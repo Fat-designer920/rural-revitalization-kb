@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>乡村振兴知识库 - 审核界面</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#f0f2f5;color:#333}
+.header{background:#2E75B6;color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.header h1{font-size:18px;font-weight:600}
+.header .stats{display:flex;gap:20px;font-size:13px}
+.header .stat-item{background:rgba(255,255,255,.15);padding:4px 12px;border-radius:12px}
+.header .stat-num{font-weight:700;font-size:15px}
+.main-container{display:flex;height:calc(100vh - 52px)}
+.sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;padding:16px;overflow-y:auto;flex-shrink:0}
+.sidebar h3{font-size:13px;color:#999;margin-bottom:8px}
+.filter-group{margin-bottom:20px}
+.filter-btn{display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;border-radius:6px;font-size:13px;color:#555;transition:all .2s}
+.filter-btn:hover{background:#f0f5ff;color:#2E75B6}
+.filter-btn.active{background:#e6f0fa;color:#2E75B6;font-weight:600}
+.filter-btn .count{float:right;background:#f0f0f0;padding:1px 8px;border-radius:10px;font-size:11px}
+.filter-btn.active .count{background:#2E75B6;color:#fff}
+.content{flex:1;overflow-y:auto;padding:20px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.toolbar-left{display:flex;gap:10px;align-items:center}
+.btn{padding:7px 16px;border:1px solid #d9d9d9;border-radius:6px;cursor:pointer;font-size:13px;background:#fff;color:#555}
+.btn:hover{border-color:#2E75B6;color:#2E75B6}
+.btn-primary{background:#2E75B6;color:#fff;border-color:#2E75B6}
+.btn-success{background:#52c41a;color:#fff;border-color:#52c41a}
+.btn-success:hover{background:#3f9c14}
+.btn-danger{background:#fff;color:#ff4d4f;border-color:#ff4d4f}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.kp-card{background:#fff;border-radius:10px;padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:4px solid #d9d9d9}
+.kp-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.kp-card.type-policy{border-left-color:#2E75B6}
+.kp-card.type-case{border-left-color:#52c41a}
+.kp-card.type-experience{border-left-color:#fa8c16}
+.kp-card.type-tool{border-left-color:#722ed1}
+.kp-card.type-data{border-left-color:#13c2c2}
+.kp-card.selected{border:2px solid #2E75B6;border-left-width:4px}
+.kp-title{font-size:16px;font-weight:600;flex:1}
+.kp-meta{font-size:12px;color:#999;margin-top:4px}
+.kp-checkbox{margin-right:10px;width:18px;height:18px;cursor:pointer}
+.type-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600}
+.type-badge.policy{background:#e6f0fa;color:#2E75B6}
+.type-badge.case{background:#f0ffe6;color:#3f9c14}
+.type-badge.experience{background:#fff7e6;color:#d48806}
+.type-badge.tool{background:#f3e8ff;color:#722ed1}
+.type-badge.data{background:#e6fffb;color:#08979c}
+.kp-section{margin-bottom:12px}
+.kp-section-title{font-size:12px;color:#999;margin-bottom:4px;font-weight:600}
+.kp-excerpt{background:#fafafa;padding:10px;border-radius:6px;font-size:13px;line-height:1.7;max-height:120px;overflow-y:auto;border:1px solid #f0f0f0}
+.kp-extracted dt{font-weight:600;color:#555;display:inline}
+.kp-extracted dt::after{content:"\FF1A"}
+.kp-extracted dd{display:inline;margin:0}
+.kp-extracted dd::after{content:"";display:block;margin-bottom:4px}
+.category-path{display:inline-block;background:#f0f5ff;padding:3px 10px;border-radius:4px;font-size:12px;color:#2E75B6}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag{display:inline-block;padding:2px 8px;background:#f5f5f5;border-radius:4px;font-size:12px;color:#666;border:1px solid #e8e8e8}
+.kp-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0}
+.kp-detail{display:none;margin-top:12px}
+.kp-detail.open{display:block}
+.status-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+.status-badge.pending{background:#fff7e6;color:#d48806}
+.status-badge.confirmed{background:#f0ffe6;color:#3f9c14}
+.status-badge.ignored{background:#f5f5f5;color:#999}
+.pagination{display:flex;justify-content:center;gap:6px;margin-top:20px;padding-bottom:20px}
+.pagination button{min-width:36px;height:36px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.pagination button.active{background:#2E75B6;color:#fff;border-color:#2E75B6}
+.page-info{line-height:36px;font-size:13px;color:#999;padding:0 10px}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:24px;width:640px;max-height:80vh;overflow-y:auto}
+.modal h2{font-size:18px;margin-bottom:16px}
+.modal-field{margin-bottom:14px}
+.modal-field label{display:block;font-size:13px;color:#666;margin-bottom:4px;font-weight:600}
+.modal-field input,.modal-field textarea,.modal-field select{width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;font-family:inherit}
+.modal-field textarea{min-height:80px;resize:vertical}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.toast{position:fixed;top:20px;right:20px;padding:12px 24px;border-radius:8px;color:#fff;font-size:14px;z-index:300;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.success{background:#52c41a}
+.toast.error{background:#ff4d4f}
+.toast.info{background:#2E75B6}
+.empty-state{text-align:center;padding:60px 20px;color:#999}
+.empty-state h3{font-size:18px;margin-bottom:8px;color:#666}
+.loading{text-align:center;padding:40px;color:#999}
+.detail-toggle{color:#2E75B6;cursor:pointer;font-size:12px;border:none;background:none}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>乡村振兴知识库 - 审核界面</h1>
+  <div class="stats">
+    <div class="stat-item">待审核 <span class="stat-num" id="statPending">-</span></div>
+    <div class="stat-item">已入库 <span class="stat-num" id="statConfirmed">-</span></div>
+    <div class="stat-item">今日API <span class="stat-num" id="statCost">-</span>元</div>
+  </div>
+</div>
+<div class="main-container">
+  <div class="sidebar">
+    <div class="filter-group">
+      <h3>审核状态</h3>
+      <button class="filter-btn active" onclick="filterByStatus(null,this)">全部</button>
+      <button class="filter-btn" onclick="filterByStatus('pending',this)">待审核 <span class="count" id="filterPending">0</span></button>
+      <button class="filter-btn" onclick="filterByStatus('confirmed',this)">已确认 <span class="count" id="filterConfirmed">0</span></button>
+      <button class="filter-btn" onclick="filterByStatus('ignored',this)">已忽略 <span class="count" id="filterIgnored">0</span></button>
+    </div>
+    <div class="filter-group">
+      <h3>知识类型</h3>
+      <button class="filter-btn" onclick="filterByType(null,this)">全部类型</button>
+      <button class="filter-btn" onclick="filterByType('policy',this)">[政策] 政策文件</button>
+      <button class="filter-btn" onclick="filterByType('case',this)">[案例] 项目案例</button>
+      <button class="filter-btn" onclick="filterByType('experience',this)">[经验] 操盘经验</button>
+      <button class="filter-btn" onclick="filterByType('tool',this)">[工具] 实操工具</button>
+      <button class="filter-btn" onclick="filterByType('data',this)">[数据] 数据资料</button>
+    </div>
+    <div class="filter-group"><h3>一级分类</h3><div id="categoryFilters"></div></div>
+  </div>
+  <div class="content">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"> 全选</label>
+        <button class="btn btn-success" onclick="batchConfirm()" id="btnBatch" disabled>批量确认入库</button>
+      </div>
+      <div class="toolbar-right"><button class="btn" onclick="refreshData()">刷新</button></div>
+    </div>
+    <div id="knowledgeList"><div class="loading">正在加载数据...</div></div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2>编辑知识点</h2>
+    <input type="hidden" id="editKpId">
+    <div class="modal-field"><label>标题</label><input type="text" id="editTitle"></div>
+    <div class="modal-field"><label>所属分类</label><select id="editCategory"></select></div>
+    <div class="modal-field"><label>标签(逗号分隔)</label><input type="text" id="editTags"></div>
+    <div class="modal-field"><label>审核备注</label><textarea id="editNotes"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeEditModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+      <button class="btn btn-success" onclick="saveAndConfirm()">保存并确认入库</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,selectedIds={},allCategories=[];
+var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
+var TL={policy:"[政策]","case":"[案例]",experience:"[经验]",tool:"[工具]",data:"[数据]"};
+var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
+
+function apiGet(u){return fetch(API+u).then(function(r){if(!r.ok)return r.text().then(function(t){try{return JSON.parse(t)}catch(e){return{error:t,items:[],total:0}}});return r.json()}).catch(function(e){console.error("GET fail",u,e);showToast("请求失败:"+e.message,"error");return{error:e.message,items:[],total:0,knowledge_points:{}}})}
+function apiPost(u,d){return fetch(API+u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d||{})}).then(function(r){return r.json()}).catch(function(e){return{error:e.message}})}
+function apiPut(u,d){return fetch(API+u,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(d||{})}).then(function(r){return r.json()}).catch(function(e){return{error:e.message}})}
+function esc(s){if(!s)return"";var d=document.createElement("div");d.textContent=String(s);return d.innerHTML}
+function showToast(m,t){var e=document.getElementById("toast");e.textContent=m;e.className="toast "+(t||"info")+" show";setTimeout(function(){e.classList.remove("show")},3000)}
+
+function init(){console.log("init()");loadStatistics();loadCategories();loadKnowledgePoints()}
+
+function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0})}
+
+function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c))allCategories=c;var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择</option>';for(var i=0;i<allCategories.length;i++){var x=allCategories[i];sel.innerHTML+='<option value="'+x.id+'">'+x.level2_code+' '+x.level1_name+'-'+x.level2_name+'</option>'}});apiGet("/api/categories/tree").then(function(t){var c=document.getElementById("categoryFilters");c.innerHTML='<button class="filter-btn active" onclick="filterByCategory(null,this)">全部分类</button>';if(t&&typeof t==="object"){var ks=Object.keys(t);for(var i=0;i<ks.length;i++){var n=ks[i],d=t[n];c.innerHTML+='<button class="filter-btn" onclick="filterByCategory('+d.code+',this)">'+d.code+'. '+n+'</button>'}}})}
+
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=15";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;console.log("load:",u);apiGet(u).then(function(d){console.log("loaded",d);if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p><p><a href="/api/debug" target="_blank">查看诊断</a></p></div>';return}var items=d.items||[];if(items.length===0){list.innerHTML='<div class="empty-state"><h3>暂无知识点</h3><p>请先运行[处理新文件.bat]</p></div>';document.getElementById("pagination").innerHTML="";return}var h="";for(var i=0;i<items.length;i++)h+=renderCard(items[i]);list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+
+function renderCard(kp){var tp=kp.content_type||"policy",tn=TN[tp]||tp,tl=TL[tp]||"",sel=selectedIds[kp.id],sn=SN[kp.review_status]||kp.review_status;var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}if(!ex)ex={};var tags=kp.suggested_tags;if(typeof tags==="string")try{tags=JSON.parse(tags)}catch(e){tags=[]}if(!Array.isArray(tags))tags=[];var cp=(kp.level1_name&&kp.level2_name)?(kp.level1_name+" > "+kp.level2_name):"未分类";var kf=getKeyFields(tp,ex);var th="";for(var t=0;t<tags.length;t++)th+='<span class="tag">'+esc(tags[t])+'</span>';var ah="";if(kp.review_status==="pending")ah='<button class="btn btn-success" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger" onclick="ignoreKp('+kp.id+')">忽略</button>';else ah='<button class="btn" onclick="openEditModal('+kp.id+')">查看详情</button>';var dis=kp.review_status!=="pending"?"disabled":"";return'<div class="kp-card type-'+tp+(sel?" selected":"")+'" id="card-'+kp.id+'"><div style="display:flex;align-items:flex-start;margin-bottom:10px"><input type="checkbox" class="kp-checkbox" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" '+dis+'><div><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="type-badge '+tp+'">'+tl+" "+tn+'</span> <span class="status-badge '+kp.review_status+'">'+sn+'</span> <span class="category-path">'+esc(cp)+'</span> <span style="margin-left:8px">'+esc(kp.original_filename||"")+"</span></div></div></div>"+(kp.original_excerpt?'<div class="kp-section"><div class="kp-section-title">原文摘录</div><div class="kp-excerpt">'+esc(kp.original_excerpt)+"</div></div>":"")+(kf?'<div class="kp-section"><div class="kp-section-title">AI提取内容</div><div class="kp-extracted">'+kf+"</div></div>":"")+(th?'<div class="kp-section"><div class="kp-section-title">标签</div><div class="tags">'+th+"</div></div>":"")+'<div class="kp-actions">'+ah+' <button class="detail-toggle" onclick="toggleDetail('+kp.id+')">展开全部</button></div><div class="kp-detail" id="detail-'+kp.id+'"><pre style="background:#fafafa;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap">'+esc(JSON.stringify(ex,null,2))+"</pre></div></div>"}
+
+function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+fs[i][1]+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
+
+function confirmKp(id){apiPost("/api/knowledge-points/"+id+"/confirm").then(function(r){if(r.success){showToast("已确认入库","success");delete selectedIds[id];refreshData()}else showToast("失败:"+(r.error||""),"error")})}
+function ignoreKp(id){if(!confirm("确定忽略?"))return;apiPost("/api/knowledge-points/"+id+"/ignore").then(function(r){if(r.success){showToast("已忽略","info");delete selectedIds[id];refreshData()}})}
+function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;if(!confirm("确认将"+ids.length+"个知识点入库?"))return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})}
+function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
+function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-checkbox:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
+function updateBatch(){var n=Object.keys(selectedIds).length;var b=document.getElementById("btnBatch");b.disabled=n===0;b.textContent=n>0?"批量确认入库("+n+")":"批量确认入库"}
+function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
+function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){document.getElementById("editKpId").value=id;document.getElementById("editTitle").value=kp.title||"";document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";var tg=kp.final_tags||kp.suggested_tags||[];if(typeof tg==="string")try{tg=JSON.parse(tg)}catch(e){tg=[]}document.getElementById("editTags").value=Array.isArray(tg)?tg.join(", "):"";document.getElementById("editNotes").value=kp.reviewer_notes||"";document.getElementById("editModal").classList.add("open")})}
+function closeEditModal(){document.getElementById("editModal").classList.remove("open")}
+function saveEdit(){var id=document.getElementById("editKpId").value;var d={title:document.getElementById("editTitle").value,final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:document.getElementById("editTags").value.split(",").map(function(t){return t.trim()}).filter(Boolean),reviewer_notes:document.getElementById("editNotes").value};apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeEditModal();loadKnowledgePoints()}})}
+function saveAndConfirm(){var id=document.getElementById("editKpId").value;var d={final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:document.getElementById("editTags").value.split(",").map(function(t){return t.trim()}).filter(Boolean),reviewer_notes:document.getElementById("editNotes").value};apiPut("/api/knowledge-points/"+id,{title:document.getElementById("editTitle").value}).then(function(){apiPost("/api/knowledge-points/"+id+"/confirm",d).then(function(r){if(r.success){showToast("已保存并确认","success");closeEditModal();refreshData()}})})}
+function filterByStatus(s,btn){currentStatus=s;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByType(t,btn){currentType=t;currentPage=1;var bs=btn?btn.closest(".filter-group").querySelectorAll(".filter-btn"):[];for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
+function filterByCategory(code,btn){if(code){for(var i=0;i<allCategories.length;i++){if(allCategories[i].level1_code==code){currentCategory=allCategories[i].id;break}}}else currentCategory=null;currentPage=1;var bs=btn?btn.closest(".filter-group").querySelectorAll(".filter-btn"):[];for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
+function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-group").querySelectorAll(".filter-btn");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
+function renderPagination(total,page,pp){var pages=Math.ceil(total/pp),c=document.getElementById("pagination");if(pages<=1){c.innerHTML="";return}var h="";if(page>1)h+='<button onclick="goToPage('+(page-1)+')">上一页</button>';for(var i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-2&&i<=page+2))h+='<button class="'+(i===page?"active":"")+'" onclick="goToPage('+i+')">'+i+"</button>";else if(i===page-3||i===page+3)h+='<span class="page-info">...</span>'}if(page<pages)h+='<button onclick="goToPage('+(page+1)+')">下一页</button>';h+='<span class="page-info">共'+total+'条</span>';c.innerHTML=h}
+function goToPage(p){currentPage=p;loadKnowledgePoints();window.scrollTo({top:0,behavior:"smooth"})}
+function refreshData(){selectedIds={};document.getElementById("selectAll").checked=false;loadStatistics();loadKnowledgePoints()}
+
+console.log("=== script loaded ===");
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){console.log("DOMContentLoaded");init()})}else{console.log("already ready");init()}
+</script>
+</body>
+</html>

@@ -1,2 +1,49 @@
-# Auto detect text files and perform LF normalization
+# ========================================
+# 乡村振兴知识库搭建助手 - .gitattributes
+# 确保跨平台文件格式一致性
+# ========================================
+
+# 默认行为：自动检测文本文件并规范化换行符
 * text=auto
+
+# Python 脚本：统一使用 LF 换行（Python标准）
+*.py text eol=lf
+
+# Batch 文件：必须使用 CRLF 换行（Windows要求）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Web 文件
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# 文档文件
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# 配置文件
+*.cfg text eol=lf
+*.ini text eol=lf
+*.toml text eol=lf
+requirements.txt text eol=lf
+
+# 不要对以下二进制文件做换行符转换
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.zip binary
+*.gz binary
+*.tar binary
