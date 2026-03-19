@@ -1,7 +1,8 @@
 @echo off
-title Ïç´åÕñÐËÖªÊ¶¿â - ´¦ÀíÐÂÎÄ¼þ
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - å¤„ç†æ–°æ–‡ä»¶
 cd /d "%~dp0"
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 %PYTHON_CMD% scripts\preprocessor.py
+pause

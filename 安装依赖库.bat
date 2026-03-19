@@ -1,12 +1,18 @@
 @echo off
-title Ïç´åÕñĞËÖªÊ¶¿â - °²×°ÒÀÀµ¿â
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - å®‰è£…ä¾èµ–åº“
 cd /d "%~dp0"
-echo ============================================================
-echo   °²×°ÒÀÀµ¿â
-echo ============================================================
-if exist "python\python.exe" (set PIP_CMD=python\python.exe -m pip) else (set PIP_CMD=python -m pip)
+if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 echo.
-%PIP_CMD% install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+echo   ========================================
+echo   æ­£åœ¨å®‰è£…ä¾èµ–åº“, è¯·è€å¿ƒç­‰å¾…...
+echo   ========================================
 echo.
-echo Done
+%PYTHON_CMD% -m pip install --upgrade pip
+%PYTHON_CMD% -m pip install requests flask cryptography pdfplumber python-docx openpyxl Pillow
+echo.
+echo   ========================================
+echo   ä¾èµ–åº“å®‰è£…å®Œæˆ!
+echo   ========================================
 pause

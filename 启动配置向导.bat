@@ -1,5 +1,5 @@
 @echo off
-title Ïç´åÕñÐËÖªÊ¶¿â - ÅäÖÃÏòµ¼
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é…ç½®å‘å¯¼
 cd /d "%~dp0"
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 chcp 65001 >nul

@@ -15,8 +15,11 @@
 - R1模型chat_with_json自动提高max_tokens至8192
 - db_manager.py新增check_file_hash_exists()文件指纹查重方法
 - 长文档分段阈值从6000字提高到12000字（适配R1长上下文能力）
+- 智能去重：只跳过已成功提取知识点的文件，失败/空结果的允许重新提取
+- 处理完毕后自动清理pending文件夹中的原始文件
+- 修复全部11个bat文件的脚本路径错误
 
-受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py
+受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, 全部bat文件
 数据库迁移：不需要
 
 ---

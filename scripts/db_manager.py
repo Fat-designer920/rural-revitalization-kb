@@ -221,12 +221,12 @@ class DatabaseManager:
         return dict(r) if r else None
 
     def check_file_hash_exists(self, file_hash):
-        """检查文件指纹是否已存在(用于去重跳过)"""
+        """检查文件指纹是否已存在(用于去重跳过)，返回含状态和处理信息"""
         if not file_hash:
             return None
         conn = self.get_connection()
         c = conn.cursor()
-        c.execute("SELECT id, original_filename, renamed_filename, process_status FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
+        c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
         r = c.fetchone(); conn.close()
         return dict(r) if r else None
 

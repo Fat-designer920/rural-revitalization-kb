@@ -1,8 +1,9 @@
 @echo off
-title Ïç´åÕñÐËÖªÊ¶¿â - ÉóºË½çÃæ
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - å®¡æ ¸ç•Œé¢
 cd /d "%~dp0"
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
-echo   ÕýÔÚÆô¶¯ÉóºË½çÃæ, ¹Ø±Õ´Ë´°¿Ú½«Í£Ö¹·þÎñ
+echo   æ­£åœ¨å¯åŠ¨å®¡æ ¸ç•Œé¢, å…³é—­æ­¤çª—å£å°†åœæ­¢æœåŠ¡
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
-%PYTHON_CMD% scriptspi_server.py
+%PYTHON_CMD% scripts\api_server.py
+pause

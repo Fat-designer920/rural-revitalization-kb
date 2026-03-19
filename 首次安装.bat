@@ -1,26 +1,30 @@
 @echo off
-title Ïç´åÕñĞËÖªÊ¶¿â - Ê×´Î°²×°
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£…
 cd /d "%~dp0"
-echo ============================================================
-echo.
-echo   »¶Ó­Ê¹ÓÃÏç´åÕñĞËÖªÊ¶¿â´î½¨ÖúÊÖ!
-echo   Õû¸ö¹ı³Ì´óÔ¼ĞèÒª 5-10 ·ÖÖÓ
-echo.
-echo ============================================================
-echo.
-echo [1/4] ¼ì²âPython...
-if exist "python\python.exe" (set PYTHON_CMD=python\python.exe & set PIP_CMD=python\python.exe -m pip & echo   OK: ÄÚÇ¶Python & goto :s2)
-where python >nul 2>&1
-if %errorlevel% equ 0 (set PYTHON_CMD=python & set PIP_CMD=python -m pip & echo   OK: ÏµÍ³Python & goto :s2)
-echo   FAIL: Î´ÕÒµ½Python, ÇëÏÈ°²×°Python 3.10+ ²¢¹´Ñ¡Add to PATH
-pause & exit /b 1
-:s2
-echo.
-echo [2/4] °²×°ÒÀÀµ¿â...
-%PIP_CMD% install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -q
-echo   OK
-echo.
-echo [3/4] Æô¶¯ÅäÖÃÏòµ¼...
+if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
-%PYTHON_CMD% scripts
+echo.
+echo   ========================================
+echo   ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£…å‘å¯¼
+echo   ========================================
+echo.
+echo   [1/3] å®‰è£…ä¾èµ–åº“...
+echo.
+%PYTHON_CMD% -m pip install --upgrade pip
+%PYTHON_CMD% -m pip install requests flask cryptography pdfplumber python-docx openpyxl Pillow
+echo.
+echo   [2/3] åˆå§‹åŒ–ç³»ç»Ÿ...
+echo.
+%PYTHON_CMD% scripts\setup.py
+echo.
+echo   [3/3] å¯åŠ¨é…ç½®å‘å¯¼...
+echo.
+%PYTHON_CMD% scripts\config_wizard.py
+echo.
+echo   ========================================
+echo   é¦–æ¬¡å®‰è£…å®Œæˆ!
+echo   ä¸‹ä¸€æ­¥: å°†æ–‡ä»¶æ”¾å…¥ data\pending\ æ–‡ä»¶å¤¹
+echo   ç„¶ååŒå‡»[å¤„ç†æ–°æ–‡ä»¶.bat]å¼€å§‹ä½¿ç”¨
+echo   ========================================
+pause

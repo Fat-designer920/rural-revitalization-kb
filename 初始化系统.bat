@@ -1,7 +1,8 @@
 @echo off
-title Ïç´åÕñÐËÖªÊ¶¿â - ³õÊ¼»¯
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - åˆå§‹åŒ–ç³»ç»Ÿ
 cd /d "%~dp0"
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 %PYTHON_CMD% scripts\setup.py
+pause

@@ -1,7 +1,7 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v1.0.1 - R1模型提取 + MD5去重 + failed隔离 + 进度增强
+版本：v1.0.1 - R1模型提取 + MD5智能去重 + failed隔离 + pending清理
 """
 import os, sys, json, shutil, hashlib
 from pathlib import Path
@@ -32,6 +32,7 @@ class Extractor:
         self.reader = FileReader(self.config)
         self.client = DeepSeekClient(self.config)
         self.db = DatabaseManager()
+        self.pending = Path(self.config.get("pending_path", PROJECT_ROOT / "data" / "pending"))
         self.processing = Path(self.config.get("processing_path", PROJECT_ROOT / "data" / "processing"))
         self.completed = Path(self.config.get("completed_path", PROJECT_ROOT / "data" / "completed"))
         self.failed_dir = Path(self.config.get("failed_path", PROJECT_ROOT / "data" / "failed"))
@@ -53,16 +54,48 @@ class Extractor:
         return h.hexdigest()
 
     def check_duplicate(self, file_path, filename):
-        """检查文件是否已处理过（通过MD5指纹判断）"""
+        """
+        智能去重：只有之前成功提取了知识点的文件才跳过。
+        以下情况允许重新提取：
+        - 之前处理失败的
+        - 之前没提取到知识点的
+        - 之前用旧版本处理的（没有hash记录的不算重复）
+        """
         file_hash = self.calculate_file_hash(file_path)
         existing = self.db.check_file_hash_exists(file_hash)
         if existing:
             exist_name = existing.get("renamed_filename") or existing.get("original_filename")
-            exist_status = existing.get("process_status")
-            print(f"     [跳过] 文件已处理过(指纹相同)")
-            print(f"            原记录: {exist_name} (状态:{exist_status})")
-            return True, file_hash
+            exist_status = existing.get("process_status", "")
+            exist_msg = existing.get("process_message", "")
+
+            # 只有"已完成 且 确实提取到了知识点"才跳过
+            if exist_status == "completed" and "提取" in exist_msg and "知识点" in exist_msg and "未提取到" not in exist_msg:
+                print(f"     [跳过] 该文件已成功提取过知识点(MD5指纹相同)")
+                print(f"            原记录: {exist_name} | {exist_msg}")
+                print(f"            如需重新提取,请先在审核界面删除该文件的旧记录")
+                return True, file_hash
+
+            # 之前失败或没提取到知识点,允许重新处理
+            if exist_status == "failed":
+                print(f"     [重新处理] 该文件上次处理失败,本次将重新提取")
+            elif "未提取到" in exist_msg:
+                print(f"     [重新处理] 该文件上次未提取到知识点,本次将重新提取")
+            else:
+                print(f"     [重新处理] 该文件存在旧记录(状态:{exist_status}),本次将重新提取")
+            return False, file_hash
+
         return False, file_hash
+
+    def _clean_pending(self, original_filename):
+        """清理pending文件夹中的原始文件"""
+        try:
+            for f in self.pending.iterdir():
+                if f.name == original_filename:
+                    os.remove(str(f))
+                    print(f"     已清理pending中的原始文件: {original_filename}")
+                    return
+        except Exception as e:
+            print(f"     ! pending文件清理失败: {e}")
 
     def get_processing_files(self):
         conn = self.db.get_connection()
@@ -149,9 +182,9 @@ class Extractor:
                 shutil.copy2(fp, str(dest))
                 if str(self.processing) in str(fp):
                     os.remove(fp)
-                print(f"     文件已移至: completed/{dest.name}")
+                print(f"     文件已归档至: completed/{dest.name}")
         except Exception as e:
-            print(f"     ! 文件移动失败: {e}")
+            print(f"     ! 文件归档失败: {e}")
 
     def _move_to_failed(self, fp, fn):
         """将处理失败的文件移动到failed文件夹隔离"""
@@ -175,6 +208,7 @@ class Extractor:
         result = {"success": False, "knowledge_count": 0, "error": ""}
         fid = rec["id"]
         fn = rec.get("renamed_filename") or rec["original_filename"]
+        original_fn = rec["original_filename"]
         fp = None
 
         try:
@@ -192,13 +226,14 @@ class Extractor:
                 print(f"     [FAIL] {result['error']}")
                 return result
 
-            # === 重复文件检测 ===
+            # === 智能去重检测 ===
             is_dup, file_hash = self.check_duplicate(fp, fn)
             if is_dup:
                 self.db.update_source_file(fid, process_status="completed",
                                            process_message="重复文件,已自动跳过",
                                            file_hash=file_hash)
                 self._move_to_completed(fp, fn)
+                self._clean_pending(original_fn)
                 result["error"] = "重复文件已跳过"
                 return result
 
@@ -211,6 +246,7 @@ class Extractor:
                 result["error"] = rr["error"]
                 print(f"     [FAIL] 文件读取失败: {result['error']}")
                 self._move_to_failed(fp, fn)
+                self._clean_pending(original_fn)
                 self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
                 return result
             content = rr["content"]
@@ -242,6 +278,7 @@ class Extractor:
                 self.db.update_source_file(fid, process_status="completed",
                                            process_message="未提取到知识点")
                 self._move_to_completed(fp, fn)
+                self._clean_pending(original_fn)
                 result["error"] = "未提取到知识点"
                 print(f"     [注意] 未提取到知识点")
                 return result
@@ -268,8 +305,9 @@ class Extractor:
                 except Exception as e:
                     print(f"     ! 第{cnt + 1}个知识点入库失败: {e}")
 
-            # === 移动文件到completed ===
+            # === 归档文件 ===
             self._move_to_completed(fp, fn)
+            self._clean_pending(original_fn)
 
             self.db.update_source_file(fid, process_status="completed",
                                        process_message=f"R1提取{cnt}个知识点")
@@ -285,6 +323,7 @@ class Extractor:
             # 失败的文件隔离到failed文件夹
             if fp and os.path.exists(fp):
                 self._move_to_failed(fp, fn)
+            self._clean_pending(original_fn)
             self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
         return result
 
