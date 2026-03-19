@@ -1,7 +1,7 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v1.0.1 - R1模型提取 + MD5智能去重 + failed隔离 + pending清理
+版本：v1.0.1 - R1模型提取 + 智能分段 + 截断自动拆分重试
 """
 import os, sys, json, shutil, hashlib
 from pathlib import Path
@@ -22,8 +22,11 @@ class Extractor:
         "tool": "实操工具", "data": "数据资料"
     }
 
-    # 使用R1模型做知识提取（更深度的推理分析）
+    # 使用R1模型做知识提取
     EXTRACTION_MODEL = "deepseek-reasoner"
+
+    # 分段阈值：4000字一段，保证R1有足够的输出空间写完所有知识点
+    SEGMENT_MAX_LEN = 4000
 
     def __init__(self):
         p = PROJECT_ROOT / "config" / "settings.json"
@@ -36,14 +39,12 @@ class Extractor:
         self.processing = Path(self.config.get("processing_path", PROJECT_ROOT / "data" / "processing"))
         self.completed = Path(self.config.get("completed_path", PROJECT_ROOT / "data" / "completed"))
         self.failed_dir = Path(self.config.get("failed_path", PROJECT_ROOT / "data" / "failed"))
-        # 确保文件夹存在
         self.completed.mkdir(parents=True, exist_ok=True)
         self.failed_dir.mkdir(parents=True, exist_ok=True)
 
     # === 文件指纹（MD5）===
     @staticmethod
     def calculate_file_hash(file_path):
-        """计算文件MD5指纹，就像文件的身份证号"""
         h = hashlib.md5()
         with open(file_path, "rb") as f:
             while True:
@@ -54,13 +55,7 @@ class Extractor:
         return h.hexdigest()
 
     def check_duplicate(self, file_path, filename):
-        """
-        智能去重：只有之前成功提取了知识点的文件才跳过。
-        以下情况允许重新提取：
-        - 之前处理失败的
-        - 之前没提取到知识点的
-        - 之前用旧版本处理的（没有hash记录的不算重复）
-        """
+        """智能去重：只跳过已成功提取知识点的文件"""
         file_hash = self.calculate_file_hash(file_path)
         existing = self.db.check_file_hash_exists(file_hash)
         if existing:
@@ -68,14 +63,11 @@ class Extractor:
             exist_status = existing.get("process_status", "")
             exist_msg = existing.get("process_message", "")
 
-            # 只有"已完成 且 确实提取到了知识点"才跳过
             if exist_status == "completed" and "提取" in exist_msg and "知识点" in exist_msg and "未提取到" not in exist_msg:
                 print(f"     [跳过] 该文件已成功提取过知识点(MD5指纹相同)")
                 print(f"            原记录: {exist_name} | {exist_msg}")
-                print(f"            如需重新提取,请先在审核界面删除该文件的旧记录")
                 return True, file_hash
 
-            # 之前失败或没提取到知识点,允许重新处理
             if exist_status == "failed":
                 print(f"     [重新处理] 该文件上次处理失败,本次将重新提取")
             elif "未提取到" in exist_msg:
@@ -122,11 +114,13 @@ class Extractor:
             return "policy"
         return "policy"
 
-    def _split(self, content, max_len=12000):
+    def _split(self, content, max_len=None):
         """
-        长文档分段。R1模型支持更长上下文，阈值从6000提高到12000字。
-        尽量在自然段落边界分割，保持语义完整。
+        按自然段落边界分段。
+        max_len: 每段最大字数,默认使用 SEGMENT_MAX_LEN
         """
+        if max_len is None:
+            max_len = self.SEGMENT_MAX_LEN
         if len(content) <= max_len:
             return [content]
         segs, cur = [], ""
@@ -145,31 +139,70 @@ class Extractor:
         up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
         ai = self.client.chat_with_json(
             prompt["system_prompt"], up,
-            temperature=0.2, max_tokens=8192,
+            temperature=0.2,
             call_type=f"extract_{ctype}",
             model_override=self.EXTRACTION_MODEL
         )
         parsed = ai.get("parsed_json")
+        was_truncated = ai.get("was_truncated", False)
         cost_info = f"(花费约{ai.get('estimated_cost', 0):.4f}元)"
+
+        # 如果被截断且没有解析到内容,返回特殊标记让外层拆分重试
+        if was_truncated and parsed is None:
+            print(f"       ! 输出被截断且无法抢救 {cost_info}")
+            return "TRUNCATED"
 
         if parsed and isinstance(parsed, dict):
             kps = parsed.get("knowledge_points", [])
             notes = parsed.get("extraction_notes", "")
             if notes:
                 print(f"       AI说明: {notes[:80]}")
-            print(f"       本段提取{len(kps)}个知识点 {cost_info}")
+            if was_truncated:
+                print(f"       本段提取{len(kps)}个知识点(部分截断已修复) {cost_info}")
+            else:
+                print(f"       本段提取{len(kps)}个知识点 {cost_info}")
             return kps
         if parsed and isinstance(parsed, list):
             print(f"       本段提取{len(parsed)}个知识点 {cost_info}")
             return parsed
 
-        # JSON解析失败
         err = ai.get("json_parse_error", "未知错误")
         print(f"       ! JSON解析失败: {err} {cost_info}")
         return []
 
+    def _extract_with_auto_split(self, content, filename, prompt, ctype, current_max_len=None):
+        """
+        带自动拆分重试的提取。
+        如果某段提取时被截断,自动把这段拆成更小的段重新提取。
+        """
+        if current_max_len is None:
+            current_max_len = self.SEGMENT_MAX_LEN
+
+        result = self._extract_single(content, filename, prompt, ctype)
+
+        # 如果返回"TRUNCATED"标记,说明需要拆分重试
+        if result == "TRUNCATED":
+            # 拆成当前长度一半的段
+            new_max = current_max_len // 2
+            if new_max < 500:
+                # 段已经很短了还是截断,放弃
+                print(f"       ! 内容过短仍被截断,跳过该段")
+                return []
+            print(f"       自动拆分为更小段(每段{new_max}字)重新提取...")
+            sub_segs = self._split(content, max_len=new_max)
+            all_kps = []
+            for j, sub_seg in enumerate(sub_segs, 1):
+                print(f"         子段{j}/{len(sub_segs)} ({len(sub_seg)}字)...")
+                sub_kps = self._extract_with_auto_split(sub_seg, f"{filename}(子段{j})", prompt, ctype, new_max)
+                all_kps.extend(sub_kps)
+            return all_kps
+
+        # 正常返回列表
+        if isinstance(result, list):
+            return result
+        return []
+
     def _move_to_completed(self, fp, fn):
-        """将处理完成的文件移动到completed文件夹"""
         try:
             dest = self.completed / fn
             c = 1
@@ -187,7 +220,6 @@ class Extractor:
             print(f"     ! 文件归档失败: {e}")
 
     def _move_to_failed(self, fp, fn):
-        """将处理失败的文件移动到failed文件夹隔离"""
         try:
             dest = self.failed_dir / fn
             c = 1
@@ -237,7 +269,6 @@ class Extractor:
                 result["error"] = "重复文件已跳过"
                 return result
 
-            # 更新文件指纹到数据库
             self.db.update_source_file(fid, file_hash=file_hash)
 
             # === 读取文件内容 ===
@@ -260,19 +291,21 @@ class Extractor:
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
             print(f"     提取模型: {self.EXTRACTION_MODEL} (R1深度推理)")
-            print(f"     AI提取中（R1模型思考较慢,请耐心等待）...")
 
             # === AI提取知识点 ===
-            if len(content) > 12000:
-                segs = self._split(content)
-                print(f"     长文档,分{len(segs)}段处理")
-                kps = []
-                for i, seg in enumerate(segs, 1):
-                    print(f"\n     --- 第{i}/{len(segs)}段 ({len(seg)}字) ---")
-                    seg_kps = self._extract_single(seg, f"{fn}(第{i}/{len(segs)}段)", prompt, ctype)
-                    kps.extend(seg_kps)
+            segs = self._split(content)
+            if len(segs) > 1:
+                print(f"     分{len(segs)}段提取(每段约{self.SEGMENT_MAX_LEN}字)")
             else:
-                kps = self._extract_single(content, fn, prompt, ctype)
+                print(f"     整段提取")
+            print(f"     AI提取中（R1模型思考较慢,请耐心等待）...")
+
+            kps = []
+            for i, seg in enumerate(segs, 1):
+                if len(segs) > 1:
+                    print(f"\n     --- 第{i}/{len(segs)}段 ({len(seg)}字) ---")
+                seg_kps = self._extract_with_auto_split(seg, f"{fn}(第{i}/{len(segs)}段)" if len(segs) > 1 else fn, prompt, ctype)
+                kps.extend(seg_kps)
 
             if not kps:
                 self.db.update_source_file(fid, process_status="completed",
@@ -320,7 +353,6 @@ class Extractor:
         except Exception as e:
             result["error"] = f"{type(e).__name__}:{e}"
             print(f"     [FAIL] {result['error']}")
-            # 失败的文件隔离到failed文件夹
             if fp and os.path.exists(fp):
                 self._move_to_failed(fp, fn)
             self._clean_pending(original_fn)
@@ -331,10 +363,10 @@ class Extractor:
         print(f"\n{'=' * 60}")
         print(f"  乡村振兴知识库 - 知识点提取引擎 v1.0.1")
         print(f"  提取模型: {self.EXTRACTION_MODEL} (R1深度推理)")
+        print(f"  分段策略: 每段{self.SEGMENT_MAX_LEN}字, 截断自动拆分重试")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
 
-        # 显示今日费用
         usage = self.client.get_today_usage()
         print(f"\n  今日API费用: {usage['today_cost']:.2f}元 / {usage['daily_limit']:.0f}元上限"
               f" (已用{usage['usage_percent']:.0f}%)")
@@ -363,7 +395,6 @@ class Extractor:
                     print(f"\n  !! 费用达到上限，剩余{len(files) - i}个文件下次再处理")
                     break
 
-        # 最终汇总
         usage = self.client.get_today_usage()
         print(f"\n{'=' * 60}")
         print(f"  提取完成!")

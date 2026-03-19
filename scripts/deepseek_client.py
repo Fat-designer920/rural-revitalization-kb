@@ -1,7 +1,7 @@
 """
 deepseek_client.py - DeepSeek API封装
 路径：scripts/deepseek_client.py
-版本：v1.0.1 - R1模型支持 + 增强JSON解析容错
+版本：v1.0.1 - R1模型支持 + 增强JSON解析 + 截断修复 + 无人为上限
 """
 import os, sys, json, time, base64, re, requests
 from pathlib import Path
@@ -21,7 +21,6 @@ class DeepSeekClient:
         "deepseek-reasoner": {"input": 4.0, "output": 16.0}
     }
 
-    # R1模型不支持temperature参数，需要更长超时（思考过程耗时长）
     R1_MODELS = {"deepseek-reasoner"}
 
     def __init__(self, config=None):
@@ -37,13 +36,12 @@ class DeepSeekClient:
         self.daily_cost_limit = config.get("daily_cost_limit", 50)
         self.max_retries = 3
         self.timeout = 120
-        self.r1_timeout = 300  # R1模型超时5分钟（思考过程较长）
+        self.r1_timeout = 300
         if not self.base_url.startswith("https://"):
             raise ValueError("API地址必须HTTPS")
         self.api_key = self._get_api_key()
         self.db = DatabaseManager()
 
-        # 调试输出目录
         self.debug_dir = PROJECT_ROOT / "data" / "debug"
         self.debug_dir.mkdir(parents=True, exist_ok=True)
 
@@ -66,13 +64,11 @@ class DeepSeekClient:
         return round((inp / 1e6) * p["input"] + (out / 1e6) * p["output"], 6)
 
     def _is_r1(self, model):
-        """判断是否为R1推理模型"""
         return model in self.R1_MODELS
 
     def _request(self, endpoint, payload, use_model=None):
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        # R1模型用更长的超时时间
         timeout = self.r1_timeout if self._is_r1(use_model or self.model) else self.timeout
         last_err = None
         for attempt in range(1, self.max_retries + 1):
@@ -105,11 +101,6 @@ class DeepSeekClient:
 
     def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=4096,
              call_type="general", model_override=None):
-        """
-        通用聊天接口。
-        model_override: 指定模型,不传则用配置文件中的默认模型。
-                        传 "deepseek-reasoner" 则使用R1模型。
-        """
         self._check_cost()
         use_model = model_override or self.model
 
@@ -118,27 +109,28 @@ class DeepSeekClient:
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ],
-            "max_tokens": max_tokens
+            ]
         }
 
-        # R1模型不支持temperature参数
-        if not self._is_r1(use_model):
+        # R1模型：不传temperature（不支持），不设max_tokens（让R1写完为止）
+        if self._is_r1(use_model):
+            pass
+        else:
             payload["temperature"] = temperature
+            payload["max_tokens"] = max_tokens
 
         resp = self._request("chat/completions", payload, use_model=use_model)
 
-        # 提取回复内容
         msg = resp["choices"][0]["message"]
         content = msg.get("content", "")
-
-        # R1模型会返回思考过程(reasoning_content)，记录但不混入正文
         reasoning = msg.get("reasoning_content", "")
 
-        # 提取token用量
         u = resp.get("usage", {})
         inp = u.get("prompt_tokens", 0)
         out = u.get("completion_tokens", 0)
+
+        finish_reason = resp["choices"][0].get("finish_reason", "stop")
+        was_truncated = (finish_reason == "length")
 
         cost = self._estimate_cost(use_model, inp, out)
         self.db.log_api_call(call_type, use_model, inp, out, cost)
@@ -148,92 +140,128 @@ class DeepSeekClient:
             "input_tokens": inp,
             "output_tokens": out,
             "estimated_cost": cost,
-            "model": use_model
+            "model": use_model,
+            "was_truncated": was_truncated
         }
         if reasoning:
             result["reasoning_content"] = reasoning
-
         return result
 
-    def _extract_json_robust(self, text):
-        """
-        增强版JSON提取：R1模型经常在JSON前后加解释文字，需要智能提取。
-        按优先级依次尝试多种方式。
-        """
+    def _repair_truncated_json(self, text):
+        """最后兜底：从截断的JSON中抢救已完成的知识点"""
+        kp_match = re.search(r'"knowledge_points"\s*:\s*\[', text)
+        if not kp_match:
+            return None
+
+        array_start = kp_match.end()
+        completed_items = []
+        depth = 0
+        item_start = -1
+
+        i = array_start
+        while i < len(text):
+            ch = text[i]
+            if ch == '"':
+                i += 1
+                while i < len(text) and text[i] != '"':
+                    if text[i] == '\\':
+                        i += 1
+                    i += 1
+                i += 1
+                continue
+            if ch == '{':
+                if depth == 0:
+                    item_start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and item_start >= 0:
+                    item_text = text[item_start:i + 1]
+                    try:
+                        item = json.loads(item_text)
+                        completed_items.append(item)
+                    except json.JSONDecodeError:
+                        pass
+                    item_start = -1
+            i += 1
+
+        if completed_items:
+            return {"knowledge_points": completed_items}
+        return None
+
+    def _extract_json_robust(self, text, was_truncated=False):
+        """增强版JSON提取：7重保险含截断修复"""
         if not text or not text.strip():
             return None, "返回内容为空"
 
         text = text.strip()
 
-        # 第1步：清理markdown代码块包裹
+        # 第1步：清理markdown代码块
         cleaned = text
-        # 处理 ```json ... ``` 包裹
         json_block = re.search(r'```json\s*([\s\S]*?)```', cleaned)
         if json_block:
             cleaned = json_block.group(1).strip()
         else:
-            # 处理 ``` ... ``` 包裹
             code_block = re.search(r'```\s*([\s\S]*?)```', cleaned)
             if code_block:
                 cleaned = code_block.group(1).strip()
 
-        # 第2步：直接尝试解析（最理想的情况）
+        # 第2步：直接解析
         try:
             return json.loads(cleaned), None
         except json.JSONDecodeError:
             pass
 
-        # 第3步：提取最外层的JSON对象 { ... }
-        # 找到第一个 { 和最后一个 } 之间的内容
+        # 第3步：提取JSON对象
         brace_start = cleaned.find("{")
         brace_end = cleaned.rfind("}")
         if brace_start >= 0 and brace_end > brace_start:
             try:
-                candidate = cleaned[brace_start:brace_end + 1]
-                return json.loads(candidate), None
+                return json.loads(cleaned[brace_start:brace_end + 1]), None
             except json.JSONDecodeError:
                 pass
 
-        # 第4步：提取最外层的JSON数组 [ ... ]
+        # 第4步：提取JSON数组
         bracket_start = cleaned.find("[")
         bracket_end = cleaned.rfind("]")
         if bracket_start >= 0 and bracket_end > bracket_start:
             try:
-                candidate = cleaned[bracket_start:bracket_end + 1]
-                return json.loads(candidate), None
+                return json.loads(cleaned[bracket_start:bracket_end + 1]), None
             except json.JSONDecodeError:
                 pass
 
-        # 第5步：尝试从原始文本（不清理代码块）中提取
+        # 第5步：从原始文本提取
         if cleaned != text:
             brace_start = text.find("{")
             brace_end = text.rfind("}")
             if brace_start >= 0 and brace_end > brace_start:
                 try:
-                    candidate = text[brace_start:brace_end + 1]
-                    return json.loads(candidate), None
+                    return json.loads(text[brace_start:brace_end + 1]), None
                 except json.JSONDecodeError:
                     pass
 
-        # 第6步：尝试修复常见的JSON格式问题
-        # R1有时会在JSON中使用中文标点
+        # 第6步：修复中文标点
         try:
             fixed = cleaned
-            if brace_start >= 0 and brace_end > brace_start:
-                fixed = cleaned[brace_start:brace_end + 1]
-            # 替换常见的中文标点为英文
+            if cleaned.find("{") >= 0 and cleaned.rfind("}") > cleaned.find("{"):
+                fixed = cleaned[cleaned.find("{"):cleaned.rfind("}") + 1]
             fixed = fixed.replace("\uff1a", ":").replace("\uff0c", ",")
             fixed = fixed.replace("\u201c", '"').replace("\u201d", '"')
-            fixed = fixed.replace("\u2018", "'").replace("\u2019", "'")
             return json.loads(fixed), None
         except (json.JSONDecodeError, Exception):
             pass
 
-        # 全部失败
-        return None, "JSON解析失败(已尝试6种方式)"
+        # 第7步：截断修复兜底
+        source = cleaned if cleaned.find('"knowledge_points"') >= 0 else text
+        repaired = self._repair_truncated_json(source)
+        if repaired:
+            count = len(repaired.get("knowledge_points", []))
+            print(f"       [截断修复] 从不完整输出中抢救出{count}个完整知识点")
+            return repaired, None
+
+        return None, "JSON解析失败(已尝试7种方式含截断修复)"
 
     def _save_debug_output(self, content, call_type):
-        """解析失败时保存原始输出，方便排查"""
         try:
             ts = time.strftime("%Y%m%d_%H%M%S")
             debug_file = self.debug_dir / f"json_fail_{call_type}_{ts}.txt"
@@ -253,31 +281,27 @@ class DeepSeekClient:
                        call_type="json_extract", model_override=None):
         """
         聊天并解析JSON输出。
-        R1模型时：max_tokens自动提高到8192以容纳更细粒度的输出。
-        增强版JSON解析：支持R1模型的自由格式输出。
+        R1模型：不设人为token上限，通过控制输入段的长度来间接控制输出。
         """
         use_model = model_override or self.model
-
-        # R1模型做提取时，输出通常更长，提高token上限
-        if self._is_r1(use_model) and max_tokens < 8192:
-            max_tokens = 8192
 
         json_sys = system_prompt + "\n\n【极其重要】你必须且只能输出一个JSON对象，不要输出任何其他文字、解释或说明。不要使用markdown代码块。直接以{开头，以}结尾。"
         result = self.chat(json_sys, user_prompt, temperature, max_tokens, call_type,
                            model_override=use_model)
         content = result["content"]
+        was_truncated = result.get("was_truncated", False)
 
-        # 使用增强版JSON提取
-        parsed, error = self._extract_json_robust(content)
+        if was_truncated:
+            print(f"       [注意] R1输出被截断(达到模型输出上限),尝试抢救...")
+
+        parsed, error = self._extract_json_robust(content, was_truncated)
 
         if parsed is not None:
             result["parsed_json"] = parsed
         else:
             result["parsed_json"] = None
             result["json_parse_error"] = error
-            # 保存失败的原始输出用于调试
             self._save_debug_output(content, call_type)
-            # 打印返回内容的前300字帮助诊断
             preview = content[:300] if content else "(空)"
             print(f"       R1原始返回(前300字): {preview}")
 
