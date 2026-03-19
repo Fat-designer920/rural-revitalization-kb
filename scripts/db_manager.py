@@ -1,6 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
+版本：v1.0.1
 """
 
 import sqlite3
@@ -135,6 +136,7 @@ class DatabaseManager:
         c.execute("CREATE INDEX IF NOT EXISTS idx_kp_type ON knowledge_points(content_type)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_kp_source ON knowledge_points(source_file_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sf_status ON source_files(process_status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_sf_hash ON source_files(file_hash)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_api_date ON api_call_logs(call_date)")
 
         conn.commit()
@@ -199,7 +201,7 @@ class DatabaseManager:
     def update_source_file(self, file_id, **kw):
         conn = self.get_connection()
         c = conn.cursor()
-        allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message"]
+        allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
@@ -215,6 +217,16 @@ class DatabaseManager:
         conn = self.get_connection()
         c = conn.cursor()
         c.execute("SELECT * FROM source_files WHERE id=?", (file_id,))
+        r = c.fetchone(); conn.close()
+        return dict(r) if r else None
+
+    def check_file_hash_exists(self, file_hash):
+        """检查文件指纹是否已存在(用于去重跳过)"""
+        if not file_hash:
+            return None
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, original_filename, renamed_filename, process_status FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
         r = c.fetchone(); conn.close()
         return dict(r) if r else None
 
