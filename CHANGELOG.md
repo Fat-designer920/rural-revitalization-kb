@@ -23,6 +23,8 @@
 - 审核界面新增：标签芯片化编辑（AI推荐标签+下拉选择+新建标签）
 - 审核界面新增：分类下拉按一级分类分组、忽略操作弹出填理由输入框
 - api_server.py新增/api/tags标签聚合接口
+- extractor.py新增启动时交互式模型选择（R1深度推理/V3快速提取）
+- extractor.py新增已处理文件交互式询问（Y重新分析/N跳过）
 
 受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, api_server.py, review.html, 全部bat文件
 数据库迁移：不需要
