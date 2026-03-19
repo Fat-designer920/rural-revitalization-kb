@@ -107,7 +107,12 @@ def confirm(kid):
 @app.route("/api/knowledge-points/<int:kid>/ignore", methods=["POST"])
 def ignore(kid):
     try:
-        db.ignore_knowledge_point(kid, (request.get_json() or {}).get("reason",""))
+        reason = (request.get_json() or {}).get("reason","")
+        kp = db.get_knowledge_point(kid)
+        if kp and kp.get("review_status") == "confirmed":
+            db.add_edit_history(kid, {"review_status": {"old": "confirmed", "new": "ignored"}},
+                               "移除出库: " + (reason or "无原因"))
+        db.ignore_knowledge_point(kid, reason)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
@@ -116,7 +121,7 @@ def update(kid):
     try:
         d = request.get_json() or {}
         kp = db.get_knowledge_point(kid)
-        track_fields = ["title","final_category_id","final_tags","reviewer_notes"]
+        track_fields = ["title","final_category_id","final_tags","reviewer_notes","original_excerpt","ai_extracted_content"]
         if kp and kp.get("review_status") == "confirmed":
             changes = {}
             for f in track_fields:
@@ -129,7 +134,7 @@ def update(kid):
                         changes[f] = {"old": old_val, "new": new_val}
             if changes:
                 db.add_edit_history(kid, changes, "人工编辑")
-        u = {k:d[k] for k in ["title","final_category_id","final_tags","reviewer_notes","ai_extracted_content"] if k in d}
+        u = {k:d[k] for k in ["title","final_category_id","final_tags","reviewer_notes","ai_extracted_content","original_excerpt"] if k in d}
         if u: db.update_knowledge_point(kid, **u)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
