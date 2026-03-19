@@ -37,7 +37,6 @@ class DatabaseManager:
     def init_tables(self):
         conn = self.get_connection()
         c = conn.cursor()
-
         c.execute("""CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             level1_code TEXT NOT NULL, level1_name TEXT NOT NULL,
@@ -45,9 +44,7 @@ class DatabaseManager:
             level3_code TEXT DEFAULT NULL, level3_name TEXT DEFAULT NULL,
             description TEXT DEFAULT '', is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-
+            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS source_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             original_filename TEXT NOT NULL, renamed_filename TEXT DEFAULT NULL,
@@ -59,9 +56,7 @@ class DatabaseManager:
                 CHECK(process_status IN ('pending','processing','completed','failed')),
             process_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-
+            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_file_id INTEGER NOT NULL,
@@ -84,17 +79,13 @@ class DatabaseManager:
             confirmed_at TEXT DEFAULT NULL,
             FOREIGN KEY (source_file_id) REFERENCES source_files(id),
             FOREIGN KEY (suggested_category_id) REFERENCES categories(id),
-            FOREIGN KEY (final_category_id) REFERENCES categories(id)
-        )""")
-
+            FOREIGN KEY (final_category_id) REFERENCES categories(id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL, version INTEGER NOT NULL,
             content_snapshot TEXT NOT NULL, change_reason TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id)
-        )""")
-
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS architecture_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             suggested_name TEXT NOT NULL, suggested_level TEXT NOT NULL,
@@ -103,25 +94,19 @@ class DatabaseManager:
             status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','deferred')),
             resolved_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (parent_category_id) REFERENCES categories(id)
-        )""")
-
+            FOREIGN KEY (parent_category_id) REFERENCES categories(id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             operation_type TEXT NOT NULL, target_table TEXT DEFAULT '',
             target_id INTEGER DEFAULT NULL, details TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-
+            created_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS api_call_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             call_type TEXT NOT NULL, model TEXT DEFAULT '',
             input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
             estimated_cost REAL DEFAULT 0.0,
             call_date TEXT DEFAULT (date('now','localtime')),
-            created_at TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-
+            created_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS notion_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
@@ -129,28 +114,20 @@ class DatabaseManager:
             sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending','synced','failed','conflict')),
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id)
-        )""")
-
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_kp_type ON knowledge_points(content_type)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_kp_source ON knowledge_points(source_file_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sf_status ON source_files(process_status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sf_hash ON source_files(file_hash)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_api_date ON api_call_logs(call_date)")
-
-        conn.commit()
-        conn.close()
+        conn.commit(); conn.close()
         return True
 
     def init_default_categories(self):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM categories")
-        if c.fetchone()["cnt"] > 0:
-            conn.close()
-            return True
-
+        if c.fetchone()["cnt"] > 0: conn.close(); return True
         cats = [
             ("1","政策库","1.1","全域土地综合整治政策","国家/省/市层面综合整治专项政策"),
             ("1","政策库","1.2","增减挂钩与占补平衡","城乡建设用地增减挂钩、耕地占补平衡相关政策"),
@@ -180,116 +157,85 @@ class DatabaseManager:
             ("5","数据库","5.2","指标数据","增减挂钩指标价格、占补平衡指标、各地交易数据"),
             ("5","数据库","5.3","地方政策对比","不同省/市的政策差异对比"),
             ("5","数据库","5.4","项目规模与成效数据","各地项目面积、投资额、产出数据等"),
-            ("5","数据库","5.5","行业基准数据","亩均投资、建设周期、收益率等行业参考值"),
-        ]
+            ("5","数据库","5.5","行业基准数据","亩均投资、建设周期、收益率等行业参考值")]
         for cat in cats:
             c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)", cat)
-        conn.commit()
-        conn.close()
+        conn.commit(); conn.close()
         return True
 
-    # === 文件操作 ===
     def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash) VALUES (?,?,?,?,?)",
                   (original_filename, file_path, file_type, file_size, file_hash))
-        fid = c.lastrowid
-        conn.commit(); conn.close()
-        return fid
+        fid = c.lastrowid; conn.commit(); conn.close(); return fid
 
     def update_source_file(self, file_id, **kw):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash"]
         sets, vals = [], []
         for k, v in kw.items():
-            if k in allowed:
-                sets.append(f"{k}=?"); vals.append(v)
+            if k in allowed: sets.append(f"{k}=?"); vals.append(v)
         if sets:
-            sets.append("updated_at=datetime('now','localtime')")
-            vals.append(file_id)
-            c.execute(f"UPDATE source_files SET {','.join(sets)} WHERE id=?", vals)
-            conn.commit()
+            sets.append("updated_at=datetime('now','localtime')"); vals.append(file_id)
+            c.execute(f"UPDATE source_files SET {','.join(sets)} WHERE id=?", vals); conn.commit()
         conn.close()
 
     def get_source_file(self, file_id):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT * FROM source_files WHERE id=?", (file_id,))
-        r = c.fetchone(); conn.close()
-        return dict(r) if r else None
+        r = c.fetchone(); conn.close(); return dict(r) if r else None
 
     def check_file_hash_exists(self, file_hash):
-        """检查文件指纹是否已存在(用于去重跳过)，返回含状态和处理信息"""
-        if not file_hash:
-            return None
-        conn = self.get_connection()
-        c = conn.cursor()
+        if not file_hash: return None
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
-        r = c.fetchone(); conn.close()
-        return dict(r) if r else None
+        r = c.fetchone(); conn.close(); return dict(r) if r else None
 
-    # === 知识点操作 ===
     def add_knowledge_point(self, source_file_id, title, content_type, original_excerpt="",
                             ai_extracted_content=None, suggested_category_id=None,
                             suggested_tags=None, source_page="", source_keyword=""):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points (source_file_id,title,content_type,original_excerpt,
             ai_extracted_content,suggested_category_id,suggested_tags,source_page,source_keyword)
             VALUES (?,?,?,?,?,?,?,?,?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
-             suggested_category_id,
-             json.dumps(suggested_tags or [], ensure_ascii=False),
+             suggested_category_id, json.dumps(suggested_tags or [], ensure_ascii=False),
              source_page, source_keyword))
-        kid = c.lastrowid
-        conn.commit(); conn.close()
-        return kid
+        kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None, category_id=None, page=1, per_page=20):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
-        if review_status:
-            where.append("kp.review_status=?"); params.append(review_status)
-        if content_type:
-            where.append("kp.content_type=?"); params.append(content_type)
-        if category_id:
-            where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)"); params.extend([category_id, category_id])
+        if review_status: where.append("kp.review_status=?"); params.append(review_status)
+        if content_type: where.append("kp.content_type=?"); params.append(content_type)
+        if category_id: where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)"); params.extend([category_id, category_id])
         w = " AND ".join(where)
         offset = (page - 1) * per_page
-
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
         total = c.fetchone()["cnt"]
-
         c.execute(f"""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
             cat.level1_name, cat.level2_name, cat.level2_code
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id=sf.id
             LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
-            WHERE {w} ORDER BY kp.created_at DESC LIMIT ? OFFSET ?""",
+            WHERE {w} ORDER BY sf.created_at DESC, kp.id ASC LIMIT ? OFFSET ?""",
             params + [per_page, offset])
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
+        rows = [dict(r) for r in c.fetchall()]; conn.close()
         return {"items": rows, "total": total, "page": page, "per_page": per_page}
 
     def get_knowledge_point(self, kp_id):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
             cat.level1_name, cat.level2_name, cat.level2_code
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id=sf.id
             LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
             WHERE kp.id=?""", (kp_id,))
-        r = c.fetchone(); conn.close()
-        return dict(r) if r else None
+        r = c.fetchone(); conn.close(); return dict(r) if r else None
 
     def update_knowledge_point(self, kp_id, **kw):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         allowed = ["title","original_excerpt","ai_extracted_content","final_category_id",
                     "final_tags","review_status","reviewer_notes","quality_score","is_outdated","superseded_by"]
         sets, vals = [], []
@@ -298,15 +244,12 @@ class DatabaseManager:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
-                else:
-                    vals.append(v)
+                else: vals.append(v)
         if sets:
             sets.append("updated_at=datetime('now','localtime')")
-            if kw.get("review_status") == "confirmed":
-                sets.append("confirmed_at=datetime('now','localtime')")
+            if kw.get("review_status") == "confirmed": sets.append("confirmed_at=datetime('now','localtime')")
             vals.append(kp_id)
-            c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", vals)
-            conn.commit()
+            c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", vals); conn.commit()
         conn.close()
 
     def confirm_knowledge_point(self, kp_id, final_category_id=None, final_tags=None, reviewer_notes=""):
@@ -321,62 +264,46 @@ class DatabaseManager:
         self.update_knowledge_point(kp_id, review_status="ignored", reviewer_notes=reason)
         self.log_operation("ignore", "knowledge_points", kp_id)
 
-    # === 分类 ===
     def get_all_categories(self, active_only=True):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         w = "WHERE is_active=1" if active_only else ""
         c.execute(f"SELECT * FROM categories {w} ORDER BY level1_code, level2_code")
-        rows = [dict(r) for r in c.fetchall()]; conn.close()
-        return rows
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
 
     def get_categories_tree(self):
-        cats = self.get_all_categories()
-        tree = {}
+        cats = self.get_all_categories(); tree = {}
         for cat in cats:
             l1 = cat["level1_name"]
-            if l1 not in tree:
-                tree[l1] = {"code": cat["level1_code"], "children": []}
+            if l1 not in tree: tree[l1] = {"code": cat["level1_code"], "children": []}
             tree[l1]["children"].append({"id": cat["id"], "code": cat["level2_code"],
                 "name": cat["level2_name"], "description": cat["description"]})
         return tree
 
     def find_category_by_code(self, level2_code):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT * FROM categories WHERE level2_code=? AND is_active=1", (level2_code,))
-        r = c.fetchone(); conn.close()
-        return dict(r) if r else None
+        r = c.fetchone(); conn.close(); return dict(r) if r else None
 
-    # === API调用记录 ===
     def log_api_call(self, call_type, model, input_tokens, output_tokens, estimated_cost):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
                   (call_type, model, input_tokens, output_tokens, estimated_cost))
         conn.commit(); conn.close()
 
     def get_today_api_cost(self):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         today = datetime.now().strftime("%Y-%m-%d")
         c.execute("SELECT COALESCE(SUM(estimated_cost),0) as tc FROM api_call_logs WHERE call_date=?", (today,))
-        r = c.fetchone(); conn.close()
-        return r["tc"]
+        r = c.fetchone(); conn.close(); return r["tc"]
 
-    # === 日志 ===
     def log_operation(self, op_type, target_table="", target_id=None, details=None):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO operation_logs (operation_type,target_table,target_id,details) VALUES (?,?,?,?)",
                   (op_type, target_table, target_id, json.dumps(details or {}, ensure_ascii=False)))
         conn.commit(); conn.close()
 
-    # === 统计 ===
     def get_statistics(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        stats = {}
+        conn = self.get_connection(); c = conn.cursor(); stats = {}
         c.execute("SELECT process_status, COUNT(*) as cnt FROM source_files GROUP BY process_status")
         stats["files"] = {r["process_status"]: r["cnt"] for r in c.fetchall()}
         c.execute("SELECT review_status, COUNT(*) as cnt FROM knowledge_points GROUP BY review_status")
@@ -388,5 +315,4 @@ class DatabaseManager:
         stats["total_confirmed"] = c.fetchone()["cnt"]
         c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='pending'")
         stats["total_pending"] = c.fetchone()["cnt"]
-        conn.close()
-        return stats
+        conn.close(); return stats
