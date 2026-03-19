@@ -90,6 +90,14 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#f0f2f5;c
 .active-filters{font-size:12px;color:#999;margin-bottom:8px}
 .active-filters span{background:#e6f0fa;color:#2E75B6;padding:2px 8px;border-radius:4px;margin-left:4px}
 .active-filters .clear-link{color:#ff4d4f;cursor:pointer;margin-left:8px;text-decoration:underline}
+.tag-editor{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid #d9d9d9;border-radius:6px;min-height:42px;background:#fff;align-items:center}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#e6f0fa;color:#2E75B6;border-radius:14px;font-size:12px;font-weight:500}
+.tag-chip .tag-remove{cursor:pointer;font-size:14px;color:#999;line-height:1;margin-left:2px;font-weight:700}
+.tag-chip .tag-remove:hover{color:#ff4d4f}
+.tag-chip.ai-tag{background:#fff7e6;color:#d48806;border:1px dashed #ffc069}
+.tag-add-area{display:flex;gap:6px;margin-top:8px;align-items:center}
+.tag-add-area select{flex:1;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;color:#555}
+.tag-hint{font-size:11px;color:#999;margin-top:4px}
 </style>
 </head>
 <body>
@@ -140,7 +148,16 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#f0f2f5;c
     <input type="hidden" id="editKpId">
     <div class="modal-field"><label>标题</label><input type="text" id="editTitle"></div>
     <div class="modal-field"><label>所属分类</label><select id="editCategory"></select></div>
-    <div class="modal-field"><label>标签(逗号分隔)</label><input type="text" id="editTags"></div>
+    <div class="modal-field">
+      <label>标签</label>
+      <div class="tag-editor" id="tagEditor"></div>
+      <div class="tag-add-area">
+        <select id="tagDropdown" onchange="onTagDropdownChange()">
+          <option value="">-- 添加标签 --</option>
+        </select>
+      </div>
+      <div class="tag-hint">AI推荐的标签带虚线边框,点击 x 可删除,从下拉菜单可添加已有标签或新建标签</div>
+    </div>
     <div class="modal-field"><label>审核备注</label><textarea id="editNotes"></textarea></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeEditModal()">取消</button>
@@ -151,7 +168,8 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#f0f2f5;c
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,selectedIds={},allCategories=[];
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,selectedIds={},allCategories=[],allSystemTags=[];
+var editingTags=[],editingSuggestedTags=[];
 var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
 var TL={policy:"[政策]","case":"[案例]",experience:"[经验]",tool:"[工具]",data:"[数据]"};
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
@@ -162,11 +180,23 @@ function apiPut(u,d){return fetch(API+u,{method:"PUT",headers:{"Content-Type":"a
 function esc(s){if(!s)return"";var d=document.createElement("div");d.textContent=String(s);return d.innerHTML}
 function showToast(m,t){var e=document.getElementById("toast");e.textContent=m;e.className="toast "+(t||"info")+" show";setTimeout(function(){e.classList.remove("show")},3000)}
 
-function init(){console.log("init()");loadStatistics();loadCategories();filterByStatus("pending",document.querySelectorAll(".filter-group .filter-btn")[1])}
+function init(){console.log("init()");loadStatistics();loadCategories();loadSystemTags();filterByStatus("pending",document.querySelectorAll(".filter-group .filter-btn")[1])}
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0})}
 
 function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c))allCategories=c;var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择</option>';for(var i=0;i<allCategories.length;i++){var x=allCategories[i];sel.innerHTML+='<option value="'+x.id+'">'+x.level2_code+' '+x.level1_name+'-'+x.level2_name+'</option>'}});apiGet("/api/categories/tree").then(function(t){var c=document.getElementById("categoryFilters");c.innerHTML='<button class="filter-btn active" onclick="filterByCategory(null,this)">全部分类</button>';if(t&&typeof t==="object"){var entries=[];var ks=Object.keys(t);for(var i=0;i<ks.length;i++){var n=ks[i],d=t[n];entries.push({code:parseInt(d.code),name:n,data:d})}entries.sort(function(a,b){return a.code-b.code});for(var i=0;i<entries.length;i++){var e=entries[i];c.innerHTML+='<button class="filter-btn" onclick="filterByCategory('+e.data.code+',this)">'+e.code+'. '+e.name+'</button>'}}})}
+
+function loadSystemTags(){apiGet("/api/tags").then(function(data){if(Array.isArray(data)){allSystemTags=[];for(var i=0;i<data.length;i++){allSystemTags.push(data[i].tag)}}})}
+
+function renderTagEditor(){var container=document.getElementById("tagEditor");var h="";for(var i=0;i<editingTags.length;i++){var t=editingTags[i];var isAi=editingSuggestedTags.indexOf(t)>=0;h+='<span class="tag-chip'+(isAi?" ai-tag":"")+'">'+esc(t)+' <span class="tag-remove" onclick="removeEditTag('+i+')">&times;</span></span>'}container.innerHTML=h;refreshTagDropdown()}
+
+function refreshTagDropdown(){var sel=document.getElementById("tagDropdown");sel.innerHTML='<option value="">-- 添加标签 --</option>';var used={};for(var i=0;i<editingTags.length;i++)used[editingTags[i]]=true;for(var i=0;i<allSystemTags.length;i++){var t=allSystemTags[i];if(!used[t]){sel.innerHTML+='<option value="'+esc(t)+'">'+esc(t)+'</option>'}}sel.innerHTML+='<option value="__NEW__">+ 新建标签...</option>'}
+
+function onTagDropdownChange(){var sel=document.getElementById("tagDropdown");var val=sel.value;if(!val)return;if(val==="__NEW__"){sel.value="";var newTag=prompt("请输入新标签名称:");if(newTag){newTag=newTag.trim();if(newTag){if(editingTags.indexOf(newTag)<0){editingTags.push(newTag)}if(allSystemTags.indexOf(newTag)<0){allSystemTags.push(newTag)}renderTagEditor()}}return}if(editingTags.indexOf(val)<0){editingTags.push(val)}sel.value="";renderTagEditor()}
+
+function removeEditTag(idx){editingTags.splice(idx,1);renderTagEditor()}
+
+function getEditingTagsArray(){return editingTags.slice()}
 
 function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=15";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;console.log("load:",u);showActiveFilters();apiGet(u).then(function(d){console.log("loaded",d);if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p><p><a href="/api/debug" target="_blank">查看诊断</a></p></div>';return}var items=d.items||[];if(items.length===0){var msg="暂无知识点";if(currentStatus||currentType||currentCategory)msg="当前筛选条件下无结果";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(currentStatus||currentType||currentCategory?'尝试<a href="#" onclick="clearAllFilters();return false;">清除筛选条件</a>':'请先运行[处理新文件.bat]')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="";for(var i=0;i<items.length;i++)h+=renderCard(items[i]);list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
@@ -185,10 +215,28 @@ function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selecte
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-checkbox:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
 function updateBatch(){var n=Object.keys(selectedIds).length;var b=document.getElementById("btnBatch");b.disabled=n===0;b.textContent=n>0?"批量确认入库("+n+")":"批量确认入库"}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
-function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){document.getElementById("editKpId").value=id;document.getElementById("editTitle").value=kp.title||"";document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";var tg=kp.final_tags||kp.suggested_tags||[];if(typeof tg==="string")try{tg=JSON.parse(tg)}catch(e){tg=[]}document.getElementById("editTags").value=Array.isArray(tg)?tg.join(", "):"";document.getElementById("editNotes").value=kp.reviewer_notes||"";document.getElementById("editModal").classList.add("open")})}
+
+function openEditModal(id){
+apiGet("/api/knowledge-points/"+id).then(function(kp){
+document.getElementById("editKpId").value=id;
+document.getElementById("editTitle").value=kp.title||"";
+document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";
+document.getElementById("editNotes").value=kp.reviewer_notes||"";
+var ft=kp.final_tags;if(typeof ft==="string")try{ft=JSON.parse(ft)}catch(e){ft=null}
+var st=kp.suggested_tags;if(typeof st==="string")try{st=JSON.parse(st)}catch(e){st=[]}
+if(!Array.isArray(st))st=[];
+editingSuggestedTags=st.slice();
+if(ft&&Array.isArray(ft)&&ft.length>0){editingTags=ft.slice()}else{editingTags=st.slice()}
+renderTagEditor();
+document.getElementById("editModal").classList.add("open")
+})}
+
 function closeEditModal(){document.getElementById("editModal").classList.remove("open")}
-function saveEdit(){var id=document.getElementById("editKpId").value;var d={title:document.getElementById("editTitle").value,final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:document.getElementById("editTags").value.split(",").map(function(t){return t.trim()}).filter(Boolean),reviewer_notes:document.getElementById("editNotes").value};apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeEditModal();loadKnowledgePoints()}else{showToast("保存失败:"+(r.error||""),"error")}})}
-function saveAndConfirm(){var id=document.getElementById("editKpId").value;var d={final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:document.getElementById("editTags").value.split(",").map(function(t){return t.trim()}).filter(Boolean),reviewer_notes:document.getElementById("editNotes").value};apiPut("/api/knowledge-points/"+id,{title:document.getElementById("editTitle").value,final_tags:d.final_tags,final_category_id:d.final_category_id}).then(function(){apiPost("/api/knowledge-points/"+id+"/confirm",d).then(function(r){if(r.success){showToast("已保存并确认","success");closeEditModal();refreshData()}})})}
+
+function saveEdit(){var id=document.getElementById("editKpId").value;var d={title:document.getElementById("editTitle").value,final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:getEditingTagsArray(),reviewer_notes:document.getElementById("editNotes").value};apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeEditModal();loadSystemTags();loadKnowledgePoints()}else{showToast("保存失败:"+(r.error||""),"error")}})}
+
+function saveAndConfirm(){var id=document.getElementById("editKpId").value;var tags=getEditingTagsArray();var catId=parseInt(document.getElementById("editCategory").value)||null;apiPut("/api/knowledge-points/"+id,{title:document.getElementById("editTitle").value,final_tags:tags,final_category_id:catId}).then(function(){apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:catId,final_tags:tags,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){if(r.success){showToast("已保存并确认","success");closeEditModal();loadSystemTags();refreshData()}})})}
+
 function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentPage=1;resetAllFilterBtns();setActive(btn);loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByCategory(code,btn){if(code){for(var i=0;i<allCategories.length;i++){if(allCategories[i].level1_code==code){currentCategory=allCategories[i].id;break}}}else currentCategory=null;currentPage=1;setActive(btn);loadKnowledgePoints()}

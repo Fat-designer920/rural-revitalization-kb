@@ -1,6 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
+版本：v1.0.1 - 新增标签管理接口
 注意：不使用Flask模板引擎,启动时读取HTML到内存,用Response直接返回
 """
 import os,sys,json,traceback,webbrowser,threading
@@ -112,7 +113,7 @@ def batch():
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 @app.route("/api/categories")
-def cats(): 
+def cats():
     try: return jsonify(db.get_all_categories())
     except: return jsonify([])
 
@@ -120,6 +121,36 @@ def cats():
 def tree():
     try: return jsonify(db.get_categories_tree())
     except: return jsonify({})
+
+@app.route("/api/tags")
+def get_all_tags():
+    """聚合所有已使用过的标签,按使用频次排序,用于标签下拉选择"""
+    try:
+        conn = db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT suggested_tags, final_tags FROM knowledge_points")
+        tag_count = {}
+        for row in c.fetchall():
+            for field in [row["suggested_tags"], row["final_tags"]]:
+                if not field:
+                    continue
+                try:
+                    tags = json.loads(field) if isinstance(field, str) else field
+                    if isinstance(tags, list):
+                        for t in tags:
+                            t = t.strip()
+                            if t:
+                                tag_count[t] = tag_count.get(t, 0) + 1
+                except:
+                    pass
+        conn.close()
+        # 按频次降序排列
+        sorted_tags = sorted(tag_count.items(), key=lambda x: -x[1])
+        result = [{"tag": t, "count": c} for t, c in sorted_tags]
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify([])
 
 @app.route("/api/statistics")
 def stats():
@@ -163,7 +194,7 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v1.0.0")
+    print(f"  乡村振兴知识库 - 审核界面 v1.0.1")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

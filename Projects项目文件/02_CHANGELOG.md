@@ -18,8 +18,11 @@
 - 智能去重：只跳过已成功提取知识点的文件，失败/空结果的允许重新提取
 - 处理完毕后自动清理pending文件夹中的原始文件
 - 修复全部11个bat文件的脚本路径错误
+- 审核界面修复：标签编辑保存后正确显示、筛选状态联动、分类按编号排序
+- 审核界面新增：标签芯片化编辑（AI推荐标签+下拉选择+新建标签）
+- api_server.py新增/api/tags标签聚合接口
 
-受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, 全部bat文件
+受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, api_server.py, review.html, 全部bat文件
 数据库迁移：不需要
 
 ---
