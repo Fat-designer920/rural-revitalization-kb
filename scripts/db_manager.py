@@ -1,12 +1,9 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v1.0.1
+版本：v1.1.0 - 编辑历史/分类管理(含一级新增)/恢复待审核/全文搜索/AI建议分类
 """
-
-import sqlite3
-import os
-import json
+import sqlite3, os, json
 from datetime import datetime
 from pathlib import Path
 
@@ -35,8 +32,7 @@ class DatabaseManager:
         return conn
 
     def init_tables(self):
-        conn = self.get_connection()
-        c = conn.cursor()
+        conn = self.get_connection(); c = conn.cursor()
         c.execute("""CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             level1_code TEXT NOT NULL, level1_name TEXT NOT NULL,
@@ -59,24 +55,18 @@ class DatabaseManager:
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_file_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
+            source_file_id INTEGER NOT NULL, title TEXT NOT NULL,
             content_type TEXT NOT NULL CHECK(content_type IN ('policy','case','experience','tool','data')),
-            original_excerpt TEXT DEFAULT '',
-            ai_extracted_content TEXT DEFAULT '{}',
-            suggested_category_id INTEGER DEFAULT NULL,
-            final_category_id INTEGER DEFAULT NULL,
+            original_excerpt TEXT DEFAULT '', ai_extracted_content TEXT DEFAULT '{}',
+            suggested_category_id INTEGER DEFAULT NULL, final_category_id INTEGER DEFAULT NULL,
             suggested_tags TEXT DEFAULT '[]', final_tags TEXT DEFAULT '[]',
             source_page TEXT DEFAULT '', source_keyword TEXT DEFAULT '',
             review_status TEXT DEFAULT 'pending'
                 CHECK(review_status IN ('pending','confirmed','ignored','merged')),
-            reviewer_notes TEXT DEFAULT '',
-            quality_score REAL DEFAULT 0.0,
-            version INTEGER DEFAULT 1,
-            is_outdated INTEGER DEFAULT 0, superseded_by INTEGER DEFAULT NULL,
+            reviewer_notes TEXT DEFAULT '', quality_score REAL DEFAULT 0.0,
+            version INTEGER DEFAULT 1, is_outdated INTEGER DEFAULT 0, superseded_by INTEGER DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')),
-            confirmed_at TEXT DEFAULT NULL,
+            updated_at TEXT DEFAULT (datetime('now','localtime')), confirmed_at TEXT DEFAULT NULL,
             FOREIGN KEY (source_file_id) REFERENCES source_files(id),
             FOREIGN KEY (suggested_category_id) REFERENCES categories(id),
             FOREIGN KEY (final_category_id) REFERENCES categories(id))""")
@@ -90,11 +80,18 @@ class DatabaseManager:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             suggested_name TEXT NOT NULL, suggested_level TEXT NOT NULL,
             parent_category_id INTEGER DEFAULT NULL,
+            suggestion_type TEXT DEFAULT 'add_level2',
             reason TEXT DEFAULT '', related_knowledge_ids TEXT DEFAULT '[]',
             status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','deferred')),
             resolved_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (parent_category_id) REFERENCES categories(id))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS edit_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            knowledge_point_id INTEGER NOT NULL,
+            edited_fields TEXT NOT NULL DEFAULT '{}', edit_summary TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             operation_type TEXT NOT NULL, target_table TEXT DEFAULT '',
@@ -109,20 +106,21 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("""CREATE TABLE IF NOT EXISTS notion_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            knowledge_point_id INTEGER NOT NULL,
-            notion_page_id TEXT DEFAULT NULL,
+            knowledge_point_id INTEGER NOT NULL, notion_page_id TEXT DEFAULT NULL,
             sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending','synced','failed','conflict')),
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_type ON knowledge_points(content_type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_source ON knowledge_points(source_file_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_sf_status ON source_files(process_status)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_sf_hash ON source_files(file_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_api_date ON api_call_logs(call_date)")
-        conn.commit(); conn.close()
-        return True
+        for idx in [
+            "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_type ON knowledge_points(content_type)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_source ON knowledge_points(source_file_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sf_status ON source_files(process_status)",
+            "CREATE INDEX IF NOT EXISTS idx_sf_hash ON source_files(file_hash)",
+            "CREATE INDEX IF NOT EXISTS idx_api_date ON api_call_logs(call_date)",
+            "CREATE INDEX IF NOT EXISTS idx_eh_kpid ON edit_history(knowledge_point_id)"]:
+            c.execute(idx)
+        conn.commit(); conn.close(); return True
 
     def init_default_categories(self):
         conn = self.get_connection(); c = conn.cursor()
@@ -160,9 +158,9 @@ class DatabaseManager:
             ("5","数据库","5.5","行业基准数据","亩均投资、建设周期、收益率等行业参考值")]
         for cat in cats:
             c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)", cat)
-        conn.commit(); conn.close()
-        return True
+        conn.commit(); conn.close(); return True
 
+    # === 文件管理 ===
     def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash) VALUES (?,?,?,?,?)",
@@ -191,6 +189,7 @@ class DatabaseManager:
         c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
         r = c.fetchone(); conn.close(); return dict(r) if r else None
 
+    # === 知识点管理 ===
     def add_knowledge_point(self, source_file_id, title, content_type, original_excerpt="",
                             ai_extracted_content=None, suggested_category_id=None,
                             suggested_tags=None, source_page="", source_keyword=""):
@@ -204,12 +203,24 @@ class DatabaseManager:
              source_page, source_keyword))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
-    def get_all_knowledge_points(self, review_status=None, content_type=None, category_id=None, page=1, per_page=20):
+    def get_all_knowledge_points(self, review_status=None, content_type=None,
+                                 category_id=None, level1_code=None,
+                                 search_query=None, page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
         if review_status: where.append("kp.review_status=?"); params.append(review_status)
         if content_type: where.append("kp.content_type=?"); params.append(content_type)
-        if category_id: where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)"); params.extend([category_id, category_id])
+        if category_id:
+            where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)")
+            params.extend([category_id, category_id])
+        elif level1_code:
+            where.append("""(kp.suggested_category_id IN (SELECT id FROM categories WHERE level1_code=?)
+                OR kp.final_category_id IN (SELECT id FROM categories WHERE level1_code=?))""")
+            params.extend([level1_code, level1_code])
+        if search_query:
+            sq = f"%{search_query}%"
+            where.append("(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ? OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)")
+            params.extend([sq, sq, sq, sq, sq])
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -264,6 +275,90 @@ class DatabaseManager:
         self.update_knowledge_point(kp_id, review_status="ignored", reviewer_notes=reason)
         self.log_operation("ignore", "knowledge_points", kp_id)
 
+    def restore_to_pending(self, kp_id):
+        self.update_knowledge_point(kp_id, review_status="pending", reviewer_notes="")
+        self.log_operation("restore_to_pending", "knowledge_points", kp_id)
+
+    # === 编辑历史 ===
+    def add_edit_history(self, kp_id, edited_fields, edit_summary=""):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("INSERT INTO edit_history (knowledge_point_id, edited_fields, edit_summary) VALUES (?,?,?)",
+                  (kp_id, json.dumps(edited_fields, ensure_ascii=False), edit_summary))
+        conn.commit(); conn.close()
+
+    def get_edit_history(self, kp_id):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM edit_history WHERE knowledge_point_id=? ORDER BY created_at DESC", (kp_id,))
+        rows = [dict(r) for r in c.fetchall()]; conn.close()
+        for row in rows:
+            try: row["edited_fields"] = json.loads(row["edited_fields"]) if isinstance(row["edited_fields"], str) else row["edited_fields"]
+            except: pass
+        return rows
+
+    def restore_from_history(self, kp_id, history_id):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM edit_history WHERE id=? AND knowledge_point_id=?", (history_id, kp_id))
+        h = c.fetchone(); conn.close()
+        if not h: return False, "历史记录不存在"
+        try: fields = json.loads(h["edited_fields"]) if isinstance(h["edited_fields"], str) else h["edited_fields"]
+        except: return False, "历史记录格式错误"
+        current_kp = self.get_knowledge_point(kp_id)
+        if not current_kp: return False, "知识点不存在"
+        restore_changes, update_kw = {}, {}
+        for field_name, change in fields.items():
+            old_val = change.get("old")
+            restore_changes[field_name] = {"old": current_kp.get(field_name), "new": old_val}
+            update_kw[field_name] = old_val
+        if update_kw:
+            self.update_knowledge_point(kp_id, **update_kw)
+            self.add_edit_history(kp_id, restore_changes, f"回滚到历史版本#{history_id}")
+            self.log_operation("restore_version", "knowledge_points", kp_id, {"history_id": history_id})
+        return True, "回滚成功"
+
+    # === 分类管理 ===
+    def get_next_level1_code(self):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT DISTINCT level1_code FROM categories ORDER BY level1_code DESC LIMIT 1")
+        r = c.fetchone(); conn.close()
+        if r: return str(int(r["level1_code"]) + 1)
+        return "1"
+
+    def get_next_level2_code(self, level1_code):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT level2_code FROM categories WHERE level1_code=? ORDER BY level2_code DESC LIMIT 1", (level1_code,))
+        r = c.fetchone(); conn.close()
+        if r:
+            parts = r["level2_code"].split(".")
+            if len(parts) == 2: return f"{parts[0]}.{int(parts[1]) + 1}"
+        return f"{level1_code}.1"
+
+    def add_category(self, level1_code, level1_name, level2_name, description="", is_new_level1=False):
+        """新增分类。is_new_level1=True时创建全新的一级分类"""
+        if is_new_level1:
+            level1_code = self.get_next_level1_code()
+            level2_code = f"{level1_code}.1"
+        else:
+            level2_code = self.get_next_level2_code(level1_code)
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)",
+                  (level1_code, level1_name, level2_code, level2_name, description))
+        cat_id = c.lastrowid; conn.commit(); conn.close()
+        self.log_operation("add_category", "categories", cat_id, {
+            "level1_code": level1_code, "level2_code": level2_code,
+            "level2_name": level2_name, "is_new_level1": is_new_level1})
+        return {"id": cat_id, "level1_code": level1_code, "level1_name": level1_name,
+                "level2_code": level2_code, "level2_name": level2_name, "description": description}
+
+    def get_category_stats(self):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT cat.id, cat.level1_code, cat.level1_name, cat.level2_code, cat.level2_name,
+            COUNT(kp.id) as kp_count
+            FROM categories cat
+            LEFT JOIN knowledge_points kp ON (kp.final_category_id=cat.id OR (kp.final_category_id IS NULL AND kp.suggested_category_id=cat.id))
+                AND kp.review_status='confirmed'
+            WHERE cat.is_active=1 GROUP BY cat.id ORDER BY cat.level1_code, cat.level2_code""")
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
     def get_all_categories(self, active_only=True):
         conn = self.get_connection(); c = conn.cursor()
         w = "WHERE is_active=1" if active_only else ""
@@ -284,6 +379,38 @@ class DatabaseManager:
         c.execute("SELECT * FROM categories WHERE level2_code=? AND is_active=1", (level2_code,))
         r = c.fetchone(); conn.close(); return dict(r) if r else None
 
+    # === AI建议分类 ===
+    def add_architecture_suggestion(self, suggested_name, suggested_level, reason,
+                                     suggestion_type="add_level2", parent_category_id=None,
+                                     related_knowledge_ids=None):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO architecture_suggestions
+            (suggested_name, suggested_level, parent_category_id, suggestion_type, reason, related_knowledge_ids)
+            VALUES (?,?,?,?,?,?)""",
+            (suggested_name, suggested_level, parent_category_id, suggestion_type, reason,
+             json.dumps(related_knowledge_ids or [], ensure_ascii=False)))
+        sid = c.lastrowid; conn.commit(); conn.close(); return sid
+
+    def get_pending_suggestions(self):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT s.*, cat.level1_name as parent_level1_name, cat.level2_name as parent_level2_name
+            FROM architecture_suggestions s
+            LEFT JOIN categories cat ON s.parent_category_id=cat.id
+            WHERE s.status='pending' ORDER BY s.created_at DESC""")
+        rows = [dict(r) for r in c.fetchall()]; conn.close()
+        for r in rows:
+            try: r["related_knowledge_ids"] = json.loads(r["related_knowledge_ids"]) if isinstance(r["related_knowledge_ids"], str) else r["related_knowledge_ids"]
+            except: r["related_knowledge_ids"] = []
+        return rows
+
+    def update_suggestion_status(self, suggestion_id, status):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("UPDATE architecture_suggestions SET status=?, resolved_at=datetime('now','localtime') WHERE id=?",
+                  (status, suggestion_id))
+        conn.commit(); conn.close()
+        self.log_operation(f"suggestion_{status}", "architecture_suggestions", suggestion_id)
+
+    # === 日志与统计 ===
     def log_api_call(self, call_type, model, input_tokens, output_tokens, estimated_cost):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
@@ -315,4 +442,6 @@ class DatabaseManager:
         stats["total_confirmed"] = c.fetchone()["cnt"]
         c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='pending'")
         stats["total_pending"] = c.fetchone()["cnt"]
+        c.execute("SELECT COUNT(*) as cnt FROM architecture_suggestions WHERE status='pending'")
+        stats["pending_suggestions"] = c.fetchone()["cnt"]
         conn.close(); return stats
