@@ -1,33 +1,40 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v1.0.1 - 强化提取Prompt + 标签策略 + 原文摘录升级(服务写文章)
+版本：v2.0.0 - 三层标签适配 + 元数据建议 + QA衍生Prompt
+
+变更说明：
+  - 5个提取Prompt全部重写，输出新增三层标签+元数据字段
+  - 旧的TAG_STRATEGY替换为THREE_LAYER_TAG_STRATEGY
+  - 标签清单从tag_config.py动态读取，新增业务领域不改此文件
+  - TAG_SUGGESTION_PROMPT重写为三层标签版
+  - 新增QA_DERIVATION_PROMPT（待激活）
+  - EXCERPT_REQUIREMENT/FILE_RENAME_PROMPT不变
 """
 
-TAG_STRATEGY = """
+import sys
+from pathlib import Path
 
-## 标签生成策略（必须严格遵守）
-标签是知识检索的核心入口，必须具备战略价值，服务于：生成知识产品、客户对话助手、AI私域咨询。
+# 确保能导入tag_config
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-### 合格标签类型（每个知识点选3-6个）
-- **政策/制度名称**：如"全域土地综合整治""增减挂钩""占补平衡""集体经营性建设用地入市"
-- **地域标签**：如"四川""成都""浙江""广东"（省级或市级，不要到区县）
-- **业务场景**：如"专项债申报""资金拼盘""EPC打捆""林盘运营""村庄规划"
-- **项目阶段**：如"前期策划""立项审批""实施推进""竣工验收""运营管理"
-- **关键主体**：如"平台公司""自然资源局""村集体""社会资本"
-- **核心方法论**：如"指标交易""资金整合""多规合一""生态修复"
+try:
+    from scripts.tag_config import (
+        get_layer1_for_prompt, get_layer2_for_prompt,
+        LAYER3_KEYWORD_RULES, get_metadata_for_prompt
+    )
+except ImportError:
+    from tag_config import (
+        get_layer1_for_prompt, get_layer2_for_prompt,
+        LAYER3_KEYWORD_RULES, get_metadata_for_prompt
+    )
 
-### 不合格标签（严禁使用）
-- 具体数值：如"5%""300亩""2.5亿"（这是知识点内容，不是标签）
-- 具体日期：如"2020年6月""7月10日"（这是时间节点，不是标签）
-- 过于宽泛：如"重要""注意""政策文件"（没有检索价值）
-- 过于琐碎：如"第三条""附则""表格数据"（这是文档结构，不是标签）
-- 重复分类名：如果已经分到"1.1全域土地综合整治政策"，不需要再加"全域土地综合整治政策"标签
 
-### 标签命名规范
-- 使用行业通用术语，不自造词
-- 4-10个字为宜
-- 同一概念只用一个标签名（不要同时出现"增减挂钩"和"城乡建设用地增减挂钩"）"""
+# ============================================================
+# 通用策略块（各Prompt共享）
+# ============================================================
 
 EXCERPT_REQUIREMENT = """
 ## 原文摘录要求（极其重要）
@@ -36,6 +43,46 @@ original_excerpt字段是知识点最核心的素材，未来将用于辅助撰�
 2. **保留上下文**：让人脱离原文也能看懂这段话在说什么，必要时补充前后衔接句
 3. **原文精度**：数值、名称、表述必须与原文一致，不得改写或概括
 4. **可直接引用**：这段摘录要达到"可以直接复制到文章中使用"的质量标准"""
+
+THREE_LAYER_TAG_STRATEGY = """
+## 三层标签打标策略（必须严格遵守）
+
+标签是知识检索和产品组装的核心入口。每条知识点必须输出三层标签：
+
+### 第一层：分类标签（suggested_category_tags）
+- 从下方提供的固定清单中选择3-6个标签名（只填标签名称，不填编号）
+- A组（业务领域）和C组（知识形态）必选至少各1个
+- E组（稀缺度）和F组（内容状态）必选各1个
+- B组（项目阶段）和D组（客户视角）有关就选，无关不选
+- 不要自创标签，必须严格从清单中选
+
+### 第二层：属性标签（suggested_attribute_tags）
+- 按下方列出的维度，从候选值中选择（只填与本知识点相关的维度，无关维度不填）
+- 如果某个维度是"自由填写"，则填具体值（如区域填"成都市崇州市"，数据年份填"2024"）
+- 输出为JSON对象，key是维度英文名，value是选中的值
+
+### 第三层：关键词（suggested_keywords）
+- 按下方关键词规则提取5-15个
+- 必须覆盖：术语类、实体类、场景类三个角度
+- 输出为字符串数组
+
+### 元数据建议
+- suggested_readiness：根据内容质量判断就绪度
+- suggested_authority：根据内容来源判断权威度"""
+
+# 三层标签的JSON输出字段说明（注入到每个Prompt的输出结构末尾）
+COMMON_TAG_OUTPUT_DESC = """
+"suggested_category_tags": ["从第一层清单选3-6个标签名称"],
+"suggested_attribute_tags": {"维度英文名": "值", ...},
+"suggested_keywords": ["关键词1", "关键词2", ...],
+"suggested_readiness": "draft或quotable或premium",
+"suggested_authority": "official或authoritative或firsthand或informal"
+"""
+
+
+# ============================================================
+# 文件重命名Prompt（不变）
+# ============================================================
 
 FILE_RENAME_PROMPT = {
     "system_prompt": """你是乡村振兴领域的资料管理专家。根据文件内容生成规范化文件名和分类标签。
@@ -52,18 +99,32 @@ FILE_RENAME_PROMPT = {
 请严格按JSON格式输出。"""
 }
 
+
+# ============================================================
+# 标签建议Prompt（v2.0.0重写）
+# ============================================================
+
 TAG_SUGGESTION_PROMPT = {
-    "system_prompt": """你是乡村振兴领域的知识管理专家。为知识内容生成5-10个精准标签。
-标签要具体,如"增减挂钩指标交易"比"土地政策"好。
-输出JSON：{"tags":["标签1","标签2"],"primary_tag":"最核心标签"}""",
-    "user_prompt_template": """为以下内容生成标签。
+    "system_prompt": """你是乡村振兴领域的知识管理专家。为知识内容进行三层标签打标。
+输出JSON格式：
+{"suggested_category_tags": ["标签1","标签2",...],
+ "suggested_attribute_tags": {"维度名":"值",...},
+ "suggested_keywords": ["关键词1","关键词2",...],
+ "primary_tag": "最核心的第一层标签名"}""",
+    "user_prompt_template": """为以下内容进行三层标签打标。
 标题：{title}
 类型：{content_type}
 摘要：{content_summary}
 请严格按JSON格式输出。"""
 }
 
-POLICY_EXTRACT_PROMPT = {
+
+# ============================================================
+# 5个提取Prompt的基础定义
+# 标签清单由get_extraction_prompt()动态注入
+# ============================================================
+
+_POLICY_EXTRACT_BASE = {
     "system_prompt": """你是乡村振兴政策分析专家，拥有20年土地政策实操经验。你的任务是从政策文件中提取全部有价值的结构化知识点。
 
 ## 提取原则（必须严格遵守）
@@ -72,7 +133,8 @@ POLICY_EXTRACT_PROMPT = {
 3. **不遗漏**：附则中的过渡条款、生效日期、例外规定同样要提取；表格中的数据逐行提取；脚注和备注中的限制条件也要捕获
 4. **实操价值优先**：对于一线操盘人员有指导意义的条款重点提取
 5. **保留原文精度**：涉及数值、比例、面积、金额的内容，必须精确引用原文表述，不得概括或四舍五入
-""" + EXCERPT_REQUIREMENT + """
+""" + EXCERPT_REQUIREMENT + THREE_LAYER_TAG_STRATEGY + """
+
 ## 每个知识点输出结构
 {"title":"20字以内精确标题",
 "original_excerpt":"原文完整段落（50-300字，保留上下文，可直接引用到文章中）",
@@ -89,7 +151,7 @@ POLICY_EXTRACT_PROMPT = {
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
 "suggested_category_code":"分类编码如1.1",
-"suggested_tags":["标签1","标签2","标签3"]}
+""" + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式
 {"knowledge_points":[所有知识点数组],"file_summary":"100字文件概述","extraction_notes":"提取过程说明"}
@@ -97,12 +159,14 @@ POLICY_EXTRACT_PROMPT = {
 ## 特别注意
 - 一个政策文件通常应提取5-30个知识点
 - 表格内容要拆分为独立知识点
-- "鼓励""支持""禁止"等不同力度的表述要区分提取""" + TAG_STRATEGY,
+- "鼓励""支持""禁止"等不同力度的表述要区分提取""",
 
     "user_prompt_template": """请对以下政策文件进行全文逐段分析，提取所有有价值的知识点。不要遗漏任何一条具体规定、数值标准或时间要求。原文摘录要保留完整段落，方便未来写文章时引用。
 
 文件名：{filename}
 可用分类：1.1全域土地综合整治政策 1.2增减挂钩与占补平衡 1.3集体经营性建设用地入市 1.4专项债与资金政策 1.5川西林盘保护政策 1.6乡村振兴综合政策 1.7自然资源与规划政策
+
+{tag_reference}
 
 全文内容：
 {full_content}
@@ -110,7 +174,7 @@ POLICY_EXTRACT_PROMPT = {
 请逐段通读上述全文，提取每一个有实操价值的知识点，按JSON格式输出。"""
 }
 
-CASE_EXTRACT_PROMPT = {
+_CASE_EXTRACT_BASE = {
     "system_prompt": """你是乡村振兴项目咨询顾问，拥有丰富的项目操盘经验。你的任务是从案例材料中提取全部有价值的结构化知识点。
 
 ## 提取原则（必须严格遵守）
@@ -120,7 +184,8 @@ CASE_EXTRACT_PROMPT = {
 4. **资金结构是重中之重**：资金来源、资金比例、融资方式、还款安排等必须详细拆分提取
 5. **成功因素和风险因素都要提**
 6. **可复制性分析**：每个知识点都要分析其适用条件和可复制的边界
-""" + EXCERPT_REQUIREMENT + """
+""" + EXCERPT_REQUIREMENT + THREE_LAYER_TAG_STRATEGY + """
+
 ## 每个知识点输出结构
 {"title":"20字内精确标题",
 "original_excerpt":"原文完整段落（50-300字，保留上下文，可直接引用到文章中）",
@@ -137,7 +202,7 @@ CASE_EXTRACT_PROMPT = {
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
 "suggested_category_code":"如2.1",
-"suggested_tags":["标签1","标签2","标签3"]}
+""" + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式
 {"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
@@ -145,12 +210,14 @@ CASE_EXTRACT_PROMPT = {
 ## 特别注意
 - 资金数据是案例的灵魂
 - 时间线上的关键节点要单独作为知识点
-- 多个子项目或阶段要独立提取""" + TAG_STRATEGY,
+- 多个子项目或阶段要独立提取""",
 
     "user_prompt_template": """请对以下案例材料进行全文逐段分析，提取所有有价值的知识点。原文摘录要保留完整段落，方便未来写文章时引用。
 
 文件名：{filename}
 可用分类：2.1全域土地综合整治项目 2.2增减挂钩项目 2.3川西林盘修复运营项目 2.4资金整合与融资创新案例 2.5乡村产业与运营案例 2.6失败与风险案例
+
+{tag_reference}
 
 全文内容：
 {full_content}
@@ -158,7 +225,7 @@ CASE_EXTRACT_PROMPT = {
 请逐段通读上述全文，提取每一个有参考价值的知识点，保留所有量化数据，按JSON格式输出。"""
 }
 
-EXPERIENCE_EXTRACT_PROMPT = {
+_EXPERIENCE_EXTRACT_BASE = {
     "system_prompt": """你是知识管理顾问，擅长从实战经验中萃取可复用的操盘智慧。你的任务是从经验材料中提取全部有价值的知识点。
 
 ## 提取原则（必须严格遵守）
@@ -168,7 +235,8 @@ EXPERIENCE_EXTRACT_PROMPT = {
 4. **三分法则**：策略判断、操盘方法、踩坑教训三类要分别提取
 5. **决策背景必须保留**
 6. **验证状态要标注**
-""" + EXCERPT_REQUIREMENT + """
+""" + EXCERPT_REQUIREMENT + THREE_LAYER_TAG_STRATEGY + """
+
 ## 每个知识点输出结构
 {"title":"20字内精确标题",
 "original_excerpt":"原文完整段落（50-300字，保留上下文，可直接引用到文章中）",
@@ -184,19 +252,21 @@ EXPERIENCE_EXTRACT_PROMPT = {
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
 "suggested_category_code":"如3.1",
-"suggested_tags":["标签1","标签2","标签3"]}
+""" + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式
 {"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
 
 ## 特别注意
 - 经验材料中往往有大量隐性知识，要主动挖掘
-- 沟通话术、汇报技巧等软性经验同样重要""" + TAG_STRATEGY,
+- 沟通话术、汇报技巧等软性经验同样重要""",
 
     "user_prompt_template": """请对以下经验材料进行全文逐段分析，提取所有有价值的实操智慧。原文摘录要保留完整段落，方便未来写文章时引用。
 
 文件名：{filename}
 可用分类：3.1策略判断类 3.2操盘方法类 3.3反常识洞察 3.4踩坑记录 3.5客户沟通与汇报经验
+
+{tag_reference}
 
 全文内容：
 {full_content}
@@ -204,7 +274,7 @@ EXPERIENCE_EXTRACT_PROMPT = {
 请逐段通读上述全文，提取每一条有复用价值的经验知识点，按JSON格式输出。"""
 }
 
-TOOL_EXTRACT_PROMPT = {
+_TOOL_EXTRACT_BASE = {
     "system_prompt": """你是实操工具整理专家。你的任务是从模板/工具文件中提取全部有价值的结构化说明。
 
 ## 提取原则（必须严格遵守）
@@ -213,7 +283,8 @@ TOOL_EXTRACT_PROMPT = {
 3. **适用场景要明确**
 4. **核心结构要完整**
 5. **使用注意事项要全**
-""" + EXCERPT_REQUIREMENT + """
+""" + EXCERPT_REQUIREMENT + THREE_LAYER_TAG_STRATEGY + """
+
 ## 每个知识点输出结构
 {"title":"20字内精确标题",
 "original_excerpt":"原文完整段落（50-300字，保留上下文）",
@@ -226,15 +297,17 @@ TOOL_EXTRACT_PROMPT = {
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
 "suggested_category_code":"如4.1",
-"suggested_tags":["标签1","标签2","标签3"]}
+""" + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}""" + TAG_STRATEGY,
+{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}""",
 
     "user_prompt_template": """请对以下工具/模板文件进行全文逐段分析，提取所有有价值的知识点。原文摘录要保留完整段落。
 
 文件名：{filename}
 可用分类：4.1方案模板 4.2合同模板 4.3评审意见模板 4.4招标文件模板 4.5汇报材料模板 4.6申报材料模板
+
+{tag_reference}
 
 全文内容：
 {full_content}
@@ -242,7 +315,7 @@ TOOL_EXTRACT_PROMPT = {
 请逐段通读上述全文，提取每个关键结构和使用要点，按JSON格式输出。"""
 }
 
-DATA_EXTRACT_PROMPT = {
+_DATA_EXTRACT_BASE = {
     "system_prompt": """你是数据分析专家，擅长从数据资料中提取结构化的数据知识点。
 
 ## 提取原则（必须严格遵守）
@@ -252,7 +325,8 @@ DATA_EXTRACT_PROMPT = {
 4. **时效性标注**
 5. **来源可靠度**
 6. **对比价值**
-""" + EXCERPT_REQUIREMENT + """
+""" + EXCERPT_REQUIREMENT + THREE_LAYER_TAG_STRATEGY + """
+
 ## 每个知识点输出结构
 {"title":"20字内精确标题",
 "original_excerpt":"原文数据段落（完整引用，含表头，50-300字）",
@@ -267,7 +341,7 @@ DATA_EXTRACT_PROMPT = {
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
 "suggested_category_code":"如5.1",
-"suggested_tags":["标签1","标签2","标签3"]}
+""" + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式
 {"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
@@ -275,18 +349,25 @@ DATA_EXTRACT_PROMPT = {
 ## 特别注意
 - 表格数据要逐行提取为独立知识点
 - 同一指标不同年份的数据分别提取
-- 测算模型中的参数假设和计算公式要单独提取""" + TAG_STRATEGY,
+- 测算模型中的参数假设和计算公式要单独提取""",
 
     "user_prompt_template": """请对以下数据资料进行全文逐段逐表分析，提取所有有价值的数据知识点。原文摘录要保留完整段落。
 
 文件名：{filename}
 可用分类：5.1资金测算数据 5.2指标数据 5.3地方政策对比 5.4项目规模与成效数据 5.5行业基准数据
 
+{tag_reference}
+
 全文内容：
 {full_content}
 
 请逐段逐表通读上述全文，精确提取每一组有参考价值的数据，务必保留数值和单位，按JSON格式输出。"""
 }
+
+
+# ============================================================
+# 待激活Prompt
+# ============================================================
 
 ARCHITECTURE_SUGGESTION_PROMPT = {
     "system_prompt": "知识架构扩充建议Prompt(v1.1.0激活)",
@@ -301,21 +382,105 @@ VERSION_DIFF_PROMPT = {
     "user_prompt_template": "旧版:{old_version_content}\n新版:{new_version_content}"
 }
 
+# v2.0.0 新增（待激活，v2.2.0启用）
+QA_DERIVATION_PROMPT = {
+    "system_prompt": """你是乡村振兴领域的问答内容专家。你的任务是将已审核的知识点转化为问答语料，直接服务于C端问答助手。
+
+## 衍生规则
+1. 每条知识点衍生3-8个问答对
+2. 问题要模拟真实用户的提问方式：
+   - 乡镇干部问法：直接、口语化，如"增减挂钩指标怎么卖？""我们县能搞全域整治吗？"
+   - 项目经理问法：操作导向，如"EPC招标评分标准怎么定？""资金拼盘方案怎么报审？"
+   - 新人问法：入门级，如"什么是占补平衡？""全域土地综合整治和高标准农田有什么区别？"
+3. 答案必须基于知识点原文，不得编造
+4. 答案长度控制在50-200字，口语化但准确
+5. 每个问答对标注适用客户类型
+
+## 输出格式
+{"qa_pairs": [
+  {"question":"问题", "answer":"答案（基于原文）", "target_audience":"决策者/操盘者/专业人士/新人",
+   "difficulty":"入门/进阶/专业", "source_kp_id":"原知识点ID"}
+]}""",
+    "user_prompt_template": """请将以下已审核知识点转化为问答语料。
+
+知识点ID：{kp_id}
+标题：{title}
+类型：{content_type}
+原文摘录：{original_excerpt}
+AI提取内容：{ai_content}
+分类标签：{category_tags}
+关键词：{keywords}
+
+请生成多角度的问答对，模拟不同身份用户的真实提问。按JSON格式输出。"""
+}
+
+
+# ============================================================
+# 核心函数：获取提取Prompt（动态注入标签清单）
+# ============================================================
+
+_EXTRACT_BASES = {
+    "policy": _POLICY_EXTRACT_BASE,
+    "case": _CASE_EXTRACT_BASE,
+    "experience": _EXPERIENCE_EXTRACT_BASE,
+    "tool": _TOOL_EXTRACT_BASE,
+    "data": _DATA_EXTRACT_BASE,
+}
+
+
+def _build_tag_reference(content_type):
+    """构建注入到user_prompt中的三层标签参考清单"""
+    layer1_text = get_layer1_for_prompt()
+    layer2_text = get_layer2_for_prompt(content_type)
+    metadata_text = get_metadata_for_prompt()
+
+    return f"""=== 三层标签参考清单（必须从以下清单中选择，不要自创标签） ===
+
+【第一层：分类标签】每条知识点选3-6个标签名称（只填名称，不填编号）：
+{layer1_text}
+
+【第二层：属性标签】只填与本知识点相关的维度，无关维度不填：
+{layer2_text}
+
+【第三层：关键词提取规则】
+{LAYER3_KEYWORD_RULES}
+
+【元数据判断参考】
+{metadata_text}"""
+
+
 def get_extraction_prompt(content_type):
-    return {"policy": POLICY_EXTRACT_PROMPT, "case": CASE_EXTRACT_PROMPT,
-            "experience": EXPERIENCE_EXTRACT_PROMPT, "tool": TOOL_EXTRACT_PROMPT,
-            "data": DATA_EXTRACT_PROMPT}.get(content_type, POLICY_EXTRACT_PROMPT)
+    """获取提取Prompt，动态注入三层标签清单。
+
+    返回 dict: {"system_prompt": str, "user_prompt_template": str}
+    user_prompt_template 中保留 {filename} 和 {full_content} 两个占位符，
+    由extractor.py在调用时填充。
+    """
+    base = _EXTRACT_BASES.get(content_type, _POLICY_EXTRACT_BASE)
+
+    # 构建标签参考文本
+    tag_ref = _build_tag_reference(content_type)
+
+    # 将 {tag_reference} 替换为实际内容，保留 {filename} 和 {full_content}
+    user_template = base["user_prompt_template"].replace("{tag_reference}", tag_ref)
+
+    return {
+        "system_prompt": base["system_prompt"],
+        "user_prompt_template": user_template
+    }
+
 
 def get_all_prompt_names():
     return [
         {"id": "file_rename", "name": "文件智能重命名", "version": "v1.0.0"},
-        {"id": "tag_suggestion", "name": "标签建议", "version": "v1.0.0"},
-        {"id": "policy_extract", "name": "政策文件提取", "version": "v1.0.1"},
-        {"id": "case_extract", "name": "项目案例提取", "version": "v1.0.1"},
-        {"id": "experience_extract", "name": "操盘经验提取", "version": "v1.0.1"},
-        {"id": "tool_extract", "name": "实操工具提取", "version": "v1.0.1"},
-        {"id": "data_extract", "name": "数据资料提取", "version": "v1.0.1"},
+        {"id": "tag_suggestion", "name": "标签建议(三层标签)", "version": "v2.0.0"},
+        {"id": "policy_extract", "name": "政策文件提取(三层标签)", "version": "v2.0.0"},
+        {"id": "case_extract", "name": "项目案例提取(三层标签)", "version": "v2.0.0"},
+        {"id": "experience_extract", "name": "操盘经验提取(三层标签)", "version": "v2.0.0"},
+        {"id": "tool_extract", "name": "实操工具提取(三层标签)", "version": "v2.0.0"},
+        {"id": "data_extract", "name": "数据资料提取(三层标签)", "version": "v2.0.0"},
         {"id": "architecture_suggestion", "name": "架构扩充建议", "version": "v1.1.0"},
         {"id": "conflict_detection", "name": "联动冲突检测", "version": "v1.1.0"},
         {"id": "version_diff", "name": "版本差异对比", "version": "v1.1.0"},
+        {"id": "qa_derivation", "name": "问答语料衍生(待激活)", "version": "v2.0.0"},
     ]

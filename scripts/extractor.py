@@ -1,7 +1,15 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v1.1.0 - 新增AI分类建议(提取后自动分析分类体系)
+版本：v2.0.0 - 三层标签打标 + 元数据建议 + AI分类建议适配
+
+变更说明（v2.0.0 vs v1.1.0）：
+  - 解析AI返回的三层标签字段(suggested_category_tags/suggested_attribute_tags/suggested_keywords)
+  - 解析元数据建议(suggested_readiness/suggested_authority)
+  - 写入db_manager的新字段，不再填旧的suggested_tags
+  - AI分类建议prompt更新为感知三层标签体系
+  - 新增_sanitize_tags()对AI返回的标签做基本校验
+  - 保留全部v1.1.0功能：R1/V3双模型、MD5去重、分段/截断修复、失败隔离、AI分类建议
 """
 import os, sys, json, shutil, hashlib
 from pathlib import Path
@@ -14,6 +22,7 @@ from scripts.file_reader import FileReader
 from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded
 from scripts.db_manager import DatabaseManager
 from scripts.prompts.prompt_templates import get_extraction_prompt
+from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
 
 
 class Extractor:
@@ -36,6 +45,12 @@ class Extractor:
             "segment_max": 6000
         }
     }
+
+    # 第一层标签的合法名称清单（启动时从tag_config加载）
+    VALID_LAYER1_NAMES = set(get_layer1_tag_names())
+    # 元数据合法值
+    VALID_READINESS = set(CONTENT_READINESS.keys())
+    VALID_AUTHORITY = set(SOURCE_AUTHORITY.keys())
 
     def __init__(self):
         p = PROJECT_ROOT / "config" / "settings.json"
@@ -219,28 +234,89 @@ class Extractor:
                 print(f"     文件已隔离至: failed/{dest.name}")
         except Exception as e: print(f"     ! 文件隔离失败: {e}")
 
-    # === v1.1.0 新增: AI分类建议 ===
+    # ================================================================
+    # v2.0.0 新增：标签数据校验
+    # ================================================================
+    def _sanitize_tags(self, kp):
+        """校验并清理AI返回的三层标签数据，确保格式正确、值合法。"""
+
+        # --- 第一层：分类标签 ---
+        raw_cat_tags = kp.get("suggested_category_tags", [])
+        if not isinstance(raw_cat_tags, list):
+            raw_cat_tags = []
+        # 只保留在合法清单中的标签名
+        clean_cat_tags = [t for t in raw_cat_tags if isinstance(t, str) and t in self.VALID_LAYER1_NAMES]
+        if len(clean_cat_tags) < len(raw_cat_tags):
+            removed = set(raw_cat_tags) - set(clean_cat_tags)
+            if removed:
+                print(f"       [标签校验] 过滤了{len(removed)}个不在清单中的分类标签: {', '.join(list(removed)[:3])}")
+
+        # --- 第二层：属性标签 ---
+        raw_attr_tags = kp.get("suggested_attribute_tags", {})
+        if not isinstance(raw_attr_tags, dict):
+            raw_attr_tags = {}
+        # 保留所有键值对（维度名由AI填写，值可能是候选值或自由文本）
+        clean_attr_tags = {}
+        for dim_key, dim_val in raw_attr_tags.items():
+            if isinstance(dim_key, str) and dim_val:
+                # 如果值是列表（AI可能多选），转为逗号分隔字符串
+                if isinstance(dim_val, list):
+                    dim_val = "、".join(str(v) for v in dim_val)
+                clean_attr_tags[dim_key] = str(dim_val)
+
+        # --- 第三层：关键词 ---
+        raw_keywords = kp.get("suggested_keywords", [])
+        if not isinstance(raw_keywords, list):
+            raw_keywords = []
+        # 过滤：只保留2-20字的字符串，去重
+        seen = set()
+        clean_keywords = []
+        for kw in raw_keywords:
+            if isinstance(kw, str) and 2 <= len(kw) <= 20 and kw not in seen:
+                seen.add(kw)
+                clean_keywords.append(kw)
+
+        # --- 元数据 ---
+        readiness = kp.get("suggested_readiness", "draft")
+        if readiness not in self.VALID_READINESS:
+            readiness = "draft"
+
+        authority = kp.get("suggested_authority", "firsthand")
+        if authority not in self.VALID_AUTHORITY:
+            authority = "firsthand"
+
+        return {
+            "category_tags": clean_cat_tags,
+            "attribute_tags": clean_attr_tags,
+            "keywords": clean_keywords,
+            "readiness": readiness,
+            "authority": authority,
+        }
+
+    # ================================================================
+    # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
+    # ================================================================
     def _check_category_suggestions(self, kps_info):
-        """
-        提取完成后,分析是否需要调整分类体系。
-        kps_info: list of dict, 每个元素包含 title, suggested_category_code, suggested_category_matched(bool)
-        """
+        """提取完成后,分析是否需要调整分类体系。"""
         unmatched = [k for k in kps_info if not k.get("category_matched")]
         if not unmatched:
-            return  # 所有知识点都匹配到了分类,无需建议
+            return
 
-        # 获取当前分类体系
         cats = self.db.get_all_categories()
         cat_tree_text = ""
         for cat in cats:
             cat_tree_text += f"  {cat['level2_code']} {cat['level2_name']}: {cat['description']}\n"
 
         unmatched_text = ""
-        for k in unmatched[:10]:  # 最多分析10条
-            unmatched_text += f"  - {k['title']} (AI建议分类编号: {k.get('suggested_code', '无')})\n"
+        for k in unmatched[:10]:
+            tags_preview = ", ".join(k.get("category_tags", [])[:4])
+            unmatched_text += f"  - {k['title']} (AI建议分类编号: {k.get('suggested_code', '无')}, 分类标签: {tags_preview})\n"
 
         system_prompt = """你是一个知识库分类体系顾问。用户有一个乡村振兴知识库,分类体系如下。
 现在有一些知识点无法匹配到现有分类,请分析是否需要调整分类体系。
+
+注意：该知识库同时使用"分类体系"和"三层标签体系"。分类体系是档案柜（按来源类型分区），三层标签是多维标注。
+你只负责分类体系的建议，不涉及标签体系。
 
 你可以提出以下类型的建议(可以同时提多条):
 1. add_level2: 在某个一级分类下新增二级分类
@@ -271,7 +347,7 @@ class Extractor:
             ai = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.3, call_type="architecture_suggestion",
-                model_override="deepseek-chat"  # 用V3即可,不需要R1
+                model_override="deepseek-chat"
             )
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
@@ -286,7 +362,6 @@ class Extractor:
                         sg_reason = sg.get("reason", "")
                         print(f"       - [{sg_type}] {sg_name} ({sg_reason[:40]})")
 
-                        # 找parent_category_id
                         parent_id = None
                         if sg_parent:
                             for cat in cats:
@@ -313,6 +388,9 @@ class Extractor:
         except Exception as e:
             print(f"     [AI分类建议] 出错: {e}")
 
+    # ================================================================
+    # 核心提取流程
+    # ================================================================
     def extract_from_file(self, rec):
         result = {"success": False, "knowledge_count": 0, "error": ""}
         fid = rec["id"]
@@ -356,6 +434,7 @@ class Extractor:
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
             print(f"     提取模型: {self.extraction_model} ({self.extraction_model_name})")
+            print(f"     标签模式: 三层标签(v2.0.0)")
 
             segs = self._split(content)
             if len(segs) > 1:
@@ -379,20 +458,35 @@ class Extractor:
                 result["error"] = "未提取到知识点"
                 print(f"     [注意] 未提取到知识点"); return result
 
-            # === 写入数据库 ===
+            # === 写入数据库（v2.0.0: 三层标签 + 元数据） ===
             print(f"\n     写入{len(kps)}个知识点到数据库...")
             cnt = 0
-            kps_info = []  # v1.1.0: 收集分类匹配信息,用于AI建议
+            kps_info = []
             for kp in kps:
                 try:
+                    # 分类体系匹配（保持不变）
                     cat_code = kp.get("suggested_category_code", "")
                     cat = self.db.find_category_by_code(cat_code)
+
+                    # v2.0.0: 三层标签校验
+                    tags = self._sanitize_tags(kp)
+
+                    # 写入数据库
                     kid = self.db.add_knowledge_point(
-                        source_file_id=fid, title=kp.get("title", "未命名"),
-                        content_type=ctype, original_excerpt=kp.get("original_excerpt", ""),
+                        source_file_id=fid,
+                        title=kp.get("title", "未命名"),
+                        content_type=ctype,
+                        original_excerpt=kp.get("original_excerpt", ""),
                         ai_extracted_content=kp,
                         suggested_category_id=cat["id"] if cat else None,
-                        suggested_tags=kp.get("suggested_tags", []),
+                        # v2.0.0 三层标签
+                        suggested_category_tags=tags["category_tags"],
+                        suggested_attribute_tags=tags["attribute_tags"],
+                        suggested_keywords=tags["keywords"],
+                        # v2.0.0 元数据
+                        content_readiness=tags["readiness"],
+                        source_authority=tags["authority"],
+                        # 定位信息
                         source_page=str(kp.get("source_page", "")),
                         source_keyword=kp.get("source_keyword", ""))
                     cnt += 1
@@ -400,7 +494,8 @@ class Extractor:
                         "kp_id": kid,
                         "title": kp.get("title", ""),
                         "suggested_code": cat_code,
-                        "category_matched": cat is not None
+                        "category_matched": cat is not None,
+                        "category_tags": tags["category_tags"],
                     })
                 except Exception as e:
                     print(f"     ! 第{cnt + 1}个知识点入库失败: {e}")
@@ -410,9 +505,9 @@ class Extractor:
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
             self.db.update_source_file(fid, process_status="completed",
-                                       process_message=f"{model_tag}提取{cnt}个知识点")
+                                       process_message=f"{model_tag}提取{cnt}个知识点(三层标签)")
             result.update({"success": True, "knowledge_count": cnt, "kps_info": kps_info})
-            print(f"     [OK] {cnt}个知识点已存入待审核队列")
+            print(f"     [OK] {cnt}个知识点已存入待审核队列(三层标签已打标)")
 
         except CostLimitExceeded as e:
             result["error"] = str(e)
@@ -428,8 +523,8 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v1.1.0")
-        print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.0.0")
+        print(f"  三层标签模式 | 启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
 
         usage = self.client.get_today_usage()
@@ -445,10 +540,11 @@ class Extractor:
         print(f"\n  共{len(files)}个文件待提取")
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
         print(f"  分段策略: 每段{self.segment_max_len}字")
+        print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
-        all_kps_info = []  # v1.1.0: 汇总所有文件的分类匹配情况
+        all_kps_info = []
         for i, rec in enumerate(files, 1):
             fn = rec.get("renamed_filename") or rec["original_filename"]
             print(f"\n[{i}/{len(files)}] {fn}")
@@ -465,7 +561,7 @@ class Extractor:
                     print(f"\n  !! 费用达到上限，剩余{len(files) - i}个文件下次再处理")
                     break
 
-        # v1.1.0: 全部提取完成后,统一分析分类建议
+        # 全部提取完成后,统一分析分类建议
         if all_kps_info:
             self._check_category_suggestions(all_kps_info)
 
@@ -473,6 +569,7 @@ class Extractor:
         print(f"\n{'=' * 60}")
         print(f"  提取完成!")
         print(f"  使用模型: {self.extraction_model_name}")
+        print(f"  标签体系: 三层标签(v2.0.0)")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
         print(f"  知识点数: 共提取{total_kps}个，等待人工审核")
         print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")

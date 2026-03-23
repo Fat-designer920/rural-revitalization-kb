@@ -9,6 +9,7 @@ tag_config.py - 标签体系配置
   第三层：关键词（AI自由提取）
 
 新增领域时只需要在A组添加标签，B-F组是通用框架不需要改。
+v2.0.0-b新增：get_metadata_for_prompt()辅助函数
 """
 
 # ============================================================
@@ -228,9 +229,9 @@ def get_layer2_for_prompt(content_type):
     for dim_code, dim in LAYER2_DIMENSIONS.items():
         if not dim["applies_to"] or content_type in dim["applies_to"]:
             if dim["values"]:
-                lines.append(f"  {dim['name']}：从以下选项中选——{'/'.join(dim['values'])}")
+                lines.append(f"  {dim['name']}({dim_code})：从以下选项中选——{'/'.join(dim['values'])}")
             else:
-                lines.append(f"  {dim['name']}：自由填写")
+                lines.append(f"  {dim['name']}({dim_code})：自由填写")
     return "\n".join(lines)
 
 
@@ -250,3 +251,15 @@ def get_tag_by_name(name):
             if tag["name"] == name:
                 return {**tag, "group_code": group_code, "group_name": group["group_name"]}
     return None
+
+
+def get_metadata_for_prompt():
+    """生成注入到Prompt中的元数据候选值说明（v2.0.0-b新增）"""
+    lines = ["就绪度（suggested_readiness）："]
+    for k, v in CONTENT_READINESS.items():
+        lines.append(f"  {k} = {v['name']}：{v['definition']}")
+    lines.append("")
+    lines.append("权威度（suggested_authority）：")
+    for k, v in SOURCE_AUTHORITY.items():
+        lines.append(f"  {k} = {v['name']}：{v['definition']}")
+    return "\n".join(lines)

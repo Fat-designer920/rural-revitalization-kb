@@ -1,32 +1,61 @@
 # 变更日志
 
+## v2.0.0-b -- 变现底座：Prompt重写+提取引擎三层标签适配（阶段二）
+
+发布日期：2026-03-23
+
+变更内容：
+- 5个提取Prompt全部重写，输出新增三层标签(category_tags/attribute_tags/keywords)+元数据(readiness/authority)
+- 旧TAG_STRATEGY替换为THREE_LAYER_TAG_STRATEGY，标签清单从tag_config.py动态注入
+- extractor.py解析三层标签并写入数据库新字段，旧suggested_tags不再填充
+- 新增_sanitize_tags()校验AI返回的标签数据（过滤非法标签名、校验元数据值）
+- TAG_SUGGESTION_PROMPT重写为三层标签版
+- 新增QA_DERIVATION_PROMPT（待激活，v2.2.0启用）
+- tag_config.py新增get_metadata_for_prompt()辅助函数
+- AI分类建议prompt更新为感知三层标签体系
+- 清理调试阶段不需要的迁移脚本
+
+受影响文件：prompt_templates.py(重写), extractor.py(重写), tag_config.py(微调)
+已删除文件：migrate_v101_to_v110.py, migrate_v110_to_v200.py, 数据库迁移_v200.bat
+数据库迁移：不需要（调试阶段建议删库重建）
+后续计划：v2.0.0-c(审核界面全面改版)
+
+---
+
+## v2.0.0-a -- 变现底座：数据库重构+三层标签配置（阶段一）
+
+发布日期：2026-03-23
+
+变更内容：
+- 系统定位升级：从"知识整理工具"重构为"知识产品变现底座"
+- 建立三层标签体系：第一层分类标签(6组41个)+第二层属性标签(8个维度)+第三层关键词(自由提取)
+- 新增tag_config.py：标签定义独立配置文件，新增业务领域只改此文件，不改代码
+- knowledge_points表新增11个字段：三层标签6个(suggested/final各3层)+元数据5个(就绪度/权威度/变现分级/保鲜时间/保鲜周期)
+- 新增tag_definitions表：标签定义存储，从tag_config.py同步，供Prompt动态读取
+- 新增knowledge_relations表：知识点关联关系（支撑/矛盾/同源/前置条件/更新替代）
+- 新增knowledge_usage_log表：使用追踪，记录知识点被哪些产品引用
+- 新增tag_statistics表：标签使用统计缓存
+- 旧标签数据自动迁移至关键词字段
+- 数据库从9张表扩展到13张表
+
+受影响文件：db_manager.py(重写), tag_config.py(新增), migrate_v110_to_v200.py(新增), 数据库迁移_v200.bat(新增)
+数据库迁移：需要（运行 数据库迁移_v200.bat）
+后续计划：v2.0.0-b(Prompt重写+extractor改造) -> v2.0.0-c(审核界面改版)
+
+---
+
 ## v1.1.0 -- 审核增强+分类管理+AI建议+全文搜索
 
 发布日期：2026-03-20
 
 变更内容：
-- 审核界面侧边栏改为树形分类结构（一级可展开/收起显示二级子分类）
-- 新增全文搜索功能（搜索标题、内容、标签、原文摘录）
-- 已确认知识点支持再编辑，编辑自动记录修改历史，可查看历史并一键回滚
-- 已确认知识点支持移除（移至已忽略,记录移除原因和编辑历史）
-- 已忽略知识点支持恢复到待审核状态
-- 编辑弹窗新增原文摘录和AI提取内容编辑区（可直接修改AI提取结果）
-- 新增分类管理功能：审核界面分类下拉底部"+ 新增分类"入口
-- 支持新增全新一级分类（不再限制只能在已有5大类下新增）
-- 支持新增二级分类（自动编号）
-- 新增分类统计概览（顶部"分类概览"按钮,柱状图显示每个分类的知识点数量）
-- 空分类灰色显示,过载分类(>30条)红色警示
-- AI分类建议功能：提取完成后自动分析分类体系,给出具体建议（新增/合并/重命名/拆分）
-- AI建议含具体分类名称+挂载位置+理由说明,不限层级（可建议新增一级分类）
-- 审核界面顶部橙色通知栏提示待处理的AI建议数量
-- AI建议弹窗支持采纳/忽略操作
-- AI分类置信度标记：待审核知识点显示"分类匹配"（绿色）或"待确认分类"（红色）
-- 标签质量过滤：后端过滤有毒标签（纯数字、百分比数值、公文操作词、过于宽泛的词、长度不合规的标签）
-- 数据库新增edit_history表（编辑历史记录）
-- architecture_suggestions表新增suggestion_type字段
+- 树形分类筛选、全文搜索、编辑回滚+移除、忽略恢复
+- 新增一级/二级分类、原文摘录和AI内容可编辑
+- AI分类建议(新增/合并/重命名/拆分)、分类概览、置信度标记
+- 标签质量过滤(去毒)、编辑历史追踪
 
-受影响文件：extractor.py, api_server.py, db_manager.py, review.html, 新增migrate_v101_to_v110.py, 新增数据库迁移_v110.bat
-数据库迁移：需要（运行 数据库迁移_v110.bat）
+受影响文件：extractor.py, api_server.py, db_manager.py, review.html, migrate_v101_to_v110.py
+数据库迁移：需要
 
 ---
 
@@ -35,20 +64,10 @@
 发布日期：2026-03-19
 
 变更内容：
-- 知识提取切换至DeepSeek R1模型(deepseek-reasoner)，深度推理分析
-- 5个提取Prompt全面强化：要求全文逐段通读、细粒度不遗漏
-- 新增TAG_STRATEGY标签策略：明确6类合格标签，禁止数值/日期等琐碎标签
-- 新增EXCERPT_REQUIREMENT原文摘录要求：50-300字完整段落，可直接引用到文章中
-- 新增MD5文件指纹去重，重复文件自动跳过
-- 新增data/failed/文件夹，处理失败的文件自动隔离不堵塞队列
-- 提取进度实时显示（文件序号、费用消耗、模型信息、段落进度）
-- deepseek_client.py支持R1模型适配（超时延长300秒、不传temperature、费用含思考token）
-- R1模型chat_with_json自动提高max_tokens至8192
-- 长文档分段阈值从6000字提高到12000字（适配R1长上下文能力）
-- 审核界面修复：标签编辑保存后正确显示、筛选状态联动、分类按编号排序
-- 审核界面新增：标签芯片化编辑、按来源文件分组显示、分类下拉按一级分组
+- R1模型深度推理、5个Prompt强化、TAG_STRATEGY标签策略
+- MD5去重、failed隔离、进度显示、R1适配
 
-受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, api_server.py, review.html, 全部bat文件
+受影响文件：extractor.py, deepseek_client.py, prompt_templates.py, db_manager.py, api_server.py, review.html
 数据库迁移：不需要
 
 ---
@@ -58,10 +77,8 @@
 发布日期：2026-03-18
 
 变更内容：
-- 核心工作流：文件读取->AI预处理->知识提取->人工审核->入库
-- 10个Python脚本+11个bat+Flask审核界面
+- 核心工作流、10个脚本+11个bat+Flask审核界面
 - SQLite 8张表+5种Prompt+API加密+费用保护+系统自检
-- bat文件GBK编码,review.html纯ES5无emoji
 
 受影响文件：全部
 数据库迁移：不需要
