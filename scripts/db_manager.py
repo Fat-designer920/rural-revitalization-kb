@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.0.0 - 三层标签体系/知识关联/使用追踪/变现分级/内容保鲜
+版本：v2.0.0 - 三层标签体系/知识关联/使用追踪/变现分级/内容保鲜/物理删除
 
 数据库表（13张）：
   categories          - 知识库分类体系（5大类27+子类）
@@ -460,6 +460,16 @@ class DatabaseManager:
     def restore_to_pending(self, kp_id):
         self.update_knowledge_point(kp_id, review_status="pending", reviewer_notes="")
         self.log_operation("restore_to_pending", "knowledge_points", kp_id)
+
+    def delete_knowledge_point(self, kp_id):
+        """物理删除知识点及其关联数据（不可恢复）"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
+        c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+        c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+        c.execute("DELETE FROM knowledge_points WHERE id=?", (kp_id,))
+        conn.commit(); conn.close()
+        self.log_operation("physical_delete", "knowledge_points", kp_id)
 
     # ================================================================
     # 编辑历史

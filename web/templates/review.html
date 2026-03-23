@@ -3,324 +3,602 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 - 审核界面 v1.1.0</title>
+<title>乡村振兴知识库 v2.0.0</title>
 <style>
+:root {
+  --primary: #4338CA;
+  --primary-light: #EEF2FF;
+  --primary-hover: #3730A3;
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --sidebar-bg: #FFFFFF;
+  --border: #E2E8F0;
+  --border-light: #F1F5F9;
+  --text: #1E293B;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --success: #059669;
+  --success-bg: #ECFDF5;
+  --warning: #D97706;
+  --warning-bg: #FFFBEB;
+  --danger: #DC2626;
+  --danger-bg: #FEF2F2;
+  --tag-A-bg:#EEF2FF; --tag-A-text:#3730A3; --tag-A-border:#C7D2FE;
+  --tag-B-bg:#ECFDF5; --tag-B-text:#065F46; --tag-B-border:#A7F3D0;
+  --tag-C-bg:#FEF3C7; --tag-C-text:#92400E; --tag-C-border:#FDE68A;
+  --tag-D-bg:#F3E8FF; --tag-D-text:#6B21A8; --tag-D-border:#DDD6FE;
+  --tag-E-bg:#FFE4E6; --tag-E-text:#9F1239; --tag-E-border:#FECDD3;
+  --tag-F-bg:#F1F5F9; --tag-F-text:#334155; --tag-F-border:#CBD5E1;
+  --kw-bg:#F8FAFC; --kw-text:#475569; --kw-border:#E2E8F0;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.04), 0 2px 4px rgba(0,0,0,.03);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,.06), 0 4px 6px rgba(0,0,0,.03);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --transition: all .2s ease;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#f0f2f5;color:#333}
-.header{background:#2E75B6;color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-.header h1{font-size:18px;font-weight:600}
-.header .stats{display:flex;gap:20px;font-size:13px}
-.header .stat-item{background:rgba(255,255,255,.15);padding:4px 12px;border-radius:12px;cursor:default}
-.header .stat-item.clickable{cursor:pointer}
-.header .stat-item.clickable:hover{background:rgba(255,255,255,.3)}
-.header .stat-num{font-weight:700;font-size:15px}
-.suggestion-bar{background:#fff7e6;border-bottom:1px solid #ffc069;padding:8px 24px;font-size:13px;color:#d48806;display:none;cursor:pointer}
-.suggestion-bar:hover{background:#fff1d6}
-.suggestion-bar .sg-count{font-weight:700}
-.main-container{display:flex;height:calc(100vh - 52px)}
-.sidebar{width:240px;background:#fff;border-right:1px solid #e8e8e8;padding:16px;overflow-y:auto;flex-shrink:0}
-.sidebar h3{font-size:13px;color:#999;margin-bottom:8px}
-.filter-group{margin-bottom:20px}
-.filter-btn{display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;border-radius:6px;font-size:13px;color:#555;transition:all .2s}
-.filter-btn:hover{background:#f0f5ff;color:#2E75B6}
-.filter-btn.active{background:#e6f0fa;color:#2E75B6;font-weight:600}
-.filter-btn .count{float:right;background:#f0f0f0;padding:1px 8px;border-radius:10px;font-size:11px}
-.filter-btn.active .count{background:#2E75B6;color:#fff}
-.tree-l1{margin-bottom:2px}
-.tree-l1-btn{display:flex;align-items:center;width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;border-radius:6px;font-size:13px;color:#333;font-weight:600;transition:all .2s}
-.tree-l1-btn:hover{background:#f0f5ff;color:#2E75B6}
-.tree-l1-btn.active{background:#e6f0fa;color:#2E75B6}
-.tree-l1-btn .arrow{margin-right:6px;font-size:10px;transition:transform .2s;display:inline-block;width:14px}
-.tree-l1-btn .arrow.open{transform:rotate(90deg)}
-.tree-l2-list{display:none;padding-left:20px}
-.tree-l2-list.open{display:block}
-.tree-l2-btn{display:block;width:100%;text-align:left;padding:5px 10px;border:none;background:none;cursor:pointer;border-radius:4px;font-size:12px;color:#666;transition:all .2s}
-.tree-l2-btn:hover{background:#f0f5ff;color:#2E75B6}
-.tree-l2-btn.active{background:#e6f0fa;color:#2E75B6;font-weight:600}
-.tree-l2-btn .cat-count{float:right;font-size:10px;color:#bbb}
-.content{flex:1;overflow-y:auto;padding:20px}
-.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
-.toolbar-left{display:flex;gap:10px;align-items:center}
-.toolbar-right{display:flex;gap:10px;align-items:center}
-.search-box{display:flex;align-items:center}
-.search-box input{padding:7px 12px;border:1px solid #d9d9d9;border-radius:6px 0 0 6px;font-size:13px;width:200px;outline:none}
-.search-box input:focus{border-color:#2E75B6}
-.search-box button{padding:7px 12px;border:1px solid #2E75B6;border-left:none;border-radius:0 6px 6px 0;background:#2E75B6;color:#fff;cursor:pointer;font-size:13px}
-.btn{padding:7px 16px;border:1px solid #d9d9d9;border-radius:6px;cursor:pointer;font-size:13px;background:#fff;color:#555}
-.btn:hover{border-color:#2E75B6;color:#2E75B6}
-.btn-primary{background:#2E75B6;color:#fff;border-color:#2E75B6}
-.btn-success{background:#52c41a;color:#fff;border-color:#52c41a}
-.btn-success:hover{background:#3f9c14}
-.btn-danger{background:#fff;color:#ff4d4f;border-color:#ff4d4f}
-.btn-warning{background:#fff;color:#fa8c16;border-color:#fa8c16}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.btn-sm{padding:4px 10px;font-size:12px}
-.file-group-header{background:#e6f0fa;border-left:4px solid #2E75B6;padding:10px 16px;margin:18px 0 10px 0;border-radius:0 8px 8px 0;font-size:14px;font-weight:600;color:#2E75B6;display:flex;justify-content:space-between;align-items:center}
-.file-group-header .file-count{font-size:12px;font-weight:400;color:#999}
-.kp-card{background:#fff;border-radius:10px;padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:4px solid #d9d9d9}
-.kp-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1)}
-.kp-card.type-policy{border-left-color:#2E75B6}
-.kp-card.type-case{border-left-color:#52c41a}
-.kp-card.type-experience{border-left-color:#fa8c16}
-.kp-card.type-tool{border-left-color:#722ed1}
-.kp-card.type-data{border-left-color:#13c2c2}
-.kp-card.selected{border:2px solid #2E75B6;border-left-width:4px}
-.kp-title{font-size:16px;font-weight:600;flex:1}
-.kp-seq{display:inline-block;background:#2E75B6;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;font-size:11px;font-weight:700;margin-right:8px;flex-shrink:0}
-.kp-meta{font-size:12px;color:#999;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.kp-checkbox{margin-right:10px;width:18px;height:18px;cursor:pointer}
-.type-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600}
-.type-badge.policy{background:#e6f0fa;color:#2E75B6}
-.type-badge.case{background:#f0ffe6;color:#3f9c14}
-.type-badge.experience{background:#fff7e6;color:#d48806}
-.type-badge.tool{background:#f3e8ff;color:#722ed1}
-.type-badge.data{background:#e6fffb;color:#08979c}
-.confidence-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600}
-.confidence-badge.high{background:#f0ffe6;color:#3f9c14}
-.confidence-badge.low{background:#fff1f0;color:#ff4d4f}
-.kp-section{margin-bottom:12px}
-.kp-section-title{font-size:12px;color:#999;margin-bottom:4px;font-weight:600}
-.kp-excerpt{background:#fafafa;padding:10px;border-radius:6px;font-size:13px;line-height:1.8;max-height:200px;overflow-y:auto;border:1px solid #f0f0f0}
-.kp-extracted dt{font-weight:600;color:#555;display:inline}
-.kp-extracted dt::after{content:"\FF1A"}
-.kp-extracted dd{display:inline;margin:0}
-.kp-extracted dd::after{content:"";display:block;margin-bottom:4px}
-.category-path{display:inline-block;background:#f0f5ff;padding:3px 10px;border-radius:4px;font-size:12px;color:#2E75B6;font-weight:600}
-.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.tag{display:inline-block;padding:2px 8px;background:#f5f5f5;border-radius:4px;font-size:12px;color:#666;border:1px solid #e8e8e8}
-.kp-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0;flex-wrap:wrap}
+body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+/* === Header === */
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:0 28px;display:flex;justify-content:space-between;align-items:center;height:56px;position:sticky;top:0;z-index:100}
+.header-title{font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.2px}
+.header-title span{color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px}
+.header-stats{display:flex;gap:6px}
+.stat-pill{padding:5px 14px;border-radius:20px;font-size:12px;color:var(--text-secondary);background:var(--bg);border:1px solid var(--border);cursor:default;transition:var(--transition)}
+.stat-pill .num{font-weight:700;color:var(--text);margin-left:4px}
+.stat-pill.clickable{cursor:pointer}
+.stat-pill.clickable:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+.suggestion-bar{background:var(--warning-bg);border-bottom:1px solid #FDE68A;padding:8px 28px;font-size:13px;color:var(--warning);display:none;cursor:pointer;transition:var(--transition)}
+.suggestion-bar:hover{background:#FEF3C7}
+
+/* === Layout === */
+.main{display:flex;height:calc(100vh - 56px)}
+.sidebar{width:256px;background:var(--sidebar-bg);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;padding:20px 16px}
+.content{flex:1;overflow-y:auto;padding:24px 28px}
+
+/* === Sidebar Filters === */
+.filter-section{margin-bottom:24px}
+.filter-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding-left:12px}
+.filter-item{display:block;width:100%;text-align:left;padding:7px 12px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);transition:var(--transition);margin-bottom:1px}
+.filter-item:hover{background:var(--primary-light);color:var(--primary)}
+.filter-item.active{background:var(--primary-light);color:var(--primary);font-weight:600}
+.filter-item .cnt{float:right;font-size:11px;background:var(--bg);padding:1px 8px;border-radius:10px;color:var(--text-muted)}
+.filter-item.active .cnt{background:var(--primary);color:#fff}
+.tree-group{margin-bottom:2px}
+.tree-parent{display:flex;align-items:center;width:100%;text-align:left;padding:7px 12px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text);font-weight:600;transition:var(--transition)}
+.tree-parent:hover{background:var(--primary-light);color:var(--primary)}
+.tree-parent.active{color:var(--primary)}
+.tree-parent .arr{margin-right:6px;font-size:9px;transition:transform .2s;display:inline-block;width:14px;color:var(--text-muted)}
+.tree-parent .arr.open{transform:rotate(90deg)}
+.tree-children{display:none;padding-left:20px}
+.tree-children.open{display:block}
+.tree-child{display:block;width:100%;text-align:left;padding:5px 10px;border:none;background:none;cursor:pointer;border-radius:6px;font-size:12px;color:var(--text-secondary);transition:var(--transition)}
+.tree-child:hover{background:var(--primary-light);color:var(--primary)}
+.tree-child.active{color:var(--primary);font-weight:600}
+
+/* === Toolbar === */
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.toolbar-left{display:flex;gap:8px;align-items:center}
+.toolbar-right{display:flex;gap:8px;align-items:center}
+.search-wrap{display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:var(--transition)}
+.search-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(67,56,202,.1)}
+.search-wrap input{padding:7px 12px;border:none;font-size:13px;width:220px;outline:none;background:transparent;color:var(--text)}
+.search-wrap button{padding:7px 14px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:var(--transition)}
+.search-wrap button:hover{background:var(--primary-hover)}
+
+/* === Buttons === */
+.btn{padding:6px 14px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:500;background:var(--card);color:var(--text-secondary);transition:var(--transition);font-family:inherit;line-height:1.5}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-success{background:var(--success);color:#fff;border-color:var(--success)}
+.btn-success:hover{background:#047857}
+.btn-danger{color:var(--danger);border-color:var(--danger);background:transparent}
+.btn-danger:hover{background:var(--danger-bg)}
+.btn-warn{color:var(--warning);border-color:var(--warning);background:transparent}
+.btn-warn:hover{background:var(--warning-bg)}
+.btn-ghost{border:none;background:none;color:var(--text-muted);padding:6px 10px}
+.btn-ghost:hover{color:var(--primary);background:var(--primary-light)}
+.btn-sm{padding:4px 10px;font-size:11px}
+
+/* === Knowledge Card === */
+.file-header{padding:10px 16px;margin:20px 0 12px;border-radius:var(--radius);font-size:13px;font-weight:600;color:var(--primary);background:var(--primary-light);display:flex;justify-content:space-between;align-items:center}
+.file-header:first-child{margin-top:0}
+.file-header .fc{font-weight:400;color:var(--text-muted);font-size:12px}
+.kp-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:12px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition);position:relative}
+.kp-card:hover{box-shadow:var(--shadow-md);border-color:var(--border)}
+.kp-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(67,56,202,.15)}
+.kp-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.kp-cb{width:16px;height:16px;cursor:pointer;margin-top:3px;accent-color:var(--primary)}
+.kp-seq{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:10px;font-weight:700;color:#fff;background:var(--primary);flex-shrink:0;margin-top:1px}
+.kp-seq.type-policy{background:#4338CA}
+.kp-seq.type-case{background:#059669}
+.kp-seq.type-experience{background:#D97706}
+.kp-seq.type-tool{background:#7C3AED}
+.kp-seq.type-data{background:#0891B2}
+.kp-info{flex:1;min-width:0}
+.kp-title{font-size:15px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:6px}
+.kp-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;line-height:1.5}
+.badge-policy{background:#EEF2FF;color:#4338CA}
+.badge-case{background:#ECFDF5;color:#059669}
+.badge-experience{background:#FFFBEB;color:#D97706}
+.badge-tool{background:#F3E8FF;color:#7C3AED}
+.badge-data{background:#ECFEFF;color:#0891B2}
+.badge-pending{background:#FEF3C7;color:#92400E}
+.badge-confirmed{background:#D1FAE5;color:#065F46}
+.badge-ignored{background:#F1F5F9;color:#64748B}
+.cat-path{font-size:12px;color:var(--text-muted)}
+.match-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+.match-dot.yes{background:var(--success)}
+.match-dot.no{background:var(--danger)}
+
+/* === Tags === */
+.tags-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.tag-chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:500;border:1px solid transparent;line-height:1.6;white-space:nowrap}
+.tag-A{background:var(--tag-A-bg);color:var(--tag-A-text);border-color:var(--tag-A-border)}
+.tag-B{background:var(--tag-B-bg);color:var(--tag-B-text);border-color:var(--tag-B-border)}
+.tag-C{background:var(--tag-C-bg);color:var(--tag-C-text);border-color:var(--tag-C-border)}
+.tag-D{background:var(--tag-D-bg);color:var(--tag-D-text);border-color:var(--tag-D-border)}
+.tag-E{background:var(--tag-E-bg);color:var(--tag-E-text);border-color:var(--tag-E-border)}
+.tag-F{background:var(--tag-F-bg);color:var(--tag-F-text);border-color:var(--tag-F-border)}
+.tag-kw{background:var(--kw-bg);color:var(--kw-text);border-color:var(--kw-border)}
+.attr-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text-secondary)}
+.attr-pair{display:inline-flex;align-items:center;gap:4px}
+.attr-pair .attr-k{color:var(--text-muted)}
+.attr-pair .attr-v{color:var(--text);font-weight:500}
+.attr-pair .attr-sep{color:var(--border);margin:0 2px}
+.meta-badges{display:flex;gap:6px;margin-bottom:10px}
+.rd-badge,.auth-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+.rd-draft{background:#F1F5F9;color:#64748B}
+.rd-quotable{background:#D1FAE5;color:#065F46}
+.rd-premium{background:#FEF3C7;color:#92400E}
+.auth-official{background:#DBEAFE;color:#1E40AF}
+.auth-authoritative{background:#CCFBF1;color:#115E59}
+.auth-firsthand{background:#FEF3C7;color:#92400E}
+.auth-informal{background:#F1F5F9;color:#64748B}
+
+/* === Card Sections === */
+.kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
+.kp-excerpt.expanded{max-height:none}
+.kp-fields{margin-bottom:10px}
+.kp-fields dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px}
+.kp-fields dt{color:var(--text-muted);font-weight:600;white-space:nowrap}
+.kp-fields dt::after{content:":"}
+.kp-fields dd{color:var(--text-secondary);margin:0}
+.kp-actions{display:flex;gap:6px;padding-top:12px;border-top:1px solid var(--border-light);flex-wrap:wrap;align-items:center}
 .kp-detail{display:none;margin-top:12px}
 .kp-detail.open{display:block}
-.status-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
-.status-badge.pending{background:#fff7e6;color:#d48806}
-.status-badge.confirmed{background:#f0ffe6;color:#3f9c14}
-.status-badge.ignored{background:#f5f5f5;color:#999}
-.pagination{display:flex;justify-content:center;gap:6px;margin-top:20px;padding-bottom:20px}
-.pagination button{min-width:36px;height:36px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
-.pagination button.active{background:#2E75B6;color:#fff;border-color:#2E75B6}
-.page-info{line-height:36px;font-size:13px;color:#999;padding:0 10px}
-.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+.kp-detail pre{background:var(--bg);padding:14px;border-radius:var(--radius);font-size:11px;white-space:pre-wrap;line-height:1.6;color:var(--text-secondary);font-family:Consolas,"Courier New",monospace;max-height:400px;overflow-y:auto}
+
+/* === Pagination === */
+.pagination{display:flex;justify-content:center;gap:4px;margin-top:24px;padding-bottom:24px}
+.pagination button{min-width:34px;height:34px;border:1px solid var(--border);background:var(--card);border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--text-secondary);transition:var(--transition)}
+.pagination button:hover{border-color:var(--primary);color:var(--primary)}
+.pagination button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.page-info{line-height:34px;font-size:12px;color:var(--text-muted);padding:0 8px}
+
+/* === Modals === */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.4);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;padding:24px;width:640px;max-height:80vh;overflow-y:auto}
-.modal h2{font-size:18px;margin-bottom:16px}
-.modal-field{margin-bottom:14px}
-.modal-field label{display:block;font-size:13px;color:#666;margin-bottom:4px;font-weight:600}
-.modal-field input,.modal-field textarea,.modal-field select{width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;font-family:inherit}
-.modal-field textarea{min-height:80px;resize:vertical}
-.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
-.toast{position:fixed;top:20px;right:20px;padding:12px 24px;border-radius:8px;color:#fff;font-size:14px;z-index:300;opacity:0;transition:opacity .3s}
+.modal{background:var(--card);border-radius:var(--radius-lg);width:680px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.modal-header{padding:20px 24px 0;font-size:17px;font-weight:700;color:var(--text)}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:12px 24px 20px;display:flex;justify-content:flex-end;gap:8px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600}
+.field input,.field textarea,.field select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--text);transition:var(--transition);background:var(--card)}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(67,56,202,.08)}
+.field textarea{min-height:80px;resize:vertical;line-height:1.6}
+.field-row{display:flex;gap:12px}
+.field-row .field{flex:1}
+.field-hint{font-size:11px;color:var(--text-muted);margin-top:4px}
+
+/* === Tag Editor in Modal === */
+.tag-editor-box{border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;min-height:40px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:var(--card)}
+.tag-editor-box .tag-chip{cursor:default}
+.tag-editor-box .tag-chip .tag-x{cursor:pointer;margin-left:4px;font-weight:700;opacity:.5;font-size:13px}
+.tag-editor-box .tag-chip .tag-x:hover{opacity:1;color:var(--danger)}
+.tag-add-row{display:flex;gap:6px;margin-top:6px}
+.tag-add-row select,.tag-add-row input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px}
+.kw-input-wrap{display:flex;gap:6px;margin-top:6px}
+.kw-input-wrap input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px}
+
+/* === Misc === */
+.toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:var(--radius);color:#fff;font-size:13px;font-weight:500;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
-.toast.success{background:#52c41a}
-.toast.error{background:#ff4d4f}
-.toast.info{background:#2E75B6}
-.empty-state{text-align:center;padding:60px 20px;color:#999}
-.empty-state h3{font-size:18px;margin-bottom:8px;color:#666}
-.loading{text-align:center;padding:40px;color:#999}
-.detail-toggle{color:#2E75B6;cursor:pointer;font-size:12px;border:none;background:none}
-.active-filters{font-size:12px;color:#999;margin-bottom:8px}
-.active-filters span{background:#e6f0fa;color:#2E75B6;padding:2px 8px;border-radius:4px;margin-left:4px}
-.active-filters .clear-link{color:#ff4d4f;cursor:pointer;margin-left:8px;text-decoration:underline}
-.tag-editor{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid #d9d9d9;border-radius:6px;min-height:42px;background:#fff;align-items:center}
-.tag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#e6f0fa;color:#2E75B6;border-radius:14px;font-size:12px;font-weight:500}
-.tag-chip .tag-remove{cursor:pointer;font-size:14px;color:#999;line-height:1;margin-left:2px;font-weight:700}
-.tag-chip .tag-remove:hover{color:#ff4d4f}
-.tag-chip.ai-tag{background:#fff7e6;color:#d48806;border:1px dashed #ffc069}
-.tag-add-area{display:flex;gap:6px;margin-top:8px}
-.tag-add-area select{flex:1;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px}
-.tag-hint{font-size:11px;color:#999;margin-top:4px}
-.history-item{border:1px solid #e8e8e8;border-radius:8px;padding:12px;margin-bottom:10px;background:#fafafa}
-.history-item .history-time{font-size:12px;color:#999;margin-bottom:6px}
-.history-item .history-summary{font-size:13px;color:#555;margin-bottom:8px;font-weight:600}
-.history-field{font-size:12px;margin-bottom:4px;line-height:1.6}
-.history-field .field-label{color:#999;font-weight:600}
-.history-field .old-val{color:#ff4d4f;text-decoration:line-through}
-.history-field .new-val{color:#52c41a}
-.sg-card{border:1px solid #ffc069;border-radius:8px;padding:14px;margin-bottom:10px;background:#fffbe6}
-.sg-card .sg-title{font-weight:600;font-size:14px;color:#d48806;margin-bottom:6px}
-.sg-card .sg-reason{font-size:13px;color:#555;margin-bottom:10px;line-height:1.6}
-.sg-card .sg-meta{font-size:12px;color:#999;margin-bottom:8px}
-.stat-row{display:flex;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+.toast.info{background:var(--primary)}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
+.empty-state h3{font-size:16px;margin-bottom:6px;color:var(--text-secondary);font-weight:600}
+.loading{text-align:center;padding:40px;color:var(--text-muted);font-size:13px}
+.active-filters{font-size:12px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.active-filters .af-tag{background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:4px;font-size:11px}
+.active-filters .af-clear{color:var(--danger);cursor:pointer;font-size:11px;margin-left:4px}
+.confirm-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:250;justify-content:center;align-items:center}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;width:400px;box-shadow:var(--shadow-lg);text-align:center}
+.confirm-box h3{font-size:16px;margin-bottom:8px;color:var(--text)}
+.confirm-box p{font-size:13px;color:var(--text-secondary);margin-bottom:20px;line-height:1.6}
+.confirm-box .confirm-actions{display:flex;gap:8px;justify-content:center}
+/* History & Suggestion cards */
+.history-item{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.history-item .ht{font-size:12px;color:var(--text-muted);margin-bottom:4px}
+.history-item .hs{font-size:13px;color:var(--text);font-weight:600;margin-bottom:8px}
+.history-field{font-size:12px;margin-bottom:3px;line-height:1.6;color:var(--text-secondary)}
+.history-field .fl{color:var(--text-muted);font-weight:600}
+.history-field .ov{color:var(--danger);text-decoration:line-through}
+.history-field .nv{color:var(--success)}
+.sg-card{border:1px solid #FDE68A;border-radius:var(--radius);padding:16px;margin-bottom:10px;background:var(--warning-bg)}
+.sg-card .sg-t{font-weight:600;font-size:14px;color:var(--warning);margin-bottom:4px}
+.sg-card .sg-m{font-size:12px;color:var(--text-muted);margin-bottom:6px}
+.sg-card .sg-r{font-size:13px;color:var(--text-secondary);margin-bottom:10px;line-height:1.6}
+.stat-row{display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px}
 .stat-row:last-child{border-bottom:none}
-.stat-bar{height:8px;background:#2E75B6;border-radius:4px;margin-left:10px;min-width:2px}
-.stat-count{min-width:30px;text-align:right;color:#999;font-size:12px;margin-left:8px}
-.stat-empty{color:#ccc}
-.stat-overload{color:#ff4d4f;font-weight:600}
+.stat-bar{height:6px;background:var(--primary);border-radius:3px;margin-left:10px;min-width:2px}
+.stat-count{min-width:30px;text-align:right;color:var(--text-muted);font-size:12px;margin-left:8px}
 </style>
 </head>
 <body>
+<!-- Header -->
 <div class="header">
-  <h1>乡村振兴知识库 v1.1.0</h1>
-  <div class="stats">
-    <div class="stat-item">待审核 <span class="stat-num" id="statPending">-</span></div>
-    <div class="stat-item">已入库 <span class="stat-num" id="statConfirmed">-</span></div>
-    <div class="stat-item clickable" onclick="openStatsModal()">分类概览</div>
-    <div class="stat-item">今日API <span class="stat-num" id="statCost">-</span>元</div>
+  <div class="header-title">乡村振兴知识库 <span>v2.0.0</span></div>
+  <div class="header-stats">
+    <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
+    <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
+    <div class="stat-pill clickable" onclick="openStatsModal()">分类概览</div>
+    <div class="stat-pill">API<span class="num" id="statCost">-</span>元</div>
   </div>
 </div>
-<div class="suggestion-bar" id="suggestionBar" onclick="openSuggestionsModal()">AI发现了 <span class="sg-count" id="sgCount">0</span> 条分类建议待处理,点此查看</div>
-<div class="main-container">
+<div class="suggestion-bar" id="suggestionBar" onclick="openSuggestionsModal()">AI 发现 <b id="sgCount">0</b> 条分类建议待处理</div>
+
+<!-- Main Layout -->
+<div class="main">
+  <!-- Sidebar -->
   <div class="sidebar">
-    <div class="filter-group">
-      <h3>审核状态</h3>
-      <button class="filter-btn active" onclick="filterByStatus(null,this)">全部</button>
-      <button class="filter-btn" onclick="filterByStatus('pending',this)">待审核 <span class="count" id="filterPending">0</span></button>
-      <button class="filter-btn" onclick="filterByStatus('confirmed',this)">已确认 <span class="count" id="filterConfirmed">0</span></button>
-      <button class="filter-btn" onclick="filterByStatus('ignored',this)">已忽略 <span class="count" id="filterIgnored">0</span></button>
+    <div class="filter-section">
+      <div class="filter-label">审核状态</div>
+      <button class="filter-item active" onclick="filterByStatus(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByStatus('pending',this)">待审核 <span class="cnt" id="filterPending">0</span></button>
+      <button class="filter-item" onclick="filterByStatus('confirmed',this)">已确认 <span class="cnt" id="filterConfirmed">0</span></button>
+      <button class="filter-item" onclick="filterByStatus('ignored',this)">已忽略 <span class="cnt" id="filterIgnored">0</span></button>
     </div>
-    <div class="filter-group">
-      <h3>知识类型</h3>
-      <button class="filter-btn active" onclick="filterByType(null,this)">全部类型</button>
-      <button class="filter-btn" onclick="filterByType('policy',this)">[政策] 政策文件</button>
-      <button class="filter-btn" onclick="filterByType('case',this)">[案例] 项目案例</button>
-      <button class="filter-btn" onclick="filterByType('experience',this)">[经验] 操盘经验</button>
-      <button class="filter-btn" onclick="filterByType('tool',this)">[工具] 实操工具</button>
-      <button class="filter-btn" onclick="filterByType('data',this)">[数据] 数据资料</button>
+    <div class="filter-section">
+      <div class="filter-label">知识类型</div>
+      <button class="filter-item active" onclick="filterByType(null,this)">全部类型</button>
+      <button class="filter-item" onclick="filterByType('policy',this)">政策文件</button>
+      <button class="filter-item" onclick="filterByType('case',this)">项目案例</button>
+      <button class="filter-item" onclick="filterByType('experience',this)">操盘经验</button>
+      <button class="filter-item" onclick="filterByType('tool',this)">实操工具</button>
+      <button class="filter-item" onclick="filterByType('data',this)">数据资料</button>
     </div>
-    <div class="filter-group"><h3>分类体系</h3><div id="categoryFilters"></div></div>
+    <div class="filter-section"><div class="filter-label">分类体系</div><div id="categoryFilters"></div></div>
+    <div class="filter-section">
+      <div class="filter-label">就绪度</div>
+      <button class="filter-item active" onclick="filterByReadiness(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByReadiness('draft',this)">草稿级</button>
+      <button class="filter-item" onclick="filterByReadiness('quotable',this)">可引用级</button>
+      <button class="filter-item" onclick="filterByReadiness('premium',this)">精品级</button>
+    </div>
   </div>
+
+  <!-- Content -->
   <div class="content">
     <div class="toolbar">
       <div class="toolbar-left">
-        <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"> 全选</label>
-        <button class="btn btn-success" onclick="batchConfirm()" id="btnBatch" disabled>批量确认入库</button>
+        <label style="font-size:12px;cursor:pointer;color:var(--text-secondary)"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()" style="accent-color:var(--primary)"> 全选</label>
+        <button class="btn btn-success btn-sm" onclick="batchConfirm()" id="btnBatch" disabled>确认入库</button>
+        <button class="btn btn-warn btn-sm" onclick="batchIgnore()" id="btnIgnore" disabled>批量忽略</button>
+        <button class="btn btn-danger btn-sm" onclick="batchDelete()" id="btnDelete" disabled>批量删除</button>
       </div>
       <div class="toolbar-right">
-        <div class="search-box"><input type="text" id="searchInput" placeholder="搜索标题/内容/标签..." onkeydown="if(event.keyCode===13)doSearch()"><button onclick="doSearch()">搜索</button></div>
-        <button class="btn" onclick="refreshData()">刷新</button>
+        <div class="search-wrap"><input type="text" id="searchInput" placeholder="搜索标题/内容/标签/关键词..." onkeydown="if(event.keyCode===13)doSearch()"><button onclick="doSearch()">搜索</button></div>
+        <button class="btn btn-sm" onclick="refreshData()">刷新</button>
       </div>
     </div>
     <div id="activeFilterInfo"></div>
-    <div id="knowledgeList"><div class="loading">正在加载数据...</div></div>
+    <div id="knowledgeList"><div class="loading">正在加载...</div></div>
     <div class="pagination" id="pagination"></div>
   </div>
 </div>
-<!-- 编辑弹窗 -->
-<div class="modal-overlay" id="editModal"><div class="modal">
-  <h2 id="editModalTitle">编辑知识点</h2>
-  <input type="hidden" id="editKpId">
-  <div class="modal-field"><label>标题</label><input type="text" id="editTitle"></div>
-  <div class="modal-field"><label>所属分类</label><select id="editCategory"></select></div>
-  <div class="modal-field"><label>标签</label><div class="tag-editor" id="tagEditor"></div><div class="tag-add-area"><select id="tagDropdown" onchange="onTagDropdownChange()"><option value="">-- 添加标签 --</option></select></div><div class="tag-hint">AI推荐标签带虚线边框,点 x 可删除;从下拉菜单添加已有标签或新建标签</div></div>
-  <div class="modal-field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
-  <div class="modal-field"><label>AI提取内容 <span style="font-weight:400;color:#999;font-size:11px">(只改引号内的中文,不要动引号/逗号/花括号)</span></label><textarea id="editAiContent" style="min-height:160px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
-  <div class="modal-field"><label>审核备注</label><textarea id="editNotes"></textarea></div>
-  <div class="modal-actions" id="editModalActions"></div>
-</div></div>
-<!-- 修改历史弹窗 -->
-<div class="modal-overlay" id="historyModal"><div class="modal">
-  <h2>修改历史</h2><div id="historyContent"></div>
-  <div class="modal-actions"><button class="btn" onclick="closeModal('historyModal')">关闭</button></div>
-</div></div>
-<!-- 新增分类弹窗 -->
-<div class="modal-overlay" id="addCatModal"><div class="modal" style="width:500px">
-  <h2>新增分类</h2>
-  <div class="modal-field"><label>分类层级</label><select id="addCatLevel" onchange="onAddCatLevelChange()"><option value="level2">在已有一级分类下新增二级分类</option><option value="level1">新增全新的一级分类</option></select></div>
-  <div class="modal-field" id="addCatParentField"><label>挂在哪个一级分类下</label><select id="addCatParent"></select></div>
-  <div class="modal-field" id="addCatL1NameField" style="display:none"><label>新一级分类名称</label><input type="text" id="addCatL1Name" placeholder="例如: 培训库"></div>
-  <div class="modal-field"><label>二级分类名称</label><input type="text" id="addCatName" placeholder="例如: 碳汇与生态价值政策"></div>
-  <div class="modal-field"><label>说明 (可选)</label><input type="text" id="addCatDesc" placeholder="简要描述该分类覆盖的内容范围"></div>
-  <div class="modal-actions"><button class="btn" onclick="closeModal('addCatModal')">取消</button><button class="btn btn-primary" onclick="submitAddCategory()">确认新增</button></div>
-</div></div>
-<!-- AI建议弹窗 -->
-<div class="modal-overlay" id="suggestionsModal"><div class="modal" style="width:600px">
-  <h2>AI分类建议</h2><div id="suggestionsContent"></div>
-  <div class="modal-actions"><button class="btn" onclick="closeModal('suggestionsModal')">关闭</button></div>
-</div></div>
-<!-- 分类统计弹窗 -->
-<div class="modal-overlay" id="statsModal"><div class="modal" style="width:560px">
-  <h2>分类概览</h2><div id="statsContent"></div>
-  <div class="modal-actions"><button class="btn" onclick="closeModal('statsModal')">关闭</button></div>
-</div></div>
-<div class="toast" id="toast"></div>
-<script>
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
-var editingTags=[],editingSuggestedTags=[],editingKpStatus="";
-var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
-var TL={policy:"[政策]","case":"[案例]",experience:"[经验]",tool:"[工具]",data:"[数据]"};
-var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
-var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容"};
 
-function apiGet(u){return fetch(API+u).then(function(r){if(!r.ok)return r.text().then(function(t){try{return JSON.parse(t)}catch(e){return{error:t,items:[],total:0}}});return r.json()}).catch(function(e){showToast("请求失败:"+e.message,"error");return{error:e.message,items:[],total:0}})}
+<!-- Edit Modal -->
+<div class="modal-overlay" id="editModal"><div class="modal" style="width:740px">
+  <div class="modal-header" id="editModalTitle">编辑知识点</div>
+  <div class="modal-body">
+    <input type="hidden" id="editKpId">
+    <div class="field"><label>标题</label><input type="text" id="editTitle"></div>
+    <div class="field"><label>所属分类</label><select id="editCategory"></select></div>
+    <div class="field"><label>分类标签 (第一层)</label><div class="tag-editor-box" id="layer1Editor"></div><div class="tag-add-row"><select id="layer1Dropdown" onchange="onL1Add()"><option value="">+ 添加分类标签...</option></select></div><div class="field-hint">从6组41个固定标签中选择，不同颜色代表不同标签组</div></div>
+    <div class="field"><label>属性标签 (第二层)</label><div id="layer2Editor"></div><div class="field-hint">按维度填写，只填有关的维度</div></div>
+    <div class="field"><label>关键词 (第三层)</label><div class="tag-editor-box" id="kwEditor"></div><div class="kw-input-wrap"><input type="text" id="kwInput" placeholder="输入关键词后回车添加" onkeydown="if(event.keyCode===13){event.preventDefault();addKw()}"><button class="btn btn-sm" onclick="addKw()">添加</button></div></div>
+    <div class="field-row">
+      <div class="field"><label>就绪度</label><select id="editReadiness"><option value="draft">草稿级</option><option value="quotable">可引用级</option><option value="premium">精品级</option></select></div>
+      <div class="field"><label>权威度</label><select id="editAuthority"><option value="official">官方文件</option><option value="authoritative">行业权威</option><option value="firsthand">项目实证</option><option value="informal">业内交流</option></select></div>
+    </div>
+    <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
+    <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
+    <div class="field"><label>审核备注</label><textarea id="editNotes" style="min-height:60px"></textarea></div>
+  </div>
+  <div class="modal-footer" id="editModalActions"></div>
+</div></div>
+
+<!-- History Modal -->
+<div class="modal-overlay" id="historyModal"><div class="modal">
+  <div class="modal-header">修改历史</div>
+  <div class="modal-body" id="historyContent"></div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('historyModal')">关闭</button></div>
+</div></div>
+
+<!-- Add Category Modal -->
+<div class="modal-overlay" id="addCatModal"><div class="modal" style="width:480px">
+  <div class="modal-header">新增分类</div>
+  <div class="modal-body">
+    <div class="field"><label>分类层级</label><select id="addCatLevel" onchange="onAddCatLevelChange()"><option value="level2">在已有一级分类下新增二级分类</option><option value="level1">新增全新的一级分类</option></select></div>
+    <div class="field" id="addCatParentField"><label>所属一级分类</label><select id="addCatParent"></select></div>
+    <div class="field" id="addCatL1NameField" style="display:none"><label>新一级分类名称</label><input type="text" id="addCatL1Name" placeholder="例如: 培训库"></div>
+    <div class="field"><label>二级分类名称</label><input type="text" id="addCatName" placeholder="例如: 碳汇与生态价值政策"></div>
+    <div class="field"><label>说明 (可选)</label><input type="text" id="addCatDesc" placeholder="简要描述该分类覆盖的内容范围"></div>
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('addCatModal')">取消</button><button class="btn btn-primary" onclick="submitAddCategory()">确认新增</button></div>
+</div></div>
+
+<!-- AI Suggestions Modal -->
+<div class="modal-overlay" id="suggestionsModal"><div class="modal" style="width:580px">
+  <div class="modal-header">AI 分类建议</div>
+  <div class="modal-body" id="suggestionsContent"></div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('suggestionsModal')">关闭</button></div>
+</div></div>
+
+<!-- Stats Modal -->
+<div class="modal-overlay" id="statsModal"><div class="modal" style="width:540px">
+  <div class="modal-header">分类概览</div>
+  <div class="modal-body" id="statsContent"></div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('statsModal')">关闭</button></div>
+</div></div>
+
+<!-- Confirm Dialog -->
+<div class="confirm-overlay" id="confirmDlg">
+  <div class="confirm-box">
+    <h3 id="confirmTitle">确认操作</h3>
+    <p id="confirmMsg">确定要执行此操作吗?</p>
+    <div class="confirm-actions">
+      <button class="btn" onclick="closeConfirm(false)">取消</button>
+      <button class="btn btn-danger" id="confirmOk" onclick="closeConfirm(true)">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* === State === */
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null;
+var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
+var tagDefs=null,tagNameToGroup={};
+var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
+var confirmCallback=null;
+var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
+var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
+var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
+var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
+var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度"};
+
+/* === API helpers === */
+function apiGet(u){return fetch(API+u).then(function(r){return r.json()}).catch(function(e){showToast("请求失败:"+e.message,"error");return{error:e.message,items:[],total:0}})}
 function apiPost(u,d){return fetch(API+u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d||{})}).then(function(r){return r.json()}).catch(function(e){return{error:e.message}})}
 function apiPut(u,d){return fetch(API+u,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(d||{})}).then(function(r){return r.json()}).catch(function(e){return{error:e.message}})}
+function apiDel(u){return fetch(API+u,{method:"DELETE"}).then(function(r){return r.json()}).catch(function(e){return{error:e.message}})}
 function esc(s){if(!s)return"";var d=document.createElement("div");d.textContent=String(s);return d.innerHTML}
 function showToast(m,t){var e=document.getElementById("toast");e.textContent=m;e.className="toast "+(t||"info")+" show";setTimeout(function(){e.classList.remove("show")},3000)}
 function parseTags(v){if(!v)return[];if(typeof v==="string"){try{v=JSON.parse(v)}catch(e){return[]}}if(Array.isArray(v)){var r=[];for(var i=0;i<v.length;i++){var t=String(v[i]).trim();if(t)r.push(t)}return r}return[]}
-function getDisplayTags(kp){var ft=parseTags(kp.final_tags);if(ft.length>0)return ft;return parseTags(kp.suggested_tags)}
+function parseObj(v){if(!v)return{};if(typeof v==="string"){try{return JSON.parse(v)}catch(e){return{}}}if(typeof v==="object"&&!Array.isArray(v))return v;return{}}
 function closeModal(id){document.getElementById(id).classList.remove("open")}
 
-function init(){loadStatistics();loadCategories();loadSystemTags();loadSuggestionCount();filterByStatus("pending",document.querySelectorAll(".filter-group .filter-btn")[1])}
+/* === Confirm dialog === */
+function showConfirm(title,msg,cb){document.getElementById("confirmTitle").textContent=title;document.getElementById("confirmMsg").textContent=msg;confirmCallback=cb;document.getElementById("confirmDlg").classList.add("open")}
+function closeConfirm(ok){document.getElementById("confirmDlg").classList.remove("open");if(confirmCallback)confirmCallback(ok);confirmCallback=null}
+
+/* === Tag name -> group code mapping === */
+function buildTagMap(){tagNameToGroup={};if(!tagDefs||!tagDefs.layer1)return;var l1=tagDefs.layer1;var groups=Object.keys(l1);for(var i=0;i<groups.length;i++){var gc=groups[i],tags=l1[gc].tags;for(var j=0;j<tags.length;j++){tagNameToGroup[tags[j].name]=gc}}}
+function tagClass(name){var g=tagNameToGroup[name];return g?"tag-"+g:"tag-kw"}
+
+/* === Init === */
+function init(){
+  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
+}
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
-
 function loadSuggestionCount(){apiGet("/api/architecture-suggestions").then(function(list){if(Array.isArray(list)&&list.length>0){document.getElementById("sgCount").textContent=list.length;document.getElementById("suggestionBar").style.display="block"}})}
 
-/* === 分类树形渲染 === */
-function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c)){allCategories=c.slice();allCategories.sort(function(a,b){if(a.level1_code!==b.level1_code)return a.level1_code.localeCompare(b.level1_code);return a.level2_code.localeCompare(b.level2_code)})}buildCategoryDropdown();buildCategoryTree()});apiGet("/api/categories/stats").then(function(s){if(Array.isArray(s))catStatsData=s})}
+/* === Categories === */
+function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c)){allCategories=c.slice();allCategories.sort(function(a,b){return a.level1_code===b.level1_code?a.level2_code.localeCompare(b.level2_code):a.level1_code.localeCompare(b.level1_code)})}buildCategoryTree();buildCategoryDropdown()})}
 
-function buildCategoryTree(){var cf=document.getElementById("categoryFilters");var h='<button class="filter-btn active" onclick="filterByCat(null,null,this)">全部分类</button>';var tree={},order=[];for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!tree[x.level1_code]){tree[x.level1_code]={name:x.level1_name,children:[]};order.push(x.level1_code)}tree[x.level1_code].children.push(x)}for(var i=0;i<order.length;i++){var code=order[i],g=tree[code];h+='<div class="tree-l1"><button class="tree-l1-btn" onclick="toggleTreeL1(this,\''+code+'\')" ondblclick="filterByCat(null,\''+code+'\',this)"><span class="arrow">&#9654;</span>'+code+'. '+esc(g.name)+'</button><div class="tree-l2-list" id="treeL2_'+code+'">';for(var j=0;j<g.children.length;j++){var c2=g.children[j];h+='<button class="tree-l2-btn" onclick="filterByCat('+c2.id+',null,this)">'+c2.level2_code+' '+esc(c2.level2_name)+'</button>'}h+='</div></div>'}cf.innerHTML=h}
+function buildCategoryTree(){var cf=document.getElementById("categoryFilters");var h='<button class="filter-item active" onclick="filterByCat(null,null,this)">全部分类</button>';var tree={},order=[];for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!tree[x.level1_code]){tree[x.level1_code]={name:x.level1_name,children:[]};order.push(x.level1_code)}tree[x.level1_code].children.push(x)}for(var i=0;i<order.length;i++){var code=order[i],g=tree[code];h+='<div class="tree-group"><button class="tree-parent" onclick="toggleTree(this,\''+code+'\')" ondblclick="filterByCat(null,\''+code+'\',this)"><span class="arr">&#9654;</span>'+esc(g.name)+'</button><div class="tree-children" id="treeC_'+code+'">';for(var j=0;j<g.children.length;j++){var c2=g.children[j];h+='<button class="tree-child" onclick="filterByCat('+c2.id+',null,this)">'+esc(c2.level2_name)+'</button>'}h+='</div></div>'}cf.innerHTML=h}
 
-function toggleTreeL1(btn,code){var list=document.getElementById("treeL2_"+code);var arrow=btn.querySelector(".arrow");if(list.classList.contains("open")){list.classList.remove("open");arrow.classList.remove("open")}else{list.classList.add("open");arrow.classList.add("open")}}
+function toggleTree(btn,code){var list=document.getElementById("treeC_"+code);var arrow=btn.querySelector(".arr");if(list.classList.contains("open")){list.classList.remove("open");arrow.classList.remove("open")}else{list.classList.add("open");arrow.classList.add("open")}}
 
-function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-btn,.tree-l1-btn,.tree-l2-btn");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
-
-function buildCategoryDropdown(){var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择分类</option>';var lastL1="";for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(x.level1_name!==lastL1){if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<optgroup label="'+x.level1_code+'. '+x.level1_name+'">';lastL1=x.level1_name}sel.innerHTML+='<option value="'+x.id+'">'+x.level2_code+' '+x.level2_name+'</option>'}if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<option value="__ADD__" style="color:#2E75B6;font-weight:600">+ 新增分类...</option>';var addSel=document.getElementById("addCatParent");addSel.innerHTML="";var seen={};for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!seen[x.level1_code]){addSel.innerHTML+='<option value="'+x.level1_code+'" data-name="'+esc(x.level1_name)+'">'+x.level1_code+'. '+x.level1_name+'</option>';seen[x.level1_code]=true}}}
-
-function loadSystemTags(){apiGet("/api/tags").then(function(data){if(Array.isArray(data)){allSystemTags=[];for(var i=0;i<data.length;i++)allSystemTags.push(data[i].tag)}})}
-function renderTagEditor(){var c=document.getElementById("tagEditor");var h="";for(var i=0;i<editingTags.length;i++){var t=editingTags[i];var isAi=editingSuggestedTags.indexOf(t)>=0;h+='<span class="tag-chip'+(isAi?" ai-tag":"")+'">'+esc(t)+' <span class="tag-remove" onclick="removeEditTag('+i+')">&times;</span></span>'}if(!editingTags.length)h='<span style="color:#ccc;font-size:12px">暂无标签</span>';c.innerHTML=h;refreshTagDropdown()}
-function refreshTagDropdown(){var sel=document.getElementById("tagDropdown");sel.innerHTML='<option value="">-- 添加标签 --</option>';var used={};for(var i=0;i<editingTags.length;i++)used[editingTags[i]]=true;for(var i=0;i<allSystemTags.length;i++){var t=allSystemTags[i];if(!used[t])sel.innerHTML+='<option value="'+esc(t)+'">'+esc(t)+'</option>'}sel.innerHTML+='<option value="__NEW__">+ 新建标签...</option>'}
-function onTagDropdownChange(){var sel=document.getElementById("tagDropdown");var val=sel.value;if(!val)return;if(val==="__NEW__"){sel.value="";var n=prompt("请输入新标签名称:");if(n){n=n.trim();if(n&&editingTags.indexOf(n)<0){editingTags.push(n);if(allSystemTags.indexOf(n)<0)allSystemTags.push(n);renderTagEditor()}}return}if(editingTags.indexOf(val)<0)editingTags.push(val);sel.value="";renderTagEditor()}
-function removeEditTag(i){editingTags.splice(i,1);renderTagEditor()}
-function getEditingTagsArray(){return editingTags.slice()}
-
-function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
-
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg="暂无知识点";if(currentStatus||currentType||currentCategory||currentLevel1||currentSearch)msg="当前筛选条件下无结果";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(currentStatus||currentType||currentCategory||currentLevel1||currentSearch?'<a href="#" onclick="clearAllFilters();return false;">清除筛选条件</a>':'请先运行[处理新文件.bat]')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-group-header"><span>'+esc(fn)+'</span><span class="file-count">本页'+(fc[kp.source_file_id]||0)+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
-
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push("状态: "+SN[currentStatus]);if(currentType)p.push("类型: "+TN[currentType]);if(currentCategory||currentLevel1)p.push("分类已筛选");if(currentSearch)p.push("搜索: "+currentSearch);if(p.length)info.innerHTML='<div class="active-filters">当前筛选: <span>'+p.join("</span> <span>")+'</span><span class="clear-link" onclick="clearAllFilters()">清除全部</span></div>';else info.innerHTML=""}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentPage=1;document.getElementById("searchInput").value="";var all=document.querySelectorAll(".filter-btn,.tree-l1-btn,.tree-l2-btn");for(var i=0;i<all.length;i++)all[i].classList.remove("active");var groups=document.querySelectorAll(".filter-group");for(var g=0;g<groups.length;g++){var f=groups[g].querySelector(".filter-btn");if(f)f.classList.add("active")}loadKnowledgePoints()}
-
-function renderCard(kp,seq){var tp=kp.content_type||"policy",tn=TN[tp]||tp,tl=TL[tp]||"",sel=selectedIds[kp.id],sn=SN[kp.review_status]||kp.review_status;var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}if(!ex)ex={};var tags=getDisplayTags(kp);var cp=(kp.level1_name&&kp.level2_name)?(kp.level2_code+" "+kp.level1_name+" > "+kp.level2_name):"未分类";var conf=kp.suggested_category_id?"high":"low";var kf=getKeyFields(tp,ex);var th="";for(var t=0;t<tags.length;t++)th+='<span class="tag">'+esc(tags[t])+'</span>';var ah="";if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>'}else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warning btn-sm" onclick="openHistory('+kp.id+')">修改历史</button><button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button>'}else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:#52c41a;border-color:#52c41a" onclick="restoreToPending('+kp.id+')">恢复到待审核</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button>'}else{ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button>'}var dis=kp.review_status!=="pending"?"disabled":"";var confBadge=kp.review_status==="pending"?'<span class="confidence-badge '+conf+'">'+(conf==="high"?"分类匹配":"待确认分类")+'</span>':"";return'<div class="kp-card type-'+tp+(sel?" selected":"")+'" id="card-'+kp.id+'"><div style="display:flex;align-items:flex-start;margin-bottom:10px"><input type="checkbox" class="kp-checkbox" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" '+dis+'><span class="kp-seq">'+seq+'</span><div style="flex:1"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="type-badge '+tp+'">'+tl+" "+tn+'</span> <span class="status-badge '+kp.review_status+'">'+sn+'</span> <span class="category-path">'+esc(cp)+"</span> "+confBadge+"</div></div></div>"+(kp.original_excerpt?'<div class="kp-section"><div class="kp-section-title">原文摘录</div><div class="kp-excerpt">'+esc(kp.original_excerpt)+"</div></div>":"")+(kf?'<div class="kp-section"><div class="kp-section-title">AI提取内容</div><div class="kp-extracted">'+kf+"</div></div>":"")+(th?'<div class="kp-section"><div class="kp-section-title">标签</div><div class="tags">'+th+"</div></div>":"")+'<div class="kp-actions">'+ah+' <button class="detail-toggle" onclick="toggleDetail('+kp.id+')">展开全部</button></div><div class="kp-detail" id="detail-'+kp.id+'"><pre style="background:#fafafa;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap">'+esc(JSON.stringify(ex,null,2))+"</pre></div></div>"}
-
-function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+fs[i][1]+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
-
-function confirmKp(id){apiPost("/api/knowledge-points/"+id+"/confirm").then(function(r){if(r.success){showToast("已确认入库","success");delete selectedIds[id];refreshData()}else showToast("失败:"+(r.error||""),"error")})}
-function ignoreKp(id){var reason=prompt("请输入忽略原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:reason}).then(function(r){if(r.success){showToast("已忽略","info");delete selectedIds[id];refreshData()}})}
-function restoreToPending(id){if(!confirm("确认恢复到待审核?"))return;apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复","success");refreshData()}else showToast("失败:"+(r.error||""),"error")})}
-function removeConfirmed(id){var reason=prompt("确认将此知识点从已入库中移除?\n请输入移除原因:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:"[从已入库移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除","info");refreshData()}else showToast("失败:"+(r.error||""),"error")})}
-
-function openHistory(id){document.getElementById("historyContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("historyModal").classList.add("open");apiGet("/api/knowledge-points/"+id+"/history").then(function(list){var c=document.getElementById("historyContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无修改记录</h3></div>';return}var h="";for(var i=0;i<list.length;i++){var it=list[i],fields=it.edited_fields||{};h+='<div class="history-item"><div class="history-time">'+esc(it.created_at)+'</div><div class="history-summary">'+esc(it.edit_summary||"人工编辑")+'</div>';var fks=Object.keys(fields);for(var j=0;j<fks.length;j++){var fn=fks[j],ch=fields[fn],lab=FIELD_NAMES[fn]||fn;h+='<div class="history-field"><span class="field-label">'+esc(lab)+'</span>: <span class="old-val">'+esc(fmtVal(fn,ch.old))+'</span> -> <span class="new-val">'+esc(fmtVal(fn,ch.new))+'</span></div>'}h+='<button class="btn btn-sm btn-warning" style="margin-top:8px" onclick="restoreVer('+id+','+it.id+')">回滚到此版本之前</button></div>'}c.innerHTML=h})}
-function fmtVal(fn,val){if(val===null||val===undefined)return"(空)";if(fn==="final_tags"){if(Array.isArray(val))return val.join(", ");try{var a=JSON.parse(val);if(Array.isArray(a))return a.join(", ")}catch(e){}return String(val)}if(fn==="final_category_id"){if(!val)return"(未选择)";for(var i=0;i<allCategories.length;i++){if(allCategories[i].id==val)return allCategories[i].level2_code+" "+allCategories[i].level2_name}return"#"+val}return String(val)}
-function restoreVer(kid,hid){if(!confirm("确认回滚?"))return;apiPost("/api/knowledge-points/"+kid+"/restore-version/"+hid).then(function(r){if(r.success){showToast("回滚成功","success");closeModal("historyModal");loadKnowledgePoints()}else showToast("失败:"+(r.error||""),"error")})}
-
-/* === 新增分类 === */
-function onAddCatLevelChange(){var v=document.getElementById("addCatLevel").value;document.getElementById("addCatParentField").style.display=v==="level2"?"block":"none";document.getElementById("addCatL1NameField").style.display=v==="level1"?"block":"none"}
-function openAddCatModal(){document.getElementById("addCatLevel").value="level2";onAddCatLevelChange();document.getElementById("addCatName").value="";document.getElementById("addCatDesc").value="";document.getElementById("addCatL1Name").value="";document.getElementById("addCatModal").classList.add("open")}
-function submitAddCategory(){var level=document.getElementById("addCatLevel").value;var l2Name=document.getElementById("addCatName").value.trim();var desc=document.getElementById("addCatDesc").value.trim();if(!l2Name){showToast("请输入分类名称","error");return}var body={level2_name:l2Name,description:desc};if(level==="level1"){var l1Name=document.getElementById("addCatL1Name").value.trim();if(!l1Name){showToast("请输入一级分类名称","error");return}body.is_new_level1=true;body.level1_name=l1Name;body.level1_code=""}else{var ps=document.getElementById("addCatParent");body.level1_code=ps.value;body.level1_name=ps.options[ps.selectedIndex].getAttribute("data-name")}apiPost("/api/categories/add",body).then(function(r){if(r.success){showToast("已新增: "+r.category.level2_code+" "+r.category.level2_name,"success");closeModal("addCatModal");loadCategories();loadSystemTags();document.getElementById("editCategory").value=r.category.id}else showToast("失败:"+(r.error||""),"error")})}
+function buildCategoryDropdown(){var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择分类</option>';var lastL1="";for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(x.level1_name!==lastL1){if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<optgroup label="'+esc(x.level1_name)+'">';lastL1=x.level1_name}sel.innerHTML+='<option value="'+x.id+'">'+esc(x.level2_name)+'</option>'}if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<option value="__ADD__" style="color:var(--primary);font-weight:600">+ 新增分类...</option>';var addSel=document.getElementById("addCatParent");addSel.innerHTML="";var seen={};for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!seen[x.level1_code]){addSel.innerHTML+='<option value="'+x.level1_code+'" data-name="'+esc(x.level1_name)+'">'+esc(x.level1_name)+'</option>';seen[x.level1_code]=true}}}
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
-/* === AI建议弹窗 === */
-function openSuggestionsModal(){document.getElementById("suggestionsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("suggestionsModal").classList.add("open");apiGet("/api/architecture-suggestions").then(function(list){var c=document.getElementById("suggestionsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无待处理建议</h3></div>';return}var h="";for(var i=0;i<list.length;i++){var s=list[i];var typeName={"add_level1":"新增一级分类",add_level2:"新增二级分类",rename:"重命名分类",split:"拆分分类",merge:"合并分类"}[s.suggestion_type]||s.suggestion_type;h+='<div class="sg-card"><div class="sg-title">'+esc(typeName)+": "+esc(s.suggested_name)+'</div><div class="sg-meta">建议层级: '+esc(s.suggested_level)+' | 时间: '+esc(s.created_at)+'</div><div class="sg-reason">'+esc(s.reason)+'</div><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="approveSg('+s.id+')">采纳</button><button class="btn btn-danger btn-sm" onclick="rejectSg('+s.id+')">忽略</button></div></div>'}c.innerHTML=h})}
-function approveSg(id){apiPost("/api/architecture-suggestions/"+id+"/approve").then(function(r){if(r.success){showToast("已采纳,请手动新增对应分类","success");openSuggestionsModal();loadStatistics()}})}
-function rejectSg(id){apiPost("/api/architecture-suggestions/"+id+"/reject").then(function(r){if(r.success){showToast("已忽略","info");openSuggestionsModal();loadStatistics()}})}
+/* === Filters === */
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);loadKnowledgePoints()}
+function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
+function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
+function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();loadKnowledgePoints()}
+function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 
-/* === 分类统计概览 === */
-function openStatsModal(){document.getElementById("statsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("statsModal").classList.add("open");apiGet("/api/categories/stats").then(function(list){var c=document.getElementById("statsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无分类数据</h3></div>';return}var maxCount=0;for(var i=0;i<list.length;i++){if(list[i].kp_count>maxCount)maxCount=list[i].kp_count}var h="",lastL1="";for(var i=0;i<list.length;i++){var s=list[i];if(s.level1_name!==lastL1){h+='<div style="font-weight:600;font-size:14px;margin:12px 0 6px;color:#333;border-bottom:1px solid #e8e8e8;padding-bottom:4px">'+s.level1_code+'. '+esc(s.level1_name)+'</div>';lastL1=s.level1_name}var barW=maxCount>0?Math.max(2,Math.round(s.kp_count/maxCount*200)):2;var cls=s.kp_count===0?"stat-empty":(s.kp_count>30?"stat-overload":"");h+='<div class="stat-row"><span style="min-width:160px;color:#555">'+s.level2_code+' '+esc(s.level2_name)+'</span><div class="stat-bar" style="width:'+barW+'px"></div><span class="stat-count '+cls+'">'+s.kp_count+'</span></div>'}c.innerHTML=h})}
+/* === Load Knowledge Points === */
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;if(!confirm("确认将"+ids.length+"个知识点入库?"))return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})}
-function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
-function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-checkbox:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
-function updateBatch(){var n=Object.keys(selectedIds).length;var b=document.getElementById("btnBatch");b.disabled=n===0;b.textContent=n>0?"批量确认("+n+")":"批量确认入库"}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+
+/* === Render Card === */
+function renderCard(kp,seq){
+  var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
+  var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
+  var matched=!!kp.suggested_category_id;
+
+  /* Three-layer tags */
+  var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
+  var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
+  var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
+  var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
+
+  /* Tag chips HTML */
+  var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
+  var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
+  var kwH="";for(var k=0;k<kws.length&&k<8;k++)kwH+='<span class="tag-chip tag-kw">'+esc(kws[k])+'</span>';if(kws.length>8)kwH+='<span class="tag-chip tag-kw">+'+( kws.length-8)+'</span>';
+
+  /* AI key fields */
+  var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}
+  if(!ex)ex={};
+  var kf=getKeyFields(tp,ex);
+
+  /* Actions */
+  var ah="";var dis=kp.review_status!=="pending"?"disabled":"";
+  if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+  else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button><button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+  else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+
+  return '<div class="kp-card'+(sel?" selected":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" '+dis+'><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
+  +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
+  +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
+  +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
+  +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span></div>'
+  +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
+  +(kf?'<div class="kp-fields">'+kf+'</div>':"")
+  +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
+  +'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
+}
+
+function getDimName(code){if(!tagDefs||!tagDefs.layer2)return code;var d=tagDefs.layer2[code];return d?d.name:code}
+
+function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+esc(fs[i][1])+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
+
+/* === Actions === */
+function confirmKp(id){apiPost("/api/knowledge-points/"+id+"/confirm").then(function(r){if(r.success){showToast("已确认入库","success");delete selectedIds[id];refreshData()}})}
+function ignoreKp(id){var reason=prompt("忽略原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:reason}).then(function(r){if(r.success){showToast("已忽略","info");delete selectedIds[id];refreshData()}})}
+function deleteKp(id){showConfirm("永久删除","此操作不可恢复，确定要永久删除这条知识点吗?",function(ok){if(!ok)return;apiDel("/api/knowledge-points/"+id).then(function(r){if(r.success){showToast("已永久删除","info");delete selectedIds[id];refreshData()}})})}
+function removeConfirmed(id){var reason=prompt("将此知识点从已入库中移除\n请输入原因:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除","info");refreshData()}})}
+function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复到待审核","success");refreshData()}})}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
 
-function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){editingKpStatus=kp.review_status||"pending";document.getElementById("editKpId").value=id;document.getElementById("editTitle").value=kp.title||"";document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";document.getElementById("editExcerpt").value=kp.original_excerpt||"";var aiC=kp.ai_extracted_content;if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}document.getElementById("editAiContent").value=aiC?JSON.stringify(aiC,null,2):"";document.getElementById("editNotes").value=kp.reviewer_notes||"";var st=parseTags(kp.suggested_tags),ft=parseTags(kp.final_tags);editingSuggestedTags=st.slice();editingTags=ft.length>0?ft.slice():st.slice();renderTagEditor();var title,acts='<button class="btn" onclick="closeModal(\'editModal\')">取消</button>';if(editingKpStatus==="pending"){title="编辑知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存</button><button class="btn btn-success" onclick="saveAndConfirm()">保存并确认</button>'}else if(editingKpStatus==="confirmed"){title="编辑已入库知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存修改</button>'}else{title="查看知识点";acts='<button class="btn" onclick="closeModal(\'editModal\')">关闭</button>'}document.getElementById("editModalTitle").textContent=title;document.getElementById("editModalActions").innerHTML=acts;document.getElementById("editModal").classList.add("open")})}
-function saveEdit(){var id=document.getElementById("editKpId").value;var aiText=document.getElementById("editAiContent").value;var aiObj=null;if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容格式有误,请检查引号和逗号是否完整","error");return}}var d={title:document.getElementById("editTitle").value,final_category_id:parseInt(document.getElementById("editCategory").value)||null,final_tags:getEditingTagsArray(),original_excerpt:document.getElementById("editExcerpt").value,reviewer_notes:document.getElementById("editNotes").value};if(aiObj)d.ai_extracted_content=aiObj;apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeModal("editModal");loadSystemTags();loadKnowledgePoints()}else showToast("保存失败","error")})}
-function saveAndConfirm(){var id=document.getElementById("editKpId").value,tags=getEditingTagsArray(),catId=parseInt(document.getElementById("editCategory").value)||null;var aiText=document.getElementById("editAiContent").value;var aiObj=null;if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容格式有误,请检查","error");return}}var upd={title:document.getElementById("editTitle").value,final_tags:tags,final_category_id:catId,original_excerpt:document.getElementById("editExcerpt").value};if(aiObj)upd.ai_extracted_content=aiObj;apiPut("/api/knowledge-points/"+id,upd).then(function(){apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:catId,final_tags:tags,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){if(r.success){showToast("已保存并确认","success");closeModal("editModal");loadSystemTags();refreshData()}})})}
+/* === Batch === */
+function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
+function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){showToast("已忽略"+r.ignored+"个","info");selectedIds={};refreshData()}})})}
+function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
+function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
+function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
+function updateBatch(){var n=Object.keys(selectedIds).length;var bc=document.getElementById("btnBatch"),bi=document.getElementById("btnIgnore"),bd=document.getElementById("btnDelete");bc.disabled=n===0;bi.disabled=n===0;bd.disabled=n===0;bc.textContent=n>0?"确认入库("+n+")":"确认入库";bi.textContent=n>0?"批量忽略("+n+")":"批量忽略";bd.textContent=n>0?"批量删除("+n+")":"批量删除"}
 
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentPage=1;document.getElementById("searchInput").value="";resetAllFilterBtns();setActive(btn);loadKnowledgePoints()}
-function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
-function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-group").querySelectorAll(".filter-btn");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
-function resetAllFilterBtns(){var typeGroup=document.querySelectorAll(".filter-group")[1];if(typeGroup){var bs=typeGroup.querySelectorAll(".filter-btn");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");var f=typeGroup.querySelector(".filter-btn");if(f)f.classList.add("active")}var cf=document.getElementById("categoryFilters");if(cf){var all=cf.querySelectorAll(".filter-btn,.tree-l1-btn,.tree-l2-btn");for(var i=0;i<all.length;i++)all[i].classList.remove("active");var f=cf.querySelector(".filter-btn");if(f)f.classList.add("active")}}
+/* === Edit Modal === */
+function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){
+  editingKpStatus=kp.review_status||"pending";
+  document.getElementById("editKpId").value=id;
+  document.getElementById("editTitle").value=kp.title||"";
+  document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";
+  document.getElementById("editExcerpt").value=kp.original_excerpt||"";
+  var aiC=kp.ai_extracted_content;if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}
+  document.getElementById("editAiContent").value=aiC?JSON.stringify(aiC,null,2):"";
+  document.getElementById("editNotes").value=kp.reviewer_notes||"";
+  document.getElementById("editReadiness").value=kp.content_readiness||"draft";
+  document.getElementById("editAuthority").value=kp.source_authority||"firsthand";
+
+  /* Layer 1 tags */
+  var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);
+  editL1Tags=ft.length>0?ft.slice():st.slice();
+  renderL1Editor();buildL1Dropdown();
+
+  /* Layer 2 attrs */
+  var fa=parseObj(kp.final_attribute_tags);var sa=parseObj(kp.suggested_attribute_tags);
+  editL2Attrs=Object.keys(fa).length>0?JSON.parse(JSON.stringify(fa)):JSON.parse(JSON.stringify(sa));
+  renderL2Editor(kp.content_type);
+
+  /* Keywords */
+  var fk=parseTags(kp.final_keywords);var sk=parseTags(kp.suggested_keywords);
+  editKws=fk.length>0?fk.slice():sk.slice();
+  renderKwEditor();
+
+  var title,acts='<button class="btn" onclick="closeModal(\'editModal\')">取消</button>';
+  if(editingKpStatus==="pending"){title="编辑知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存</button><button class="btn btn-success" onclick="saveAndConfirm()">保存并确认</button>'}
+  else if(editingKpStatus==="confirmed"){title="编辑已入库知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存修改</button>'}
+  else{title="查看知识点";acts='<button class="btn" onclick="closeModal(\'editModal\')">关闭</button>'}
+  document.getElementById("editModalTitle").textContent=title;
+  document.getElementById("editModalActions").innerHTML=acts;
+  document.getElementById("editModal").classList.add("open");
+})}
+
+function renderL1Editor(){var c=document.getElementById("layer1Editor");var h="";for(var i=0;i<editL1Tags.length;i++){h+='<span class="tag-chip '+tagClass(editL1Tags[i])+'">'+esc(editL1Tags[i])+'<span class="tag-x" onclick="removeL1('+i+')">&times;</span></span>'}if(!h)h='<span style="color:var(--text-muted);font-size:12px">暂无标签</span>';c.innerHTML=h}
+
+function buildL1Dropdown(){var sel=document.getElementById("layer1Dropdown");sel.innerHTML='<option value="">+ 添加分类标签...</option>';if(!tagDefs||!tagDefs.layer1)return;var groups=Object.keys(tagDefs.layer1).sort();for(var g=0;g<groups.length;g++){var gc=groups[g],grp=tagDefs.layer1[gc];sel.innerHTML+='<optgroup label="'+gc+' '+esc(grp.group_name)+'">';for(var t=0;t<grp.tags.length;t++){var tn=grp.tags[t].name;var used=false;for(var u=0;u<editL1Tags.length;u++){if(editL1Tags[u]===tn){used=true;break}}if(!used)sel.innerHTML+='<option value="'+esc(tn)+'">'+esc(tn)+'</option>'}sel.innerHTML+='</optgroup>'}}
+
+function onL1Add(){var sel=document.getElementById("layer1Dropdown");var val=sel.value;if(!val)return;editL1Tags.push(val);sel.value="";renderL1Editor();buildL1Dropdown()}
+function removeL1(i){editL1Tags.splice(i,1);renderL1Editor();buildL1Dropdown()}
+
+function renderL2Editor(contentType){var c=document.getElementById("layer2Editor");if(!tagDefs||!tagDefs.layer2){c.innerHTML="<p style='color:var(--text-muted);font-size:12px'>标签定义未加载</p>";return}var h="";var dims=Object.keys(tagDefs.layer2);for(var i=0;i<dims.length;i++){var dk=dims[i],dim=tagDefs.layer2[dk];var applies=dim.applies_to;if(applies&&applies.length>0){var match=false;for(var a=0;a<applies.length;a++){if(applies[a]===contentType){match=true;break}}if(!match)continue}var cur=editL2Attrs[dk]||"";if(dim.values&&dim.values.length>0){h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><select onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px"><option value="">--</option>';for(var v=0;v<dim.values.length;v++){var sv=dim.values[v];h+='<option value="'+esc(sv)+'"'+(cur===sv?" selected":"")+'>'+esc(sv)+'</option>'}h+='</select></div>'}else{h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><input type="text" value="'+esc(cur)+'" onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px" placeholder="自由填写"></div>'}}c.innerHTML=h||"<p style='color:var(--text-muted);font-size:12px'>该类型无属性维度</p>"}
+
+function renderKwEditor(){var c=document.getElementById("kwEditor");var h="";for(var i=0;i<editKws.length;i++){h+='<span class="tag-chip tag-kw">'+esc(editKws[i])+'<span class="tag-x" onclick="removeKw('+i+')">&times;</span></span>'}if(!h)h='<span style="color:var(--text-muted);font-size:12px">暂无关键词</span>';c.innerHTML=h}
+function addKw(){var inp=document.getElementById("kwInput");var v=inp.value.trim();if(!v)return;var dup=false;for(var i=0;i<editKws.length;i++){if(editKws[i]===v){dup=true;break}}if(!dup)editKws.push(v);inp.value="";renderKwEditor()}
+function removeKw(i){editKws.splice(i,1);renderKwEditor()}
+
+function saveEdit(){var id=document.getElementById("editKpId").value;
+  var aiText=document.getElementById("editAiContent").value;var aiObj=null;
+  if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
+  /* Collect L2 attrs - remove empty */
+  var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
+  var d={title:document.getElementById("editTitle").value,
+    final_category_id:parseInt(document.getElementById("editCategory").value)||null,
+    final_category_tags:editL1Tags.slice(),
+    final_attribute_tags:cleanL2,
+    final_keywords:editKws.slice(),
+    content_readiness:document.getElementById("editReadiness").value,
+    source_authority:document.getElementById("editAuthority").value,
+    original_excerpt:document.getElementById("editExcerpt").value,
+    reviewer_notes:document.getElementById("editNotes").value};
+  if(aiObj)d.ai_extracted_content=aiObj;
+  apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeModal("editModal");loadKnowledgePoints()}else showToast("保存失败: "+(r.error||""),"error")})}
+
+function saveAndConfirm(){var id=document.getElementById("editKpId").value;
+  var aiText=document.getElementById("editAiContent").value;var aiObj=null;
+  if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
+  var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
+  var upd={title:document.getElementById("editTitle").value,
+    final_category_id:parseInt(document.getElementById("editCategory").value)||null,
+    final_category_tags:editL1Tags.slice(),final_attribute_tags:cleanL2,final_keywords:editKws.slice(),
+    content_readiness:document.getElementById("editReadiness").value,source_authority:document.getElementById("editAuthority").value,
+    original_excerpt:document.getElementById("editExcerpt").value};
+  if(aiObj)upd.ai_extracted_content=aiObj;
+  apiPut("/api/knowledge-points/"+id,upd).then(function(){
+    apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:upd.final_category_id,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){
+      if(r.success){showToast("已保存并确认","success");closeModal("editModal");refreshData()}})})}
+
+/* === History Modal === */
+function openHistory(id){document.getElementById("historyContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("historyModal").classList.add("open");apiGet("/api/knowledge-points/"+id+"/history").then(function(list){var c=document.getElementById("historyContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无修改记录</h3></div>';return}var h="";for(var i=0;i<list.length;i++){var it=list[i],fields=it.edited_fields||{};h+='<div class="history-item"><div class="ht">'+esc(it.created_at)+'</div><div class="hs">'+esc(it.edit_summary||"人工编辑")+'</div>';var fks=Object.keys(fields);for(var j=0;j<fks.length;j++){var fn=fks[j],ch=fields[fn],lab=FIELD_NAMES[fn]||fn;h+='<div class="history-field"><span class="fl">'+esc(lab)+'</span>: <span class="ov">'+esc(fmtVal(fn,ch.old))+'</span> -> <span class="nv">'+esc(fmtVal(fn,ch.new))+'</span></div>'}h+='<button class="btn btn-warn btn-sm" style="margin-top:8px" onclick="restoreVer('+id+','+it.id+')">回滚到此版本</button></div>'}c.innerHTML=h})}
+function fmtVal(fn,val){if(val===null||val===undefined)return"(空)";if(fn==="final_tags"||fn==="final_category_tags"||fn==="final_keywords"){if(Array.isArray(val))return val.join(", ");try{var a=JSON.parse(val);if(Array.isArray(a))return a.join(", ")}catch(e){}return String(val)}if(fn==="final_attribute_tags"){if(typeof val==="object")return JSON.stringify(val);return String(val)}if(fn==="final_category_id"){if(!val)return"(未选择)";for(var i=0;i<allCategories.length;i++){if(allCategories[i].id==val)return allCategories[i].level2_name}return"#"+val}if(fn==="content_readiness")return RN[val]||val;if(fn==="source_authority")return AN[val]||val;return String(val)}
+function restoreVer(kid,hid){showConfirm("回滚确认","确认回滚到此历史版本?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+kid+"/restore-version/"+hid).then(function(r){if(r.success){showToast("回滚成功","success");closeModal("historyModal");loadKnowledgePoints()}})})}
+
+/* === Add Category === */
+function onAddCatLevelChange(){var v=document.getElementById("addCatLevel").value;document.getElementById("addCatParentField").style.display=v==="level2"?"block":"none";document.getElementById("addCatL1NameField").style.display=v==="level1"?"block":"none"}
+function openAddCatModal(){document.getElementById("addCatLevel").value="level2";onAddCatLevelChange();document.getElementById("addCatName").value="";document.getElementById("addCatDesc").value="";document.getElementById("addCatL1Name").value="";document.getElementById("addCatModal").classList.add("open")}
+function submitAddCategory(){var level=document.getElementById("addCatLevel").value;var l2Name=document.getElementById("addCatName").value.trim();var desc=document.getElementById("addCatDesc").value.trim();if(!l2Name){showToast("请输入分类名称","error");return}var body={level2_name:l2Name,description:desc};if(level==="level1"){var l1Name=document.getElementById("addCatL1Name").value.trim();if(!l1Name){showToast("请输入一级分类名称","error");return}body.is_new_level1=true;body.level1_name=l1Name;body.level1_code=""}else{var ps=document.getElementById("addCatParent");body.level1_code=ps.value;body.level1_name=ps.options[ps.selectedIndex].getAttribute("data-name")}apiPost("/api/categories/add",body).then(function(r){if(r.success){showToast("已新增: "+r.category.level2_name,"success");closeModal("addCatModal");loadCategories();document.getElementById("editCategory").value=r.category.id}else showToast("失败:"+(r.error||""),"error")})}
+
+/* === AI Suggestions === */
+function openSuggestionsModal(){document.getElementById("suggestionsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("suggestionsModal").classList.add("open");apiGet("/api/architecture-suggestions").then(function(list){var c=document.getElementById("suggestionsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无待处理建议</h3></div>';return}var h="";var typeNames={"add_level1":"新增一级分类",add_level2:"新增二级分类",rename:"重命名",split:"拆分",merge:"合并"};for(var i=0;i<list.length;i++){var s=list[i];h+='<div class="sg-card"><div class="sg-t">'+esc(typeNames[s.suggestion_type]||s.suggestion_type)+": "+esc(s.suggested_name)+'</div><div class="sg-m">层级: '+esc(s.suggested_level)+' | '+esc(s.created_at)+'</div><div class="sg-r">'+esc(s.reason)+'</div><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="approveSg('+s.id+')">采纳</button><button class="btn btn-danger btn-sm" onclick="rejectSg('+s.id+')">忽略</button></div></div>'}c.innerHTML=h})}
+function approveSg(id){apiPost("/api/architecture-suggestions/"+id+"/approve").then(function(r){if(r.success){showToast("已采纳","success");openSuggestionsModal();loadStatistics()}})}
+function rejectSg(id){apiPost("/api/architecture-suggestions/"+id+"/reject").then(function(r){if(r.success){showToast("已忽略","info");openSuggestionsModal();loadStatistics()}})}
+
+/* === Stats Modal === */
+function openStatsModal(){document.getElementById("statsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("statsModal").classList.add("open");apiGet("/api/categories/stats").then(function(list){var c=document.getElementById("statsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无分类数据</h3></div>';return}var maxC=0;for(var i=0;i<list.length;i++){if(list[i].kp_count>maxC)maxC=list[i].kp_count}var h="",lastL1="";for(var i=0;i<list.length;i++){var s=list[i];if(s.level1_name!==lastL1){h+='<div style="font-weight:600;font-size:14px;margin:14px 0 6px;color:var(--text);border-bottom:1px solid var(--border-light);padding-bottom:4px">'+esc(s.level1_name)+'</div>';lastL1=s.level1_name}var bw=maxC>0?Math.max(2,Math.round(s.kp_count/maxC*180)):2;h+='<div class="stat-row"><span style="min-width:140px;color:var(--text-secondary);font-size:13px">'+esc(s.level2_name)+'</span><div class="stat-bar" style="width:'+bw+'px"></div><span class="stat-count'+(s.kp_count===0?" stat-empty":"")+'">'+s.kp_count+'</span></div>'}c.innerHTML=h})}
+
+/* === Pagination === */
 function renderPagination(total,page,pp){var pages=Math.ceil(total/pp),c=document.getElementById("pagination");if(pages<=1){c.innerHTML="";return}var h="";if(page>1)h+='<button onclick="goToPage('+(page-1)+')">上一页</button>';for(var i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-2&&i<=page+2))h+='<button class="'+(i===page?"active":"")+'" onclick="goToPage('+i+')">'+i+"</button>";else if(i===page-3||i===page+3)h+='<span class="page-info">...</span>'}if(page<pages)h+='<button onclick="goToPage('+(page+1)+')">下一页</button>';h+='<span class="page-info">共'+total+'条</span>';c.innerHTML=h}
 function goToPage(p){currentPage=p;loadKnowledgePoints();document.querySelector(".content").scrollTo({top:0,behavior:"smooth"})}
 function refreshData(){selectedIds={};document.getElementById("selectAll").checked=false;loadStatistics();loadKnowledgePoints()}

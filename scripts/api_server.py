@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v1.1.0 - 编辑历史/分类管理/标签过滤/AI建议分类/全文搜索
+版本：v2.0.0 - 三层标签审核/物理删除/批量操作/标签定义API
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -33,29 +33,30 @@ def _parse(v):
 def _safe(item):
     r = {}
     for k,v in item.items(): r[k] = v.decode("utf-8",errors="replace") if isinstance(v,bytes) else v
-    for f in ["ai_extracted_content","suggested_tags","final_tags","domain_tags"]:
+    # 解析所有JSON字段
+    for f in ["ai_extracted_content","suggested_tags","final_tags","domain_tags",
+              "suggested_category_tags","final_category_tags",
+              "suggested_attribute_tags","final_attribute_tags",
+              "suggested_keywords","final_keywords"]:
         if f in r: r[f] = _parse(r[f])
     return r
 
-# === 标签质量过滤 ===
+# === 标签质量过滤（保留，用于旧标签兼容） ===
 _POISON_EXACT = {"乡村振兴","土地政策","项目管理","工作","文件","内容","要求","标准","规定",
     "报送","填报","附件","详见","通知","印发","转发","函","编号","落实","推进","加强"}
 _POISON_PATTERNS = [
-    re.compile(r'^\d+[%％]'),       # 以数字百分比开头: "5%标准"
-    re.compile(r'^\d+[\.\d]*$'),    # 纯数字: "300"
-    re.compile(r'^\d+[万亿元]'),    # 数值金额: "300万"
-    re.compile(r'第[一二三四五六七八九十\d]+[条款项章节]'),  # "第五条"
-    re.compile(r'^[一二三四五六七八九十]+、'),  # "一、xxx"
+    re.compile(r'^\d+[%％]'),
+    re.compile(r'^\d+[\.\d]*$'),
+    re.compile(r'^\d+[万亿元]'),
+    re.compile(r'第[一二三四五六七八九十\d]+[条款项章节]'),
+    re.compile(r'^[一二三四五六七八九十]+、'),
 ]
 
 def _is_valid_tag(tag):
-    if not tag or len(tag) < 2 or len(tag) > 14:
-        return False
-    if tag in _POISON_EXACT:
-        return False
+    if not tag or len(tag) < 2 or len(tag) > 14: return False
+    if tag in _POISON_EXACT: return False
     for p in _POISON_PATTERNS:
-        if p.search(tag):
-            return False
+        if p.search(tag): return False
     return True
 
 @app.before_request
@@ -69,6 +70,10 @@ def index():
     if REVIEW_HTML: return Response(REVIEW_HTML, mimetype="text/html; charset=utf-8")
     return "<h1>review.html not found</h1>",404
 
+# ================================================================
+# 知识点 CRUD
+# ================================================================
+
 @app.route("/api/knowledge-points", methods=["GET"])
 def get_kps():
     try:
@@ -77,6 +82,7 @@ def get_kps():
             category_id=request.args.get("category",None,type=int),
             level1_code=request.args.get("level1",None),
             search_query=request.args.get("search",None),
+            content_readiness=request.args.get("readiness",None),
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         r["items"] = [_safe(i) for i in r["items"]]
         return jsonify(r)
@@ -116,12 +122,26 @@ def ignore(kid):
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+# v2.0.0 新增：物理删除
+@app.route("/api/knowledge-points/<int:kid>", methods=["DELETE"])
+def delete_kp(kid):
+    try:
+        kp = db.get_knowledge_point(kid)
+        if not kp: return jsonify({"error":"not found"}),404
+        db.delete_knowledge_point(kid)
+        return jsonify({"success":True})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
 @app.route("/api/knowledge-points/<int:kid>", methods=["PUT"])
 def update(kid):
     try:
         d = request.get_json() or {}
         kp = db.get_knowledge_point(kid)
-        track_fields = ["title","final_category_id","final_tags","reviewer_notes","original_excerpt","ai_extracted_content"]
+        # v2.0.0: 增加三层标签和元数据的追踪
+        track_fields = ["title","final_category_id","final_tags","reviewer_notes",
+                        "original_excerpt","ai_extracted_content",
+                        "final_category_tags","final_attribute_tags","final_keywords",
+                        "content_readiness","source_authority","access_level"]
         if kp and kp.get("review_status") == "confirmed":
             changes = {}
             for f in track_fields:
@@ -134,13 +154,22 @@ def update(kid):
                         changes[f] = {"old": old_val, "new": new_val}
             if changes:
                 db.add_edit_history(kid, changes, "人工编辑")
-        u = {k:d[k] for k in ["title","final_category_id","final_tags","reviewer_notes","ai_extracted_content","original_excerpt"] if k in d}
+        # v2.0.0: 扩展允许更新的字段
+        allowed_update = ["title","final_category_id","final_tags","reviewer_notes",
+                          "ai_extracted_content","original_excerpt",
+                          "final_category_tags","final_attribute_tags","final_keywords",
+                          "content_readiness","source_authority","access_level"]
+        u = {k:d[k] for k in allowed_update if k in d}
         if u: db.update_knowledge_point(kid, **u)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+# ================================================================
+# 批量操作
+# ================================================================
+
 @app.route("/api/knowledge-points/batch-confirm", methods=["POST"])
-def batch():
+def batch_confirm():
     try:
         ids = (request.get_json() or {}).get("ids",[])
         n = 0
@@ -153,6 +182,35 @@ def batch():
         return jsonify({"success":True,"confirmed":n})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+# v2.0.0 新增
+@app.route("/api/knowledge-points/batch-ignore", methods=["POST"])
+def batch_ignore():
+    try:
+        ids = (request.get_json() or {}).get("ids",[])
+        n = 0
+        for kid in ids:
+            try:
+                kp = db.get_knowledge_point(kid)
+                if kp and kp["review_status"] in ("pending","confirmed"):
+                    if kp["review_status"] == "confirmed":
+                        db.add_edit_history(kid, {"review_status":{"old":"confirmed","new":"ignored"}}, "批量移除")
+                    db.ignore_knowledge_point(kid, "批量忽略"); n+=1
+            except: pass
+        return jsonify({"success":True,"ignored":n})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+# v2.0.0 新增
+@app.route("/api/knowledge-points/batch-delete", methods=["POST"])
+def batch_delete():
+    try:
+        ids = (request.get_json() or {}).get("ids",[])
+        n = 0
+        for kid in ids:
+            try: db.delete_knowledge_point(kid); n+=1
+            except: pass
+        return jsonify({"success":True,"deleted":n})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
 @app.route("/api/knowledge-points/<int:kid>/restore-to-pending", methods=["POST"])
 def restore_to_pending(kid):
     try:
@@ -163,6 +221,10 @@ def restore_to_pending(kid):
         db.restore_to_pending(kid)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+# ================================================================
+# 编辑历史
+# ================================================================
 
 @app.route("/api/knowledge-points/<int:kid>/history", methods=["GET"])
 def get_history(kid):
@@ -177,7 +239,10 @@ def restore_version(kid, hid):
         return jsonify({"error":msg}),400
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# === 分类管理 ===
+# ================================================================
+# 分类管理
+# ================================================================
+
 @app.route("/api/categories/add", methods=["POST"])
 def add_cat():
     try:
@@ -210,7 +275,10 @@ def tree():
     try: return jsonify(db.get_categories_tree())
     except: return jsonify({})
 
-# === AI建议分类 ===
+# ================================================================
+# AI建议
+# ================================================================
+
 @app.route("/api/architecture-suggestions", methods=["GET"])
 def get_suggestions():
     try: return jsonify(db.get_pending_suggestions())
@@ -229,6 +297,32 @@ def reject_suggestion(sid):
         db.update_suggestion_status(sid, "rejected")
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+# ================================================================
+# v2.0.0 新增：标签定义API（供前端标签选择器使用）
+# ================================================================
+
+@app.route("/api/tag-definitions")
+def get_tag_defs():
+    """返回三层标签体系的完整定义"""
+    try:
+        from scripts.tag_config import (LAYER1_TAGS, LAYER2_DIMENSIONS, LAYER3_KEYWORD_RULES,
+                                         CONTENT_READINESS, SOURCE_AUTHORITY, ACCESS_LEVEL)
+        return jsonify({
+            "layer1": LAYER1_TAGS,
+            "layer2": LAYER2_DIMENSIONS,
+            "layer3_rules": LAYER3_KEYWORD_RULES,
+            "readiness": CONTENT_READINESS,
+            "authority": SOURCE_AUTHORITY,
+            "access_level": ACCESS_LEVEL
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
+# ================================================================
+# 标签、统计、文件、系统
+# ================================================================
 
 @app.route("/api/tags")
 def get_all_tags():
@@ -294,7 +388,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v1.1.0")
+    print(f"  乡村振兴知识库 - 审核界面 v2.0.0")
+    print(f"  三层标签审核 | 物理删除 | 批量操作")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")
