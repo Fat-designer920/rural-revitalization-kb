@@ -1,38 +1,32 @@
 @echo off
-title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - æ‰‹åŠ¨å¤‡ä»½
+title Ïç´åÕñÐËÖªÊ¶¿â - ÊÖ¶¯±¸·Ý
 cd /d "%~dp0"
 chcp 65001 >nul
 echo.
 echo   ========================================
-echo   ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - æ‰‹åŠ¨å¤‡ä»½
+echo   Ïç´åÕñÐËÖªÊ¶¿â - ÊÖ¶¯±¸·Ý
 echo   ========================================
 echo.
-
-set TIMESTAMP=%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%
-set TIMESTAMP=%TIMESTAMP: =0%
+for /f %%a in ('powershell -command "Get-Date -Format yyyyMMdd_HHmm"') do set TIMESTAMP=%%a
 set BACKUP_DIR=data\backup\%TIMESTAMP%
-
 if not exist "data\backup" mkdir "data\backup"
 mkdir "%BACKUP_DIR%"
-
-echo   æ­£åœ¨å¤‡ä»½æ•°æ®åº“...
+echo   ÕýÔÚ±¸·ÝÊý¾Ý¿â...
 if exist "data\database\knowledge_base.db" (
     copy "data\database\knowledge_base.db" "%BACKUP_DIR%\knowledge_base.db" >nul
-    echo   [OK] æ•°æ®åº“å·²å¤‡ä»½
+    echo   [OK] Êý¾Ý¿âÒÑ±¸·Ý
 ) else (
-    echo   [è·³è¿‡] æ•°æ®åº“æ–‡ä»¶ä¸å­˜åœ¨
+    echo   [Ìø¹ý] Êý¾Ý¿âÎÄ¼þ²»´æÔÚ
 )
-
-echo   æ­£åœ¨å¤‡ä»½é…ç½®æ–‡ä»¶...
+echo   ÕýÔÚ±¸·ÝÅäÖÃÎÄ¼þ...
 if exist "config\settings.json" (
     copy "config\settings.json" "%BACKUP_DIR%\settings.json" >nul
-    echo   [OK] é…ç½®æ–‡ä»¶å·²å¤‡ä»½
+    echo   [OK] ÅäÖÃÎÄ¼þÒÑ±¸·Ý
 ) else (
-    echo   [è·³è¿‡] é…ç½®æ–‡ä»¶ä¸å­˜åœ¨
+    echo   [Ìø¹ý] ÅäÖÃÎÄ¼þ²»´æÔÚ
 )
-
 echo.
 echo   ========================================
-echo   å¤‡ä»½å®Œæˆ! ä¿å­˜åœ¨: %BACKUP_DIR%
+echo   ±¸·ÝÍê³É! ±£´æÔÚ: %BACKUP_DIR%
 echo   ========================================
 pause

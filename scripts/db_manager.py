@@ -1,8 +1,24 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v1.1.0 - 编辑历史/分类管理(含一级新增)/恢复待审核/全文搜索/AI建议分类
+版本：v2.0.0 - 三层标签体系/知识关联/使用追踪/变现分级/内容保鲜
+
+数据库表（13张）：
+  categories          - 知识库分类体系（5大类27+子类）
+  source_files        - 原始文件记录
+  knowledge_points    - 知识点（核心表，v2.0.0新增多个字段）
+  knowledge_versions  - 知识点版本快照（预留）
+  architecture_suggestions - AI分类建议
+  edit_history        - 编辑历史记录
+  tag_definitions     - 标签定义表（v2.0.0新增）
+  knowledge_relations - 知识关联表（v2.0.0新增）
+  knowledge_usage_log - 使用追踪表（v2.0.0新增）
+  tag_statistics      - 标签统计缓存（v2.0.0新增）
+  operation_logs      - 操作日志
+  api_call_logs       - API调用日志
+  notion_sync_log     - Notion同步日志（预留）
 """
+
 import sqlite3, os, json
 from datetime import datetime
 from pathlib import Path
@@ -31,8 +47,13 @@ class DatabaseManager:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
+    # ================================================================
+    # 建表
+    # ================================================================
     def init_tables(self):
         conn = self.get_connection(); c = conn.cursor()
+
+        # --- 分类体系 ---
         c.execute("""CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             level1_code TEXT NOT NULL, level1_name TEXT NOT NULL,
@@ -41,6 +62,8 @@ class DatabaseManager:
             description TEXT DEFAULT '', is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- 原始文件 ---
         c.execute("""CREATE TABLE IF NOT EXISTS source_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             original_filename TEXT NOT NULL, renamed_filename TEXT DEFAULT NULL,
@@ -53,29 +76,66 @@ class DatabaseManager:
             process_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- 知识点（核心表） ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_file_id INTEGER NOT NULL, title TEXT NOT NULL,
+            source_file_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
             content_type TEXT NOT NULL CHECK(content_type IN ('policy','case','experience','tool','data')),
-            original_excerpt TEXT DEFAULT '', ai_extracted_content TEXT DEFAULT '{}',
-            suggested_category_id INTEGER DEFAULT NULL, final_category_id INTEGER DEFAULT NULL,
-            suggested_tags TEXT DEFAULT '[]', final_tags TEXT DEFAULT '[]',
-            source_page TEXT DEFAULT '', source_keyword TEXT DEFAULT '',
+            original_excerpt TEXT DEFAULT '',
+            ai_extracted_content TEXT DEFAULT '{}',
+            -- 分类体系（保留原有，与标签并行）
+            suggested_category_id INTEGER DEFAULT NULL,
+            final_category_id INTEGER DEFAULT NULL,
+            -- 第一层：分类标签（从41个固定标签中选）
+            suggested_category_tags TEXT DEFAULT '[]',
+            final_category_tags TEXT DEFAULT '[]',
+            -- 第二层：属性标签（key=维度,value=值）
+            suggested_attribute_tags TEXT DEFAULT '{}',
+            final_attribute_tags TEXT DEFAULT '{}',
+            -- 第三层：关键词（自由提取）
+            suggested_keywords TEXT DEFAULT '[]',
+            final_keywords TEXT DEFAULT '[]',
+            -- 旧字段保留兼容（迁移后数据会转入上面的新字段）
+            suggested_tags TEXT DEFAULT '[]',
+            final_tags TEXT DEFAULT '[]',
+            -- 元数据
+            source_page TEXT DEFAULT '',
+            source_keyword TEXT DEFAULT '',
             review_status TEXT DEFAULT 'pending'
                 CHECK(review_status IN ('pending','confirmed','ignored','merged')),
-            reviewer_notes TEXT DEFAULT '', quality_score REAL DEFAULT 0.0,
-            version INTEGER DEFAULT 1, is_outdated INTEGER DEFAULT 0, superseded_by INTEGER DEFAULT NULL,
+            reviewer_notes TEXT DEFAULT '',
+            quality_score REAL DEFAULT 0.0,
+            version INTEGER DEFAULT 1,
+            is_outdated INTEGER DEFAULT 0,
+            superseded_by INTEGER DEFAULT NULL,
+            -- v2.0.0 新增字段
+            content_readiness TEXT DEFAULT 'draft'
+                CHECK(content_readiness IN ('draft','quotable','premium')),
+            source_authority TEXT DEFAULT 'firsthand'
+                CHECK(source_authority IN ('official','authoritative','firsthand','informal')),
+            access_level TEXT DEFAULT 'open'
+                CHECK(access_level IN ('open','standard','premium')),
+            freshness_checked_at TEXT DEFAULT NULL,
+            freshness_interval_days INTEGER DEFAULT 180,
+            -- 时间戳
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')), confirmed_at TEXT DEFAULT NULL,
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            confirmed_at TEXT DEFAULT NULL,
             FOREIGN KEY (source_file_id) REFERENCES source_files(id),
             FOREIGN KEY (suggested_category_id) REFERENCES categories(id),
             FOREIGN KEY (final_category_id) REFERENCES categories(id))""")
+
+        # --- 知识版本快照（预留） ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL, version INTEGER NOT NULL,
             content_snapshot TEXT NOT NULL, change_reason TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+
+        # --- AI分类建议 ---
         c.execute("""CREATE TABLE IF NOT EXISTS architecture_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             suggested_name TEXT NOT NULL, suggested_level TEXT NOT NULL,
@@ -86,17 +146,66 @@ class DatabaseManager:
             resolved_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (parent_category_id) REFERENCES categories(id))""")
+
+        # --- 编辑历史 ---
         c.execute("""CREATE TABLE IF NOT EXISTS edit_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
-            edited_fields TEXT NOT NULL DEFAULT '{}', edit_summary TEXT DEFAULT '',
+            edited_fields TEXT NOT NULL DEFAULT '{}',
+            edit_summary TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+
+        # --- v2.0.0 标签定义表 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS tag_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            layer TEXT NOT NULL CHECK(layer IN ('layer1','layer2')),
+            group_code TEXT NOT NULL,
+            group_name TEXT NOT NULL,
+            tag_code TEXT NOT NULL,
+            tag_name TEXT NOT NULL,
+            tag_definition TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- v2.0.0 知识关联表 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_relations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_kp_id INTEGER NOT NULL,
+            target_kp_id INTEGER NOT NULL,
+            relation_type TEXT NOT NULL
+                CHECK(relation_type IN ('supports','contradicts','same_source','prerequisite','updated_by','related')),
+            created_by TEXT DEFAULT 'manual' CHECK(created_by IN ('ai','manual')),
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
+            FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id))""")
+
+        # --- v2.0.0 使用追踪表 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_usage_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            knowledge_point_id INTEGER NOT NULL,
+            usage_type TEXT NOT NULL CHECK(usage_type IN ('article','course','qa','proposal','export','other')),
+            usage_context TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+
+        # --- v2.0.0 标签统计缓存 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS tag_statistics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag_name TEXT NOT NULL,
+            layer TEXT NOT NULL,
+            usage_count INTEGER DEFAULT 0,
+            last_updated TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- 操作日志 ---
         c.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             operation_type TEXT NOT NULL, target_table TEXT DEFAULT '',
             target_id INTEGER DEFAULT NULL, details TEXT DEFAULT '{}',
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- API调用日志 ---
         c.execute("""CREATE TABLE IF NOT EXISTS api_call_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             call_type TEXT NOT NULL, model TEXT DEFAULT '',
@@ -104,24 +213,40 @@ class DatabaseManager:
             estimated_cost REAL DEFAULT 0.0,
             call_date TEXT DEFAULT (date('now','localtime')),
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
+
+        # --- Notion同步日志（预留） ---
         c.execute("""CREATE TABLE IF NOT EXISTS notion_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            knowledge_point_id INTEGER NOT NULL, notion_page_id TEXT DEFAULT NULL,
+            knowledge_point_id INTEGER NOT NULL,
+            notion_page_id TEXT DEFAULT NULL,
             sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending','synced','failed','conflict')),
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+
+        # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
             "CREATE INDEX IF NOT EXISTS idx_kp_type ON knowledge_points(content_type)",
             "CREATE INDEX IF NOT EXISTS idx_kp_source ON knowledge_points(source_file_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_readiness ON knowledge_points(content_readiness)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_access ON knowledge_points(access_level)",
             "CREATE INDEX IF NOT EXISTS idx_sf_status ON source_files(process_status)",
             "CREATE INDEX IF NOT EXISTS idx_sf_hash ON source_files(file_hash)",
             "CREATE INDEX IF NOT EXISTS idx_api_date ON api_call_logs(call_date)",
-            "CREATE INDEX IF NOT EXISTS idx_eh_kpid ON edit_history(knowledge_point_id)"]:
+            "CREATE INDEX IF NOT EXISTS idx_eh_kpid ON edit_history(knowledge_point_id)",
+            "CREATE INDEX IF NOT EXISTS idx_td_layer ON tag_definitions(layer, group_code)",
+            "CREATE INDEX IF NOT EXISTS idx_kr_source ON knowledge_relations(source_kp_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kr_target ON knowledge_relations(target_kp_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kul_kpid ON knowledge_usage_log(knowledge_point_id)",
+        ]:
             c.execute(idx)
+
         conn.commit(); conn.close(); return True
 
+    # ================================================================
+    # 默认分类
+    # ================================================================
     def init_default_categories(self):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM categories")
@@ -134,16 +259,16 @@ class DatabaseManager:
             ("1","政策库","1.5","川西林盘保护政策","林盘保护修复专项政策、生态保护相关法规"),
             ("1","政策库","1.6","乡村振兴综合政策","跨领域综合政策、五年规划、考核标准等"),
             ("1","政策库","1.7","自然资源与规划政策","国土空间规划、用途管制、耕地保护等底层法规"),
-            ("2","案例库","2.1","全域土地综合整治项目","完整项目案例（含背景、策略、资金、成效）"),
+            ("2","案例库","2.1","全域土地综合整治项目","完整项目案例"),
             ("2","案例库","2.2","增减挂钩项目","指标交易类项目案例"),
             ("2","案例库","2.3","川西林盘修复运营项目","林盘保护修复+运营类项目案例"),
-            ("2","案例库","2.4","资金整合与融资创新案例","专项债申报、EPC打捆、资金拼盘等融资案例"),
-            ("2","案例库","2.5","乡村产业与运营案例","民宿、农旅、集体经济运营等产业端案例"),
+            ("2","案例库","2.4","资金整合与融资创新案例","专项债申报、EPC打捆、资金拼盘等"),
+            ("2","案例库","2.5","乡村产业与运营案例","民宿、农旅、集体经济运营等"),
             ("2","案例库","2.6","失败与风险案例","踩坑项目、烂尾项目、政策风险暴露案例"),
             ("3","经验库","3.1","策略判断类","选址逻辑、项目类型选择、合作模式判断等"),
             ("3","经验库","3.2","操盘方法类","资金拼盘方法、报批流程优化、多部门协调等"),
             ("3","经验库","3.3","反常识洞察","与行业常规认知相反但经实战验证的判断"),
-            ("3","经验库","3.4","踩坑记录","具体失误及教训，含当时决策背景和事后复盘"),
+            ("3","经验库","3.4","踩坑记录","具体失误及教训"),
             ("3","经验库","3.5","客户沟通与汇报经验","面向政府领导、平台公司的汇报话术经验"),
             ("4","工具库","4.1","方案模板","可研报告、实施方案、策划方案等模板"),
             ("4","工具库","4.2","合同模板","咨询合同、EPC合同、合作框架协议等"),
@@ -160,7 +285,41 @@ class DatabaseManager:
             c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)", cat)
         conn.commit(); conn.close(); return True
 
-    # === 文件管理 ===
+    # ================================================================
+    # 标签定义初始化（从tag_config.py同步到数据库）
+    # ================================================================
+    def init_tag_definitions(self):
+        """将tag_config.py中的标签定义同步到tag_definitions表"""
+        try:
+            from scripts.tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
+        except ImportError:
+            from tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT COUNT(*) as cnt FROM tag_definitions")
+        if c.fetchone()["cnt"] > 0:
+            conn.close(); return True  # 已初始化过
+
+        sort = 0
+        for group_code, group in LAYER1_TAGS.items():
+            for tag in group["tags"]:
+                sort += 1
+                c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    ("layer1", group_code, group["group_name"], tag["code"], tag["name"], tag["definition"], sort))
+
+        for dim_code, dim in LAYER2_DIMENSIONS.items():
+            for val in dim.get("values", []):
+                sort += 1
+                c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    ("layer2", dim_code, dim["name"], dim_code, val, "", sort))
+
+        conn.commit(); conn.close(); return True
+
+    # ================================================================
+    # 文件管理
+    # ================================================================
     def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash) VALUES (?,?,?,?,?)",
@@ -189,27 +348,43 @@ class DatabaseManager:
         c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
         r = c.fetchone(); conn.close(); return dict(r) if r else None
 
-    # === 知识点管理 ===
+    # ================================================================
+    # 知识点管理
+    # ================================================================
     def add_knowledge_point(self, source_file_id, title, content_type, original_excerpt="",
                             ai_extracted_content=None, suggested_category_id=None,
-                            suggested_tags=None, source_page="", source_keyword=""):
+                            suggested_category_tags=None, suggested_attribute_tags=None,
+                            suggested_keywords=None,
+                            suggested_tags=None,  # 旧字段兼容
+                            source_page="", source_keyword="",
+                            content_readiness="draft", source_authority="firsthand"):
         conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO knowledge_points (source_file_id,title,content_type,original_excerpt,
-            ai_extracted_content,suggested_category_id,suggested_tags,source_page,source_keyword)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+        c.execute("""INSERT INTO knowledge_points
+            (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
+             suggested_category_id, suggested_category_tags, suggested_attribute_tags,
+             suggested_keywords, suggested_tags, source_page, source_keyword,
+             content_readiness, source_authority)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
-             suggested_category_id, json.dumps(suggested_tags or [], ensure_ascii=False),
-             source_page, source_keyword))
+             suggested_category_id,
+             json.dumps(suggested_category_tags or [], ensure_ascii=False),
+             json.dumps(suggested_attribute_tags or {}, ensure_ascii=False),
+             json.dumps(suggested_keywords or [], ensure_ascii=False),
+             json.dumps(suggested_tags or [], ensure_ascii=False),
+             source_page, source_keyword,
+             content_readiness, source_authority))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,
                                  category_id=None, level1_code=None,
-                                 search_query=None, page=1, per_page=20):
+                                 search_query=None, content_readiness=None,
+                                 page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
         if review_status: where.append("kp.review_status=?"); params.append(review_status)
         if content_type: where.append("kp.content_type=?"); params.append(content_type)
+        if content_readiness: where.append("kp.content_readiness=?"); params.append(content_readiness)
         if category_id:
             where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)")
             params.extend([category_id, category_id])
@@ -219,8 +394,11 @@ class DatabaseManager:
             params.extend([level1_code, level1_code])
         if search_query:
             sq = f"%{search_query}%"
-            where.append("(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ? OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)")
-            params.extend([sq, sq, sq, sq, sq])
+            where.append("""(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
+                OR kp.suggested_keywords LIKE ? OR kp.final_keywords LIKE ?
+                OR kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?
+                OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)""")
+            params.extend([sq]*9)
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -248,12 +426,16 @@ class DatabaseManager:
     def update_knowledge_point(self, kp_id, **kw):
         conn = self.get_connection(); c = conn.cursor()
         allowed = ["title","original_excerpt","ai_extracted_content","final_category_id",
-                    "final_tags","review_status","reviewer_notes","quality_score","is_outdated","superseded_by"]
+                    "final_tags","final_category_tags","final_attribute_tags","final_keywords",
+                    "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
+                    "content_readiness","source_authority","access_level",
+                    "freshness_checked_at","freshness_interval_days"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
-                if k in ("ai_extracted_content","final_tags") and isinstance(v, (dict, list)):
+                if k in ("ai_extracted_content","final_tags","final_category_tags",
+                         "final_attribute_tags","final_keywords") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:
@@ -279,7 +461,9 @@ class DatabaseManager:
         self.update_knowledge_point(kp_id, review_status="pending", reviewer_notes="")
         self.log_operation("restore_to_pending", "knowledge_points", kp_id)
 
-    # === 编辑历史 ===
+    # ================================================================
+    # 编辑历史
+    # ================================================================
     def add_edit_history(self, kp_id, edited_fields, edit_summary=""):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO edit_history (knowledge_point_id, edited_fields, edit_summary) VALUES (?,?,?)",
@@ -315,7 +499,9 @@ class DatabaseManager:
             self.log_operation("restore_version", "knowledge_points", kp_id, {"history_id": history_id})
         return True, "回滚成功"
 
-    # === 分类管理 ===
+    # ================================================================
+    # 分类管理
+    # ================================================================
     def get_next_level1_code(self):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT DISTINCT level1_code FROM categories ORDER BY level1_code DESC LIMIT 1")
@@ -333,7 +519,6 @@ class DatabaseManager:
         return f"{level1_code}.1"
 
     def add_category(self, level1_code, level1_name, level2_name, description="", is_new_level1=False):
-        """新增分类。is_new_level1=True时创建全新的一级分类"""
         if is_new_level1:
             level1_code = self.get_next_level1_code()
             level2_code = f"{level1_code}.1"
@@ -379,7 +564,9 @@ class DatabaseManager:
         c.execute("SELECT * FROM categories WHERE level2_code=? AND is_active=1", (level2_code,))
         r = c.fetchone(); conn.close(); return dict(r) if r else None
 
-    # === AI建议分类 ===
+    # ================================================================
+    # AI建议分类
+    # ================================================================
     def add_architecture_suggestion(self, suggested_name, suggested_level, reason,
                                      suggestion_type="add_level2", parent_category_id=None,
                                      related_knowledge_ids=None):
@@ -410,7 +597,67 @@ class DatabaseManager:
         conn.commit(); conn.close()
         self.log_operation(f"suggestion_{status}", "architecture_suggestions", suggestion_id)
 
-    # === 日志与统计 ===
+    # ================================================================
+    # 知识关联
+    # ================================================================
+    def add_knowledge_relation(self, source_kp_id, target_kp_id, relation_type, created_by="manual"):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("INSERT INTO knowledge_relations (source_kp_id,target_kp_id,relation_type,created_by) VALUES (?,?,?,?)",
+                  (source_kp_id, target_kp_id, relation_type, created_by))
+        conn.commit(); conn.close()
+
+    def get_knowledge_relations(self, kp_id):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT kr.*, kp.title as related_title
+            FROM knowledge_relations kr
+            JOIN knowledge_points kp ON (CASE WHEN kr.source_kp_id=? THEN kr.target_kp_id ELSE kr.source_kp_id END)=kp.id
+            WHERE kr.source_kp_id=? OR kr.target_kp_id=?
+            ORDER BY kr.created_at DESC""", (kp_id, kp_id, kp_id))
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
+    # ================================================================
+    # 使用追踪
+    # ================================================================
+    def log_knowledge_usage(self, kp_id, usage_type, usage_context=""):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("INSERT INTO knowledge_usage_log (knowledge_point_id,usage_type,usage_context) VALUES (?,?,?)",
+                  (kp_id, usage_type, usage_context))
+        conn.commit(); conn.close()
+
+    # ================================================================
+    # 内容保鲜
+    # ================================================================
+    def get_stale_knowledge_points(self):
+        """获取需要检查时效性的知识点"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.freshness_checked_at, kp.freshness_interval_days
+            FROM knowledge_points kp
+            WHERE kp.review_status='confirmed'
+            AND (kp.freshness_checked_at IS NULL
+                 OR julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days)
+            ORDER BY kp.freshness_checked_at ASC NULLS FIRST
+            LIMIT 50""")
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
+    def mark_freshness_checked(self, kp_id):
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("UPDATE knowledge_points SET freshness_checked_at=datetime('now','localtime') WHERE id=?", (kp_id,))
+        conn.commit(); conn.close()
+
+    # ================================================================
+    # 标签定义查询
+    # ================================================================
+    def get_tag_definitions(self, layer=None):
+        conn = self.get_connection(); c = conn.cursor()
+        if layer:
+            c.execute("SELECT * FROM tag_definitions WHERE layer=? AND is_active=1 ORDER BY sort_order", (layer,))
+        else:
+            c.execute("SELECT * FROM tag_definitions WHERE is_active=1 ORDER BY layer, sort_order")
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
+    # ================================================================
+    # 日志与统计
+    # ================================================================
     def log_api_call(self, call_type, model, input_tokens, output_tokens, estimated_cost):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
@@ -444,4 +691,9 @@ class DatabaseManager:
         stats["total_pending"] = c.fetchone()["cnt"]
         c.execute("SELECT COUNT(*) as cnt FROM architecture_suggestions WHERE status='pending'")
         stats["pending_suggestions"] = c.fetchone()["cnt"]
+        # v2.0.0 新增统计
+        c.execute("SELECT content_readiness, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY content_readiness")
+        stats["by_readiness"] = {r["content_readiness"]: r["cnt"] for r in c.fetchall()}
+        c.execute("SELECT access_level, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY access_level")
+        stats["by_access"] = {r["access_level"]: r["cnt"] for r in c.fetchall()}
         conn.close(); return stats
