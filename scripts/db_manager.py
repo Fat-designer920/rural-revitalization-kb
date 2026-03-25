@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.0.0 - 三层标签体系/知识关联/使用追踪/变现分级/内容保鲜/物理删除
+版本：v2.1.0-b - 新增架构升级检查查询方法
 
 数据库表（13张）：
   categories          - 知识库分类体系（5大类27+子类）
@@ -633,6 +633,26 @@ class DatabaseManager:
         c.execute("INSERT INTO knowledge_usage_log (knowledge_point_id,usage_type,usage_context) VALUES (?,?,?)",
                   (kp_id, usage_type, usage_context))
         conn.commit(); conn.close()
+
+    # ================================================================
+    # 架构升级检查
+    # ================================================================
+    def get_all_knowledge_for_upgrade(self):
+        """获取所有知识点用于升级检查（不分页，含源文件信息）"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.source_file_id,
+            kp.original_excerpt, kp.ai_extracted_content,
+            kp.suggested_category_tags, kp.final_category_tags,
+            kp.suggested_attribute_tags, kp.final_attribute_tags,
+            kp.suggested_keywords, kp.final_keywords,
+            kp.content_readiness, kp.source_authority,
+            kp.review_status,
+            sf.original_filename, sf.renamed_filename, sf.file_path
+            FROM knowledge_points kp
+            LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+            WHERE kp.review_status IN ('pending','confirmed')
+            ORDER BY kp.id""")
+        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
 
     # ================================================================
     # 内容保鲜
