@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.0-b - 新增架构升级检查查询方法
+版本：v2.1.0-c - 新增prompt_version/qa_score/qa_flags字段支持
 
 数据库表（13张）：
   categories          - 知识库分类体系（5大类27+子类）
@@ -328,7 +328,8 @@ class DatabaseManager:
 
     def update_source_file(self, file_id, **kw):
         conn = self.get_connection(); c = conn.cursor()
-        allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash"]
+        allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash",
+                   "pre_analysis_result","suggested_content_type","segment_plan"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed: sets.append(f"{k}=?"); vals.append(v)
@@ -357,14 +358,15 @@ class DatabaseManager:
                             suggested_keywords=None,
                             suggested_tags=None,  # 旧字段兼容
                             source_page="", source_keyword="",
-                            content_readiness="draft", source_authority="firsthand"):
+                            content_readiness="draft", source_authority="firsthand",
+                            prompt_version=""):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
-             content_readiness, source_authority)
-            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?)""",
+             content_readiness, source_authority, prompt_version)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
              suggested_category_id,
@@ -373,7 +375,7 @@ class DatabaseManager:
              json.dumps(suggested_keywords or [], ensure_ascii=False),
              json.dumps(suggested_tags or [], ensure_ascii=False),
              source_page, source_keyword,
-             content_readiness, source_authority))
+             content_readiness, source_authority, prompt_version))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,
@@ -429,13 +431,14 @@ class DatabaseManager:
                     "final_tags","final_category_tags","final_attribute_tags","final_keywords",
                     "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
                     "content_readiness","source_authority","access_level",
-                    "freshness_checked_at","freshness_interval_days"]
+                    "freshness_checked_at","freshness_interval_days",
+                    "prompt_version","qa_score","qa_flags"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags","final_category_tags",
-                         "final_attribute_tags","final_keywords") and isinstance(v, (dict, list)):
+                         "final_attribute_tags","final_keywords","qa_flags") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:

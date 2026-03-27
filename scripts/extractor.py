@@ -1,17 +1,19 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.0.0 - 三层标签打标 + 元数据建议 + AI分类建议适配
+版本：v2.1.0-c - 预分析+智能分段+上下文接力+跨段补漏+V3质检+版本追踪
 
-变更说明（v2.0.0 vs v1.1.0）：
-  - 解析AI返回的三层标签字段(suggested_category_tags/suggested_attribute_tags/suggested_keywords)
-  - 解析元数据建议(suggested_readiness/suggested_authority)
-  - 写入db_manager的新字段，不再填旧的suggested_tags
-  - AI分类建议prompt更新为感知三层标签体系
-  - 新增_sanitize_tags()对AI返回的标签做基本校验
-  - 保留全部v1.1.0功能：R1/V3双模型、MD5去重、分段/截断修复、失败隔离、AI分类建议
+变更说明（v2.1.0-c vs v2.0.0）：
+  - 新增V3预分析：质量预筛+分类建议+结构识别（可跳过，不可降级）
+  - 新增三级智能分段：V3结构摘要 > 本地规则分段 > 段落边界分段（不回退到机械切割）
+  - 新增上下文接力：每段提取时传递前段知识点标题+前段末尾200字+文件结构摘要
+  - 新增跨段补漏检查：V3比对文件大纲与知识点标题，找遗漏
+  - 新增V3质检（第3批）：提取完成后5维度评分+问题标记，结果存入qa_score/qa_flags
+  - 新增费用预估：大文件提取前展示预估费用
+  - 新增prompt_version记录：每条知识点记录提取时的Prompt版本号
+  - 保留全部v2.0.0功能：R1/V3双模型、MD5去重、三层标签、截断修复、失败隔离、AI分类建议
 """
-import os, sys, json, shutil, hashlib
+import os, sys, json, re, shutil, hashlib
 from pathlib import Path
 from datetime import datetime
 
@@ -21,7 +23,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from scripts.file_reader import FileReader
 from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded
 from scripts.db_manager import DatabaseManager
-from scripts.prompts.prompt_templates import get_extraction_prompt
+from scripts.prompts.prompt_templates import (
+    get_extraction_prompt, get_prompt_version,
+    CONTEXT_RELAY_TEMPLATE, PRE_ANALYSIS_PROMPT,
+    SEGMENT_SUMMARY_PROMPT, CROSS_SEGMENT_CHECK_PROMPT,
+    QC_CHECK_PROMPT
+)
 from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
 
 
@@ -165,8 +172,10 @@ class Extractor:
         if cur: segs.append(cur)
         return segs
 
-    def _extract_single(self, content, filename, prompt, ctype):
+    def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
         up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
+        if relay_prefix:
+            up = relay_prefix + "\n\n" + up
         ai = self.client.chat_with_json(
             prompt["system_prompt"], up, temperature=0.2,
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
@@ -192,9 +201,9 @@ class Extractor:
         print(f"       ! JSON解析失败: {err} {cost_info}")
         return []
 
-    def _extract_with_auto_split(self, content, filename, prompt, ctype, current_max_len=None):
+    def _extract_with_auto_split(self, content, filename, prompt, ctype, current_max_len=None, relay_prefix=""):
         if current_max_len is None: current_max_len = self.segment_max_len
-        result = self._extract_single(content, filename, prompt, ctype)
+        result = self._extract_single(content, filename, prompt, ctype, relay_prefix=relay_prefix)
         if result == "TRUNCATED":
             new_max = current_max_len // 2
             if new_max < 500:
@@ -204,7 +213,7 @@ class Extractor:
             all_kps = []
             for j, sub_seg in enumerate(sub_segs, 1):
                 print(f"         子段{j}/{len(sub_segs)} ({len(sub_seg)}字)...")
-                sub_kps = self._extract_with_auto_split(sub_seg, f"{filename}(子段{j})", prompt, ctype, new_max)
+                sub_kps = self._extract_with_auto_split(sub_seg, f"{filename}(子段{j})", prompt, ctype, new_max, relay_prefix=relay_prefix)
                 all_kps.extend(sub_kps)
             return all_kps
         if isinstance(result, list): return result
@@ -292,6 +301,456 @@ class Extractor:
             "readiness": readiness,
             "authority": authority,
         }
+
+    # ================================================================
+    # v2.1.0-c 新增：V3预分析
+    # ================================================================
+    def _pre_analyze(self, content, filename):
+        """V3预分析：质量评估+分类建议+结构识别。失败时暂停让用户选择。"""
+        preview = content[:2000]
+        char_count = len(content)
+        prompt = PRE_ANALYSIS_PROMPT
+        up = prompt["user_prompt_template"].format(
+            filename=filename, char_count=char_count, content_preview=preview)
+
+        for attempt in range(1, 4):
+            try:
+                ai = self.client.chat_with_json(
+                    prompt["system_prompt"], up, temperature=0.2,
+                    call_type="pre_analysis", model_override="deepseek-chat")
+                parsed = ai.get("parsed_json")
+                if parsed and isinstance(parsed, dict):
+                    cost = ai.get("estimated_cost", 0)
+                    print(f"     预分析完成(花费{cost:.4f}元)")
+                    return parsed
+                print(f"     预分析返回格式异常(第{attempt}次)")
+            except CostLimitExceeded:
+                raise
+            except Exception as e:
+                print(f"     预分析出错(第{attempt}次): {e}")
+
+        # 3次失败，暂停让用户选择
+        print(f"\n     [预分析未能完成] 可能是网络问题")
+        while True:
+            choice = input("     [1]重试 [2]跳过预分析直接提取 [3]跳过该文件: ").strip()
+            if choice == "1":
+                return self._pre_analyze(content, filename)  # 递归重试
+            elif choice == "2":
+                print("     跳过预分析，使用文件名推断分类")
+                return None
+            elif choice == "3":
+                return "SKIP_FILE"
+            else:
+                print("     请输入 1/2/3")
+
+    # ================================================================
+    # v2.1.0-c 新增：V3结构摘要
+    # ================================================================
+    def _get_structure_summary(self, content, filename):
+        """V3分析文件结构，返回分段建议。失败返回None。"""
+        char_count = len(content)
+        prompt = SEGMENT_SUMMARY_PROMPT
+        up = prompt["user_prompt_template"].format(
+            filename=filename, char_count=char_count, full_content=content[:8000])
+        try:
+            ai = self.client.chat_with_json(
+                prompt["system_prompt"], up, temperature=0.2,
+                call_type="segment_summary", model_override="deepseek-chat")
+            parsed = ai.get("parsed_json")
+            if parsed and isinstance(parsed, dict):
+                cost = ai.get("estimated_cost", 0)
+                print(f"     结构摘要完成(花费{cost:.4f}元)")
+                return parsed
+        except CostLimitExceeded:
+            raise
+        except Exception as e:
+            print(f"     结构摘要失败: {e}")
+        return None
+
+    # ================================================================
+    # v2.1.0-c 新增：三级智能分段
+    # ================================================================
+    def _smart_segment(self, content, pre_result, filename):
+        """三级分段策略，绝不回退到机械切割。
+        返回 (segments_list, file_structure_text)"""
+        if len(content) <= 4000:
+            return [content], ""
+
+        # --- 第一级：V3结构摘要分段 ---
+        structure_result = self._get_structure_summary(content, filename)
+        if structure_result:
+            suggested_segs = structure_result.get("suggested_segments", [])
+            if suggested_segs and len(suggested_segs) >= 2:
+                segs = self._apply_v3_segments(content, suggested_segs)
+                if segs:
+                    # 构建结构摘要文本
+                    doc_structure = structure_result.get("document_structure", [])
+                    struct_text = self._format_structure_text(doc_structure)
+                    notes = structure_result.get("notes", "")
+                    if notes:
+                        print(f"     分段提示: {notes[:60]}")
+                    # 保存分段方案
+                    try:
+                        self.db.update_source_file(
+                            self._current_file_id,
+                            segment_plan=json.dumps(structure_result, ensure_ascii=False))
+                    except:
+                        pass
+                    return segs, struct_text
+            print(f"     V3分段建议不可用,切换到本地规则分段")
+        else:
+            print(f"     V3结构摘要不可用,切换到本地规则分段")
+
+        # --- 第二级：本地规则分段 ---
+        segs = self._local_rule_segment(content)
+        if segs and len(segs) >= 2:
+            print(f"     使用本地规则分段(按章节标记)")
+            # 从预分析中提取结构信息
+            struct_text = ""
+            if pre_result and isinstance(pre_result, dict):
+                overview = pre_result.get("content_overview", "")
+                struct_text = overview
+            return segs, struct_text
+
+        # --- 第三级：段落边界分段 ---
+        print(f"     使用段落边界分段")
+        segs = self._paragraph_segment(content)
+        struct_text = ""
+        if pre_result and isinstance(pre_result, dict):
+            struct_text = pre_result.get("content_overview", "")
+        return segs, struct_text
+
+    def _apply_v3_segments(self, content, suggested_segs):
+        """根据V3建议的分段方案切割内容"""
+        segments = []
+        content_lower = content
+        for seg_info in suggested_segs:
+            start_kw = seg_info.get("start_keyword", "")
+            if not start_kw:
+                continue
+            # 找到起始位置
+            pos = content_lower.find(start_kw)
+            if pos < 0:
+                # 尝试模糊匹配（取前10个字）
+                short_kw = start_kw[:10]
+                pos = content_lower.find(short_kw)
+            if pos >= 0:
+                segments.append(pos)
+
+        if len(segments) < 2:
+            return None
+
+        # 按位置排序并切割
+        segments.sort()
+        result = []
+        for i in range(len(segments)):
+            start = segments[i]
+            end = segments[i + 1] if i + 1 < len(segments) else len(content)
+            seg_text = content[start:end].strip()
+            if seg_text:
+                result.append(seg_text)
+
+        # 如果第一段之前有内容，加到第一段前面
+        if segments[0] > 0:
+            prefix = content[:segments[0]].strip()
+            if prefix and result:
+                result[0] = prefix + "\n\n" + result[0]
+
+        # 检查是否有过大的段（超过6000字的拆分）
+        final = []
+        for seg in result:
+            if len(seg) > 6000:
+                sub_segs = self._paragraph_segment(seg, max_len=5000)
+                final.extend(sub_segs)
+            else:
+                final.append(seg)
+
+        return final if len(final) >= 1 else None
+
+    def _local_rule_segment(self, content):
+        """按章节标记分段：识别中文文档常见的结构标记"""
+        # 常见章节标记模式
+        patterns = [
+            r'\n(第[一二三四五六七八九十百]+[章编篇])',           # 第一章、第一编
+            r'\n(第[一二三四五六七八九十\d]+条[\s\u3000])',       # 第一条 （政策文件）
+            r'\n([一二三四五六七八九十]+、)',                      # 一、二、三、
+            r'\n(附[则件录表]\s)',                                # 附则、附件
+        ]
+
+        # 尝试每种模式，选择最佳（切出2-15段的）
+        for pattern in patterns:
+            positions = []
+            for m in re.finditer(pattern, content):
+                positions.append(m.start())
+
+            if len(positions) >= 2:
+                # 切割
+                segments = []
+                for i in range(len(positions)):
+                    start = positions[i]
+                    end = positions[i + 1] if i + 1 < len(positions) else len(content)
+                    seg = content[start:end].strip()
+                    if seg:
+                        segments.append(seg)
+
+                # 第一段之前的内容加到第一段
+                if positions[0] > 0:
+                    prefix = content[:positions[0]].strip()
+                    if prefix and segments:
+                        segments[0] = prefix + "\n\n" + segments[0]
+
+                # 合并过小的段（小于500字的与后一段合并）
+                merged = []
+                buf = ""
+                for seg in segments:
+                    if buf:
+                        buf = buf + "\n\n" + seg
+                    else:
+                        buf = seg
+                    if len(buf) >= 500:
+                        merged.append(buf)
+                        buf = ""
+                if buf:
+                    if merged:
+                        merged[-1] = merged[-1] + "\n\n" + buf
+                    else:
+                        merged.append(buf)
+
+                # 拆分过大的段
+                final = []
+                for seg in merged:
+                    if len(seg) > 6000:
+                        sub = self._paragraph_segment(seg, max_len=5000)
+                        final.extend(sub)
+                    else:
+                        final.append(seg)
+
+                if 2 <= len(final) <= 20:
+                    return final
+
+        return None  # 没有找到合适的章节标记
+
+    def _paragraph_segment(self, content, max_len=4000):
+        """按段落边界分段，保证不在段落中间切断"""
+        if len(content) <= max_len:
+            return [content]
+
+        paragraphs = content.split("\n\n")
+        segments = []
+        current = ""
+
+        for para in paragraphs:
+            # 如果当前段加上新段落会超限，且当前段非空，先保存当前段
+            if len(current) + len(para) + 2 > max_len and current:
+                segments.append(current.strip())
+                current = para
+            else:
+                current = current + "\n\n" + para if current else para
+
+        if current.strip():
+            segments.append(current.strip())
+
+        # 如果只产生了一段（整个内容没有段落分隔），按换行分
+        if len(segments) <= 1 and len(content) > max_len:
+            lines = content.split("\n")
+            segments = []
+            current = ""
+            for line in lines:
+                if len(current) + len(line) + 1 > max_len and current:
+                    segments.append(current.strip())
+                    current = line
+                else:
+                    current = current + "\n" + line if current else line
+            if current.strip():
+                segments.append(current.strip())
+
+        return segments if segments else [content]
+
+    def _format_structure_text(self, doc_structure):
+        """将V3返回的文档结构格式化为文本"""
+        if not doc_structure:
+            return ""
+        lines = []
+        for item in doc_structure:
+            level = item.get("level", 1)
+            title = item.get("title", "")
+            indent = "  " * (level - 1)
+            lines.append(f"{indent}- {title}")
+        return "\n".join(lines)
+
+    # ================================================================
+    # v2.1.0-c 新增：上下文接力信息构建
+    # ================================================================
+    def _build_context_relay(self, seg_idx, total_segs, file_structure, prev_kps):
+        """构建分段提取的上下文接力信息。单段文件返回空字符串。"""
+        if total_segs <= 1:
+            return ""
+
+        # 前段已提取的知识点标题
+        if prev_kps:
+            titles = [kp.get("title", "") for kp in prev_kps]
+            titles_text = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(titles))
+        else:
+            titles_text = "  (这是第一段，暂无)"
+
+        return CONTEXT_RELAY_TEMPLATE.format(
+            total_segments=total_segs,
+            current_segment=seg_idx,
+            file_structure_summary=file_structure or "(结构摘要不可用)",
+            previous_titles=titles_text
+        )
+
+    # ================================================================
+    # v2.1.0-c 新增：跨段补漏检查
+    # ================================================================
+    def _cross_segment_check(self, filename, file_structure, all_kps):
+        """V3检查分段提取是否有遗漏。返回遗漏信息dict或None。"""
+        if not file_structure:
+            print(f"     无结构摘要,跳过补漏检查")
+            return None
+
+        all_titles = "\n".join(f"  {i+1}. {kp.get('title', '')}" for i, kp in enumerate(all_kps))
+        prompt = CROSS_SEGMENT_CHECK_PROMPT
+        up = prompt["user_prompt_template"].format(
+            filename=filename,
+            document_structure=file_structure,
+            all_kp_titles=all_titles)
+        try:
+            ai = self.client.chat_with_json(
+                prompt["system_prompt"], up, temperature=0.2,
+                call_type="cross_segment_check", model_override="deepseek-chat")
+            parsed = ai.get("parsed_json")
+            if parsed and isinstance(parsed, dict):
+                cost = ai.get("estimated_cost", 0)
+                missed = parsed.get("missed_sections", [])
+                coverage = parsed.get("overall_coverage", "未知")
+                dupes = parsed.get("duplicate_suspects", [])
+                print(f"     补漏检查完成(花费{cost:.4f}元)")
+                print(f"     覆盖评估: {coverage}")
+                if missed:
+                    important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
+                    if important_missed:
+                        print(f"     [注意] 发现{len(important_missed)}个可能遗漏的章节:")
+                        for m in important_missed[:3]:
+                            print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
+                        print(f"     建议在审核时重点关注相关知识点的完整性")
+                if dupes:
+                    print(f"     [提示] 发现{len(dupes)}组疑似重复知识点")
+                return parsed
+        except CostLimitExceeded:
+            print(f"     费用已达上限,跳过补漏检查")
+        except Exception as e:
+            print(f"     补漏检查失败: {e}")
+        return None
+
+    # ================================================================
+    # v2.1.0-c 新增：费用预估
+    # ================================================================
+    def _estimate_extraction_cost(self, segments):
+        """估算R1提取费用（粗略估算，给用户一个量级参考）"""
+        # R1定价：输入4元/百万token，输出16元/百万token
+        # 粗估：1000中文字 ≈ 800 token
+        total_chars = sum(len(s) for s in segments)
+        est_input_tokens = int(total_chars * 0.8)  # 输入（含system prompt约3000字）
+        est_input_tokens += len(segments) * 3000 * 0.8  # 每段的system prompt
+        est_output_tokens = len(segments) * 1500  # 每段估算输出1500 token
+        cost = (est_input_tokens / 1e6) * 4.0 + (est_output_tokens / 1e6) * 16.0
+        return round(cost, 2)
+
+    # ================================================================
+    # v2.1.0-c 第3批新增：V3质检（5维度评分）
+    # ================================================================
+    def _quality_check(self, filename, content_summary, kps, kps_info):
+        """V3质检：对同一文件的所有知识点进行5维度评分。
+        kps: 原始AI提取的知识点列表（含完整内容）
+        kps_info: 写入DB后的info列表（含kp_id）
+        返回成功质检的数量。"""
+        if not kps or not kps_info:
+            return 0
+
+        # 构建知识点文本
+        kp_lines = []
+        for i, kp in enumerate(kps):
+            title = kp.get("title", "未命名")
+            excerpt = (kp.get("original_excerpt") or "")[:200]
+            cat_tags = kp.get("suggested_category_tags", [])
+            tags_text = ", ".join(cat_tags) if isinstance(cat_tags, list) else ""
+            kp_lines.append(
+                f"[{i+1}] 标题: {title}\n"
+                f"    分类标签: {tags_text}\n"
+                f"    原文摘录: {excerpt}"
+            )
+        knowledge_points_text = "\n\n".join(kp_lines)
+
+        prompt = QC_CHECK_PROMPT
+        up = prompt["user_prompt_template"].format(
+            filename=filename,
+            content_summary=content_summary or "(无摘要)",
+            knowledge_points_text=knowledge_points_text
+        )
+
+        try:
+            ai = self.client.chat_with_json(
+                prompt["system_prompt"], up, temperature=0.2,
+                call_type="qc_check", model_override="deepseek-chat")
+            parsed = ai.get("parsed_json")
+            cost = ai.get("estimated_cost", 0)
+
+            if not parsed or not isinstance(parsed, dict):
+                print(f"     质检返回格式异常(花费{cost:.4f}元)")
+                return 0
+
+            results = parsed.get("results", [])
+            if not results:
+                print(f"     质检无结果(花费{cost:.4f}元)")
+                return 0
+
+            print(f"     质检完成: {len(results)}条评分(花费{cost:.4f}元)")
+
+            # 统计分数分布
+            scores = []
+            checked = 0
+            for qr in results:
+                idx = qr.get("index", 0) - 1  # 1-based → 0-based
+                score = qr.get("score", 0)
+                flags = qr.get("flags", [])
+                if not isinstance(flags, list):
+                    flags = []
+
+                scores.append(score)
+
+                # 找到对应的kp_id
+                if 0 <= idx < len(kps_info):
+                    kp_id = kps_info[idx].get("kp_id")
+                    if kp_id:
+                        try:
+                            self.db.update_knowledge_point(
+                                kp_id,
+                                qa_score=score,
+                                qa_flags=json.dumps(flags, ensure_ascii=False)
+                            )
+                            checked += 1
+                        except Exception as e:
+                            print(f"       ! 质检分数写入失败(ID={kp_id}): {e}")
+
+            # 打印分数分布
+            if scores:
+                avg = sum(scores) / len(scores)
+                low = sum(1 for s in scores if s <= 2)
+                mid = sum(1 for s in scores if s == 3)
+                high = sum(1 for s in scores if s >= 4)
+                print(f"     质检评分: 平均{avg:.1f}分 (优{high} / 中{mid} / 差{low})")
+                if low > 0:
+                    print(f"     [注意] {low}条知识点评分较低,建议审核时重点关注")
+
+            return checked
+
+        except CostLimitExceeded:
+            print(f"     费用已达上限,跳过质检")
+            return 0
+        except Exception as e:
+            print(f"     质检失败: {e}")
+            return 0
 
     # ================================================================
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
@@ -394,6 +853,7 @@ class Extractor:
     def extract_from_file(self, rec):
         result = {"success": False, "knowledge_count": 0, "error": ""}
         fid = rec["id"]
+        self._current_file_id = fid  # 供_smart_segment保存分段方案
         fn = rec.get("renamed_filename") or rec["original_filename"]
         original_fn = rec["original_filename"]
         fp = None
@@ -430,26 +890,89 @@ class Extractor:
                 content = self.client.ocr_image(fp)["content"]
 
             ctype = self._determine_type(rec, content)
+
+            # === Step 1: V3预分析 ===
+            pre_result = None
+            print(f"     [Step 1] V3预分析...")
+            pre_result = self._pre_analyze(content, fn)
+            if pre_result == "SKIP_FILE":
+                self.db.update_source_file(fid, process_status="processing",
+                                           process_message="预分析失败,用户选择跳过")
+                result["error"] = "用户跳过(预分析失败)"; return result
+            if pre_result and isinstance(pre_result, dict):
+                # 更新分类建议
+                suggested_type = pre_result.get("content_type", "")
+                if suggested_type and suggested_type in self.TYPE_NAMES:
+                    if suggested_type != ctype:
+                        print(f"     V3建议分类: {self.TYPE_NAMES[suggested_type]}(原判断:{self.TYPE_NAMES.get(ctype, ctype)})")
+                        ctype = suggested_type
+                # 质量评估
+                q_score = pre_result.get("quality_score", 5)
+                q_reason = pre_result.get("quality_reason", "")
+                est_count = pre_result.get("estimated_knowledge_count", "?")
+                print(f"     质量评分: {q_score}/5 ({q_reason})")
+                print(f"     预估知识点: {est_count}条")
+                # 低价值文件提醒
+                if q_score <= 2:
+                    warnings = pre_result.get("warnings", [])
+                    if warnings:
+                        for w in warnings:
+                            print(f"     [提醒] {w}")
+                    while True:
+                        answer = input(f"     该文件价值较低(评分{q_score}/5), 继续提取? (Y=继续 / N=跳过): ").strip().upper()
+                        if answer == "Y":
+                            print(f"     好的,继续提取"); break
+                        elif answer == "N":
+                            self.db.update_source_file(fid, process_status="completed",
+                                                       process_message=f"V3预分析评分{q_score}/5,用户选择跳过")
+                            self._move_to_completed(fp, fn); self._clean_pending(original_fn)
+                            result["error"] = "低价值文件已跳过"; return result
+                        else: print(f"     请输入 Y 或 N")
+                # 保存预分析结果
+                self.db.update_source_file(fid,
+                    pre_analysis_result=json.dumps(pre_result, ensure_ascii=False),
+                    suggested_content_type=ctype)
+
             prompt = get_extraction_prompt(ctype)
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
             print(f"     提取模型: {self.extraction_model} ({self.extraction_model_name})")
-            print(f"     标签模式: 三层标签(v2.0.0)")
+            print(f"     Prompt版本: {get_prompt_version()}")
 
-            segs = self._split(content)
+            # === Step 2: 智能分段 ===
+            print(f"     [Step 2] 智能分段...")
+            segs, file_structure = self._smart_segment(content, pre_result, fn)
             if len(segs) > 1:
-                print(f"     分{len(segs)}段提取(每段约{self.segment_max_len}字)")
+                seg_lens = [len(s) for s in segs]
+                print(f"     分{len(segs)}段提取(段长: {min(seg_lens)}-{max(seg_lens)}字)")
             else:
-                print(f"     整段提取")
-            print(f"     AI提取中,请耐心等待...")
+                print(f"     整段提取({len(segs[0])}字)")
 
+            # === Step 3: 费用预估(大文件) ===
+            if len(segs) >= 3:
+                est_cost = self._estimate_extraction_cost(segs)
+                print(f"     预估费用: R1提取约{est_cost:.2f}元 + V3辅助<0.2元")
+                if est_cost > 5.0:
+                    while True:
+                        answer = input(f"     预估费用较高({est_cost:.1f}元), 继续? (Y/N): ").strip().upper()
+                        if answer == "Y": break
+                        elif answer == "N":
+                            self.db.update_source_file(fid, process_status="processing",
+                                                       process_message=f"费用预估{est_cost:.1f}元,用户暂缓")
+                            result["error"] = "用户暂缓(费用)"; return result
+                        else: print(f"     请输入 Y 或 N")
+
+            # === Step 4: R1逐段提取(带上下文接力) ===
+            print(f"     [Step 4] AI提取中,请耐心等待...")
             kps = []
             for i, seg in enumerate(segs, 1):
                 if len(segs) > 1:
                     print(f"\n     --- 第{i}/{len(segs)}段 ({len(seg)}字) ---")
+                # 构建上下文接力信息
+                relay_prefix = self._build_context_relay(i, len(segs), file_structure, kps)
                 seg_kps = self._extract_with_auto_split(
                     seg, f"{fn}(第{i}/{len(segs)}段)" if len(segs) > 1 else fn,
-                    prompt, ctype)
+                    prompt, ctype, relay_prefix=relay_prefix)
                 kps.extend(seg_kps)
 
             if not kps:
@@ -458,20 +981,25 @@ class Extractor:
                 result["error"] = "未提取到知识点"
                 print(f"     [注意] 未提取到知识点"); return result
 
-            # === 写入数据库（v2.0.0: 三层标签 + 元数据） ===
+            # === Step 5: 跨段补漏检查(多段文件) ===
+            extraction_notes = ""
+            if len(segs) > 1:
+                print(f"\n     [Step 5] 跨段补漏检查...")
+                missed = self._cross_segment_check(fn, file_structure, kps)
+                if missed:
+                    extraction_notes = json.dumps(missed, ensure_ascii=False)
+
+            # === 写入数据库（v2.1.0-c: 三层标签 + 元数据 + prompt_version） ===
             print(f"\n     写入{len(kps)}个知识点到数据库...")
+            current_prompt_version = get_prompt_version()
             cnt = 0
             kps_info = []
             for kp in kps:
                 try:
-                    # 分类体系匹配（保持不变）
                     cat_code = kp.get("suggested_category_code", "")
                     cat = self.db.find_category_by_code(cat_code)
-
-                    # v2.0.0: 三层标签校验
                     tags = self._sanitize_tags(kp)
 
-                    # 写入数据库
                     kid = self.db.add_knowledge_point(
                         source_file_id=fid,
                         title=kp.get("title", "未命名"),
@@ -479,16 +1007,14 @@ class Extractor:
                         original_excerpt=kp.get("original_excerpt", ""),
                         ai_extracted_content=kp,
                         suggested_category_id=cat["id"] if cat else None,
-                        # v2.0.0 三层标签
                         suggested_category_tags=tags["category_tags"],
                         suggested_attribute_tags=tags["attribute_tags"],
                         suggested_keywords=tags["keywords"],
-                        # v2.0.0 元数据
                         content_readiness=tags["readiness"],
                         source_authority=tags["authority"],
-                        # 定位信息
                         source_page=str(kp.get("source_page", "")),
-                        source_keyword=kp.get("source_keyword", ""))
+                        source_keyword=kp.get("source_keyword", ""),
+                        prompt_version=current_prompt_version)
                     cnt += 1
                     kps_info.append({
                         "kp_id": kid,
@@ -503,11 +1029,24 @@ class Extractor:
             self._move_to_completed(fp, fn)
             self._clean_pending(original_fn)
 
+            # === Step 6: V3质检（5维度评分） ===
+            qc_count = 0
+            if cnt > 0:
+                print(f"\n     [Step 6] V3质检({cnt}条知识点)...")
+                content_summary = ""
+                if pre_result and isinstance(pre_result, dict):
+                    content_summary = pre_result.get("content_overview", "")
+                qc_count = self._quality_check(fn, content_summary, kps, kps_info)
+
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
-            self.db.update_source_file(fid, process_status="completed",
-                                       process_message=f"{model_tag}提取{cnt}个知识点(三层标签)")
+            msg = f"{model_tag}提取{cnt}个知识点(v2.1.0-c)"
+            if qc_count > 0:
+                msg += f" [已质检{qc_count}条]"
+            if extraction_notes:
+                msg += " [有补漏建议]"
+            self.db.update_source_file(fid, process_status="completed", process_message=msg)
             result.update({"success": True, "knowledge_count": cnt, "kps_info": kps_info})
-            print(f"     [OK] {cnt}个知识点已存入待审核队列(三层标签已打标)")
+            print(f"     [OK] {cnt}个知识点已存入待审核队列(Prompt:{get_prompt_version()})")
 
         except CostLimitExceeded as e:
             result["error"] = str(e)
@@ -523,8 +1062,9 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.0.0")
-        print(f"  三层标签模式 | 启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.0-c")
+        print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
+        print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
 
         usage = self.client.get_today_usage()
@@ -539,8 +1079,9 @@ class Extractor:
             return
         print(f"\n  共{len(files)}个文件待提取")
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
-        print(f"  分段策略: 每段{self.segment_max_len}字")
+        print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
         print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
+        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
@@ -569,9 +1110,9 @@ class Extractor:
         print(f"\n{'=' * 60}")
         print(f"  提取完成!")
         print(f"  使用模型: {self.extraction_model_name}")
-        print(f"  标签体系: 三层标签(v2.0.0)")
+        print(f"  Prompt版本: {get_prompt_version()}")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
-        print(f"  知识点数: 共提取{total_kps}个，等待人工审核")
+        print(f"  知识点数: 共提取{total_kps}个，已V3质检，等待人工审核")
         print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")
         print(f"{'-' * 60}")
         print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
@@ -580,6 +1121,16 @@ class Extractor:
 
 def main():
     try:
+        # v2.1.0-c: 自动检查数据库迁移
+        try:
+            from scripts.migrate_v210c import migrate
+            migrate()
+        except ImportError:
+            try:
+                from migrate_v210c import migrate
+                migrate()
+            except ImportError:
+                pass  # 迁移脚本不存在，跳过
         Extractor().run()
     except KeyboardInterrupt:
         print(f"\n\n  已取消操作。")

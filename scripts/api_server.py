@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v2.0.0 - 三层标签审核/物理删除/批量操作/标签定义API
+版本：v2.1.0-c - 三层标签审核/物理删除/批量操作/标签定义API/质检展示
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -37,7 +37,7 @@ def _safe(item):
     for f in ["ai_extracted_content","suggested_tags","final_tags","domain_tags",
               "suggested_category_tags","final_category_tags",
               "suggested_attribute_tags","final_attribute_tags",
-              "suggested_keywords","final_keywords"]:
+              "suggested_keywords","final_keywords","qa_flags"]:
         if f in r: r[f] = _parse(r[f])
     return r
 
@@ -77,6 +77,7 @@ def index():
 @app.route("/api/knowledge-points", methods=["GET"])
 def get_kps():
     try:
+        sort_by_qa = request.args.get("sort_by_qa", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -84,7 +85,11 @@ def get_kps():
             search_query=request.args.get("search",None),
             content_readiness=request.args.get("readiness",None),
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
-        r["items"] = [_safe(i) for i in r["items"]]
+        items = r["items"]
+        if sort_by_qa:
+            # 按qa_score升序排列，NULL排最后
+            items.sort(key=lambda x: (x.get("qa_score") is None, x.get("qa_score") or 999))
+        r["items"] = [_safe(i) for i in items]
         return jsonify(r)
     except Exception as e:
         traceback.print_exc()
@@ -388,8 +393,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v2.0.0")
-    print(f"  三层标签审核 | 物理删除 | 批量操作")
+    print(f"  乡村振兴知识库 - 审核界面 v2.1.0-c")
+    print(f"  三层标签审核 | 物理删除 | 批量操作 | V3质检展示")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

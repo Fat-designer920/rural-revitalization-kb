@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.0.0</title>
+<title>乡村振兴知识库 v2.1.0-c</title>
 <style>
 :root {
   --primary: #4338CA;
@@ -160,6 +160,14 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .auth-authoritative{background:#CCFBF1;color:#115E59}
 .auth-firsthand{background:#FEF3C7;color:#92400E}
 .auth-informal{background:#F1F5F9;color:#64748B}
+.qa-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;line-height:1.5}
+.qa-high{background:#D1FAE5;color:#065F46}
+.qa-mid{background:#FEF3C7;color:#92400E}
+.qa-low{background:#FEE2E2;color:#991B1B}
+.qa-none{background:#F1F5F9;color:#94A3B8}
+.qa-flags{display:inline-flex;flex-wrap:wrap;gap:3px;margin-left:6px}
+.qa-flag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA}
+.btn-sort-active{background:var(--primary-light);color:var(--primary);border-color:var(--primary);font-weight:600}
 
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
@@ -246,7 +254,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 <body>
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.0.0</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.1.0-c</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -297,6 +305,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       </div>
       <div class="toolbar-right">
         <div class="search-wrap"><input type="text" id="searchInput" placeholder="搜索标题/内容/标签/关键词..." onkeydown="if(event.keyCode===13)doSearch()"><button onclick="doSearch()">搜索</button></div>
+        <button class="btn btn-sm" id="btnQaSort" onclick="toggleQaSort()">质检排序</button>
         <button class="btn btn-sm" onclick="refreshData()">刷新</button>
       </div>
     </div>
@@ -377,7 +386,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var tagDefs=null,tagNameToGroup={};
 var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
@@ -386,6 +395,7 @@ var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",to
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
 var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
 var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
+var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度"};
 
 /* === API helpers === */
@@ -432,13 +442,14 @@ function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
+function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
@@ -451,6 +462,13 @@ function renderCard(kp,seq){
   var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
   var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
   var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
+
+  /* QA score & flags */
+  var qaScore=kp.qa_score,qaFlags=kp.qa_flags||[];
+  if(typeof qaFlags==="string"){try{qaFlags=JSON.parse(qaFlags)}catch(e){qaFlags=[]}}
+  if(!Array.isArray(qaFlags))qaFlags=[];
+  var qaH="";
+  if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
 
   /* Tag chips HTML */
   var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
@@ -472,7 +490,7 @@ function renderCard(kp,seq){
   +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
   +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
   +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
-  +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span></div>'
+  +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+'</div>'
   +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
   +(kf?'<div class="kp-fields">'+kf+'</div>':"")
   +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
