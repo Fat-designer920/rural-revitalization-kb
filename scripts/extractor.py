@@ -668,25 +668,24 @@ class Extractor:
         if not kps or not kps_info:
             return 0
 
-        # 构建知识点文本
-        kp_lines = []
+        # 构建知识点JSON（与QC_CHECK_PROMPT模板的{knowledge_points_json}对应）
+        kp_for_qc = []
         for i, kp in enumerate(kps):
-            title = kp.get("title", "未命名")
-            excerpt = (kp.get("original_excerpt") or "")[:200]
-            cat_tags = kp.get("suggested_category_tags", [])
-            tags_text = ", ".join(cat_tags) if isinstance(cat_tags, list) else ""
-            kp_lines.append(
-                f"[{i+1}] 标题: {title}\n"
-                f"    分类标签: {tags_text}\n"
-                f"    原文摘录: {excerpt}"
-            )
-        knowledge_points_text = "\n\n".join(kp_lines)
+            kp_for_qc.append({
+                "index": i,
+                "title": kp.get("title", "未命名"),
+                "original_excerpt": (kp.get("original_excerpt") or "")[:200],
+                "suggested_category_tags": kp.get("suggested_category_tags", []),
+                "suggested_keywords": kp.get("suggested_keywords", [])[:5]
+            })
+        knowledge_points_json = json.dumps(kp_for_qc, ensure_ascii=False, indent=2)
 
         prompt = QC_CHECK_PROMPT
         up = prompt["user_prompt_template"].format(
             filename=filename,
-            content_summary=content_summary or "(无摘要)",
-            knowledge_points_text=knowledge_points_text
+            file_summary=content_summary or "(无摘要)",
+            kp_count=len(kps),
+            knowledge_points_json=knowledge_points_json
         )
 
         try:
@@ -700,7 +699,8 @@ class Extractor:
                 print(f"     质检返回格式异常(花费{cost:.4f}元)")
                 return 0
 
-            results = parsed.get("results", [])
+            # QC_CHECK_PROMPT返回的数组字段名是qa_results
+            results = parsed.get("qa_results", [])
             if not results:
                 print(f"     质检无结果(花费{cost:.4f}元)")
                 return 0
@@ -711,11 +711,32 @@ class Extractor:
             scores = []
             checked = 0
             for qr in results:
-                idx = qr.get("index", 0) - 1  # 1-based → 0-based
-                score = qr.get("score", 0)
-                flags = qr.get("flags", [])
+                # QC_CHECK_PROMPT返回kp_index（0开始）
+                idx = qr.get("kp_index", -1)
+                score = qr.get("qa_score", 0)
+                flags = qr.get("qa_flags", [])
                 if not isinstance(flags, list):
                     flags = []
+                # 标准化flags为英文标记，方便前端翻译
+                normalized_flags = []
+                FLAG_MAP = {
+                    "缺上下文": "independence", "独立性不足": "independence",
+                    "信息空泛": "density", "信息密度低": "density",
+                    "颗粒度过粗": "granularity_coarse", "过粗": "granularity_coarse",
+                    "颗粒度过细": "granularity_fine", "过细": "granularity_fine",
+                    "标签不符": "tag_mismatch", "标签不匹配": "tag_mismatch",
+                    "疑似重复": "duplicate_suspect", "重复": "duplicate_suspect",
+                }
+                for f in flags:
+                    if isinstance(f, str):
+                        mapped = FLAG_MAP.get(f)
+                        if mapped:
+                            normalized_flags.append(mapped)
+                        elif f in FLAG_MAP.values():
+                            normalized_flags.append(f)
+                        else:
+                            # 保留原始中文标记
+                            normalized_flags.append(f)
 
                 scores.append(score)
 
@@ -727,7 +748,7 @@ class Extractor:
                             self.db.update_knowledge_point(
                                 kp_id,
                                 qa_score=score,
-                                qa_flags=json.dumps(flags, ensure_ascii=False)
+                                qa_flags=json.dumps(normalized_flags, ensure_ascii=False)
                             )
                             checked += 1
                         except Exception as e:
