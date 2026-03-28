@@ -279,6 +279,39 @@ def mark_outdated(kid):
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+@app.route("/api/knowledge-points/batch-mark-outdated", methods=["POST"])
+def batch_mark_outdated():
+    """批量标记过时"""
+    try:
+        d = request.get_json() or {}
+        ids = d.get("ids", [])
+        reason = d.get("reason", "")
+        n = 0
+        for kid in ids:
+            try:
+                db.mark_knowledge_outdated(kid, reason)
+                n += 1
+            except: pass
+        return jsonify({"success":True,"marked":n})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+@app.route("/api/knowledge-points/batch-restore-to-pending", methods=["POST"])
+def batch_restore_to_pending():
+    """批量恢复到待审核"""
+    try:
+        d = request.get_json() or {}
+        ids = d.get("ids", [])
+        n = 0
+        for kid in ids:
+            try:
+                kp = db.get_knowledge_point(kid)
+                if kp and kp["review_status"] == "ignored":
+                    db.restore_to_pending(kid)
+                    n += 1
+            except: pass
+        return jsonify({"success":True,"restored":n})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
 # ================================================================
 # 编辑历史
 # ================================================================

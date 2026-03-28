@@ -349,10 +349,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
     <div class="toolbar">
       <div class="toolbar-left">
         <label style="font-size:12px;cursor:pointer;color:var(--text-secondary)"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()" style="accent-color:var(--primary)"> 全选</label>
-        <button class="btn btn-success btn-sm" onclick="batchConfirm()" id="btnBatch" disabled>确认入库</button>
-        <button class="btn btn-warn btn-sm" onclick="batchIgnore()" id="btnIgnore" disabled>批量忽略</button>
-        <button class="btn btn-danger btn-sm" onclick="batchDelete()" id="btnDelete" disabled>批量删除</button>
-        <button class="btn btn-sm" onclick="batchRenewFreshness()" id="btnRenew" disabled style="color:#059669;border-color:#059669">批量续期</button>
+        <span id="batchButtons"></span>
       </div>
       <div class="toolbar-right">
         <div class="search-wrap"><input type="text" id="searchInput" placeholder="搜索标题/内容/标签/关键词..." onkeydown="if(event.keyCode===13)doSearch()"><button onclick="doSearch()">搜索</button></div>
@@ -489,7 +486,7 @@ function getFreshnessStatus(kp){
 
 /* === Init === */
 function init(){
-  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
+  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
 }
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
@@ -509,7 +506,7 @@ function buildCategoryDropdown(){var sel=document.getElementById("editCategory")
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
@@ -578,7 +575,10 @@ return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"
 +'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
 }
 
-function getDimName(code){if(!tagDefs||!tagDefs.layer2)return code;var d=tagDefs.layer2[code];return d?d.name:code}
+function getDimName(code){
+var ATTR_KEY_CN={"policy_level":"政策层级","funding_channel":"资金渠道","stakeholder":"涉及主体","region":"涉及区域","timeliness":"时效状态","data_year":"数据年份","replicability":"可复制性","funding_scale":"资金规模"};
+if(ATTR_KEY_CN[code])return ATTR_KEY_CN[code];
+if(!tagDefs||!tagDefs.layer2)return code;var d=tagDefs.layer2[code];return d?d.name:code}
 
 function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+esc(fs[i][1])+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
 
@@ -594,14 +594,22 @@ function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle
 function renewFreshness(id){var note=prompt("保鲜备注（可留空）:\n例如: 2026年3月核实，该政策仍为现行有效文件");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
 function markOutdated(id){showConfirm("标记已过时","此知识点将标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（可留空）:");apiPost("/api/knowledge-points/"+id+"/mark-outdated",{reason:reason||""}).then(function(r){if(r.success){showToast("已标记过时","info");refreshData();loadFreshnessSummary()}})})}
 function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:\n例如: 本批次知识点已核实均为现行有效");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
-
+function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){showToast("已标记"+r.marked+"条过时","info");selectedIds={};refreshData();loadFreshnessSummary()}})})}
+function batchRestoreToPending(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量恢复","将"+ids.length+"条知识点恢复到待审核状态?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-restore-to-pending",{ids:ids}).then(function(r){if(r.success){showToast("已恢复"+r.restored+"条","success");selectedIds={};refreshData()}})})}
 /* === Batch === */
 function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
 function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){showToast("已忽略"+r.ignored+"个","info");selectedIds={};refreshData()}})})}
 function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
 function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
-function updateBatch(){var n=Object.keys(selectedIds).length;var bc=document.getElementById("btnBatch"),bi=document.getElementById("btnIgnore"),bd=document.getElementById("btnDelete"),br=document.getElementById("btnRenew");bc.disabled=n===0;bi.disabled=n===0;bd.disabled=n===0;br.disabled=n===0;bc.textContent=n>0?"确认入库("+n+")":"确认入库";bi.textContent=n>0?"批量忽略("+n+")":"批量忽略";bd.textContent=n>0?"批量删除("+n+")":"批量删除";br.textContent=n>0?"批量续期("+n+")":"批量续期"}
+function updateBatch(){var n=Object.keys(selectedIds).length;var btns=document.querySelectorAll("#batchButtons button");for(var i=0;i<btns.length;i++){btns[i].disabled=n===0;var base=btns[i].getAttribute("data-label");if(base)btns[i].textContent=n>0?base+"("+n+")":base}}
+
+function renderBatchButtons(){var h="",st=currentStatus;
+if(!st||st==="pending"){h+='<button class="btn btn-success btn-sm" data-label="确认入库" onclick="batchConfirm()" disabled>确认入库</button>';h+='<button class="btn btn-warn btn-sm" data-label="批量忽略" onclick="batchIgnore()" disabled>批量忽略</button>'}
+if(!st||st==="confirmed"){h+='<button class="btn btn-sm" data-label="批量续期" onclick="batchRenewFreshness()" disabled style="color:#059669;border-color:#059669">批量续期</button>';h+='<button class="btn btn-sm" data-label="批量标记过时" onclick="batchMarkOutdated()" disabled style="color:#DC2626;border-color:#DC2626">批量标记过时</button>'}
+if(!st||st==="ignored"){h+='<button class="btn btn-sm" data-label="批量恢复" onclick="batchRestoreToPending()" disabled style="color:#059669;border-color:#059669">批量恢复</button>'}
+h+='<button class="btn btn-danger btn-sm" data-label="批量删除" onclick="batchDelete()" disabled>批量删除</button>';
+document.getElementById("batchButtons").innerHTML=h}
 
 /* === Edit Modal === */
 function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){
