@@ -1,17 +1,13 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.0-c - 预分析+智能分段+上下文接力+跨段补漏+V3质检+版本追踪
+版本：v2.1.0-d - 基于v2.1.0-c，修复R1截断问题
 
-变更说明（v2.1.0-c vs v2.0.0）：
-  - 新增V3预分析：质量预筛+分类建议+结构识别（可跳过，不可降级）
-  - 新增三级智能分段：V3结构摘要 > 本地规则分段 > 段落边界分段（不回退到机械切割）
-  - 新增上下文接力：每段提取时传递前段知识点标题+前段末尾200字+文件结构摘要
-  - 新增跨段补漏检查：V3比对文件大纲与知识点标题，找遗漏
-  - 新增V3质检（第3批）：提取完成后5维度评分+问题标记，结果存入qa_score/qa_flags
-  - 新增费用预估：大文件提取前展示预估费用
-  - 新增prompt_version记录：每条知识点记录提取时的Prompt版本号
-  - 保留全部v2.0.0功能：R1/V3双模型、MD5去重、三层标签、截断修复、失败隔离、AI分类建议
+变更说明（v2.1.0-d vs v2.1.0-c）：
+  - R1分段上限从4000降到3000（减少高密度文件截断概率）
+  - 过大段拆分阈值从硬编码6000改为动态计算（segment_max * 1.5），适配不同模型
+  - 截断提示信息增强：明确告知已抢救数量和可能损失
+  - 保留全部v2.1.0-c功能不变
 """
 import os, sys, json, re, shutil, hashlib
 from pathlib import Path
@@ -43,7 +39,7 @@ class Extractor:
             "model": "deepseek-reasoner",
             "name": "R1 深度推理",
             "desc": "最精准,逐段深度分析,速度较慢,费用较高",
-            "segment_max": 4000
+            "segment_max": 3000  # v2.1.0-d: 从4000降到3000,减少截断
         },
         "2": {
             "model": "deepseek-chat",
@@ -55,6 +51,7 @@ class Extractor:
 
     # 第一层标签的合法名称清单（启动时从tag_config加载）
     VALID_LAYER1_NAMES = set(get_layer1_tag_names())
+
     # 元数据合法值
     VALID_READINESS = set(CONTENT_READINESS.keys())
     VALID_AUTHORITY = set(SOURCE_AUTHORITY.keys())
@@ -72,10 +69,9 @@ class Extractor:
         self.failed_dir = Path(self.config.get("failed_path", PROJECT_ROOT / "data" / "failed"))
         self.completed.mkdir(parents=True, exist_ok=True)
         self.failed_dir.mkdir(parents=True, exist_ok=True)
-
         self.extraction_model = None
         self.extraction_model_name = None
-        self.segment_max_len = 4000
+        self.segment_max_len = 3000  # v2.1.0-d: 默认值也改为3000
 
     def select_model(self):
         print(f"\n  请选择提取模型:")
@@ -114,7 +110,7 @@ class Extractor:
             exist_msg = existing.get("process_message", "")
             if exist_status == "completed" and "提取" in exist_msg and "知识点" in exist_msg and "未提取到" not in exist_msg:
                 print(f"     [发现重复] 该文件已成功处理过(MD5指纹相同)")
-                print(f"                原记录: {exist_name} | {exist_msg}")
+                print(f"       原记录: {exist_name} | {exist_msg}")
                 while True:
                     answer = input("     是否重新分析? (Y=重新分析 / N=跳过): ").strip().upper()
                     if answer == "Y":
@@ -182,23 +178,28 @@ class Extractor:
         parsed = ai.get("parsed_json")
         was_truncated = ai.get("was_truncated", False)
         cost_info = f"(花费约{ai.get('estimated_cost', 0):.4f}元)"
+
         if was_truncated and parsed is None:
-            print(f"       ! 输出被截断且无法抢救 {cost_info}")
+            print(f"     ! 输出被截断且无法抢救 {cost_info}")
             return "TRUNCATED"
+
         if parsed and isinstance(parsed, dict):
             kps = parsed.get("knowledge_points", [])
             notes = parsed.get("extraction_notes", "")
-            if notes: print(f"       AI说明: {notes[:80]}")
+            if notes: print(f"     AI说明: {notes[:80]}")
             if was_truncated:
-                print(f"       本段提取{len(kps)}个知识点(部分截断已修复) {cost_info}")
+                # v2.1.0-d: 截断提示增强，明确说明影响
+                print(f"     [注意] R1输出被截断(达到模型输出上限),尝试抢救...")
+                print(f"     [截断修复] 从不完整输出中抢救出{len(kps)}个完整知识点")
+                print(f"     本段提取{len(kps)}个知识点(部分截断已修复) {cost_info}")
             else:
-                print(f"       本段提取{len(kps)}个知识点 {cost_info}")
+                print(f"     本段提取{len(kps)}个知识点 {cost_info}")
             return kps
         if parsed and isinstance(parsed, list):
-            print(f"       本段提取{len(parsed)}个知识点 {cost_info}")
+            print(f"     本段提取{len(parsed)}个知识点 {cost_info}")
             return parsed
         err = ai.get("json_parse_error", "未知错误")
-        print(f"       ! JSON解析失败: {err} {cost_info}")
+        print(f"     ! JSON解析失败: {err} {cost_info}")
         return []
 
     def _extract_with_auto_split(self, content, filename, prompt, ctype, current_max_len=None, relay_prefix=""):
@@ -207,12 +208,12 @@ class Extractor:
         if result == "TRUNCATED":
             new_max = current_max_len // 2
             if new_max < 500:
-                print(f"       ! 内容过短仍被截断,跳过该段"); return []
-            print(f"       自动拆分为更小段(每段{new_max}字)重新提取...")
+                print(f"     ! 内容过短仍被截断,跳过该段"); return []
+            print(f"     自动拆分为更小段(每段{new_max}字)重新提取...")
             sub_segs = self._split(content, max_len=new_max)
             all_kps = []
             for j, sub_seg in enumerate(sub_segs, 1):
-                print(f"         子段{j}/{len(sub_segs)} ({len(sub_seg)}字)...")
+                print(f"       子段{j}/{len(sub_segs)} ({len(sub_seg)}字)...")
                 sub_kps = self._extract_with_auto_split(sub_seg, f"{filename}(子段{j})", prompt, ctype, new_max, relay_prefix=relay_prefix)
                 all_kps.extend(sub_kps)
             return all_kps
@@ -248,7 +249,6 @@ class Extractor:
     # ================================================================
     def _sanitize_tags(self, kp):
         """校验并清理AI返回的三层标签数据，确保格式正确、值合法。"""
-
         # --- 第一层：分类标签 ---
         raw_cat_tags = kp.get("suggested_category_tags", [])
         if not isinstance(raw_cat_tags, list):
@@ -258,17 +258,15 @@ class Extractor:
         if len(clean_cat_tags) < len(raw_cat_tags):
             removed = set(raw_cat_tags) - set(clean_cat_tags)
             if removed:
-                print(f"       [标签校验] 过滤了{len(removed)}个不在清单中的分类标签: {', '.join(list(removed)[:3])}")
+                print(f"     [标签校验] 过滤了{len(removed)}个不在清单中的分类标签: {', '.join(list(removed)[:3])}")
 
         # --- 第二层：属性标签 ---
         raw_attr_tags = kp.get("suggested_attribute_tags", {})
         if not isinstance(raw_attr_tags, dict):
             raw_attr_tags = {}
-        # 保留所有键值对（维度名由AI填写，值可能是候选值或自由文本）
         clean_attr_tags = {}
         for dim_key, dim_val in raw_attr_tags.items():
             if isinstance(dim_key, str) and dim_val:
-                # 如果值是列表（AI可能多选），转为逗号分隔字符串
                 if isinstance(dim_val, list):
                     dim_val = "、".join(str(v) for v in dim_val)
                 clean_attr_tags[dim_key] = str(dim_val)
@@ -277,7 +275,6 @@ class Extractor:
         raw_keywords = kp.get("suggested_keywords", [])
         if not isinstance(raw_keywords, list):
             raw_keywords = []
-        # 过滤：只保留2-20字的字符串，去重
         seen = set()
         clean_keywords = []
         for kw in raw_keywords:
@@ -289,7 +286,6 @@ class Extractor:
         readiness = kp.get("suggested_readiness", "draft")
         if readiness not in self.VALID_READINESS:
             readiness = "draft"
-
         authority = kp.get("suggested_authority", "firsthand")
         if authority not in self.VALID_AUTHORITY:
             authority = "firsthand"
@@ -373,15 +369,18 @@ class Extractor:
     def _smart_segment(self, content, pre_result, filename):
         """三级分段策略，绝不回退到机械切割。
         返回 (segments_list, file_structure_text)"""
-        if len(content) <= 4000:
+        if len(content) <= self.segment_max_len:
             return [content], ""
+
+        # v2.1.0-d: 过大段阈值动态计算，跟随模型设置
+        oversized_threshold = int(self.segment_max_len * 1.5)
 
         # --- 第一级：V3结构摘要分段 ---
         structure_result = self._get_structure_summary(content, filename)
         if structure_result:
             suggested_segs = structure_result.get("suggested_segments", [])
             if suggested_segs and len(suggested_segs) >= 2:
-                segs = self._apply_v3_segments(content, suggested_segs)
+                segs = self._apply_v3_segments(content, suggested_segs, oversized_threshold)
                 if segs:
                     # 构建结构摘要文本
                     doc_structure = structure_result.get("document_structure", [])
@@ -402,7 +401,7 @@ class Extractor:
             print(f"     V3结构摘要不可用,切换到本地规则分段")
 
         # --- 第二级：本地规则分段 ---
-        segs = self._local_rule_segment(content)
+        segs = self._local_rule_segment(content, oversized_threshold)
         if segs and len(segs) >= 2:
             print(f"     使用本地规则分段(按章节标记)")
             # 从预分析中提取结构信息
@@ -420,8 +419,12 @@ class Extractor:
             struct_text = pre_result.get("content_overview", "")
         return segs, struct_text
 
-    def _apply_v3_segments(self, content, suggested_segs):
+    def _apply_v3_segments(self, content, suggested_segs, oversized_threshold=None):
         """根据V3建议的分段方案切割内容"""
+        # v2.1.0-d: 使用传入的动态阈值
+        if oversized_threshold is None:
+            oversized_threshold = int(self.segment_max_len * 1.5)
+
         segments = []
         content_lower = content
         for seg_info in suggested_segs:
@@ -456,25 +459,29 @@ class Extractor:
             if prefix and result:
                 result[0] = prefix + "\n\n" + result[0]
 
-        # 检查是否有过大的段（超过6000字的拆分）
+        # v2.1.0-d: 过大段拆分使用动态阈值
         final = []
         for seg in result:
-            if len(seg) > 6000:
-                sub_segs = self._paragraph_segment(seg, max_len=5000)
+            if len(seg) > oversized_threshold:
+                sub_segs = self._paragraph_segment(seg, max_len=self.segment_max_len)
                 final.extend(sub_segs)
             else:
                 final.append(seg)
 
         return final if len(final) >= 1 else None
 
-    def _local_rule_segment(self, content):
+    def _local_rule_segment(self, content, oversized_threshold=None):
         """按章节标记分段：识别中文文档常见的结构标记"""
+        # v2.1.0-d: 使用动态阈值
+        if oversized_threshold is None:
+            oversized_threshold = int(self.segment_max_len * 1.5)
+
         # 常见章节标记模式
         patterns = [
-            r'\n(第[一二三四五六七八九十百]+[章编篇])',           # 第一章、第一编
-            r'\n(第[一二三四五六七八九十\d]+条[\s\u3000])',       # 第一条 （政策文件）
-            r'\n([一二三四五六七八九十]+、)',                      # 一、二、三、
-            r'\n(附[则件录表]\s)',                                # 附则、附件
+            r'\n(第[一二三四五六七八九十百]+[章编篇])',    # 第一章、第一编
+            r'\n(第[一二三四五六七八九十\d]+条[\s\u3000])',  # 第一条 （政策文件）
+            r'\n([一二三四五六七八九十]+、)',              # 一、二、三、
+            r'\n(附[则件录表]\s)',                        # 附则、附件
         ]
 
         # 尝试每种模式，选择最佳（切出2-15段的）
@@ -516,11 +523,11 @@ class Extractor:
                     else:
                         merged.append(buf)
 
-                # 拆分过大的段
+                # v2.1.0-d: 拆分过大的段（使用动态阈值）
                 final = []
                 for seg in merged:
-                    if len(seg) > 6000:
-                        sub = self._paragraph_segment(seg, max_len=5000)
+                    if len(seg) > oversized_threshold:
+                        sub = self._paragraph_segment(seg, max_len=self.segment_max_len)
                         final.extend(sub)
                     else:
                         final.append(seg)
@@ -530,15 +537,15 @@ class Extractor:
 
         return None  # 没有找到合适的章节标记
 
-    def _paragraph_segment(self, content, max_len=4000):
+    def _paragraph_segment(self, content, max_len=None):
         """按段落边界分段，保证不在段落中间切断"""
+        if max_len is None:
+            max_len = self.segment_max_len
         if len(content) <= max_len:
             return [content]
-
         paragraphs = content.split("\n\n")
         segments = []
         current = ""
-
         for para in paragraphs:
             # 如果当前段加上新段落会超限，且当前段非空，先保存当前段
             if len(current) + len(para) + 2 > max_len and current:
@@ -546,10 +553,8 @@ class Extractor:
                 current = para
             else:
                 current = current + "\n\n" + para if current else para
-
         if current.strip():
             segments.append(current.strip())
-
         # 如果只产生了一段（整个内容没有段落分隔），按换行分
         if len(segments) <= 1 and len(content) > max_len:
             lines = content.split("\n")
@@ -563,7 +568,6 @@ class Extractor:
                     current = current + "\n" + line if current else line
             if current.strip():
                 segments.append(current.strip())
-
         return segments if segments else [content]
 
     def _format_structure_text(self, doc_structure):
@@ -585,14 +589,12 @@ class Extractor:
         """构建分段提取的上下文接力信息。单段文件返回空字符串。"""
         if total_segs <= 1:
             return ""
-
         # 前段已提取的知识点标题
         if prev_kps:
             titles = [kp.get("title", "") for kp in prev_kps]
             titles_text = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(titles))
         else:
             titles_text = "  (这是第一段，暂无)"
-
         return CONTEXT_RELAY_TEMPLATE.format(
             total_segments=total_segs,
             current_segment=seg_idx,
@@ -615,6 +617,7 @@ class Extractor:
             filename=filename,
             document_structure=file_structure,
             all_kp_titles=all_titles)
+
         try:
             ai = self.client.chat_with_json(
                 prompt["system_prompt"], up, temperature=0.2,
@@ -678,8 +681,8 @@ class Extractor:
                 "suggested_category_tags": kp.get("suggested_category_tags", []),
                 "suggested_keywords": kp.get("suggested_keywords", [])[:5]
             })
-        knowledge_points_json = json.dumps(kp_for_qc, ensure_ascii=False, indent=2)
 
+        knowledge_points_json = json.dumps(kp_for_qc, ensure_ascii=False, indent=2)
         prompt = QC_CHECK_PROMPT
         up = prompt["user_prompt_template"].format(
             filename=filename,
@@ -717,6 +720,7 @@ class Extractor:
                 flags = qr.get("qa_flags", [])
                 if not isinstance(flags, list):
                     flags = []
+
                 # 标准化flags为英文标记，方便前端翻译
                 normalized_flags = []
                 FLAG_MAP = {
@@ -739,7 +743,6 @@ class Extractor:
                             normalized_flags.append(f)
 
                 scores.append(score)
-
                 # 找到对应的kp_id
                 if 0 <= idx < len(kps_info):
                     kp_id = kps_info[idx].get("kp_id")
@@ -752,7 +755,7 @@ class Extractor:
                             )
                             checked += 1
                         except Exception as e:
-                            print(f"       ! 质检分数写入失败(ID={kp_id}): {e}")
+                            print(f"     ! 质检分数写入失败(ID={kp_id}): {e}")
 
             # 打印分数分布
             if scores:
@@ -848,7 +851,6 @@ class Extractor:
                                 if cat["level1_name"] == sg_parent:
                                     parent_id = cat["id"]
                                     break
-
                         related_ids = [k.get("kp_id") for k in unmatched if k.get("kp_id")]
                         self.db.add_architecture_suggestion(
                             suggested_name=sg_name,
@@ -878,9 +880,8 @@ class Extractor:
         fn = rec.get("renamed_filename") or rec["original_filename"]
         original_fn = rec["original_filename"]
         fp = None
-
         try:
-            print(f"\n  >> 开始提取: {fn}")
+            print(f"\n     >> 开始提取: {fn}")
             for f in self.processing.iterdir():
                 if f.name == fn or f.name == rec["original_filename"]:
                     fp = str(f); break
@@ -920,6 +921,7 @@ class Extractor:
                 self.db.update_source_file(fid, process_status="processing",
                                            process_message="预分析失败,用户选择跳过")
                 result["error"] = "用户跳过(预分析失败)"; return result
+
             if pre_result and isinstance(pre_result, dict):
                 # 更新分类建议
                 suggested_type = pre_result.get("content_type", "")
@@ -1060,7 +1062,7 @@ class Extractor:
                 qc_count = self._quality_check(fn, content_summary, kps, kps_info)
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
-            msg = f"{model_tag}提取{cnt}个知识点(v2.1.0-c)"
+            msg = f"{model_tag}提取{cnt}个知识点(v2.1.0-d)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
             if extraction_notes:
@@ -1083,7 +1085,7 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.0-c")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.0-d")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
