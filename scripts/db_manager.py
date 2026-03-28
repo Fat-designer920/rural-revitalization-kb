@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.0-d - 新增保鲜方法(get_freshness_summary/renew_freshness/mark_knowledge_outdated)+freshness_filter
+版本：v2.1.0-d - 新增保鲜方法+freshness_filter+政策校验字段(policy_dependencies/policy_validated)
 
 数据库表（13张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -435,13 +435,14 @@ class DatabaseManager:
                     "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
                     "content_readiness","source_authority","access_level",
                     "freshness_checked_at","freshness_interval_days","freshness_note",
-                    "prompt_version","qa_score","qa_flags"]
+                    "prompt_version","qa_score","qa_flags",
+                    "policy_dependencies","policy_validated"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags","final_category_tags",
-                          "final_attribute_tags","final_keywords","qa_flags") and isinstance(v, (dict, list)):
+                          "final_attribute_tags","final_keywords","qa_flags","policy_dependencies") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:

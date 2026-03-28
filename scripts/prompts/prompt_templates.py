@@ -1,7 +1,12 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.1.0-c - 产品导向深度重写
+版本：v2.1.0-d - 基于v2.1.0-c，新增POLICY_SCAN_PROMPT(F028)
+
+变更说明（v2.1.0-d）：
+  - 新增POLICY_SCAN_PROMPT：V3扫描非政策类知识点中的政策引用
+  - get_all_prompt_names新增policy_scan条目
+  - 保留v2.1.0-c全部内容不变
 
 变更说明（v2.1.0-c）：
   - 5个提取Prompt全部深度重写：注入产品目标上下文+颗粒度标准+正反示例+自检指令
@@ -769,6 +774,62 @@ CROSS_SEGMENT_CHECK_PROMPT = {
 
 
 # ============================================================
+# 政策依赖扫描Prompt（v2.1.0-d F028新增）
+# V3模型扫描非政策类知识点中的政策引用
+# ============================================================
+
+POLICY_SCAN_PROMPT = {
+    "system_prompt": """你是乡村振兴领域的政策合规审核专家。你的任务是检查知识点中是否引用了政策文件，并识别出具体的政策引用。
+
+## 判断规则
+
+1. **涉及政策（involves_policy = "yes"）**：知识点中提到了具体的政策文件（有文号、政策名称、或明确的政策条款引用），或者知识点的核心内容依赖某项政策规定。
+   例如："根据川府发〔2023〕12号""按照自然资发〔2023〕95号第三条规定""《四川省全域土地综合整治管理办法》要求"
+
+2. **不涉及政策（involves_policy = "no"）**：知识点是纯操盘技巧、沟通话术、项目管理经验、资金测算方法等，不依赖于任何特定政策。
+   例如："拆旧最佳时机是秋收后春节前""向领导汇报时先讲收益再讲风险""EPC合同变更上限约定15%"
+
+3. **不确定（involves_policy = "uncertain"）**：知识点可能间接涉及政策但没有明确引用，你无法确定。宁可标uncertain也不要错标。
+   例如："符合相关规定""按照上级要求""依据相关政策"等模糊引用
+
+## 政策识别要求
+
+对于involves_policy = "yes"的知识点，请尽可能识别出：
+- policy_number：政策文号（如"自然资发〔2023〕95号"）— 可能没有则留空
+- policy_name：政策名称（如"关于开展全域土地综合整治试点的通知"）— 尽可能提取
+- policy_level：政策层级（国家级/省级/市县级/行业规范）
+
+一条知识点可能引用多个政策，全部列出。
+
+## 输出格式（严格JSON，不要有其他文字）
+
+{"scan_results": [
+  {"kp_index": 0, "involves_policy": "yes/no/uncertain",
+   "referenced_policies": [
+     {"policy_number": "文号", "policy_name": "政策名称", "policy_level": "国家级/省级/市县级/行业规范"}
+   ],
+   "reason": "判断理由（15字内）"
+  }
+]}
+
+如果involves_policy为"no"或"uncertain"，referenced_policies可以为空数组[]。""",
+
+    "user_prompt_template": """请检查以下{kp_count}条知识点是否引用了政策文件。
+
+注意：
+- 纯操盘技巧、沟通话术、经验判断类知识点通常不涉及政策
+- 只要提到了具体政策文号或政策名称，就算涉及政策
+- 模糊引用（如"相关规定""上级要求"）标记为uncertain
+- 宁可标uncertain也不要漏标
+
+知识点列表：
+{knowledge_points_json}
+
+请逐条分析，按JSON格式输出。"""
+}
+
+
+# ============================================================
 # 待激活Prompt（保留不变）
 # ============================================================
 
@@ -890,4 +951,5 @@ def get_all_prompt_names():
         {"id": "qc_check", "name": "提取后质检", "version": PROMPT_VERSION},
         {"id": "segment_summary", "name": "文件结构摘要", "version": PROMPT_VERSION},
         {"id": "cross_segment_check", "name": "跨段补漏检查", "version": PROMPT_VERSION},
+        {"id": "policy_scan", "name": "政策依赖扫描", "version": PROMPT_VERSION},
     ]

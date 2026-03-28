@@ -1,12 +1,13 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.0-d - 基于v2.1.0-c，修复R1截断问题
+版本：v2.1.0-d - 基于v2.1.0-c，新增政策依赖校验(F028)
 
-变更说明（v2.1.0-d vs v2.1.0-c）：
+变更说明（v2.1.0-d）：
   - R1分段上限从4000降到3000（减少高密度文件截断概率）
   - 过大段拆分阈值从硬编码6000改为动态计算（segment_max * 1.5），适配不同模型
   - 截断提示信息增强：明确告知已抢救数量和可能损失
+  - 新增Step 7: 政策依赖校验（V3扫描政策引用+KB匹配+就绪度锁定）
   - 保留全部v2.1.0-c功能不变
 """
 import os, sys, json, re, shutil, hashlib
@@ -26,6 +27,7 @@ from scripts.prompts.prompt_templates import (
     QC_CHECK_PROMPT
 )
 from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
+from scripts.policy_validator import PolicyValidator
 
 
 class Extractor:
@@ -72,6 +74,7 @@ class Extractor:
         self.extraction_model = None
         self.extraction_model_name = None
         self.segment_max_len = 3000  # v2.1.0-d: 默认值也改为3000
+        self.policy_validator = PolicyValidator(db=self.db, client=self.client)
 
     def select_model(self):
         print(f"\n  请选择提取模型:")
@@ -1061,10 +1064,23 @@ class Extractor:
                     content_summary = pre_result.get("content_overview", "")
                 qc_count = self._quality_check(fn, content_summary, kps, kps_info)
 
+            # === Step 7: 政策依赖校验（V3扫描+KB匹配） ===
+            pv_count = 0
+            if cnt > 0:
+                print(f"\n     [Step 7] 政策依赖校验({cnt}条知识点)...")
+                try:
+                    pv_count = self.policy_validator.validate_batch(kps, kps_info, ctype)
+                except CostLimitExceeded:
+                    print(f"     费用已达上限,跳过政策校验")
+                except Exception as e:
+                    print(f"     政策校验出错: {e}")
+
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
             msg = f"{model_tag}提取{cnt}个知识点(v2.1.0-d)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
+            if pv_count > 0:
+                msg += f" [已政策校验{pv_count}条]"
             if extraction_notes:
                 msg += " [有补漏建议]"
             self.db.update_source_file(fid, process_status="completed", process_message=msg)
@@ -1104,7 +1120,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
         print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
         print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
-        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检")
+        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
@@ -1135,7 +1151,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name}")
         print(f"  Prompt版本: {get_prompt_version()}")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
-        print(f"  知识点数: 共提取{total_kps}个，已V3质检，等待人工审核")
+        print(f"  知识点数: 共提取{total_kps}个，已V3质检+政策校验，等待人工审核")
         print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")
         print(f"{'-' * 60}")
         print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
@@ -1154,6 +1170,16 @@ def main():
                 migrate()
             except ImportError:
                 pass  # 迁移脚本不存在，跳过
+        # v2.1.0-d F028: 政策依赖校验字段迁移
+        try:
+            from scripts.migrate_v210d_f028 import migrate as migrate_f028
+            migrate_f028()
+        except ImportError:
+            try:
+                from migrate_v210d_f028 import migrate as migrate_f028
+                migrate_f028()
+            except ImportError:
+                pass
         Extractor().run()
     except KeyboardInterrupt:
         print(f"\n\n  已取消操作。")
