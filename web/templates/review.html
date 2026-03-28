@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.1.0-c</title>
+<title>乡村振兴知识库 v2.1.0-d</title>
 <style>
 :root {
   --primary: #4338CA;
@@ -50,8 +50,15 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .stat-pill .num{font-weight:700;color:var(--text);margin-left:4px}
 .stat-pill.clickable{cursor:pointer}
 .stat-pill.clickable:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+
 .suggestion-bar{background:var(--warning-bg);border-bottom:1px solid #FDE68A;padding:8px 28px;font-size:13px;color:var(--warning);display:none;cursor:pointer;transition:var(--transition)}
 .suggestion-bar:hover{background:#FEF3C7}
+
+/* === Freshness Bar === */
+.freshness-bar{background:#FFF7ED;border-bottom:1px solid #FED7AA;padding:8px 28px;font-size:13px;color:#C2410C;display:none;cursor:pointer;transition:var(--transition)}
+.freshness-bar:hover{background:#FFEDD5}
+.freshness-bar .fb-expired{color:#DC2626;font-weight:700}
+.freshness-bar .fb-expiring{color:#D97706;font-weight:700}
 
 /* === Layout === */
 .main{display:flex;height:calc(100vh - 56px)}
@@ -66,6 +73,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .filter-item.active{background:var(--primary-light);color:var(--primary);font-weight:600}
 .filter-item .cnt{float:right;font-size:11px;background:var(--bg);padding:1px 8px;border-radius:10px;color:var(--text-muted)}
 .filter-item.active .cnt{background:var(--primary);color:#fff}
+
 .tree-group{margin-bottom:2px}
 .tree-parent{display:flex;align-items:center;width:100%;text-align:left;padding:7px 12px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text);font-weight:600;transition:var(--transition)}
 .tree-parent:hover{background:var(--primary-light);color:var(--primary)}
@@ -108,9 +116,12 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .file-header{padding:10px 16px;margin:20px 0 12px;border-radius:var(--radius);font-size:13px;font-weight:600;color:var(--primary);background:var(--primary-light);display:flex;justify-content:space-between;align-items:center}
 .file-header:first-child{margin-top:0}
 .file-header .fc{font-weight:400;color:var(--text-muted);font-size:12px}
+
 .kp-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:12px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition);position:relative}
 .kp-card:hover{box-shadow:var(--shadow-md);border-color:var(--border)}
 .kp-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(67,56,202,.15)}
+.kp-card.card-outdated{opacity:.6;background:#FAFAFA}
+
 .kp-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
 .kp-cb{width:16px;height:16px;cursor:pointer;margin-top:3px;accent-color:var(--primary)}
 .kp-seq{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:10px;font-weight:700;color:#fff;background:var(--primary);flex-shrink:0;margin-top:1px}
@@ -122,6 +133,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .kp-info{flex:1;min-width:0}
 .kp-title{font-size:15px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:6px}
 .kp-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
 .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;line-height:1.5}
 .badge-policy{background:#EEF2FF;color:#4338CA}
 .badge-case{background:#ECFDF5;color:#059669}
@@ -146,12 +158,14 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .tag-E{background:var(--tag-E-bg);color:var(--tag-E-text);border-color:var(--tag-E-border)}
 .tag-F{background:var(--tag-F-bg);color:var(--tag-F-text);border-color:var(--tag-F-border)}
 .tag-kw{background:var(--kw-bg);color:var(--kw-text);border-color:var(--kw-border)}
+
 .attr-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text-secondary)}
 .attr-pair{display:inline-flex;align-items:center;gap:4px}
 .attr-pair .attr-k{color:var(--text-muted)}
 .attr-pair .attr-v{color:var(--text);font-weight:500}
 .attr-pair .attr-sep{color:var(--border);margin:0 2px}
-.meta-badges{display:flex;gap:6px;margin-bottom:10px}
+
+.meta-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center}
 .rd-badge,.auth-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
 .rd-draft{background:#F1F5F9;color:#64748B}
 .rd-quotable{background:#D1FAE5;color:#065F46}
@@ -160,6 +174,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .auth-authoritative{background:#CCFBF1;color:#115E59}
 .auth-firsthand{background:#FEF3C7;color:#92400E}
 .auth-informal{background:#F1F5F9;color:#64748B}
+
 .qa-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;line-height:1.5}
 .qa-high{background:#D1FAE5;color:#065F46}
 .qa-mid{background:#FEF3C7;color:#92400E}
@@ -168,6 +183,15 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .qa-flags{display:inline-flex;flex-wrap:wrap;gap:3px;margin-left:6px}
 .qa-flag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA}
 .btn-sort-active{background:var(--primary-light);color:var(--primary);border-color:var(--primary);font-weight:600}
+
+/* === Freshness Badges === */
+.fr-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5}
+.fr-fresh{background:#D1FAE5;color:#065F46}
+.fr-expiring{background:#FEF3C7;color:#92400E}
+.fr-expired{background:#FEE2E2;color:#991B1B}
+.fr-outdated{background:#F1F5F9;color:#94A3B8;text-decoration:line-through}
+.fr-unknown{background:#F1F5F9;color:#94A3B8}
+.fr-note{font-size:11px;color:var(--text-muted);margin-left:6px;font-style:italic}
 
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
@@ -196,6 +220,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .modal-header{padding:20px 24px 0;font-size:17px;font-weight:700;color:var(--text)}
 .modal-body{padding:20px 24px}
 .modal-footer{padding:12px 24px 20px;display:flex;justify-content:flex-end;gap:8px}
+
 .field{margin-bottom:16px}
 .field label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600}
 .field input,.field textarea,.field select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--text);transition:var(--transition);background:var(--card)}
@@ -224,15 +249,18 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
 .empty-state h3{font-size:16px;margin-bottom:6px;color:var(--text-secondary);font-weight:600}
 .loading{text-align:center;padding:40px;color:var(--text-muted);font-size:13px}
+
 .active-filters{font-size:12px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .active-filters .af-tag{background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:4px;font-size:11px}
 .active-filters .af-clear{color:var(--danger);cursor:pointer;font-size:11px;margin-left:4px}
+
 .confirm-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:250;justify-content:center;align-items:center}
 .confirm-overlay.open{display:flex}
 .confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;width:400px;box-shadow:var(--shadow-lg);text-align:center}
 .confirm-box h3{font-size:16px;margin-bottom:8px;color:var(--text)}
 .confirm-box p{font-size:13px;color:var(--text-secondary);margin-bottom:20px;line-height:1.6}
 .confirm-box .confirm-actions{display:flex;gap:8px;justify-content:center}
+
 /* History & Suggestion cards */
 .history-item{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
 .history-item .ht{font-size:12px;color:var(--text-muted);margin-bottom:4px}
@@ -241,20 +269,24 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .history-field .fl{color:var(--text-muted);font-weight:600}
 .history-field .ov{color:var(--danger);text-decoration:line-through}
 .history-field .nv{color:var(--success)}
+
 .sg-card{border:1px solid #FDE68A;border-radius:var(--radius);padding:16px;margin-bottom:10px;background:var(--warning-bg)}
 .sg-card .sg-t{font-weight:600;font-size:14px;color:var(--warning);margin-bottom:4px}
 .sg-card .sg-m{font-size:12px;color:var(--text-muted);margin-bottom:6px}
 .sg-card .sg-r{font-size:13px;color:var(--text-secondary);margin-bottom:10px;line-height:1.6}
+
 .stat-row{display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px}
 .stat-row:last-child{border-bottom:none}
 .stat-bar{height:6px;background:var(--primary);border-radius:3px;margin-left:10px;min-width:2px}
 .stat-count{min-width:30px;text-align:right;color:var(--text-muted);font-size:12px;margin-left:8px}
+
 </style>
 </head>
 <body>
+
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.1.0-c</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.1.0-d</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -263,9 +295,14 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
   </div>
 </div>
 <div class="suggestion-bar" id="suggestionBar" onclick="openSuggestionsModal()">AI 发现 <b id="sgCount">0</b> 条分类建议待处理</div>
+<!-- v2.1.0-d: 保鲜提醒栏 -->
+<div class="freshness-bar" id="freshnessBar" onclick="filterByFreshness('needs_check',document.querySelector('#freshnessFilterSection .filter-item:nth-child(2)'))">
+  保鲜提醒: <span class="fb-expired" id="fbExpired">0</span> 条已过期, <span class="fb-expiring" id="fbExpiring">0</span> 条即将到期 -- 点击查看
+</div>
 
 <!-- Main Layout -->
 <div class="main">
+
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="filter-section">
@@ -275,6 +312,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByStatus('confirmed',this)">已确认 <span class="cnt" id="filterConfirmed">0</span></button>
       <button class="filter-item" onclick="filterByStatus('ignored',this)">已忽略 <span class="cnt" id="filterIgnored">0</span></button>
     </div>
+
     <div class="filter-section">
       <div class="filter-label">知识类型</div>
       <button class="filter-item active" onclick="filterByType(null,this)">全部类型</button>
@@ -284,13 +322,25 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByType('tool',this)">实操工具</button>
       <button class="filter-item" onclick="filterByType('data',this)">数据资料</button>
     </div>
+
     <div class="filter-section"><div class="filter-label">分类体系</div><div id="categoryFilters"></div></div>
+
     <div class="filter-section">
       <div class="filter-label">就绪度</div>
       <button class="filter-item active" onclick="filterByReadiness(null,this)">全部</button>
       <button class="filter-item" onclick="filterByReadiness('draft',this)">草稿级</button>
       <button class="filter-item" onclick="filterByReadiness('quotable',this)">可引用级</button>
       <button class="filter-item" onclick="filterByReadiness('premium',this)">精品级</button>
+    </div>
+
+    <!-- v2.1.0-d: 保鲜筛选 -->
+    <div class="filter-section" id="freshnessFilterSection">
+      <div class="filter-label">保鲜状态</div>
+      <button class="filter-item active" onclick="filterByFreshness(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByFreshness('needs_check',this)">待检查</button>
+      <button class="filter-item" onclick="filterByFreshness('expired',this)">已过期</button>
+      <button class="filter-item" onclick="filterByFreshness('expiring',this)">即将到期</button>
+      <button class="filter-item" onclick="filterByFreshness('outdated',this)">已过时</button>
     </div>
   </div>
 
@@ -302,6 +352,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
         <button class="btn btn-success btn-sm" onclick="batchConfirm()" id="btnBatch" disabled>确认入库</button>
         <button class="btn btn-warn btn-sm" onclick="batchIgnore()" id="btnIgnore" disabled>批量忽略</button>
         <button class="btn btn-danger btn-sm" onclick="batchDelete()" id="btnDelete" disabled>批量删除</button>
+        <button class="btn btn-sm" onclick="batchRenewFreshness()" id="btnRenew" disabled style="color:#059669;border-color:#059669">批量续期</button>
       </div>
       <div class="toolbar-right">
         <div class="search-wrap"><input type="text" id="searchInput" placeholder="搜索标题/内容/标签/关键词..." onkeydown="if(event.keyCode===13)doSearch()"><button onclick="doSearch()">搜索</button></div>
@@ -328,6 +379,10 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
     <div class="field-row">
       <div class="field"><label>就绪度</label><select id="editReadiness"><option value="draft">草稿级</option><option value="quotable">可引用级</option><option value="premium">精品级</option></select></div>
       <div class="field"><label>权威度</label><select id="editAuthority"><option value="official">官方文件</option><option value="authoritative">行业权威</option><option value="firsthand">项目实证</option><option value="informal">业内交流</option></select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>保鲜周期(天)</label><input type="number" id="editFreshnessInterval" min="1" max="9999"></div>
+      <div class="field"><label>保鲜备注</label><input type="text" id="editFreshnessNote" placeholder="上次检查说明"></div>
     </div>
     <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
     <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
@@ -386,17 +441,19 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var tagDefs=null,tagNameToGroup={};
 var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
 var confirmCallback=null;
+
 var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
 var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
 var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
 var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复"};
-var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度"};
+var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"已过时",unknown:"未设置"};
+var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
 
 /* === API helpers === */
 function apiGet(u){return fetch(API+u).then(function(r){return r.json()}).catch(function(e){showToast("请求失败:"+e.message,"error");return{error:e.message,items:[],total:0}})}
@@ -417,84 +474,108 @@ function closeConfirm(ok){document.getElementById("confirmDlg").classList.remove
 function buildTagMap(){tagNameToGroup={};if(!tagDefs||!tagDefs.layer1)return;var l1=tagDefs.layer1;var groups=Object.keys(l1);for(var i=0;i<groups.length;i++){var gc=groups[i],tags=l1[gc].tags;for(var j=0;j<tags.length;j++){tagNameToGroup[tags[j].name]=gc}}}
 function tagClass(name){var g=tagNameToGroup[name];return g?"tag-"+g:"tag-kw"}
 
+/* === Freshness helpers === */
+function getFreshnessStatus(kp){
+  if(kp.is_outdated)return"outdated";
+  if(!kp.freshness_checked_at||!kp.freshness_interval_days)return"unknown";
+  var checked=new Date(kp.freshness_checked_at.replace(" ","T"));
+  var interval=kp.freshness_interval_days||365;
+  var now=new Date();
+  var daysSince=Math.floor((now-checked)/(1000*60*60*24));
+  if(daysSince>interval)return"expired";
+  if(daysSince>interval-7)return"expiring";
+  return"fresh";
+}
+
 /* === Init === */
 function init(){
-  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
+  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
 }
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
+
 function loadSuggestionCount(){apiGet("/api/architecture-suggestions").then(function(list){if(Array.isArray(list)&&list.length>0){document.getElementById("sgCount").textContent=list.length;document.getElementById("suggestionBar").style.display="block"}})}
+
+/* === v2.1.0-d: Freshness Summary === */
+function loadFreshnessSummary(){apiGet("/api/freshness/summary").then(function(s){if(s.error)return;var expired=s.expired||0;var expiring=s.expiring||0;if(expired>0||expiring>0){document.getElementById("fbExpired").textContent=expired;document.getElementById("fbExpiring").textContent=expiring;document.getElementById("freshnessBar").style.display="block"}else{document.getElementById("freshnessBar").style.display="none"}})}
 
 /* === Categories === */
 function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c)){allCategories=c.slice();allCategories.sort(function(a,b){return a.level1_code===b.level1_code?a.level2_code.localeCompare(b.level2_code):a.level1_code.localeCompare(b.level1_code)})}buildCategoryTree();buildCategoryDropdown()})}
 
 function buildCategoryTree(){var cf=document.getElementById("categoryFilters");var h='<button class="filter-item active" onclick="filterByCat(null,null,this)">全部分类</button>';var tree={},order=[];for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!tree[x.level1_code]){tree[x.level1_code]={name:x.level1_name,children:[]};order.push(x.level1_code)}tree[x.level1_code].children.push(x)}for(var i=0;i<order.length;i++){var code=order[i],g=tree[code];h+='<div class="tree-group"><button class="tree-parent" onclick="toggleTree(this,\''+code+'\')" ondblclick="filterByCat(null,\''+code+'\',this)"><span class="arr">&#9654;</span>'+esc(g.name)+'</button><div class="tree-children" id="treeC_'+code+'">';for(var j=0;j<g.children.length;j++){var c2=g.children[j];h+='<button class="tree-child" onclick="filterByCat('+c2.id+',null,this)">'+esc(c2.level2_name)+'</button>'}h+='</div></div>'}cf.innerHTML=h}
-
 function toggleTree(btn,code){var list=document.getElementById("treeC_"+code);var arrow=btn.querySelector(".arr");if(list.classList.contains("open")){list.classList.remove("open");arrow.classList.remove("open")}else{list.classList.add("open");arrow.classList.add("open")}}
 
 function buildCategoryDropdown(){var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择分类</option>';var lastL1="";for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(x.level1_name!==lastL1){if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<optgroup label="'+esc(x.level1_name)+'">';lastL1=x.level1_name}sel.innerHTML+='<option value="'+x.id+'">'+esc(x.level2_name)+'</option>'}if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<option value="__ADD__" style="color:var(--primary);font-weight:600">+ 新增分类...</option>';var addSel=document.getElementById("addCatParent");addSel.innerHTML="";var seen={};for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!seen[x.level1_code]){addSel.innerHTML+='<option value="'+x.level1_code+'" data-name="'+esc(x.level1_name)+'">'+esc(x.level1_name)+'</option>';seen[x.level1_code]=true}}}
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
+
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
-  var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
-  var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
-  var matched=!!kp.suggested_category_id;
+var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
+var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
+var matched=!!kp.suggested_category_id;
 
-  /* Three-layer tags */
-  var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
-  var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
-  var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
-  var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
+/* Three-layer tags */
+var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
+var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
+var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
+var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
 
-  /* QA score & flags */
-  var qaScore=kp.qa_score,qaFlags=kp.qa_flags||[];
-  if(typeof qaFlags==="string"){try{qaFlags=JSON.parse(qaFlags)}catch(e){qaFlags=[]}}
-  if(!Array.isArray(qaFlags))qaFlags=[];
-  var qaH="";
-  if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
+/* QA score & flags */
+var qaScore=kp.qa_score,qaFlags=kp.qa_flags||[];
+if(typeof qaFlags==="string"){try{qaFlags=JSON.parse(qaFlags)}catch(e){qaFlags=[]}}
+if(!Array.isArray(qaFlags))qaFlags=[];
+var qaH="";
+if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
 
-  /* Tag chips HTML */
-  var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
-  var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
-  var kwH="";for(var k=0;k<kws.length&&k<8;k++)kwH+='<span class="tag-chip tag-kw">'+esc(kws[k])+'</span>';if(kws.length>8)kwH+='<span class="tag-chip tag-kw">+'+( kws.length-8)+'</span>';
+/* Freshness status */
+var frSt=getFreshnessStatus(kp);
+var frH='<span class="fr-badge fr-'+frSt+'">'+esc(FRN[frSt]||frSt)+'</span>';
+if(kp.freshness_note&&(frSt==="fresh"||frSt==="expiring")){frH+='<span class="fr-note">'+esc(kp.freshness_note)+'</span>'}
+var isOutdated=!!kp.is_outdated;
 
-  /* AI key fields */
-  var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}
-  if(!ex)ex={};
-  var kf=getKeyFields(tp,ex);
+/* Tag chips HTML */
+var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
+var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
+var kwH="";for(var k=0;k<kws.length&&k<8;k++)kwH+='<span class="tag-chip tag-kw">'+esc(kws[k])+'</span>';if(kws.length>8)kwH+='<span class="tag-chip tag-kw">+'+(kws.length-8)+'</span>';
 
-  /* Actions */
-  var ah="";var dis=kp.review_status!=="pending"?"disabled":"";
-  if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-  else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button><button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-  else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+/* AI key fields */
+var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}
+if(!ex)ex={};
+var kf=getKeyFields(tp,ex);
 
-  return '<div class="kp-card'+(sel?" selected":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" '+dis+'><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
-  +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
-  +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
-  +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
-  +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+'</div>'
-  +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
-  +(kf?'<div class="kp-fields">'+kf+'</div>':"")
-  +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
-  +'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
+/* Actions */
+var ah="";var dis=kp.review_status!=="pending"?"disabled":"";
+if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:#DC2626;border-color:#DC2626" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">续期</button>'}}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+
+return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" '+dis+'><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
++(tagH?'<div class="tags-row">'+tagH+'</div>':"")
++(attrH?'<div class="attr-row">'+attrH+'</div>':"")
++(kwH?'<div class="tags-row">'+kwH+'</div>':"")
++'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+'</div>'
++(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
++(kf?'<div class="kp-fields">'+kf+'</div>':"")
++'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
++'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
 }
 
 function getDimName(code){if(!tagDefs||!tagDefs.layer2)return code;var d=tagDefs.layer2[code];return d?d.name:code}
@@ -509,98 +590,104 @@ function removeConfirmed(id){var reason=prompt("将此知识点从已入库中�
 function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复到待审核","success");refreshData()}})}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
 
+/* === v2.1.0-d: Freshness Actions === */
+function renewFreshness(id){var note=prompt("保鲜备注（可留空）:\n例如: 2026年3月核实，该政策仍为现行有效文件");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
+function markOutdated(id){showConfirm("标记已过时","此知识点将标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（可留空）:");apiPost("/api/knowledge-points/"+id+"/mark-outdated",{reason:reason||""}).then(function(r){if(r.success){showToast("已标记过时","info");refreshData();loadFreshnessSummary()}})})}
+function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:\n例如: 本批次知识点已核实均为现行有效");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
+
 /* === Batch === */
 function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
 function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){showToast("已忽略"+r.ignored+"个","info");selectedIds={};refreshData()}})})}
 function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
 function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
-function updateBatch(){var n=Object.keys(selectedIds).length;var bc=document.getElementById("btnBatch"),bi=document.getElementById("btnIgnore"),bd=document.getElementById("btnDelete");bc.disabled=n===0;bi.disabled=n===0;bd.disabled=n===0;bc.textContent=n>0?"确认入库("+n+")":"确认入库";bi.textContent=n>0?"批量忽略("+n+")":"批量忽略";bd.textContent=n>0?"批量删除("+n+")":"批量删除"}
+function updateBatch(){var n=Object.keys(selectedIds).length;var bc=document.getElementById("btnBatch"),bi=document.getElementById("btnIgnore"),bd=document.getElementById("btnDelete"),br=document.getElementById("btnRenew");bc.disabled=n===0;bi.disabled=n===0;bd.disabled=n===0;br.disabled=n===0;bc.textContent=n>0?"确认入库("+n+")":"确认入库";bi.textContent=n>0?"批量忽略("+n+")":"批量忽略";bd.textContent=n>0?"批量删除("+n+")":"批量删除";br.textContent=n>0?"批量续期("+n+")":"批量续期"}
 
 /* === Edit Modal === */
 function openEditModal(id){apiGet("/api/knowledge-points/"+id).then(function(kp){
-  editingKpStatus=kp.review_status||"pending";
-  document.getElementById("editKpId").value=id;
-  document.getElementById("editTitle").value=kp.title||"";
-  document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";
-  document.getElementById("editExcerpt").value=kp.original_excerpt||"";
-  var aiC=kp.ai_extracted_content;if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}
-  document.getElementById("editAiContent").value=aiC?JSON.stringify(aiC,null,2):"";
-  document.getElementById("editNotes").value=kp.reviewer_notes||"";
-  document.getElementById("editReadiness").value=kp.content_readiness||"draft";
-  document.getElementById("editAuthority").value=kp.source_authority||"firsthand";
+editingKpStatus=kp.review_status||"pending";
+document.getElementById("editKpId").value=id;
+document.getElementById("editTitle").value=kp.title||"";
+document.getElementById("editCategory").value=kp.final_category_id||kp.suggested_category_id||"";
+document.getElementById("editExcerpt").value=kp.original_excerpt||"";
+var aiC=kp.ai_extracted_content;if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}
+document.getElementById("editAiContent").value=aiC?JSON.stringify(aiC,null,2):"";
+document.getElementById("editNotes").value=kp.reviewer_notes||"";
+document.getElementById("editReadiness").value=kp.content_readiness||"draft";
+document.getElementById("editAuthority").value=kp.source_authority||"firsthand";
+document.getElementById("editFreshnessInterval").value=kp.freshness_interval_days||"";
+document.getElementById("editFreshnessNote").value=kp.freshness_note||"";
 
-  /* Layer 1 tags */
-  var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);
-  editL1Tags=ft.length>0?ft.slice():st.slice();
-  renderL1Editor();buildL1Dropdown();
+/* Layer 1 tags */
+var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);
+editL1Tags=ft.length>0?ft.slice():st.slice();
+renderL1Editor();buildL1Dropdown();
+/* Layer 2 attrs */
+var fa=parseObj(kp.final_attribute_tags);var sa=parseObj(kp.suggested_attribute_tags);
+editL2Attrs=Object.keys(fa).length>0?JSON.parse(JSON.stringify(fa)):JSON.parse(JSON.stringify(sa));
+renderL2Editor(kp.content_type);
+/* Keywords */
+var fk=parseTags(kp.final_keywords);var sk=parseTags(kp.suggested_keywords);
+editKws=fk.length>0?fk.slice():sk.slice();
+renderKwEditor();
 
-  /* Layer 2 attrs */
-  var fa=parseObj(kp.final_attribute_tags);var sa=parseObj(kp.suggested_attribute_tags);
-  editL2Attrs=Object.keys(fa).length>0?JSON.parse(JSON.stringify(fa)):JSON.parse(JSON.stringify(sa));
-  renderL2Editor(kp.content_type);
-
-  /* Keywords */
-  var fk=parseTags(kp.final_keywords);var sk=parseTags(kp.suggested_keywords);
-  editKws=fk.length>0?fk.slice():sk.slice();
-  renderKwEditor();
-
-  var title,acts='<button class="btn" onclick="closeModal(\'editModal\')">取消</button>';
-  if(editingKpStatus==="pending"){title="编辑知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存</button><button class="btn btn-success" onclick="saveAndConfirm()">保存并确认</button>'}
-  else if(editingKpStatus==="confirmed"){title="编辑已入库知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存修改</button>'}
-  else{title="查看知识点";acts='<button class="btn" onclick="closeModal(\'editModal\')">关闭</button>'}
-  document.getElementById("editModalTitle").textContent=title;
-  document.getElementById("editModalActions").innerHTML=acts;
-  document.getElementById("editModal").classList.add("open");
+var title,acts='<button class="btn" onclick="closeModal(\'editModal\')">取消</button>';
+if(editingKpStatus==="pending"){title="编辑知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存</button><button class="btn btn-success" onclick="saveAndConfirm()">保存并确认</button>'}
+else if(editingKpStatus==="confirmed"){title="编辑已入库知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存修改</button>'}
+else{title="查看知识点";acts='<button class="btn" onclick="closeModal(\'editModal\')">关闭</button>'}
+document.getElementById("editModalTitle").textContent=title;
+document.getElementById("editModalActions").innerHTML=acts;
+document.getElementById("editModal").classList.add("open");
 })}
 
 function renderL1Editor(){var c=document.getElementById("layer1Editor");var h="";for(var i=0;i<editL1Tags.length;i++){h+='<span class="tag-chip '+tagClass(editL1Tags[i])+'">'+esc(editL1Tags[i])+'<span class="tag-x" onclick="removeL1('+i+')">&times;</span></span>'}if(!h)h='<span style="color:var(--text-muted);font-size:12px">暂无标签</span>';c.innerHTML=h}
-
 function buildL1Dropdown(){var sel=document.getElementById("layer1Dropdown");sel.innerHTML='<option value="">+ 添加分类标签...</option>';if(!tagDefs||!tagDefs.layer1)return;var groups=Object.keys(tagDefs.layer1).sort();for(var g=0;g<groups.length;g++){var gc=groups[g],grp=tagDefs.layer1[gc];sel.innerHTML+='<optgroup label="'+gc+' '+esc(grp.group_name)+'">';for(var t=0;t<grp.tags.length;t++){var tn=grp.tags[t].name;var used=false;for(var u=0;u<editL1Tags.length;u++){if(editL1Tags[u]===tn){used=true;break}}if(!used)sel.innerHTML+='<option value="'+esc(tn)+'">'+esc(tn)+'</option>'}sel.innerHTML+='</optgroup>'}}
-
 function onL1Add(){var sel=document.getElementById("layer1Dropdown");var val=sel.value;if(!val)return;editL1Tags.push(val);sel.value="";renderL1Editor();buildL1Dropdown()}
 function removeL1(i){editL1Tags.splice(i,1);renderL1Editor();buildL1Dropdown()}
 
 function renderL2Editor(contentType){var c=document.getElementById("layer2Editor");if(!tagDefs||!tagDefs.layer2){c.innerHTML="<p style='color:var(--text-muted);font-size:12px'>标签定义未加载</p>";return}var h="";var dims=Object.keys(tagDefs.layer2);for(var i=0;i<dims.length;i++){var dk=dims[i],dim=tagDefs.layer2[dk];var applies=dim.applies_to;if(applies&&applies.length>0){var match=false;for(var a=0;a<applies.length;a++){if(applies[a]===contentType){match=true;break}}if(!match)continue}var cur=editL2Attrs[dk]||"";if(dim.values&&dim.values.length>0){h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><select onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px"><option value="">--</option>';for(var v=0;v<dim.values.length;v++){var sv=dim.values[v];h+='<option value="'+esc(sv)+'"'+(cur===sv?" selected":"")+'>'+esc(sv)+'</option>'}h+='</select></div>'}else{h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><input type="text" value="'+esc(cur)+'" onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px" placeholder="自由填写"></div>'}}c.innerHTML=h||"<p style='color:var(--text-muted);font-size:12px'>该类型无属性维度</p>"}
-
 function renderKwEditor(){var c=document.getElementById("kwEditor");var h="";for(var i=0;i<editKws.length;i++){h+='<span class="tag-chip tag-kw">'+esc(editKws[i])+'<span class="tag-x" onclick="removeKw('+i+')">&times;</span></span>'}if(!h)h='<span style="color:var(--text-muted);font-size:12px">暂无关键词</span>';c.innerHTML=h}
 function addKw(){var inp=document.getElementById("kwInput");var v=inp.value.trim();if(!v)return;var dup=false;for(var i=0;i<editKws.length;i++){if(editKws[i]===v){dup=true;break}}if(!dup)editKws.push(v);inp.value="";renderKwEditor()}
 function removeKw(i){editKws.splice(i,1);renderKwEditor()}
 
 function saveEdit(){var id=document.getElementById("editKpId").value;
-  var aiText=document.getElementById("editAiContent").value;var aiObj=null;
-  if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
-  /* Collect L2 attrs - remove empty */
-  var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
-  var d={title:document.getElementById("editTitle").value,
-    final_category_id:parseInt(document.getElementById("editCategory").value)||null,
-    final_category_tags:editL1Tags.slice(),
-    final_attribute_tags:cleanL2,
-    final_keywords:editKws.slice(),
-    content_readiness:document.getElementById("editReadiness").value,
-    source_authority:document.getElementById("editAuthority").value,
-    original_excerpt:document.getElementById("editExcerpt").value,
-    reviewer_notes:document.getElementById("editNotes").value};
-  if(aiObj)d.ai_extracted_content=aiObj;
-  apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeModal("editModal");loadKnowledgePoints()}else showToast("保存失败: "+(r.error||""),"error")})}
+var aiText=document.getElementById("editAiContent").value;var aiObj=null;
+if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
+/* Collect L2 attrs - remove empty */
+var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
+var fi=parseInt(document.getElementById("editFreshnessInterval").value);
+var d={title:document.getElementById("editTitle").value,
+final_category_id:parseInt(document.getElementById("editCategory").value)||null,
+final_category_tags:editL1Tags.slice(),final_attribute_tags:cleanL2,final_keywords:editKws.slice(),
+content_readiness:document.getElementById("editReadiness").value,
+source_authority:document.getElementById("editAuthority").value,
+original_excerpt:document.getElementById("editExcerpt").value,
+reviewer_notes:document.getElementById("editNotes").value,
+freshness_note:document.getElementById("editFreshnessNote").value};
+if(fi>0)d.freshness_interval_days=fi;
+if(aiObj)d.ai_extracted_content=aiObj;
+apiPut("/api/knowledge-points/"+id,d).then(function(r){if(r.success){showToast("已保存","success");closeModal("editModal");loadKnowledgePoints();loadFreshnessSummary()}else showToast("保存失败: "+(r.error||""),"error")})}
 
 function saveAndConfirm(){var id=document.getElementById("editKpId").value;
-  var aiText=document.getElementById("editAiContent").value;var aiObj=null;
-  if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
-  var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
-  var upd={title:document.getElementById("editTitle").value,
-    final_category_id:parseInt(document.getElementById("editCategory").value)||null,
-    final_category_tags:editL1Tags.slice(),final_attribute_tags:cleanL2,final_keywords:editKws.slice(),
-    content_readiness:document.getElementById("editReadiness").value,source_authority:document.getElementById("editAuthority").value,
-    original_excerpt:document.getElementById("editExcerpt").value};
-  if(aiObj)upd.ai_extracted_content=aiObj;
-  apiPut("/api/knowledge-points/"+id,upd).then(function(){
-    apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:upd.final_category_id,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){
-      if(r.success){showToast("已保存并确认","success");closeModal("editModal");refreshData()}})})}
+var aiText=document.getElementById("editAiContent").value;var aiObj=null;
+if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
+var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
+var fi=parseInt(document.getElementById("editFreshnessInterval").value);
+var upd={title:document.getElementById("editTitle").value,
+final_category_id:parseInt(document.getElementById("editCategory").value)||null,
+final_category_tags:editL1Tags.slice(),final_attribute_tags:cleanL2,final_keywords:editKws.slice(),
+content_readiness:document.getElementById("editReadiness").value,source_authority:document.getElementById("editAuthority").value,
+original_excerpt:document.getElementById("editExcerpt").value,
+freshness_note:document.getElementById("editFreshnessNote").value};
+if(fi>0)upd.freshness_interval_days=fi;
+if(aiObj)upd.ai_extracted_content=aiObj;
+apiPut("/api/knowledge-points/"+id,upd).then(function(){
+apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:upd.final_category_id,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){
+if(r.success){showToast("已保存并确认","success");closeModal("editModal");refreshData();loadFreshnessSummary()}})})}
 
 /* === History Modal === */
 function openHistory(id){document.getElementById("historyContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("historyModal").classList.add("open");apiGet("/api/knowledge-points/"+id+"/history").then(function(list){var c=document.getElementById("historyContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无修改记录</h3></div>';return}var h="";for(var i=0;i<list.length;i++){var it=list[i],fields=it.edited_fields||{};h+='<div class="history-item"><div class="ht">'+esc(it.created_at)+'</div><div class="hs">'+esc(it.edit_summary||"人工编辑")+'</div>';var fks=Object.keys(fields);for(var j=0;j<fks.length;j++){var fn=fks[j],ch=fields[fn],lab=FIELD_NAMES[fn]||fn;h+='<div class="history-field"><span class="fl">'+esc(lab)+'</span>: <span class="ov">'+esc(fmtVal(fn,ch.old))+'</span> -> <span class="nv">'+esc(fmtVal(fn,ch.new))+'</span></div>'}h+='<button class="btn btn-warn btn-sm" style="margin-top:8px" onclick="restoreVer('+id+','+it.id+')">回滚到此版本</button></div>'}c.innerHTML=h})}
-function fmtVal(fn,val){if(val===null||val===undefined)return"(空)";if(fn==="final_tags"||fn==="final_category_tags"||fn==="final_keywords"){if(Array.isArray(val))return val.join(", ");try{var a=JSON.parse(val);if(Array.isArray(a))return a.join(", ")}catch(e){}return String(val)}if(fn==="final_attribute_tags"){if(typeof val==="object")return JSON.stringify(val);return String(val)}if(fn==="final_category_id"){if(!val)return"(未选择)";for(var i=0;i<allCategories.length;i++){if(allCategories[i].id==val)return allCategories[i].level2_name}return"#"+val}if(fn==="content_readiness")return RN[val]||val;if(fn==="source_authority")return AN[val]||val;return String(val)}
+function fmtVal(fn,val){if(val===null||val===undefined)return"(空)";if(fn==="final_tags"||fn==="final_category_tags"||fn==="final_keywords"){if(Array.isArray(val))return val.join(", ");try{var a=JSON.parse(val);if(Array.isArray(a))return a.join(", ")}catch(e){}return String(val)}if(fn==="final_attribute_tags"){if(typeof val==="object")return JSON.stringify(val);return String(val)}if(fn==="final_category_id"){if(!val)return"(未选择)";for(var i=0;i<allCategories.length;i++){if(allCategories[i].id==val)return allCategories[i].level2_name}return"#"+val}if(fn==="content_readiness")return RN[val]||val;if(fn==="source_authority")return AN[val]||val;if(fn==="freshness_interval_days")return val+"天";return String(val)}
 function restoreVer(kid,hid){showConfirm("回滚确认","确认回滚到此历史版本?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+kid+"/restore-version/"+hid).then(function(r){if(r.success){showToast("回滚成功","success");closeModal("historyModal");loadKnowledgePoints()}})})}
 
 /* === Add Category === */
@@ -619,7 +706,7 @@ function openStatsModal(){document.getElementById("statsContent").innerHTML='<di
 /* === Pagination === */
 function renderPagination(total,page,pp){var pages=Math.ceil(total/pp),c=document.getElementById("pagination");if(pages<=1){c.innerHTML="";return}var h="";if(page>1)h+='<button onclick="goToPage('+(page-1)+')">上一页</button>';for(var i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-2&&i<=page+2))h+='<button class="'+(i===page?"active":"")+'" onclick="goToPage('+i+')">'+i+"</button>";else if(i===page-3||i===page+3)h+='<span class="page-info">...</span>'}if(page<pages)h+='<button onclick="goToPage('+(page+1)+')">下一页</button>';h+='<span class="page-info">共'+total+'条</span>';c.innerHTML=h}
 function goToPage(p){currentPage=p;loadKnowledgePoints();document.querySelector(".content").scrollTo({top:0,behavior:"smooth"})}
-function refreshData(){selectedIds={};document.getElementById("selectAll").checked=false;loadStatistics();loadKnowledgePoints()}
+function refreshData(){selectedIds={};document.getElementById("selectAll").checked=false;loadStatistics();loadKnowledgePoints();loadFreshnessSummary()}
 
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}
 </script>

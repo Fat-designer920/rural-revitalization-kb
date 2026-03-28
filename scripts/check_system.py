@@ -1,17 +1,11 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.0（v2.1.0-c第4批升级）
-
+版本：v2.1（v2.1.0-d升级）
 升级内容：
-  - 保留原有6项基础检查（Python/依赖/配置/数据库/文件夹/磁盘）
-  - 新增数据库字段完整性检查（v2.1.0-c迁移是否完成）
-  - 新增知识库健康度概览（各状态/类型/就绪度分布）
-  - 新增Prompt版本检查（旧版本知识点统计）
-  - 新增V3质检覆盖率（已质检/未质检/平均分/低分预警）
-  - 新增备份状态检查（最近备份时间/备份数量）
-  - 新增文件管线状态（pending/processing/completed/failed文件数）
-  - 输出格式美化，分数据统计和问题诊断两部分
+  - 保留v2.0全部12项检查
+  - 新增第13项：保鲜状态检查（过期/即将到期/未设周期统计）
+  - 新增v2.1.0-d迁移字段检查（freshness_note）
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -20,11 +14,9 @@ from datetime import datetime
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-
 def get_version():
     p = PROJECT_ROOT / "VERSION"
     return p.read_text(encoding="utf-8").strip() if p.exists() else "unknown"
-
 
 def _load_config():
     """加载配置文件，返回dict或None"""
@@ -37,26 +29,22 @@ def _load_config():
     except:
         return None
 
-
 def _get_db_path(config):
     """从配置获取数据库路径"""
     if config:
         return config.get("database_path",
-                          str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db"))
+            str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db"))
     return str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db")
-
 
 # ================================================================
 # 原有基础检查（保留，微调格式）
 # ================================================================
-
 def check_python():
     print(f"\n[1] Python环境")
     print(f"    版本: {sys.version.split()[0]}")
     ok = sys.version_info >= (3, 8)
     print(f"    {'OK' if ok else 'FAIL'} (需>=3.8)")
     return ok
-
 
 def check_deps():
     print(f"\n[2] 依赖库")
@@ -75,7 +63,6 @@ def check_deps():
             print(f"    FAIL {n}")
             ok = False
     return ok
-
 
 def check_config():
     print(f"\n[3] 配置文件")
@@ -98,7 +85,6 @@ def check_config():
     print(f"    费用上限: {limit}元")
     return ok
 
-
 def check_db_basic():
     print(f"\n[4] 数据库基础")
     config = _load_config()
@@ -111,7 +97,6 @@ def check_db_basic():
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [r[0] for r in cur.fetchall()]
-        # v2.0.0应有13张表
         expected_core = [
             "categories", "source_files", "knowledge_points",
             "operation_logs", "api_call_logs", "edit_history",
@@ -135,7 +120,6 @@ def check_db_basic():
                 print(f"    OK {t}")
             else:
                 print(f"    WARN {t} 缺失(v2.0.0表)")
-
         size_mb = os.path.getsize(dp) / (1024 * 1024)
         print(f"    大小: {size_mb:.2f}MB")
         conn.close()
@@ -143,7 +127,6 @@ def check_db_basic():
     except Exception as e:
         print(f"    FAIL {e}")
         return False
-
 
 def check_dirs():
     print(f"\n[5] 文件夹")
@@ -165,7 +148,6 @@ def check_dirs():
             ok = False
     return ok
 
-
 def check_disk():
     print(f"\n[6] 磁盘空间")
     try:
@@ -180,25 +162,21 @@ def check_disk():
     except:
         return True
 
-
 # ================================================================
 # v2.0 新增：数据库字段完整性
 # ================================================================
-
 def check_db_migration():
-    print(f"\n[7] 数据库迁移状态(v2.1.0-c)")
+    print(f"\n[7] 数据库迁移状态(v2.1.0-d)")
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
         print(f"    跳过(数据库不存在)")
-        return True  # 不算失败，基础检查已报
-
+        return True
     try:
         conn = sqlite3.connect(dp)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-
-        # 检查source_files新增字段
+        # 检查source_files新增字段(v2.1.0-c)
         cur.execute("PRAGMA table_info(source_files)")
         sf_cols = {r[1] for r in cur.fetchall()}
         sf_new = ["pre_analysis_result", "suggested_content_type", "segment_plan"]
@@ -209,21 +187,25 @@ def check_db_migration():
             else:
                 print(f"    FAIL source_files.{col} 缺失")
                 sf_ok = False
-
-        # 检查knowledge_points新增字段
+        # 检查knowledge_points新增字段(v2.1.0-c + v2.1.0-d)
         cur.execute("PRAGMA table_info(knowledge_points)")
         kp_cols = {r[1] for r in cur.fetchall()}
-        kp_new = ["prompt_version", "qa_score", "qa_flags"]
+        kp_new_c = ["prompt_version", "qa_score", "qa_flags"]
+        kp_new_d = ["freshness_note"]
         kp_ok = True
-        for col in kp_new:
+        for col in kp_new_c:
             if col in kp_cols:
                 print(f"    OK knowledge_points.{col}")
             else:
                 print(f"    FAIL knowledge_points.{col} 缺失")
                 kp_ok = False
-
+        for col in kp_new_d:
+            if col in kp_cols:
+                print(f"    OK knowledge_points.{col}")
+            else:
+                print(f"    WARN knowledge_points.{col} 缺失(v2.1.0-d)")
+                print(f"       => 请运行[一键提取.bat]或[保鲜检查.bat]触发自动迁移")
         conn.close()
-
         if not sf_ok or not kp_ok:
             print(f"    => 请运行[一键提取.bat]触发自动迁移，或手动运行 migrate_v210c.py")
             return False
@@ -232,11 +214,9 @@ def check_db_migration():
         print(f"    FAIL {e}")
         return False
 
-
 # ================================================================
 # v2.0 新增：知识库健康度概览
 # ================================================================
-
 def check_knowledge_health():
     print(f"\n[8] 知识库健康度")
     config = _load_config()
@@ -244,20 +224,15 @@ def check_knowledge_health():
     if not os.path.exists(dp):
         print(f"    跳过")
         return True
-
     try:
         conn = sqlite3.connect(dp)
         cur = conn.cursor()
-
-        # 总量
         cur.execute("SELECT COUNT(*) FROM knowledge_points")
         total = cur.fetchone()[0]
         if total == 0:
             print(f"    知识点: 0条 (知识库为空，请先提取文件)")
             conn.close()
             return True
-
-        # 按状态
         cur.execute("""
             SELECT review_status, COUNT(*) FROM knowledge_points
             GROUP BY review_status ORDER BY COUNT(*) DESC
@@ -268,8 +243,6 @@ def check_knowledge_health():
             label = status_map.get(row[0], row[0] or "未知")
             status_parts.append(f"{label}{row[1]}")
         print(f"    知识点: {total}条 ({' / '.join(status_parts)})")
-
-        # 按类型
         cur.execute("""
             SELECT content_type, COUNT(*) FROM knowledge_points
             GROUP BY content_type ORDER BY COUNT(*) DESC
@@ -283,8 +256,6 @@ def check_knowledge_health():
             label = type_map.get(row[0], row[0] or "未知")
             type_parts.append(f"{label}{row[1]}")
         print(f"    类型: {' / '.join(type_parts)}")
-
-        # 按就绪度
         cur.execute("""
             SELECT content_readiness, COUNT(*) FROM knowledge_points
             WHERE review_status='confirmed'
@@ -297,8 +268,6 @@ def check_knowledge_health():
             rd_parts.append(f"{label}{row[1]}")
         if rd_parts:
             print(f"    就绪度(已确认): {' / '.join(rd_parts)}")
-
-        # 源文件
         cur.execute("SELECT COUNT(*) FROM source_files")
         total_files = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM source_files WHERE process_status='completed'")
@@ -306,18 +275,15 @@ def check_knowledge_health():
         cur.execute("SELECT COUNT(*) FROM source_files WHERE process_status='failed'")
         fail_files = cur.fetchone()[0]
         print(f"    源文件: {total_files}个 (完成{done_files} / 失败{fail_files})")
-
         conn.close()
         return True
     except Exception as e:
         print(f"    FAIL {e}")
         return False
 
-
 # ================================================================
 # v2.0 新增：Prompt版本检查
 # ================================================================
-
 def check_prompt_version():
     print(f"\n[9] Prompt版本")
     try:
@@ -330,32 +296,24 @@ def check_prompt_version():
         except:
             print(f"    WARN 无法加载prompt_templates")
             return True
-
     print(f"    当前版本: {current}")
-
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
         return True
-
     try:
         conn = sqlite3.connect(dp)
         cur = conn.cursor()
-
         cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE prompt_version IS NOT NULL AND prompt_version != ''")
         has_version = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE prompt_version IS NULL OR prompt_version = ''")
         no_version = cur.fetchone()[0]
-
         if has_version == 0 and no_version == 0:
             print(f"    (暂无知识点)")
             conn.close()
             return True
-
         if no_version > 0:
             print(f"    {no_version}条知识点无版本标记(迁移前提取)")
-
-        # 统计各版本数量
         cur.execute("""
             SELECT prompt_version, COUNT(*) FROM knowledge_points
             WHERE prompt_version IS NOT NULL AND prompt_version != ''
@@ -370,21 +328,17 @@ def check_prompt_version():
             print(f"    {ver}: {cnt}条{marker}")
             if ver != current:
                 old_count += cnt
-
         if old_count > 0:
             print(f"    => {old_count}条旧版本知识点，可运行[一键知识库升级.bat]批量重提取")
-
         conn.close()
         return True
     except Exception as e:
         print(f"    WARN {e}")
         return True
 
-
 # ================================================================
 # v2.0 新增：V3质检覆盖率
 # ================================================================
-
 def check_qa_coverage():
     print(f"\n[10] V3质检覆盖率")
     config = _load_config()
@@ -392,27 +346,22 @@ def check_qa_coverage():
     if not os.path.exists(dp):
         print(f"    跳过")
         return True
-
     try:
         conn = sqlite3.connect(dp)
         cur = conn.cursor()
-
         cur.execute("SELECT COUNT(*) FROM knowledge_points")
         total = cur.fetchone()[0]
         if total == 0:
             print(f"    (暂无知识点)")
             conn.close()
             return True
-
         cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NOT NULL")
         checked = cur.fetchone()[0]
         unchecked = total - checked
-
         pct = (checked / total * 100) if total > 0 else 0
         print(f"    已质检: {checked}条 / 总{total}条 ({pct:.0f}%)")
         if unchecked > 0:
             print(f"    未质检: {unchecked}条")
-
         if checked > 0:
             cur.execute("SELECT AVG(qa_score) FROM knowledge_points WHERE qa_score IS NOT NULL")
             avg = cur.fetchone()[0] or 0
@@ -423,18 +372,15 @@ def check_qa_coverage():
             print(f"    平均分: {avg:.1f} (优{high} / 差{low})")
             if low > 0:
                 print(f"    => {low}条低分知识点，建议在审核界面使用[质检排序]优先处理")
-
         conn.close()
         return True
     except Exception as e:
         print(f"    WARN {e}")
         return True
 
-
 # ================================================================
 # v2.0 新增：备份状态
 # ================================================================
-
 def check_backup_status():
     print(f"\n[11] 备份状态")
     try:
@@ -447,7 +393,6 @@ def check_backup_status():
             bm = BackupManager()
             status = bm.get_backup_status()
         except:
-            # BackupManager不可用，直接检查备份目录
             backup_dir = PROJECT_ROOT / "data" / "backups"
             if backup_dir.exists():
                 backups = list(backup_dir.glob("*.db"))
@@ -458,7 +403,6 @@ def check_backup_status():
                 print(f"    备份目录不存在")
                 print(f"    => 建议运行[一键备份.bat]")
             return True
-
     if status:
         count = status.get("backup_count", 0)
         latest = status.get("latest_backup", "无")
@@ -470,25 +414,21 @@ def check_backup_status():
         print(f"    未获取到备份信息")
     return True
 
-
 # ================================================================
 # v2.0 新增：文件管线状态
 # ================================================================
-
 def check_file_pipeline():
     print(f"\n[12] 文件管线")
     config = _load_config()
     base = PROJECT_ROOT
     if config:
         base = Path(config.get("knowledge_base_path", str(PROJECT_ROOT)))
-
     dirs = {
         "pending": "待分析",
         "processing": "处理中",
         "completed": "已完成",
         "failed": "失败隔离",
     }
-
     has_stuck = False
     for d, desc in dirs.items():
         dp = base / "data" / d
@@ -506,17 +446,96 @@ def check_file_pipeline():
             print(f"    {desc}: {cnt}个文件{extra}")
         else:
             print(f"    {desc}: 目录不存在")
-
     return not has_stuck
 
+# ================================================================
+# v2.1 新增：保鲜状态检查
+# ================================================================
+def check_freshness_status():
+    print(f"\n[13] 保鲜状态")
+    config = _load_config()
+    dp = _get_db_path(config)
+    if not os.path.exists(dp):
+        print(f"    跳过")
+        return True
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+        # 只检查已确认且未过时的知识点
+        cur.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed' AND (is_outdated IS NULL OR is_outdated=0)
+        """)
+        confirmed = cur.fetchone()[0]
+        if confirmed == 0:
+            print(f"    (无已确认知识点)")
+            conn.close()
+            return True
+
+        # 统计未设保鲜周期的
+        cur.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed' AND (is_outdated IS NULL OR is_outdated=0)
+              AND (freshness_interval_days IS NULL OR freshness_interval_days=0)
+        """)
+        no_interval = cur.fetchone()[0]
+
+        # 统计已过期的
+        cur.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed' AND (is_outdated IS NULL OR is_outdated=0)
+              AND freshness_interval_days > 0
+              AND freshness_checked_at IS NOT NULL
+              AND julianday('now') - julianday(freshness_checked_at) > freshness_interval_days
+        """)
+        expired = cur.fetchone()[0]
+
+        # 统计即将到期的（7天内）
+        cur.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed' AND (is_outdated IS NULL OR is_outdated=0)
+              AND freshness_interval_days > 0
+              AND freshness_checked_at IS NOT NULL
+              AND julianday('now') - julianday(freshness_checked_at) > freshness_interval_days - 7
+              AND julianday('now') - julianday(freshness_checked_at) <= freshness_interval_days
+        """)
+        expiring = cur.fetchone()[0]
+
+        # 统计已过时的
+        cur.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed' AND is_outdated=1
+        """)
+        outdated = cur.fetchone()[0]
+
+        fresh = confirmed - expired - expiring
+        if fresh < 0:
+            fresh = 0
+
+        print(f"    已确认: {confirmed}条 (新鲜{fresh} / 即将到期{expiring} / 已过期{expired})")
+
+        if outdated > 0:
+            print(f"    已过时: {outdated}条")
+
+        if no_interval > 0:
+            print(f"    未设保鲜周期: {no_interval}条")
+            print(f"    => 运行[保鲜检查.bat]可自动补充默认周期")
+
+        if expired > 0:
+            print(f"    => {expired}条已过期，建议在审核界面筛选[保鲜状态-待检查]优先处理")
+
+        conn.close()
+        return expired == 0
+    except Exception as e:
+        print(f"    WARN {e}")
+        return True
 
 # ================================================================
 # 主流程
 # ================================================================
-
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.0")
+    print(f"  系统状态检查 v2.1")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -525,7 +544,6 @@ def main():
     print(f"\n{'─' * 40}")
     print(f"  基础环境检查")
     print(f"{'─' * 40}")
-
     results = []
     results.append(("Python环境", check_python()))
     results.append(("依赖库", check_deps()))
@@ -539,18 +557,18 @@ def main():
     print(f"\n{'─' * 40}")
     print(f"  知识库状态")
     print(f"{'─' * 40}")
-
     results.append(("知识库健康度", check_knowledge_health()))
     results.append(("Prompt版本", check_prompt_version()))
     results.append(("V3质检覆盖", check_qa_coverage()))
     results.append(("备份状态", check_backup_status()))
     results.append(("文件管线", check_file_pipeline()))
+    results.append(("保鲜状态", check_freshness_status()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")
     ans = input("  是否测试API连通性? (会消耗少量费用) [y/N]: ").strip().lower()
     if ans == "y":
-        print(f"\n[13] API连通性")
+        print(f"\n[14] API连通性")
         try:
             from scripts.deepseek_client import DeepSeekClient
             cl = DeepSeekClient()
@@ -569,13 +587,10 @@ def main():
     print(f"\n{'=' * 60}")
     print(f"  检查汇总")
     print(f"{'=' * 60}")
-
     ok_count = sum(1 for _, v in results if v)
     fail_count = len(results) - ok_count
-
     for name, passed in results:
         print(f"  {'OK' if passed else '!!'} {name}")
-
     print(f"\n  {ok_count}/{len(results)} 项通过", end="")
     if fail_count > 0:
         print(f"，{fail_count}项需处理")
@@ -583,7 +598,6 @@ def main():
         print(f"\n  系统状态正常!")
     print(f"{'=' * 60}")
     input("\n按回车键退出...")
-
 
 if __name__ == "__main__":
     main()

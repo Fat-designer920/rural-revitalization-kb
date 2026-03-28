@@ -1,14 +1,13 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v2.1.0-c - 三层标签审核/物理删除/批量操作/标签定义API/质检展示
+版本：v2.1.0-d - 保鲜提醒(续期/批量续期/标记过时/摘要/筛选)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from scripts.db_manager import DatabaseManager
@@ -16,7 +15,6 @@ from scripts.db_manager import DatabaseManager
 app = Flask(__name__)
 CORS(app)
 db = DatabaseManager()
-
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
     if _p.exists():
@@ -51,7 +49,6 @@ _POISON_PATTERNS = [
     re.compile(r'第[一二三四五六七八九十\d]+[条款项章节]'),
     re.compile(r'^[一二三四五六七八九十]+、'),
 ]
-
 def _is_valid_tag(tag):
     if not tag or len(tag) < 2 or len(tag) > 14: return False
     if tag in _POISON_EXACT: return False
@@ -73,17 +70,18 @@ def index():
 # ================================================================
 # 知识点 CRUD
 # ================================================================
-
 @app.route("/api/knowledge-points", methods=["GET"])
 def get_kps():
     try:
         sort_by_qa = request.args.get("sort_by_qa", None)
+        freshness_filter = request.args.get("freshness", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
             level1_code=request.args.get("level1",None),
             search_query=request.args.get("search",None),
             content_readiness=request.args.get("readiness",None),
+            freshness_filter=freshness_filter,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -122,7 +120,7 @@ def ignore(kid):
         kp = db.get_knowledge_point(kid)
         if kp and kp.get("review_status") == "confirmed":
             db.add_edit_history(kid, {"review_status": {"old": "confirmed", "new": "ignored"}},
-                               "移除出库: " + (reason or "无原因"))
+                "移除出库: " + (reason or "无原因"))
         db.ignore_knowledge_point(kid, reason)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
@@ -146,7 +144,8 @@ def update(kid):
         track_fields = ["title","final_category_id","final_tags","reviewer_notes",
                         "original_excerpt","ai_extracted_content",
                         "final_category_tags","final_attribute_tags","final_keywords",
-                        "content_readiness","source_authority","access_level"]
+                        "content_readiness","source_authority","access_level",
+                        "freshness_interval_days"]
         if kp and kp.get("review_status") == "confirmed":
             changes = {}
             for f in track_fields:
@@ -159,12 +158,17 @@ def update(kid):
                         changes[f] = {"old": old_val, "new": new_val}
             if changes:
                 db.add_edit_history(kid, changes, "人工编辑")
-        # v2.0.0: 扩展允许更新的字段
+        # v2.1.0-d: 扩展允许更新的字段（含保鲜周期）
         allowed_update = ["title","final_category_id","final_tags","reviewer_notes",
                           "ai_extracted_content","original_excerpt",
                           "final_category_tags","final_attribute_tags","final_keywords",
-                          "content_readiness","source_authority","access_level"]
+                          "content_readiness","source_authority","access_level",
+                          "freshness_interval_days","freshness_note"]
         u = {k:d[k] for k in allowed_update if k in d}
+        # 如果编辑了内容，自动刷新保鲜时间
+        content_fields = {"title","ai_extracted_content","original_excerpt"}
+        if any(k in d for k in content_fields):
+            u["freshness_checked_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if u: db.update_knowledge_point(kid, **u)
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
@@ -172,7 +176,6 @@ def update(kid):
 # ================================================================
 # 批量操作
 # ================================================================
-
 @app.route("/api/knowledge-points/batch-confirm", methods=["POST"])
 def batch_confirm():
     try:
@@ -228,9 +231,57 @@ def restore_to_pending(kid):
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # ================================================================
+# v2.1.0-d 新增：保鲜管理
+# ================================================================
+@app.route("/api/freshness/summary", methods=["GET"])
+def freshness_summary():
+    """返回保鲜状态摘要（供审核界面顶部提示栏使用）"""
+    try:
+        summary = db.get_freshness_summary()
+        return jsonify(summary)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e),"expired":0,"expiring":0,"fresh":0}),500
+
+@app.route("/api/knowledge-points/<int:kid>/renew-freshness", methods=["POST"])
+def renew_freshness(kid):
+    """续期单条知识点保鲜"""
+    try:
+        d = request.get_json() or {}
+        note = d.get("freshness_note", "")
+        db.renew_freshness(kid, note)
+        return jsonify({"success":True})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+@app.route("/api/knowledge-points/batch-renew-freshness", methods=["POST"])
+def batch_renew_freshness():
+    """批量续期保鲜"""
+    try:
+        d = request.get_json() or {}
+        ids = d.get("ids", [])
+        note = d.get("freshness_note", "")
+        n = 0
+        for kid in ids:
+            try:
+                db.renew_freshness(kid, note)
+                n += 1
+            except: pass
+        return jsonify({"success":True,"renewed":n})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+@app.route("/api/knowledge-points/<int:kid>/mark-outdated", methods=["POST"])
+def mark_outdated(kid):
+    """标记知识点已过时"""
+    try:
+        d = request.get_json() or {}
+        reason = d.get("reason", "")
+        db.mark_knowledge_outdated(kid, reason)
+        return jsonify({"success":True})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+# ================================================================
 # 编辑历史
 # ================================================================
-
 @app.route("/api/knowledge-points/<int:kid>/history", methods=["GET"])
 def get_history(kid):
     try: return jsonify(db.get_edit_history(kid))
@@ -247,7 +298,6 @@ def restore_version(kid, hid):
 # ================================================================
 # 分类管理
 # ================================================================
-
 @app.route("/api/categories/add", methods=["POST"])
 def add_cat():
     try:
@@ -283,7 +333,6 @@ def tree():
 # ================================================================
 # AI建议
 # ================================================================
-
 @app.route("/api/architecture-suggestions", methods=["GET"])
 def get_suggestions():
     try: return jsonify(db.get_pending_suggestions())
@@ -306,20 +355,21 @@ def reject_suggestion(sid):
 # ================================================================
 # v2.0.0 新增：标签定义API（供前端标签选择器使用）
 # ================================================================
-
 @app.route("/api/tag-definitions")
 def get_tag_defs():
     """返回三层标签体系的完整定义"""
     try:
         from scripts.tag_config import (LAYER1_TAGS, LAYER2_DIMENSIONS, LAYER3_KEYWORD_RULES,
-                                         CONTENT_READINESS, SOURCE_AUTHORITY, ACCESS_LEVEL)
+                                        CONTENT_READINESS, SOURCE_AUTHORITY, ACCESS_LEVEL,
+                                        FRESHNESS_INTERVALS)
         return jsonify({
             "layer1": LAYER1_TAGS,
             "layer2": LAYER2_DIMENSIONS,
             "layer3_rules": LAYER3_KEYWORD_RULES,
             "readiness": CONTENT_READINESS,
             "authority": SOURCE_AUTHORITY,
-            "access_level": ACCESS_LEVEL
+            "access_level": ACCESS_LEVEL,
+            "freshness_intervals": FRESHNESS_INTERVALS
         })
     except Exception as e:
         traceback.print_exc()
@@ -328,7 +378,6 @@ def get_tag_defs():
 # ================================================================
 # 标签、统计、文件、系统
 # ================================================================
-
 @app.route("/api/tags")
 def get_all_tags():
     try:
@@ -393,8 +442,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v2.1.0-c")
-    print(f"  三层标签审核 | 物理删除 | 批量操作 | V3质检展示")
+    print(f"  乡村振兴知识库 - 审核界面 v2.1.0-d")
+    print(f"  三层标签审核 | 保鲜提醒 | V3质检 | 批量操作")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

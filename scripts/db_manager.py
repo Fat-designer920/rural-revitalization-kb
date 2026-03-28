@@ -1,22 +1,21 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.0-c - 新增prompt_version/qa_score/qa_flags字段支持
-
+版本：v2.1.0-d - 新增保鲜管理方法 + 自动保鲜周期赋值
 数据库表（13张）：
-  categories          - 知识库分类体系（5大类27+子类）
-  source_files        - 原始文件记录
-  knowledge_points    - 知识点（核心表，v2.0.0新增多个字段）
-  knowledge_versions  - 知识点版本快照（预留）
-  architecture_suggestions - AI分类建议
-  edit_history        - 编辑历史记录
-  tag_definitions     - 标签定义表（v2.0.0新增）
-  knowledge_relations - 知识关联表（v2.0.0新增）
-  knowledge_usage_log - 使用追踪表（v2.0.0新增）
-  tag_statistics      - 标签统计缓存（v2.0.0新增）
-  operation_logs      - 操作日志
-  api_call_logs       - API调用日志
-  notion_sync_log     - Notion同步日志（预留）
+    categories - 知识库分类体系（5大类27+子类）
+    source_files - 原始文件记录
+    knowledge_points - 知识点（核心表，v2.0.0新增多个字段）
+    knowledge_versions - 知识点版本快照（预留）
+    architecture_suggestions - AI分类建议
+    edit_history - 编辑历史记录
+    tag_definitions - 标签定义表（v2.0.0新增）
+    knowledge_relations - 知识关联表（v2.0.0新增）
+    knowledge_usage_log - 使用追踪表（v2.0.0新增）
+    tag_statistics - 标签统计缓存（v2.0.0新增）
+    operation_logs - 操作日志
+    api_call_logs - API调用日志
+    notion_sync_log - Notion同步日志（预留）
 """
 
 import sqlite3, os, json
@@ -27,7 +26,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class DatabaseManager:
-
     def __init__(self, db_path=None):
         if db_path is None:
             config_path = PROJECT_ROOT / "config" / "settings.json"
@@ -52,7 +50,6 @@ class DatabaseManager:
     # ================================================================
     def init_tables(self):
         conn = self.get_connection(); c = conn.cursor()
-
         # --- 分类体系 ---
         c.execute("""CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +59,6 @@ class DatabaseManager:
             description TEXT DEFAULT '', is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- 原始文件 ---
         c.execute("""CREATE TABLE IF NOT EXISTS source_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +72,6 @@ class DatabaseManager:
             process_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- 知识点（核心表） ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +121,6 @@ class DatabaseManager:
             FOREIGN KEY (source_file_id) REFERENCES source_files(id),
             FOREIGN KEY (suggested_category_id) REFERENCES categories(id),
             FOREIGN KEY (final_category_id) REFERENCES categories(id))""")
-
         # --- 知识版本快照（预留） ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,7 +128,6 @@ class DatabaseManager:
             content_snapshot TEXT NOT NULL, change_reason TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
-
         # --- AI分类建议 ---
         c.execute("""CREATE TABLE IF NOT EXISTS architecture_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,7 +139,6 @@ class DatabaseManager:
             resolved_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (parent_category_id) REFERENCES categories(id))""")
-
         # --- 编辑历史 ---
         c.execute("""CREATE TABLE IF NOT EXISTS edit_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +147,6 @@ class DatabaseManager:
             edit_summary TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
-
         # --- v2.0.0 标签定义表 ---
         c.execute("""CREATE TABLE IF NOT EXISTS tag_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,7 +159,6 @@ class DatabaseManager:
             is_active INTEGER DEFAULT 1,
             sort_order INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- v2.0.0 知识关联表 ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_relations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,7 +170,6 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
             FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id))""")
-
         # --- v2.0.0 使用追踪表 ---
         c.execute("""CREATE TABLE IF NOT EXISTS knowledge_usage_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +178,6 @@ class DatabaseManager:
             usage_context TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
-
         # --- v2.0.0 标签统计缓存 ---
         c.execute("""CREATE TABLE IF NOT EXISTS tag_statistics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,14 +185,12 @@ class DatabaseManager:
             layer TEXT NOT NULL,
             usage_count INTEGER DEFAULT 0,
             last_updated TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- 操作日志 ---
         c.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             operation_type TEXT NOT NULL, target_table TEXT DEFAULT '',
             target_id INTEGER DEFAULT NULL, details TEXT DEFAULT '{}',
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- API调用日志 ---
         c.execute("""CREATE TABLE IF NOT EXISTS api_call_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,7 +199,6 @@ class DatabaseManager:
             estimated_cost REAL DEFAULT 0.0,
             call_date TEXT DEFAULT (date('now','localtime')),
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
-
         # --- Notion同步日志（预留） ---
         c.execute("""CREATE TABLE IF NOT EXISTS notion_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,7 +208,6 @@ class DatabaseManager:
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
-
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -241,7 +225,6 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_kul_kpid ON knowledge_usage_log(knowledge_point_id)",
         ]:
             c.execute(idx)
-
         conn.commit(); conn.close(); return True
 
     # ================================================================
@@ -294,12 +277,10 @@ class DatabaseManager:
             from scripts.tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
         except ImportError:
             from tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
-
         conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM tag_definitions")
         if c.fetchone()["cnt"] > 0:
             conn.close(); return True  # 已初始化过
-
         sort = 0
         for group_code, group in LAYER1_TAGS.items():
             for tag in group["tags"]:
@@ -307,14 +288,12 @@ class DatabaseManager:
                 c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
                     VALUES (?,?,?,?,?,?,?)""",
                     ("layer1", group_code, group["group_name"], tag["code"], tag["name"], tag["definition"], sort))
-
         for dim_code, dim in LAYER2_DIMENSIONS.items():
             for val in dim.get("values", []):
                 sort += 1
                 c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
                     VALUES (?,?,?,?,?,?,?)""",
                     ("layer2", dim_code, dim["name"], dim_code, val, "", sort))
-
         conn.commit(); conn.close(); return True
 
     # ================================================================
@@ -323,13 +302,13 @@ class DatabaseManager:
     def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash) VALUES (?,?,?,?,?)",
-                  (original_filename, file_path, file_type, file_size, file_hash))
+            (original_filename, file_path, file_type, file_size, file_hash))
         fid = c.lastrowid; conn.commit(); conn.close(); return fid
 
     def update_source_file(self, file_id, **kw):
         conn = self.get_connection(); c = conn.cursor()
         allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash",
-                   "pre_analysis_result","suggested_content_type","segment_plan"]
+                    "pre_analysis_result","suggested_content_type","segment_plan"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed: sets.append(f"{k}=?"); vals.append(v)
@@ -360,13 +339,23 @@ class DatabaseManager:
                             source_page="", source_keyword="",
                             content_readiness="draft", source_authority="firsthand",
                             prompt_version=""):
+        # v2.1.0-d: 根据content_type自动设定保鲜周期
+        try:
+            from scripts.tag_config import get_default_freshness_interval
+        except ImportError:
+            try:
+                from tag_config import get_default_freshness_interval
+            except ImportError:
+                get_default_freshness_interval = lambda ct: 180
+        interval = get_default_freshness_interval(content_type)
+
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
-             content_readiness, source_authority, prompt_version)
-            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)""",
+             content_readiness, source_authority, prompt_version, freshness_interval_days)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
              suggested_category_id,
@@ -375,7 +364,7 @@ class DatabaseManager:
              json.dumps(suggested_keywords or [], ensure_ascii=False),
              json.dumps(suggested_tags or [], ensure_ascii=False),
              source_page, source_keyword,
-             content_readiness, source_authority, prompt_version))
+             content_readiness, source_authority, prompt_version, interval))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,
@@ -406,7 +395,7 @@ class DatabaseManager:
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
         total = c.fetchone()["cnt"]
         c.execute(f"""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
-            cat.level1_name, cat.level2_name, cat.level2_code
+                cat.level1_name, cat.level2_name, cat.level2_code
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id=sf.id
             LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
@@ -418,7 +407,7 @@ class DatabaseManager:
     def get_knowledge_point(self, kp_id):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
-            cat.level1_name, cat.level2_name, cat.level2_code
+                cat.level1_name, cat.level2_name, cat.level2_code
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id=sf.id
             LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
@@ -431,14 +420,14 @@ class DatabaseManager:
                     "final_tags","final_category_tags","final_attribute_tags","final_keywords",
                     "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
                     "content_readiness","source_authority","access_level",
-                    "freshness_checked_at","freshness_interval_days",
+                    "freshness_checked_at","freshness_interval_days","freshness_note",
                     "prompt_version","qa_score","qa_flags"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags","final_category_tags",
-                         "final_attribute_tags","final_keywords","qa_flags") and isinstance(v, (dict, list)):
+                          "final_attribute_tags","final_keywords","qa_flags") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:
@@ -480,7 +469,7 @@ class DatabaseManager:
     def add_edit_history(self, kp_id, edited_fields, edit_summary=""):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO edit_history (knowledge_point_id, edited_fields, edit_summary) VALUES (?,?,?)",
-                  (kp_id, json.dumps(edited_fields, ensure_ascii=False), edit_summary))
+            (kp_id, json.dumps(edited_fields, ensure_ascii=False), edit_summary))
         conn.commit(); conn.close()
 
     def get_edit_history(self, kp_id):
@@ -534,12 +523,10 @@ class DatabaseManager:
     def add_category(self, level1_code, level1_name, level2_name, description="", is_new_level1=False):
         if is_new_level1:
             level1_code = self.get_next_level1_code()
-            level2_code = f"{level1_code}.1"
-        else:
-            level2_code = self.get_next_level2_code(level1_code)
+        level2_code = self.get_next_level2_code(level1_code)
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)",
-                  (level1_code, level1_name, level2_code, level2_name, description))
+            (level1_code, level1_name, level2_code, level2_name, description))
         cat_id = c.lastrowid; conn.commit(); conn.close()
         self.log_operation("add_category", "categories", cat_id, {
             "level1_code": level1_code, "level2_code": level2_code,
@@ -550,7 +537,7 @@ class DatabaseManager:
     def get_category_stats(self):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""SELECT cat.id, cat.level1_code, cat.level1_name, cat.level2_code, cat.level2_name,
-            COUNT(kp.id) as kp_count
+                COUNT(kp.id) as kp_count
             FROM categories cat
             LEFT JOIN knowledge_points kp ON (kp.final_category_id=cat.id OR (kp.final_category_id IS NULL AND kp.suggested_category_id=cat.id))
                 AND kp.review_status='confirmed'
@@ -606,7 +593,7 @@ class DatabaseManager:
     def update_suggestion_status(self, suggestion_id, status):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("UPDATE architecture_suggestions SET status=?, resolved_at=datetime('now','localtime') WHERE id=?",
-                  (status, suggestion_id))
+            (status, suggestion_id))
         conn.commit(); conn.close()
         self.log_operation(f"suggestion_{status}", "architecture_suggestions", suggestion_id)
 
@@ -616,7 +603,7 @@ class DatabaseManager:
     def add_knowledge_relation(self, source_kp_id, target_kp_id, relation_type, created_by="manual"):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO knowledge_relations (source_kp_id,target_kp_id,relation_type,created_by) VALUES (?,?,?,?)",
-                  (source_kp_id, target_kp_id, relation_type, created_by))
+            (source_kp_id, target_kp_id, relation_type, created_by))
         conn.commit(); conn.close()
 
     def get_knowledge_relations(self, kp_id):
@@ -634,7 +621,7 @@ class DatabaseManager:
     def log_knowledge_usage(self, kp_id, usage_type, usage_context=""):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO knowledge_usage_log (knowledge_point_id,usage_type,usage_context) VALUES (?,?,?)",
-                  (kp_id, usage_type, usage_context))
+            (kp_id, usage_type, usage_context))
         conn.commit(); conn.close()
 
     # ================================================================
@@ -644,13 +631,13 @@ class DatabaseManager:
         """获取所有知识点用于升级检查（不分页，含源文件信息）"""
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.source_file_id,
-            kp.original_excerpt, kp.ai_extracted_content,
-            kp.suggested_category_tags, kp.final_category_tags,
-            kp.suggested_attribute_tags, kp.final_attribute_tags,
-            kp.suggested_keywords, kp.final_keywords,
-            kp.content_readiness, kp.source_authority,
-            kp.review_status,
-            sf.original_filename, sf.renamed_filename, sf.file_path
+                kp.original_excerpt, kp.ai_extracted_content,
+                kp.suggested_category_tags, kp.final_category_tags,
+                kp.suggested_attribute_tags, kp.final_attribute_tags,
+                kp.suggested_keywords, kp.final_keywords,
+                kp.content_readiness, kp.source_authority,
+                kp.review_status,
+                sf.original_filename, sf.renamed_filename, sf.file_path
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id=sf.id
             WHERE kp.review_status IN ('pending','confirmed')
@@ -658,24 +645,54 @@ class DatabaseManager:
         rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
 
     # ================================================================
-    # 内容保鲜
+    # 内容保鲜（v2.1.0-d增强）
     # ================================================================
-    def get_stale_knowledge_points(self):
-        """获取需要检查时效性的知识点"""
+    def get_stale_knowledge_points(self, limit=50):
+        """获取需要检查时效性的知识点（已到期+逾期）"""
         conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.freshness_checked_at, kp.freshness_interval_days
+        c.execute("""SELECT kp.id, kp.title, kp.content_type,
+                kp.freshness_checked_at, kp.freshness_interval_days,
+                kp.created_at, kp.freshness_note, kp.is_outdated,
+                cat.level1_name
             FROM knowledge_points kp
+            LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
             WHERE kp.review_status='confirmed'
-            AND (kp.freshness_checked_at IS NULL
-                 OR julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days)
+              AND kp.is_outdated=0
+              AND (kp.freshness_checked_at IS NULL
+                   OR julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days)
             ORDER BY kp.freshness_checked_at ASC NULLS FIRST
-            LIMIT 50""")
+            LIMIT ?""", (limit,))
         rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
 
     def mark_freshness_checked(self, kp_id):
+        """标记保鲜已检查（仅更新时间戳）"""
         conn = self.get_connection(); c = conn.cursor()
         c.execute("UPDATE knowledge_points SET freshness_checked_at=datetime('now','localtime') WHERE id=?", (kp_id,))
         conn.commit(); conn.close()
+
+    def renew_freshness(self, kp_id, note=""):
+        """续期：更新保鲜检查时间+写入备注"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE knowledge_points
+            SET freshness_checked_at=datetime('now','localtime'),
+                freshness_note=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?""", (note, kp_id))
+        conn.commit(); conn.close()
+        self.log_operation("freshness_renew", "knowledge_points", kp_id, {"note": note})
+
+    def batch_renew_freshness(self, kp_ids, note=""):
+        """批量续期"""
+        conn = self.get_connection(); c = conn.cursor()
+        for kp_id in kp_ids:
+            c.execute("""UPDATE knowledge_points
+                SET freshness_checked_at=datetime('now','localtime'),
+                    freshness_note=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?""", (note, kp_id))
+        conn.commit(); conn.close()
+        self.log_operation("freshness_batch_renew", "knowledge_points", None,
+                           {"count": len(kp_ids), "note": note})
 
     # ================================================================
     # 标签定义查询
@@ -694,7 +711,7 @@ class DatabaseManager:
     def log_api_call(self, call_type, model, input_tokens, output_tokens, estimated_cost):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
-                  (call_type, model, input_tokens, output_tokens, estimated_cost))
+            (call_type, model, input_tokens, output_tokens, estimated_cost))
         conn.commit(); conn.close()
 
     def get_today_api_cost(self):
@@ -706,7 +723,7 @@ class DatabaseManager:
     def log_operation(self, op_type, target_table="", target_id=None, details=None):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO operation_logs (operation_type,target_table,target_id,details) VALUES (?,?,?,?)",
-                  (op_type, target_table, target_id, json.dumps(details or {}, ensure_ascii=False)))
+            (op_type, target_table, target_id, json.dumps(details or {}, ensure_ascii=False)))
         conn.commit(); conn.close()
 
     def get_statistics(self):
