@@ -3,9 +3,12 @@ migrate_v210d.py - v2.1.0-d 数据库迁移脚本
 路径：scripts/migrate_v210d.py
 
 迁移内容：
-    knowledge_points 表新增: freshness_note (续期备注)
+    knowledge_points 表新增:
+      - freshness_note (续期备注)
+      - policy_dependencies (政策依赖JSON，F028)
+      - policy_validated (政策校验状态码，F028)
 
-使用方法：保鲜检查.bat 和 一键提取.bat 启动时自动检测并执行，无需手动运行
+使用方法：保鲜检查.bat / 一键提取.bat / 政策补跑.bat 启动时自动检测并执行
 """
 
 import sqlite3
@@ -45,6 +48,15 @@ def migrate():
     if not check_column_exists(c, "knowledge_points", "freshness_note"):
         c.execute("ALTER TABLE knowledge_points ADD COLUMN freshness_note TEXT DEFAULT ''")
         migrated.append("knowledge_points.freshness_note")
+
+    # --- F028 政策依赖校验字段 ---
+    if not check_column_exists(c, "knowledge_points", "policy_dependencies"):
+        c.execute("ALTER TABLE knowledge_points ADD COLUMN policy_dependencies TEXT DEFAULT '[]'")
+        migrated.append("knowledge_points.policy_dependencies")
+
+    if not check_column_exists(c, "knowledge_points", "policy_validated"):
+        c.execute("ALTER TABLE knowledge_points ADD COLUMN policy_validated INTEGER DEFAULT 0")
+        migrated.append("knowledge_points.policy_validated")
 
     if migrated:
         conn.commit()

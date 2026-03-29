@@ -193,6 +193,22 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .fr-unknown{background:#F1F5F9;color:#94A3B8}
 .fr-note{font-size:11px;color:var(--text-muted);margin-left:6px;font-style:italic}
 
+/* === Policy Validation Badges (F028) === */
+.pv-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5}
+.pv-validated{background:#D1FAE5;color:#065F46}
+.pv-pending{background:#FEE2E2;color:#991B1B}
+.pv-exempt{background:#DBEAFE;color:#1E40AF}
+.pv-no-policy{background:#F1F5F9;color:#94A3B8}
+.pv-unchecked{background:#F1F5F9;color:#94A3B8}
+.policy-deps{background:#FEF2F2;border:1px solid #FECACA;border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px}
+.policy-deps .pd-title{font-weight:600;color:#991B1B;margin-bottom:6px}
+.policy-deps .pd-item{padding:4px 0;border-bottom:1px solid #FEE2E2}
+.policy-deps .pd-item:last-child{border-bottom:none}
+.policy-deps .pd-matched{color:#065F46}
+.policy-deps .pd-unmatched{color:#DC2626;font-weight:600}
+.policy-deps .pd-guide{font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic}
+.policy-deps-ok{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:#065F46}
+
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
 .kp-excerpt.expanded{max-height:none}
@@ -342,6 +358,17 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByFreshness('expiring',this)">即将到期</button>
       <button class="filter-item" onclick="filterByFreshness('outdated',this)">已过时</button>
     </div>
+
+    <!-- v2.1.0-d F028: 政策校验筛选 -->
+    <div class="filter-section" id="policyFilterSection">
+      <div class="filter-label">政策校验</div>
+      <button class="filter-item active" onclick="filterByPolicy(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByPolicy('pending_validation',this)">待验证</button>
+      <button class="filter-item" onclick="filterByPolicy('validated',this)">已验证</button>
+      <button class="filter-item" onclick="filterByPolicy('exempt',this)">已豁免</button>
+      <button class="filter-item" onclick="filterByPolicy('unvalidated',this)">未校验</button>
+      <button class="filter-item" onclick="filterByPolicy('no_policy',this)">不涉及</button>
+    </div>
   </div>
 
   <!-- Content -->
@@ -380,6 +407,11 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
     <div class="field-row">
       <div class="field"><label>保鲜周期(天)</label><input type="number" id="editFreshnessInterval" min="1" max="9999"></div>
       <div class="field"><label>保鲜备注</label><input type="text" id="editFreshnessNote" placeholder="上次检查说明"></div>
+    </div>
+    <div class="field" id="editPolicyDepsField" style="display:none">
+      <label>政策依赖 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(AI扫描,只读)</span></label>
+      <div id="editPolicyDeps" style="font-size:12px;color:var(--text-secondary);background:var(--bg);padding:10px;border-radius:var(--radius);max-height:200px;overflow-y:auto"></div>
+      <div class="field-hint">政策依赖由提取流程自动扫描,如需修改请在卡片上操作(豁免/重新校验)</div>
     </div>
     <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
     <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
@@ -438,7 +470,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var tagDefs=null,tagNameToGroup={};
 var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
@@ -450,6 +482,7 @@ var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
 var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
 var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复"};
 var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"已过时",unknown:"未设置"};
+var PVN={"0":"未校验","1":"已验证","2":"待验证","3":"已豁免","4":"无需校验"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
 
 /* === API helpers === */
@@ -506,22 +539,23 @@ function buildCategoryDropdown(){var sel=document.getElementById("editCategory")
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
+function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
@@ -548,6 +582,28 @@ var frH='<span class="fr-badge fr-'+frSt+'">'+esc(FRN[frSt]||frSt)+'</span>';
 if(kp.freshness_note&&(frSt==="fresh"||frSt==="expiring")){frH+='<span class="fr-note">'+esc(kp.freshness_note)+'</span>'}
 var isOutdated=!!kp.is_outdated;
 
+/* Policy validation status (F028) */
+var pvVal=kp.policy_validated;
+var pvH="";
+if(pvVal===2){pvH='<span class="pv-badge pv-pending">待政策验证</span>'}
+else if(pvVal===1){pvH='<span class="pv-badge pv-validated">政策已验证</span>'}
+else if(pvVal===3){pvH='<span class="pv-badge pv-exempt">已豁免</span>'}
+else if(pvVal===4){pvH=""}
+else if(tp!=="policy"){pvH='<span class="pv-badge pv-unchecked">未校验</span>'}
+
+/* Policy dependencies detail (F028) */
+var pdH="";
+var pdeps=kp.policy_dependencies;
+if(typeof pdeps==="string"){try{pdeps=JSON.parse(pdeps)}catch(e){pdeps=[]}}
+if(!Array.isArray(pdeps))pdeps=[];
+if(pvVal===2&&pdeps.length>0){
+pdH='<div class="policy-deps"><div class="pd-title">未验证的政策依赖 ('+pdeps.length+'项)</div>';
+for(var pi=0;pi<pdeps.length;pi++){var pd=pdeps[pi];if(pd.matched){pdH+='<div class="pd-item"><span class="pd-matched">&#10003; '+esc(pd.name||pd.number)+'</span> <span style="font-size:11px;color:var(--text-muted)">- 已匹配KB#'+pd.kb_id+'</span></div>'}else if(pd.uncertain){pdH+='<div class="pd-item"><span class="pd-unmatched">? '+esc(pd.name||pd.number)+'</span><div class="pd-guide">'+esc(pd.lookup_guide||"")+'</div></div>'}else{pdH+='<div class="pd-item"><span class="pd-unmatched">&#10007; '+esc(pd.name||pd.number)+'</span>'+(pd.policy_level?' <span style="font-size:11px;color:var(--text-muted)">('+esc(pd.policy_level)+')</span>':'')+'<div class="pd-guide">'+esc(pd.lookup_guide||"")+'</div></div>'}}
+pdH+='</div>'}
+else if(pvVal===1&&pdeps.length>0){
+var matchedNames=[];for(var pi=0;pi<pdeps.length;pi++){if(pdeps[pi].matched)matchedNames.push(pdeps[pi].name||pdeps[pi].number)}
+if(matchedNames.length>0){pdH='<div class="policy-deps-ok">&#10003; 已验证政策: '+esc(matchedNames.join(", "))+'</div>'}}
+
 /* Tag chips HTML */
 var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
 var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
@@ -560,15 +616,16 @@ var kf=getKeyFields(tp,ex);
 
 /* Actions */
 var ah="";
-if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:#DC2626;border-color:#DC2626" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">续期</button>'}}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:#1E40AF;border-color:#1E40AF" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#7C3AED;border-color:#7C3AED" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:#DC2626;border-color:#DC2626" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:#1E40AF;border-color:#1E40AF" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#7C3AED;border-color:#7C3AED" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
 
 return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
 +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
 +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
 +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
-+'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+'</div>'
++'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+'</div>'
++pdH
 +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
 +(kf?'<div class="kp-fields">'+kf+'</div>':"")
 +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
@@ -597,6 +654,10 @@ function markOutdated(id){showConfirm("标记已过时","此知识点将标记�
 function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:\n例如: 本批次知识点已核实均为现行有效");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
 function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){showToast("已标记"+r.marked+"条过时","info");selectedIds={};refreshData();loadFreshnessSummary()}})})}
 function batchRestoreToPending(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量恢复","将"+ids.length+"条知识点恢复到待审核状态?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-restore-to-pending",{ids:ids}).then(function(r){if(r.success){showToast("已恢复"+r.restored+"条","success");selectedIds={};refreshData()}})})}
+/* === v2.1.0-d F028: Policy Validation Actions === */
+function exemptPolicy(id){showConfirm("豁免政策校验","此知识点将标记为不需要政策校验(人工豁免)。确认?",function(ok){if(!ok)return;var reason=prompt("豁免原因(可留空):\n例如: 纯操盘经验,不依赖特定政策");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/exempt-policy",{reason:reason||""}).then(function(r){if(r.success){showToast("已豁免","info");refreshData()}else{showToast("操作失败: "+(r.error||""),"error")}})})}
+function revalidatePolicy(id){showConfirm("重新校验","将重新调用AI扫描此知识点的政策引用并匹配知识库。确认?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+id+"/revalidate-policy").then(function(r){if(r.success){showToast("重新校验完成","success");refreshData()}else{showToast("校验失败: "+(r.error||""),"error")}})})}
+
 /* === Batch === */
 function batchRemoveConfirmed(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量移除","将"+ids.length+"条已确认知识点移除出库(变为已忽略)?",function(ok){if(!ok)return;var reason=prompt("移除原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids,reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除"+r.ignored+"条","info");selectedIds={};refreshData()}})})}
 function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
@@ -627,6 +688,19 @@ document.getElementById("editReadiness").value=kp.content_readiness||"draft";
 document.getElementById("editAuthority").value=kp.source_authority||"firsthand";
 document.getElementById("editFreshnessInterval").value=kp.freshness_interval_days||"";
 document.getElementById("editFreshnessNote").value=kp.freshness_note||"";
+
+/* Policy deps display (F028, readonly) */
+var pdField=document.getElementById("editPolicyDepsField");
+var pdDiv=document.getElementById("editPolicyDeps");
+var pvSt=kp.policy_validated;
+var pdArr=kp.policy_dependencies;
+if(typeof pdArr==="string"){try{pdArr=JSON.parse(pdArr)}catch(e){pdArr=[]}}
+if(!Array.isArray(pdArr))pdArr=[];
+if(pvSt&&pvSt>0&&pdArr.length>0){
+pdField.style.display="block";
+var pdHtml="<div style='margin-bottom:6px;font-weight:600'>状态: "+esc(PVN[String(pvSt)]||"未知")+"</div>";
+for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:#065F46'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:#DC2626'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
+pdDiv.innerHTML=pdHtml}else{pdField.style.display="none"}
 
 /* Layer 1 tags */
 var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);

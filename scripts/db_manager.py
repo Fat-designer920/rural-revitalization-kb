@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.0-d - 新增保鲜方法+freshness_filter+政策校验字段(policy_dependencies/policy_validated)
+版本：v2.1.0-d - 保鲜方法+freshness_filter+政策校验(policy_filter+summary+字段)
 
 数据库表（13张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -359,7 +359,7 @@ class DatabaseManager:
     def get_all_knowledge_points(self, review_status=None, content_type=None,
                                  category_id=None, level1_code=None,
                                  search_query=None, content_readiness=None,
-                                 freshness_filter=None,
+                                 freshness_filter=None, policy_filter=None,
                                  page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
@@ -404,6 +404,18 @@ class DatabaseManager:
             elif freshness_filter == "unchecked":
                 # 未设保鲜时间
                 where.append("kp.review_status='confirmed' AND kp.freshness_checked_at IS NULL AND kp.is_outdated=0")
+        # v2.1.0-d F028: 政策校验状态筛选
+        if policy_filter:
+            if policy_filter == "unvalidated":
+                where.append("(kp.policy_validated IS NULL OR kp.policy_validated = 0)")
+            elif policy_filter == "validated":
+                where.append("kp.policy_validated = 1")
+            elif policy_filter == "pending_validation":
+                where.append("kp.policy_validated = 2")
+            elif policy_filter == "exempt":
+                where.append("kp.policy_validated = 3")
+            elif policy_filter == "no_policy":
+                where.append("kp.policy_validated = 4")
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -736,6 +748,32 @@ class DatabaseManager:
                      WHERE id=?""", (reason, kp_id))
         conn.commit(); conn.close()
         self.log_operation("mark_outdated", "knowledge_points", kp_id, {"reason": reason})
+
+    # ================================================================
+    # 政策依赖校验（v2.1.0-d F028 新增）
+    # ================================================================
+    def get_policy_validation_summary(self):
+        """获取政策校验状态摘要"""
+        conn = self.get_connection(); c = conn.cursor()
+        summary = {"unvalidated": 0, "validated": 0, "pending": 0, "exempt": 0, "no_policy": 0}
+        c.execute("""SELECT policy_validated, COUNT(*) as cnt FROM knowledge_points
+                     WHERE review_status IN ('pending','confirmed')
+                     GROUP BY policy_validated""")
+        for row in c.fetchall():
+            val = row["policy_validated"]
+            cnt = row["cnt"]
+            if val is None or val == 0:
+                summary["unvalidated"] += cnt
+            elif val == 1:
+                summary["validated"] += cnt
+            elif val == 2:
+                summary["pending"] += cnt
+            elif val == 3:
+                summary["exempt"] += cnt
+            elif val == 4:
+                summary["no_policy"] += cnt
+        conn.close()
+        return summary
 
     # ================================================================
     # 标签定义查询

@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v2.1.0-d - 保鲜提醒(续期/批量续期/标记过时/摘要/筛选)
+版本：v2.1.0-d - 保鲜提醒+政策依赖校验(F028)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -35,7 +35,8 @@ def _safe(item):
     for f in ["ai_extracted_content","suggested_tags","final_tags","domain_tags",
               "suggested_category_tags","final_category_tags",
               "suggested_attribute_tags","final_attribute_tags",
-              "suggested_keywords","final_keywords","qa_flags"]:
+              "suggested_keywords","final_keywords","qa_flags",
+              "policy_dependencies"]:
         if f in r: r[f] = _parse(r[f])
     return r
 
@@ -75,6 +76,7 @@ def get_kps():
     try:
         sort_by_qa = request.args.get("sort_by_qa", None)
         freshness_filter = request.args.get("freshness", None)
+        policy_filter = request.args.get("policy", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -82,6 +84,7 @@ def get_kps():
             search_query=request.args.get("search",None),
             content_readiness=request.args.get("readiness",None),
             freshness_filter=freshness_filter,
+            policy_filter=policy_filter,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -295,6 +298,66 @@ def batch_mark_outdated():
         return jsonify({"success":True,"marked":n})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+# ================================================================
+# v2.1.0-d F028: 政策依赖校验
+# ================================================================
+@app.route("/api/policy-validation/summary", methods=["GET"])
+def policy_validation_summary():
+    """返回政策校验状态摘要"""
+    try:
+        summary = db.get_policy_validation_summary()
+        return jsonify(summary)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e),"unvalidated":0,"validated":0,"pending":0,"exempt":0,"no_policy":0}),500
+
+@app.route("/api/knowledge-points/<int:kid>/exempt-policy", methods=["POST"])
+def exempt_policy(kid):
+    """人工豁免政策校验（标记为不需要政策校验）"""
+    try:
+        kp = db.get_knowledge_point(kid)
+        if not kp: return jsonify({"error":"not found"}),404
+        d = request.get_json() or {}
+        reason = d.get("reason", "")
+        db.update_knowledge_point(kid, policy_validated=3,
+            policy_dependencies=json.dumps([{"exempt_reason": reason or "human_exempt"}], ensure_ascii=False))
+        if kp.get("content_readiness") == "draft" and kp.get("policy_validated") == 2:
+            db.update_knowledge_point(kid, content_readiness="draft")
+        db.log_operation("exempt_policy", "knowledge_points", kid, {"reason": reason})
+        return jsonify({"success":True})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
+@app.route("/api/knowledge-points/<int:kid>/revalidate-policy", methods=["POST"])
+def revalidate_policy(kid):
+    """重新校验单条知识点的政策依赖"""
+    try:
+        kp = db.get_knowledge_point(kid)
+        if not kp: return jsonify({"error":"not found"}),404
+        if kp.get("content_type") == "policy":
+            return jsonify({"error":"政策类知识点无需校验"}),400
+        from scripts.policy_validator import PolicyValidator
+        pv = PolicyValidator(db=db)
+        ai_content = {}
+        raw = kp.get("ai_extracted_content", "{}")
+        if isinstance(raw, str):
+            try: ai_content = json.loads(raw)
+            except: pass
+        elif isinstance(raw, dict):
+            ai_content = raw
+        kps_mock = [{
+            "title": kp["title"],
+            "original_excerpt": kp.get("original_excerpt", ""),
+            "core_provisions": ai_content.get("core_provisions", ""),
+            "core_strategy": ai_content.get("core_strategy", ""),
+            "core_conclusion": ai_content.get("core_conclusion", ""),
+            "detailed_method": ai_content.get("detailed_method", ""),
+        }]
+        kps_info_mock = [{"kp_id": kid, "title": kp["title"]}]
+        count = pv.validate_batch(kps_mock, kps_info_mock, kp["content_type"])
+        db.log_operation("revalidate_policy", "knowledge_points", kid)
+        return jsonify({"success":True,"validated":count})
+    except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
+
 @app.route("/api/knowledge-points/batch-restore-to-pending", methods=["POST"])
 def batch_restore_to_pending():
     """批量恢复到待审核"""
@@ -476,7 +539,7 @@ def main():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
     print(f"  乡村振兴知识库 - 审核界面 v2.1.0-d")
-    print(f"  三层标签审核 | 保鲜提醒 | V3质检 | 批量操作")
+    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 批量操作")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

@@ -1,11 +1,11 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.1（v2.1.0-d升级）
+版本：v2.2（v2.1.0-d F028升级）
 升级内容：
-  - 保留v2.0全部12项检查
-  - 新增第13项：保鲜状态检查（过期/即将到期/未设周期统计）
-  - 新增v2.1.0-d迁移字段检查（freshness_note）
+  - 保留v2.1全部13项检查
+  - 新增第14项：政策校验状态检查(F028)
+  - 数据库迁移检查新增policy_dependencies/policy_validated字段
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -166,7 +166,7 @@ def check_disk():
 # v2.0 新增：数据库字段完整性
 # ================================================================
 def check_db_migration():
-    print(f"\n[7] 数据库迁移状态(v2.1.0-d)")
+    print(f"\n[7] 数据库迁移状态(v2.1.0-d F028)")
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
@@ -191,7 +191,7 @@ def check_db_migration():
         cur.execute("PRAGMA table_info(knowledge_points)")
         kp_cols = {r[1] for r in cur.fetchall()}
         kp_new_c = ["prompt_version", "qa_score", "qa_flags"]
-        kp_new_d = ["freshness_note"]
+        kp_new_d = ["freshness_note", "policy_dependencies", "policy_validated"]
         kp_ok = True
         for col in kp_new_c:
             if col in kp_cols:
@@ -204,7 +204,7 @@ def check_db_migration():
                 print(f"    OK knowledge_points.{col}")
             else:
                 print(f"    WARN knowledge_points.{col} 缺失(v2.1.0-d)")
-                print(f"       => 请运行[一键提取.bat]或[保鲜检查.bat]触发自动迁移")
+                print(f"       => 请运行[一键提取.bat]或[保鲜检查.bat]或[政策补跑.bat]触发自动迁移")
         conn.close()
         if not sf_ok or not kp_ok:
             print(f"    => 请运行[一键提取.bat]触发自动迁移，或手动运行 migrate_v210c.py")
@@ -531,11 +531,85 @@ def check_freshness_status():
         return True
 
 # ================================================================
+# v2.2 新增：政策校验状态检查（F028）
+# ================================================================
+def check_policy_validation():
+    print(f"\n[14] 政策校验状态(F028)")
+    config = _load_config()
+    dp = _get_db_path(config)
+    if not os.path.exists(dp):
+        print(f"    跳过")
+        return True
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+        # 检查字段是否存在
+        cur.execute("PRAGMA table_info(knowledge_points)")
+        cols = {r[1] for r in cur.fetchall()}
+        if "policy_validated" not in cols:
+            print(f"    (字段不存在,需先运行迁移)")
+            conn.close()
+            return True
+
+        cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status IN ('pending','confirmed')")
+        total = cur.fetchone()[0]
+        if total == 0:
+            print(f"    (无知识点)")
+            conn.close()
+            return True
+
+        # 各状态统计
+        status_map = {0: "未校验", 1: "已验证", 2: "待验证", 3: "已豁免", 4: "不涉及"}
+        cur.execute("""
+            SELECT COALESCE(policy_validated, 0) as pv, COUNT(*) as cnt
+            FROM knowledge_points
+            WHERE review_status IN ('pending','confirmed')
+            GROUP BY pv ORDER BY pv
+        """)
+        parts = []
+        pending_count = 0
+        unvalidated_count = 0
+        for row in cur.fetchall():
+            pv = row[0]
+            cnt = row[1]
+            label = status_map.get(pv, f"状态{pv}")
+            parts.append(f"{label}{cnt}")
+            if pv == 2:
+                pending_count = cnt
+            if pv == 0 or pv is None:
+                unvalidated_count = cnt
+
+        print(f"    知识点: {total}条 ({' / '.join(parts)})")
+
+        if pending_count > 0:
+            print(f"    => {pending_count}条待验证: 有未匹配的政策引用,建议先导入相关政策文件")
+            print(f"       在审核界面筛选[政策校验-待验证]查看详情")
+
+        if unvalidated_count > 0:
+            # 区分政策类和非政策类
+            cur.execute("""
+                SELECT COUNT(*) FROM knowledge_points
+                WHERE review_status IN ('pending','confirmed')
+                  AND (policy_validated IS NULL OR policy_validated=0)
+                  AND content_type != 'policy'
+            """)
+            non_policy_unvalidated = cur.fetchone()[0]
+            if non_policy_unvalidated > 0:
+                print(f"    => {non_policy_unvalidated}条非政策类知识点未校验")
+                print(f"       运行[政策补跑.bat]可补跑校验")
+
+        conn.close()
+        return pending_count == 0
+    except Exception as e:
+        print(f"    WARN {e}")
+        return True
+
+# ================================================================
 # 主流程
 # ================================================================
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.1")
+    print(f"  系统状态检查 v2.2")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -563,12 +637,13 @@ def main():
     results.append(("备份状态", check_backup_status()))
     results.append(("文件管线", check_file_pipeline()))
     results.append(("保鲜状态", check_freshness_status()))
+    results.append(("政策校验", check_policy_validation()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")
     ans = input("  是否测试API连通性? (会消耗少量费用) [y/N]: ").strip().lower()
     if ans == "y":
-        print(f"\n[14] API连通性")
+        print(f"\n[15] API连通性")
         try:
             from scripts.deepseek_client import DeepSeekClient
             cl = DeepSeekClient()
