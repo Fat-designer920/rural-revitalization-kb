@@ -416,3 +416,14 @@ class PolicyValidator:
             total_validated += count
 
         print(f"\n  补跑完成: 共校验{total_validated}条知识点")
+
+
+# ================================================================
+# 独立运行入口（供bat文件直接调用）
+# ================================================================
+if __name__ == "__main__":
+    print("\n  政策依赖补跑校验")
+    print("  对已入库但未校验的知识点补跑政策校验")
+    print("=" * 50)
+    pv = PolicyValidator()
+    pv.run_standalone()

@@ -1,5 +1,47 @@
 # 变更日志
 
+## v2.1.0-d 第2批 -- 政策依赖校验前端：F028审核界面+系统检查
+
+发布日期：2026-03-29
+
+变更内容：
+- migrate_v210d.py新增policy_dependencies和policy_validated字段迁移
+- db_manager.py新增get_policy_validation_summary()政策校验状态摘要
+- db_manager.py的get_all_knowledge_points新增policy_filter参数支持
+- api_server.py新增3个政策校验端点：摘要/人工豁免/重新校验
+- api_server.py新增policy筛选参数支持
+- api_server.py的_safe()新增policy_dependencies JSON解析
+- review.html新增政策校验徽标(已验证/待验证/已豁免/未校验)
+- review.html新增待验证知识点政策依赖详情展开(未匹配政策+查找指引)
+- review.html新增侧边栏政策校验筛选(全部/待验证/已验证/已豁免/未校验/不涉及)
+- review.html新增豁免校验+重新校验按钮
+- review.html新增编辑弹窗政策依赖只读展示
+- check_system.py升级至v2.2，新增第14项政策校验状态检查
+- check_system.py迁移检查扩展policy_dependencies+policy_validated
+- 新增政策补跑.bat(对历史知识点补跑政策校验)
+
+新增文件：政策补跑.bat
+修改文件：migrate_v210d.py, db_manager.py, api_server.py, review.html, check_system.py
+数据库迁移：migrate_v210d.py(knowledge_points+policy_dependencies+policy_validated)
+
+---
+
+## v2.1.0-d 第1.5批 -- 政策依赖校验后端：F028核心模块
+
+发布日期：2026-03-29
+
+变更内容：
+- 新增policy_validator.py政策依赖校验模块(V3扫描+KB匹配+就绪度锁定)
+- extractor.py新增Step 7政策依赖校验集成
+- prompt_templates.py新增POLICY_SCAN_PROMPT(V3扫描政策引用)
+- tag_config.py新增POLICY_LOOKUP_GUIDE(政策查找指引模板)
+- db_manager.py的update_knowledge_point允许policy_dependencies/policy_validated
+
+新增文件：policy_validator.py
+修改文件：extractor.py, prompt_templates.py, tag_config.py, db_manager.py
+
+---
+
 ## v2.1.0-d 第1批 -- 保鲜提醒：F015内容保鲜提醒
 
 发布日期：2026-03-28
@@ -11,23 +53,9 @@
 - db_manager.py新增保鲜方法：get_freshness_summary/renew_freshness/mark_knowledge_outdated
 - db_manager.py的get_all_knowledge_points新增freshness_filter参数支持
 - api_server.py新增4个保鲜端点：摘要/续期/批量续期/标记过时
-- api_server.py的PUT新增freshness_interval_days/freshness_note字段支持，编辑内容自动刷新保鲜时间
-- api_server.py的tag-definitions新增返回FRESHNESS_INTERVALS
-- review.html新增保鲜提醒栏(顶部橙色提示,过期/即将到期数量)
-- review.html新增保鲜状态徽标(新鲜/即将到期/已过期/已过时)
-- review.html新增保鲜筛选(侧边栏保鲜状态过滤)
-- review.html新增续期操作(确认仍有效/标记过时,支持写备注)
-- review.html新增批量续期按钮
-- review.html编辑弹窗增加保鲜周期和保鲜备注编辑
-- review.html已过时知识点灰显(card-outdated样式)
+- review.html新增保鲜提醒栏+保鲜徽标+保鲜筛选+续期+批量续期+已过时灰显
 - check_system.py升级至v2.1，新增第13项保鲜状态检查
-- check_system.py新增v2.1.0-d迁移字段检查(freshness_note)
 - 新增保鲜检查.bat
-- 版本号统一更新至v2.1.0-d
-
-新增文件：freshness_checker.py, migrate_v210d.py, 保鲜检查.bat
-修改文件：tag_config.py, db_manager.py, api_server.py, review.html, check_system.py
-数据库迁移：migrate_v210d.py(knowledge_points+freshness_note)
 
 ---
 
@@ -37,16 +65,6 @@
 
 变更内容：
 - check_system.py从v1.0升级到v2.0，从6项检查扩展到12项
-- 新增数据库迁移状态检查（v2.1.0-c的6个新字段是否存在）
-- 新增知识库健康度概览（状态/类型/就绪度分布+源文件统计）
-- 新增Prompt版本检查（统计旧版本知识点数量，提示升级路径）
-- 新增V3质检覆盖率（已检/未检/平均分/低分预警）
-- 新增备份状态检查（最近备份时间/数量）
-- 新增文件管线状态（pending/processing/completed/failed文件数+行动建议）
-- v2.1.0-c全部4批交付完毕
-
-修改文件：check_system.py(重写)
-数据库迁移：不需要
 
 ---
 

@@ -544,7 +544,7 @@ function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnow
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
 function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
-function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
+function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;currentStatus=null;var stSection=document.querySelectorAll(".filter-section")[0];var stBtns=stSection.querySelectorAll(".filter-item");for(var si=0;si<stBtns.length;si++)stBtns[si].classList.remove("active");stBtns[0].classList.add("active");renderBatchButtons();var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
@@ -634,8 +634,11 @@ return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"
 
 function getDimName(code){
 if(tagDefs&&tagDefs.layer2){var d=tagDefs.layer2[code];if(d)return d.name}
+var baseCode=code.replace(/_\d+$/,"");
+if(baseCode!==code&&tagDefs&&tagDefs.layer2){var d2=tagDefs.layer2[baseCode];if(d2)return d2.name}
 var ATTR_KEY_CN={"policy_level":"政策层级","fund_channel":"资金渠道","funding_channel":"资金渠道","stakeholder":"涉及主体","region":"涉及区域","timeliness":"时效状态","data_year":"数据年份","replicability":"可复制性","funding_scale":"资金规模"};
 if(ATTR_KEY_CN[code])return ATTR_KEY_CN[code];
+if(baseCode!==code&&ATTR_KEY_CN[baseCode])return ATTR_KEY_CN[baseCode];
 return code}
 
 function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+esc(fs[i][1])+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
