@@ -1,14 +1,15 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.0-d - 基于v2.1.0-c，新增政策依赖校验(F028)
+版本：v2.1.1 - 基于v2.1.0-d，新增举一反三(F038)
 
-变更说明（v2.1.0-d）：
-  - R1分段上限从4000降到3000（减少高密度文件截断概率）
-  - 过大段拆分阈值从硬编码6000改为动态计算（segment_max * 1.5），适配不同模型
-  - 截断提示信息增强：明确告知已抢救数量和可能损失
-  - 新增Step 7: 政策依赖校验（V3扫描政策引用+KB匹配+就绪度锁定）
-  - 保留全部v2.1.0-c功能不变
+变更说明（v2.1.1 F038）：
+  - 解析AI输出中的practical_insights字段存入数据库
+  - _quality_check传递insights数据供V3评估可靠性
+  - V3质检结果新增insight_reliability字段写入DB
+  - 自动调用migrate_v211迁移脚本
+  - 版本号和提示信息更新为v2.1.1
+  - 保留全部v2.1.0-d功能不变
 """
 import os, sys, json, re, shutil, hashlib
 from pathlib import Path
@@ -667,9 +668,9 @@ class Extractor:
     # v2.1.0-c 第3批新增：V3质检（5维度评分）
     # ================================================================
     def _quality_check(self, filename, content_summary, kps, kps_info):
-        """V3质检：对同一文件的所有知识点进行5维度评分。
+        """V3质检：对同一文件的所有知识点进行6维度评分（v2.1.1: 含举一反三可靠性）。
         kps: 原始AI提取的知识点列表（含完整内容）
-        kps_info: 写入DB后的info列表（含kp_id）
+        kps_info: 写入DB后的info列表（含kp_id和practical_insights）
         返回成功质检的数量。"""
         if not kps or not kps_info:
             return 0
@@ -677,13 +678,19 @@ class Extractor:
         # 构建知识点JSON（与QC_CHECK_PROMPT模板的{knowledge_points_json}对应）
         kp_for_qc = []
         for i, kp in enumerate(kps):
-            kp_for_qc.append({
+            qc_item = {
                 "index": i,
                 "title": kp.get("title", "未命名"),
                 "original_excerpt": (kp.get("original_excerpt") or "")[:200],
                 "suggested_category_tags": kp.get("suggested_category_tags", []),
                 "suggested_keywords": kp.get("suggested_keywords", [])[:5]
-            })
+            }
+            # v2.1.1 F038: 传递practical_insights供V3评估可靠性
+            if i < len(kps_info):
+                insights = kps_info[i].get("practical_insights", [])
+                if insights:
+                    qc_item["practical_insights"] = insights
+            kp_for_qc.append(qc_item)
 
         knowledge_points_json = json.dumps(kp_for_qc, ensure_ascii=False, indent=2)
         prompt = QC_CHECK_PROMPT
@@ -733,6 +740,7 @@ class Extractor:
                     "颗粒度过细": "granularity_fine", "过细": "granularity_fine",
                     "标签不符": "tag_mismatch", "标签不匹配": "tag_mismatch",
                     "疑似重复": "duplicate_suspect", "重复": "duplicate_suspect",
+                    "启示无依据": "insight_no_basis", "举一反三无依据": "insight_no_basis",
                 }
                 for f in flags:
                     if isinstance(f, str):
@@ -745,17 +753,25 @@ class Extractor:
                             # 保留原始中文标记
                             normalized_flags.append(f)
 
+                # v2.1.1 F038: 解析insight_reliability
+                insight_rel = qr.get("insight_reliability", None)
+                valid_rel = ("reliable", "uncertain", "unreliable", "no_insights")
+                if insight_rel not in valid_rel:
+                    insight_rel = None
+
                 scores.append(score)
                 # 找到对应的kp_id
                 if 0 <= idx < len(kps_info):
                     kp_id = kps_info[idx].get("kp_id")
                     if kp_id:
                         try:
-                            self.db.update_knowledge_point(
-                                kp_id,
-                                qa_score=score,
-                                qa_flags=json.dumps(normalized_flags, ensure_ascii=False)
-                            )
+                            update_kw = {
+                                "qa_score": score,
+                                "qa_flags": json.dumps(normalized_flags, ensure_ascii=False)
+                            }
+                            if insight_rel:
+                                update_kw["insight_reliability"] = insight_rel
+                            self.db.update_knowledge_point(kp_id, **update_kw)
                             checked += 1
                         except Exception as e:
                             print(f"     ! 质检分数写入失败(ID={kp_id}): {e}")
@@ -1015,7 +1031,7 @@ class Extractor:
                 if missed:
                     extraction_notes = json.dumps(missed, ensure_ascii=False)
 
-            # === 写入数据库（v2.1.0-c: 三层标签 + 元数据 + prompt_version） ===
+            # === 写入数据库（v2.1.1: 三层标签 + 元数据 + prompt_version + practical_insights） ===
             print(f"\n     写入{len(kps)}个知识点到数据库...")
             current_prompt_version = get_prompt_version()
             cnt = 0
@@ -1025,6 +1041,19 @@ class Extractor:
                     cat_code = kp.get("suggested_category_code", "")
                     cat = self.db.find_category_by_code(cat_code)
                     tags = self._sanitize_tags(kp)
+
+                    # v2.1.1 F038: 解析practical_insights
+                    raw_insights = kp.get("practical_insights", [])
+                    if not isinstance(raw_insights, list):
+                        raw_insights = []
+                    clean_insights = []
+                    for ins in raw_insights:
+                        if isinstance(ins, dict) and ins.get("insight"):
+                            clean_insights.append({
+                                "insight": str(ins.get("insight", "")),
+                                "basis": str(ins.get("basis", "")),
+                                "confidence": ins.get("confidence", "medium") if ins.get("confidence") in ("high", "medium", "low") else "medium"
+                            })
 
                     kid = self.db.add_knowledge_point(
                         source_file_id=fid,
@@ -1040,7 +1069,8 @@ class Extractor:
                         source_authority=tags["authority"],
                         source_page=str(kp.get("source_page", "")),
                         source_keyword=kp.get("source_keyword", ""),
-                        prompt_version=current_prompt_version)
+                        prompt_version=current_prompt_version,
+                        practical_insights=clean_insights)
                     cnt += 1
                     kps_info.append({
                         "kp_id": kid,
@@ -1048,6 +1078,7 @@ class Extractor:
                         "suggested_code": cat_code,
                         "category_matched": cat is not None,
                         "category_tags": tags["category_tags"],
+                        "practical_insights": clean_insights,
                     })
                 except Exception as e:
                     print(f"     ! 第{cnt + 1}个知识点入库失败: {e}")
@@ -1076,7 +1107,7 @@ class Extractor:
                     print(f"     政策校验出错: {e}")
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
-            msg = f"{model_tag}提取{cnt}个知识点(v2.1.0-d)"
+            msg = f"{model_tag}提取{cnt}个知识点(v2.1.1)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
             if pv_count > 0:
@@ -1101,7 +1132,7 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.0-d")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.1")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
@@ -1120,7 +1151,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
         print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
         print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
-        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验")
+        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验+举一反三")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
@@ -1151,7 +1182,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name}")
         print(f"  Prompt版本: {get_prompt_version()}")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
-        print(f"  知识点数: 共提取{total_kps}个，已V3质检+政策校验，等待人工审核")
+        print(f"  知识点数: 共提取{total_kps}个，已V3质检(含举一反三)+政策校验，等待人工审核")
         print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")
         print(f"{'-' * 60}")
         print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
@@ -1178,6 +1209,16 @@ def main():
             try:
                 from migrate_v210d_f028 import migrate as migrate_f028
                 migrate_f028()
+            except ImportError:
+                pass
+        # v2.1.1 F038: 举一反三字段迁移
+        try:
+            from scripts.migrate_v211 import migrate as migrate_v211
+            migrate_v211()
+        except ImportError:
+            try:
+                from migrate_v211 import migrate as migrate_v211
+                migrate_v211()
             except ImportError:
                 pass
         Extractor().run()

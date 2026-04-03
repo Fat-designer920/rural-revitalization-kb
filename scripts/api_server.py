@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v2.1.0-d - 保鲜提醒+政策依赖校验(F028)
+版本：v2.1.1 - 新增practical_insights解析(F038)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -36,7 +36,7 @@ def _safe(item):
               "suggested_category_tags","final_category_tags",
               "suggested_attribute_tags","final_attribute_tags",
               "suggested_keywords","final_keywords","qa_flags",
-              "policy_dependencies"]:
+              "policy_dependencies","practical_insights"]:
         if f in r: r[f] = _parse(r[f])
     return r
 
@@ -538,8 +538,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v2.1.0-d")
-    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 批量操作")
+    print(f"  乡村振兴知识库 - 审核界面 v2.1.1")
+    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 举一反三 | 批量操作")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

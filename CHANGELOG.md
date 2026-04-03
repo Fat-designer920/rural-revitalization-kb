@@ -1,5 +1,45 @@
 # 变更日志
 
+## v2.1.1 第2批 -- 举一反三提取增强：F038
+
+发布日期：2026-04-03
+
+变更内容：
+- **F038 举一反三提取增强(7个文件)**
+  - 新增migrate_v211.py迁移脚本（knowledge_points新增practical_insights+insight_reliability列）
+  - prompt_templates.py: PROMPT_VERSION改v2.1.1，新增PRACTICAL_INSIGHTS_INSTRUCTION共享策略块
+  - prompt_templates.py: 5个提取Prompt输出结构新增practical_insights数组字段（含insight/basis/confidence三要素）
+  - prompt_templates.py: QC_CHECK_PROMPT从5维度扩展到6维度（新增举一反三可靠性），输出新增insight_reliability
+  - extractor.py: 解析practical_insights存入DB、_quality_check传递insights、解析insight_reliability写DB、自动调用v211迁移
+  - db_manager.py: add_knowledge_point新增practical_insights参数，update_knowledge_point允许practical_insights和insight_reliability
+  - api_server.py: _safe()新增practical_insights JSON解析
+  - review.html: 卡片新增实操启示折叠区带三色可信度标记（high绿/medium黄/low红），insight_reliability徽标，编辑弹窗只读展示
+  - check_system.py: 迁移检查新增v2.1.1字段，版本升至v2.3
+
+新增文件：migrate_v211.py
+修改文件：prompt_templates.py, extractor.py, db_manager.py, api_server.py, review.html, check_system.py
+数据库迁移：migrate_v211.py（knowledge_points + practical_insights + insight_reliability）
+
+---
+
+## v2.1.1 第1批 -- bat文件修复+审核界面Bug修复：F040+F041
+
+发布日期：2026-04-03
+
+变更内容：
+- **F041 bat文件统一修复(3个文件)**
+  - 保鲜检查.bat: 补充cd /d "%~dp0"+title+PYTHONIOENCODING，统一标准风格
+  - 审核统计.bat: 去除%~dp0在set PYTHON_CMD中的使用，统一标准风格
+  - 政策补跑.bat: 去除%~dp0在set PYTHON_CMD中的使用+去除-c内联Python调用
+  - policy_validator.py新增`__main__`入口，政策补跑.bat改为直接调用脚本
+- **F040 审核界面Bug修复(2个Bug)**
+  - Bug1: filterByCat切分类时自动重置审核状态为"全部"，避免分类+状态组合下无结果
+  - Bug2: getDimName处理stakeholder_2等带_数字后缀的属性key翻译
+
+修改文件：policy_validator.py, review.html, 保鲜检查.bat, 审核统计.bat, 政策补跑.bat
+
+---
+
 ## v2.1.0-d 第2批 -- 政策依赖校验前端：F028审核界面+系统检查
 
 发布日期：2026-03-29

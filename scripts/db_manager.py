@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.0-d - 保鲜方法+freshness_filter+政策校验(policy_filter+summary+字段)
+版本：v2.1.1 - 新增practical_insights+insight_reliability支持(F038)
 
 数据库表（13张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -337,14 +337,15 @@ class DatabaseManager:
                             suggested_tags=None,  # 旧字段兼容
                             source_page="", source_keyword="",
                             content_readiness="draft", source_authority="firsthand",
-                            prompt_version=""):
+                            prompt_version="",
+                            practical_insights=None):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
-             content_readiness, source_authority, prompt_version)
-            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)""",
+             content_readiness, source_authority, prompt_version, practical_insights)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
              suggested_category_id,
@@ -353,7 +354,8 @@ class DatabaseManager:
              json.dumps(suggested_keywords or [], ensure_ascii=False),
              json.dumps(suggested_tags or [], ensure_ascii=False),
              source_page, source_keyword,
-             content_readiness, source_authority, prompt_version))
+             content_readiness, source_authority, prompt_version,
+             json.dumps(practical_insights or [], ensure_ascii=False)))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,
@@ -448,13 +450,15 @@ class DatabaseManager:
                     "content_readiness","source_authority","access_level",
                     "freshness_checked_at","freshness_interval_days","freshness_note",
                     "prompt_version","qa_score","qa_flags",
-                    "policy_dependencies","policy_validated"]
+                    "policy_dependencies","policy_validated",
+                    "practical_insights","insight_reliability"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags","final_category_tags",
-                          "final_attribute_tags","final_keywords","qa_flags","policy_dependencies") and isinstance(v, (dict, list)):
+                          "final_attribute_tags","final_keywords","qa_flags",
+                          "policy_dependencies","practical_insights") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:

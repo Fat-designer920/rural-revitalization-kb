@@ -1,12 +1,15 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.1.0-d - 基于v2.1.0-c，新增POLICY_SCAN_PROMPT(F028)
+版本：v2.1.1 - 基于v2.1.0-d，新增举一反三(F038)
 
-变更说明（v2.1.0-d）：
-  - 新增POLICY_SCAN_PROMPT：V3扫描非政策类知识点中的政策引用
-  - get_all_prompt_names新增policy_scan条目
-  - 保留v2.1.0-c全部内容不变
+变更说明（v2.1.1 F038）：
+  - PROMPT_VERSION改为v2.1.1
+  - 新增PRACTICAL_INSIGHTS_INSTRUCTION共享策略块
+  - 5个提取Prompt输出结构新增practical_insights数组字段（含insight/basis/confidence）
+  - QC_CHECK_PROMPT从5维度扩展到6维度（新增举一反三可靠性）
+  - QC输出新增insight_reliability字段(reliable/uncertain/unreliable/no_insights)
+  - 保留v2.1.0-d全部内容不变
 
 变更说明（v2.1.0-c）：
   - 5个提取Prompt全部深度重写：注入产品目标上下文+颗粒度标准+正反示例+自检指令
@@ -48,7 +51,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.1.0-c"
+PROMPT_VERSION = "v2.1.1"
 
 
 def get_prompt_version():
@@ -114,6 +117,38 @@ SELF_CHECK_INSTRUCTION = """
 3. 数据完整性检验：涉及数字的地方是否精确摘录了原文？有没有遗漏单位、年份、统计口径？
 4. 标签一致性检验：打的标签和知识点内容是否匹配？不要出现内容讲资金但标签没选"资金筹措"的情况。"""
 
+PRACTICAL_INSIGHTS_INSTRUCTION = """
+## 举一反三：实操启示推导（v2.1.1新增，重要）
+在提取原文信息之外，请主动推导对一线操盘人员有价值的实操启示。
+
+规则：
+1. 每条知识点推导0-3条实操启示（没有合理推导依据时不要硬凑，输出空数组即可）
+2. 每条启示必须标注推导依据（basis）和置信度（confidence）
+3. 置信度分三档：
+   - high：有原文明确支撑或行业共识支持
+   - medium：基于合理推断但原文未直接说明
+   - low：属于经验性判断，需要实战验证
+4. 禁止无依据的臆测，宁可不输出也不要编造
+5. 启示要面向实操：告诉操盘人员"所以你应该怎么做"或"要特别注意什么"
+
+好的实操启示示例：
+- insight: "申报全域整治项目时，优先选择拆旧潜力大的乡镇，而非建新需求大的"
+  basis: "原文要求新增耕地率不低于5%，拆旧区面积越大越容易满足指标"
+  confidence: "high"
+- insight: "EPC合同中应提前约定变更累计上限不超过15%"
+  basis: "多个案例显示未约定变更上限导致超概，15%为行业常见约定值"
+  confidence: "medium"
+
+差的实操启示（禁止出现）：
+- "该政策对乡村振兴有重要意义" → 废话，不可操作
+- "建议关注后续政策变化" → 空泛，人人都知道
+
+在每个知识点JSON中新增字段：
+"practical_insights": [
+  {"insight": "实操启示内容（一句话说清楚）", "basis": "推导依据", "confidence": "high或medium或low"}
+]
+如果该知识点没有可推导的实操启示，输出空数组 []。"""
+
 THREE_LAYER_TAG_STRATEGY = """
 ## 三层标签打标策略（必须严格遵守）
 
@@ -146,7 +181,8 @@ COMMON_TAG_OUTPUT_DESC = """
 "suggested_attribute_tags": {"维度英文名": "值", ...},
 "suggested_keywords": ["关键词1", "关键词2", ...],
 "suggested_readiness": "draft或quotable或premium",
-"suggested_authority": "official或authoritative或firsthand或informal"
+"suggested_authority": "official或authoritative或firsthand或informal",
+"practical_insights": [{"insight":"实操启示(一句话)","basis":"推导依据","confidence":"high或medium或low"}]
 """
 
 
@@ -281,7 +317,7 @@ _POLICY_EXTRACT_BASE = {
 - 一个政策文件通常应提取5-30个知识点
 - 表格内容要拆分为独立知识点
 - "鼓励""支持""禁止"等不同力度的表述要区分提取
-""" + SELF_CHECK_INSTRUCTION,
+""" + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下政策文件进行全文逐段分析，萃取所有可用于付费产品的高质量知识点。
 
@@ -365,7 +401,7 @@ _CASE_EXTRACT_BASE = {
 - 资金数据是案例的灵魂
 - 时间线上的关键节点要单独作为知识点
 - 多个子项目或阶段要独立提取
-""" + SELF_CHECK_INSTRUCTION,
+""" + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下案例材料进行全文逐段分析，萃取所有可用于付费产品的高质量知识点。
 
@@ -448,7 +484,7 @@ _EXPERIENCE_EXTRACT_BASE = {
 - 经验材料中往往有大量隐性知识，要主动挖掘
 - 沟通话术、汇报技巧等软性经验同样重要
 - "差点出事"的经历和"最终没做"的决策同样有提取价值
-""" + SELF_CHECK_INSTRUCTION,
+""" + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下经验材料进行全文逐段分析，萃取所有可用于付费产品的实操智慧。
 
@@ -520,7 +556,7 @@ _TOOL_EXTRACT_BASE = {
 
 ## 输出格式
 {"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
-""" + SELF_CHECK_INSTRUCTION,
+""" + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下工具/模板文件进行全文逐段分析，萃取所有可用于付费产品的知识点。
 
@@ -598,7 +634,7 @@ _DATA_EXTRACT_BASE = {
 - 表格数据要逐行提取为独立知识点
 - 同一指标不同年份的数据分别提取
 - 测算模型中的参数假设和计算公式要单独提取
-""" + SELF_CHECK_INSTRUCTION,
+""" + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下数据资料进行全文逐段逐表分析，萃取所有可用于付费产品的数据知识点。
 
@@ -666,14 +702,15 @@ PRE_ANALYSIS_PROMPT = {
 }
 
 QC_CHECK_PROMPT = {
-    "system_prompt": """你是知识产品质量检验专家。你的任务是对AI提取的知识点进行质量检查，从五个维度评分并标记问题。
+    "system_prompt": """你是知识产品质量检验专家。你的任务是对AI提取的知识点进行质量检查，从六个维度评分并标记问题。
 
-你要检查的五个维度：
+你要检查的六个维度：
 1. 独立可用性：脱离原文后，这条知识点能否被读者独立理解和使用？
 2. 信息密度：是否包含具体的数据、方法、步骤，还是只有空泛描述？
 3. 颗粒度合理性：这一条知识点是否只讲了一件事？是否过粗（混了多个要点）或过细（拆得太碎无意义）？
 4. 标签匹配度：打的标签和内容是否一致？
 5. 重复嫌疑：和同文件其他知识点是否高度相似？
+6. 举一反三可靠性：实操启示(practical_insights)是否有合理依据？是否存在无根据的臆测或废话式启示？
 
 请严格按JSON格式输出，不要输出任何其他文字：
 {
@@ -682,7 +719,8 @@ QC_CHECK_PROMPT = {
       "kp_index": 知识点在列表中的序号（从0开始）,
       "kp_title": "知识点标题",
       "qa_score": 1-5的整数（5=优秀，4=良好，3=及格，2=需改进，1=严重问题）,
-      "qa_flags": ["问题标记，如：缺上下文/信息空泛/颗粒度过粗/标签不符/疑似重复"],
+      "qa_flags": ["问题标记，如：缺上下文/信息空泛/颗粒度过粗/标签不符/疑似重复/启示无依据"],
+      "insight_reliability": "reliable或uncertain或unreliable或no_insights",
       "improvement_suggestion": "改进建议（50字内，没问题则留空）"
     }
   ],
@@ -691,11 +729,17 @@ QC_CHECK_PROMPT = {
 }
 
 评分标准：
-- 5分：独立可用+信息密集+颗粒度精准+标签匹配+无重复
+- 5分：独立可用+信息密集+颗粒度精准+标签匹配+无重复+启示可靠
 - 4分：基本达标，有小问题但不影响使用
 - 3分：及格，需要人工微调后才可用于产品
 - 2分：明显问题，如缺关键上下文、数据不完整、多个要点混在一起
-- 1分：严重问题，如内容空泛无实操价值、标签完全不符、与其他知识点重复""",
+- 1分：严重问题，如内容空泛无实操价值、标签完全不符、与其他知识点重复
+
+举一反三可靠性评判：
+- reliable：所有启示都有明确依据（原文支撑或行业共识），可信度高
+- uncertain：部分启示依据不够充分，需要人工确认
+- unreliable：存在明显无依据的臆测或废话式启示
+- no_insights：该知识点没有实操启示（practical_insights为空数组）""",
 
     "user_prompt_template": """请对以下知识点进行质量检查。
 
@@ -705,7 +749,7 @@ QC_CHECK_PROMPT = {
 知识点列表（共{kp_count}条）：
 {knowledge_points_json}
 
-请从五个维度（独立可用性/信息密度/颗粒度/标签匹配/重复嫌疑）逐条检查，按JSON格式输出。"""
+请从六个维度（独立可用性/信息密度/颗粒度/标签匹配/重复嫌疑/举一反三可靠性）逐条检查，按JSON格式输出。"""
 }
 
 SEGMENT_SUMMARY_PROMPT = {

@@ -208,6 +208,26 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .policy-deps .pd-unmatched{color:#DC2626;font-weight:600}
 .policy-deps .pd-guide{font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic}
 .policy-deps-ok{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:#065F46}
+.insights-section{margin:6px 0;border:1px solid var(--border-light);border-radius:var(--radius);overflow:hidden}
+.insights-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);background:#F8FAFC;user-select:none}
+.insights-toggle:hover{background:#F1F5F9}
+.insights-body{display:none;padding:8px 10px}
+.insights-body.open{display:block}
+.insight-item{margin-bottom:6px;padding:6px 8px;border-radius:4px;font-size:12px;line-height:1.5}
+.insight-item:last-child{margin-bottom:0}
+.ins-high{background:#F0FDF4;border-left:3px solid #22C55E}
+.ins-medium{background:#FFFBEB;border-left:3px solid #F59E0B}
+.ins-low{background:#FEF2F2;border-left:3px solid #EF4444}
+.ins-conf{display:inline-block;font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:4px}
+.ins-conf-high{background:#DCFCE7;color:#166534}
+.ins-conf-medium{background:#FEF3C7;color:#92400E}
+.ins-conf-low{background:#FEE2E2;color:#991B1B}
+.ins-text{font-weight:500;color:var(--text)}
+.ins-basis{color:var(--text-muted);font-size:11px;margin-top:2px}
+.ir-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
+.ir-reliable{background:#DCFCE7;color:#166534}
+.ir-uncertain{background:#FEF3C7;color:#92400E}
+.ir-unreliable{background:#FEE2E2;color:#991B1B}
 
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
@@ -413,6 +433,11 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <div id="editPolicyDeps" style="font-size:12px;color:var(--text-secondary);background:var(--bg);padding:10px;border-radius:var(--radius);max-height:200px;overflow-y:auto"></div>
       <div class="field-hint">政策依赖由提取流程自动扫描,如需修改请在卡片上操作(豁免/重新校验)</div>
     </div>
+    <div class="field" id="editInsightsField" style="display:none">
+      <label>实操启示 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(AI推导,只读)</span></label>
+      <div id="editInsights" style="font-size:12px;color:var(--text-secondary);background:var(--bg);padding:10px;border-radius:var(--radius);max-height:200px;overflow-y:auto"></div>
+      <div class="field-hint">实操启示由R1提取时自动推导,V3质检评估可靠性</div>
+    </div>
     <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
     <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
     <div class="field"><label>审核备注</label><textarea id="editNotes" style="min-height:60px"></textarea></div>
@@ -480,9 +505,11 @@ var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",to
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
 var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
 var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
-var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复"};
+var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复","insight_no_basis":"启示无依据"};
 var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"已过时",unknown:"未设置"};
 var PVN={"0":"未校验","1":"已验证","2":"待验证","3":"已豁免","4":"无需校验"};
+var IRN={"reliable":"可靠","uncertain":"存疑","unreliable":"不可靠","no_insights":"无启示"};
+var CONF_CN={"high":"依据充分","medium":"合理推断","low":"待验证"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
 
 /* === API helpers === */
@@ -604,6 +631,21 @@ else if(pvVal===1&&pdeps.length>0){
 var matchedNames=[];for(var pi=0;pi<pdeps.length;pi++){if(pdeps[pi].matched)matchedNames.push(pdeps[pi].name||pdeps[pi].number)}
 if(matchedNames.length>0){pdH='<div class="policy-deps-ok">&#10003; 已验证政策: '+esc(matchedNames.join(", "))+'</div>'}}
 
+/* v2.1.1 F038: Practical insights */
+var insightsH="";
+var pInsights=kp.practical_insights;
+if(typeof pInsights==="string"){try{pInsights=JSON.parse(pInsights)}catch(e){pInsights=[]}}
+if(!Array.isArray(pInsights))pInsights=[];
+var irVal=kp.insight_reliability;
+var irH="";
+if(irVal&&IRN[irVal]){irH='<span class="ir-badge ir-'+irVal+'">'+esc(IRN[irVal])+'</span>'}
+if(pInsights.length>0){
+insightsH='<div class="insights-section"><div class="insights-toggle" onclick="toggleInsights('+kp.id+')"><span id="insArr-'+kp.id+'">&#9654;</span> 实操启示 ('+pInsights.length+'条)';
+if(irVal&&IRN[irVal])insightsH+=' <span class="ir-badge ir-'+irVal+'">V3评估: '+esc(IRN[irVal])+'</span>';
+insightsH+='</div><div class="insights-body" id="insights-'+kp.id+'">';
+for(var ii=0;ii<pInsights.length;ii++){var ins=pInsights[ii];var conf=ins.confidence||"medium";insightsH+='<div class="insight-item ins-'+conf+'"><span class="ins-conf ins-conf-'+conf+'">'+esc(CONF_CN[conf]||conf)+'</span><span class="ins-text">'+esc(ins.insight||"")+'</span>';if(ins.basis)insightsH+='<div class="ins-basis">依据: '+esc(ins.basis)+'</div>';insightsH+='</div>'}
+insightsH+='</div></div>'}
+
 /* Tag chips HTML */
 var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
 var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
@@ -624,8 +666,8 @@ return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"
 +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
 +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
 +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
-+'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+'</div>'
-+pdH
++'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+irH+'</div>'
++pdH+insightsH
 +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
 +(kf?'<div class="kp-fields">'+kf+'</div>':"")
 +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
@@ -650,6 +692,7 @@ function deleteKp(id){showConfirm("永久删除","此操作不可恢复，确定
 function removeConfirmed(id){var reason=prompt("将此知识点从已入库中移除\n请输入原因:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除","info");refreshData()}})}
 function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复到待审核","success");refreshData()}})}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
+function toggleInsights(id){var body=document.getElementById("insights-"+id);var arr=document.getElementById("insArr-"+id);if(body){var isOpen=body.classList.toggle("open");if(arr)arr.innerHTML=isOpen?"&#9660;":"&#9654;"}}
 
 /* === v2.1.0-d: Freshness Actions === */
 function renewFreshness(id){var note=prompt("保鲜备注（可留空）:\n例如: 2026年3月核实，该政策仍为现行有效文件");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
@@ -704,6 +747,20 @@ pdField.style.display="block";
 var pdHtml="<div style='margin-bottom:6px;font-weight:600'>状态: "+esc(PVN[String(pvSt)]||"未知")+"</div>";
 for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:#065F46'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:#DC2626'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
 pdDiv.innerHTML=pdHtml}else{pdField.style.display="none"}
+
+/* v2.1.1 F038: Insights display (readonly) */
+var insField=document.getElementById("editInsightsField");
+var insDiv=document.getElementById("editInsights");
+var insArr=kp.practical_insights;
+if(typeof insArr==="string"){try{insArr=JSON.parse(insArr)}catch(e){insArr=[]}}
+if(!Array.isArray(insArr))insArr=[];
+if(insArr.length>0){
+insField.style.display="block";
+var irVal=kp.insight_reliability;
+var insHtml="";
+if(irVal&&IRN[irVal]){insHtml+="<div style='margin-bottom:6px;font-weight:600'>V3可靠性评估: <span class='ir-badge ir-"+irVal+"'>"+esc(IRN[irVal])+"</span></div>"}
+for(var ii=0;ii<insArr.length;ii++){var ins=insArr[ii];var conf=ins.confidence||"medium";insHtml+="<div class='insight-item ins-"+conf+"'><span class='ins-conf ins-conf-"+conf+"'>"+esc(CONF_CN[conf]||conf)+"</span><span class='ins-text'>"+esc(ins.insight||"")+"</span>";if(ins.basis)insHtml+="<div class='ins-basis'>依据: "+esc(ins.basis)+"</div>";insHtml+="</div>"}
+insDiv.innerHTML=insHtml}else{insField.style.display="none"}
 
 /* Layer 1 tags */
 var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);

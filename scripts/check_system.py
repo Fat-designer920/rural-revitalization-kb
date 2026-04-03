@@ -1,11 +1,10 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.2（v2.1.0-d F028升级）
+版本：v2.3（v2.1.1 F038升级）
 升级内容：
-  - 保留v2.1全部13项检查
-  - 新增第14项：政策校验状态检查(F028)
-  - 数据库迁移检查新增policy_dependencies/policy_validated字段
+  - 保留v2.2全部14项检查
+  - 数据库迁移检查新增practical_insights/insight_reliability字段(v2.1.1)
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -166,7 +165,7 @@ def check_disk():
 # v2.0 新增：数据库字段完整性
 # ================================================================
 def check_db_migration():
-    print(f"\n[7] 数据库迁移状态(v2.1.0-d F028)")
+    print(f"\n[7] 数据库迁移状态(v2.1.1 F038)")
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
@@ -192,6 +191,7 @@ def check_db_migration():
         kp_cols = {r[1] for r in cur.fetchall()}
         kp_new_c = ["prompt_version", "qa_score", "qa_flags"]
         kp_new_d = ["freshness_note", "policy_dependencies", "policy_validated"]
+        kp_new_v211 = ["practical_insights", "insight_reliability"]
         kp_ok = True
         for col in kp_new_c:
             if col in kp_cols:
@@ -205,6 +205,12 @@ def check_db_migration():
             else:
                 print(f"    WARN knowledge_points.{col} 缺失(v2.1.0-d)")
                 print(f"       => 请运行[一键提取.bat]或[保鲜检查.bat]或[政策补跑.bat]触发自动迁移")
+        for col in kp_new_v211:
+            if col in kp_cols:
+                print(f"    OK knowledge_points.{col}")
+            else:
+                print(f"    WARN knowledge_points.{col} 缺失(v2.1.1)")
+                print(f"       => 请运行[一键提取.bat]触发自动迁移")
         conn.close()
         if not sf_ok or not kp_ok:
             print(f"    => 请运行[一键提取.bat]触发自动迁移，或手动运行 migrate_v210c.py")
@@ -609,7 +615,7 @@ def check_policy_validation():
 # ================================================================
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.2")
+    print(f"  系统状态检查 v2.3")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
