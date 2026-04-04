@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 审核界面
 路径：scripts/api_server.py
-版本：v2.1.1 - 新增practical_insights解析(F038)
+版本：v2.1.1 F039 - 新增重复检测端点(duplicate-groups)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -358,6 +358,90 @@ def revalidate_policy(kid):
         return jsonify({"success":True,"validated":count})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
+# ================================================================
+# v2.1.1 F039: 重复检测
+# ================================================================
+@app.route("/api/duplicate-groups", methods=["GET"])
+def get_duplicate_groups():
+    """获取重复检测结果列表（默认只返回pending）"""
+    try:
+        status = request.args.get("status", "pending")
+        if status == "all":
+            groups = db.get_duplicate_groups(status=None)
+        else:
+            groups = db.get_duplicate_groups(status=status)
+        # 解析JSON字段并附带知识点标题
+        result = []
+        for g in groups:
+            item = dict(g)
+            item["member_ids"] = _parse(item.get("member_ids"))
+            item["ai_judgment"] = _parse(item.get("ai_judgment"))
+            # 查询每个成员知识点的标题和类型
+            members_detail = []
+            if isinstance(item["member_ids"], list):
+                for mid in item["member_ids"]:
+                    kp = db.get_knowledge_point(mid)
+                    if kp:
+                        members_detail.append({
+                            "id": mid,
+                            "title": kp["title"],
+                            "content_type": kp["content_type"],
+                            "source_file": kp.get("renamed_filename") or kp.get("original_filename", ""),
+                            "review_status": kp.get("review_status", ""),
+                            "content_readiness": kp.get("content_readiness", "draft"),
+                            "qa_score": kp.get("qa_score")
+                        })
+                    else:
+                        members_detail.append({"id": mid, "title": "(已删除)", "content_type": "unknown"})
+            item["members_detail"] = members_detail
+            result.append(item)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify([])
+
+@app.route("/api/duplicate-groups/summary", methods=["GET"])
+def duplicate_summary():
+    """获取重复检测摘要"""
+    try:
+        summary = db.get_duplicate_summary()
+        return jsonify(summary)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"pending":0,"resolved":0,"dismissed":0})
+
+@app.route("/api/duplicate-groups/<int:gid>/resolve", methods=["POST"])
+def resolve_duplicate(gid):
+    """处理重复组：保留指定知识点，删除其余"""
+    try:
+        group = db.get_duplicate_group(gid)
+        if not group: return jsonify({"error":"not found"}),404
+        d = request.get_json() or {}
+        keep_id = d.get("keep_id")
+        action = d.get("action", "resolve")  # resolve=保留一条删其余, dismiss=全部保留
+        if action == "dismiss":
+            db.update_duplicate_group(gid, "dismissed", "人工判定：非重复，全部保留")
+            return jsonify({"success":True, "action":"dismissed"})
+        if not keep_id:
+            return jsonify({"error":"缺少keep_id参数"}),400
+        member_ids = _parse(group["member_ids"])
+        if not isinstance(member_ids, list):
+            return jsonify({"error":"member_ids格式错误"}),500
+        if keep_id not in member_ids:
+            return jsonify({"error":"keep_id不在组成员中"}),400
+        # 删除其余知识点
+        deleted = []
+        for mid in member_ids:
+            if mid != keep_id:
+                db.delete_knowledge_point(mid)
+                deleted.append(mid)
+        action_desc = "保留#%d，删除#%s" % (keep_id, ",".join(str(x) for x in deleted))
+        db.update_duplicate_group(gid, "resolved", action_desc)
+        return jsonify({"success":True, "kept":keep_id, "deleted":deleted, "action":"resolved"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
 @app.route("/api/knowledge-points/batch-restore-to-pending", methods=["POST"])
 def batch_restore_to_pending():
     """批量恢复到待审核"""
@@ -539,7 +623,7 @@ def main():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
     print(f"  乡村振兴知识库 - 审核界面 v2.1.1")
-    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 举一反三 | 批量操作")
+    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 举一反三 | 重复检测 | 批量操作")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

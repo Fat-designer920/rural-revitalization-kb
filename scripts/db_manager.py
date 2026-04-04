@@ -1,9 +1,9 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.1 - 新增practical_insights+insight_reliability支持(F038)
+版本：v2.1.1 F039 - 新增duplicate_groups表+重复检测CRUD
 
-数据库表（13张）：
+数据库表（14张）：
   categories - 知识库分类体系（5大类27+子类）
   source_files - 原始文件记录
   knowledge_points - 知识点（核心表，v2.0.0新增多个字段）
@@ -17,6 +17,7 @@ db_manager.py - SQLite数据库管理模块
   operation_logs - 操作日志
   api_call_logs - API调用日志
   notion_sync_log - Notion同步日志（预留）
+  duplicate_groups - 重复检测结果（v2.1.1 F039新增）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -207,6 +208,19 @@ class DatabaseManager:
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+        # --- v2.1.1 F039 重复检测结果 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS duplicate_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_ids TEXT NOT NULL,
+            relation_type TEXT DEFAULT NULL,
+            ai_judgment TEXT DEFAULT '{}',
+            similarity_score REAL DEFAULT 0,
+            status TEXT DEFAULT 'pending'
+                CHECK(status IN ('pending','resolved','dismissed')),
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            resolved_at TEXT DEFAULT NULL,
+            resolved_action TEXT DEFAULT ''
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -222,6 +236,7 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_kr_source ON knowledge_relations(source_kp_id)",
             "CREATE INDEX IF NOT EXISTS idx_kr_target ON knowledge_relations(target_kp_id)",
             "CREATE INDEX IF NOT EXISTS idx_kul_kpid ON knowledge_usage_log(knowledge_point_id)",
+            "CREATE INDEX IF NOT EXISTS idx_dg_status ON duplicate_groups(status)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -831,4 +846,69 @@ class DatabaseManager:
         stats["by_readiness"] = {r["content_readiness"]: r["cnt"] for r in c.fetchall()}
         c.execute("SELECT access_level, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY access_level")
         stats["by_access"] = {r["access_level"]: r["cnt"] for r in c.fetchall()}
+        # v2.1.1 F039: 重复检测统计
+        try:
+            c.execute("SELECT COUNT(*) as cnt FROM duplicate_groups WHERE status='pending'")
+            stats["pending_duplicates"] = c.fetchone()["cnt"]
+        except:
+            stats["pending_duplicates"] = 0
         conn.close(); return stats
+
+    # ================================================================
+    # 重复检测（v2.1.1 F039 新增）
+    # ================================================================
+    def add_duplicate_group(self, member_ids, relation_type=None, ai_judgment=None, similarity_score=0):
+        """新增一条重复检测结果"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO duplicate_groups
+            (member_ids, relation_type, ai_judgment, similarity_score)
+            VALUES (?,?,?,?)""",
+            (json.dumps(member_ids, ensure_ascii=False),
+             relation_type,
+             json.dumps(ai_judgment or {}, ensure_ascii=False),
+             similarity_score))
+        gid = c.lastrowid; conn.commit(); conn.close()
+        self.log_operation("add_duplicate_group", "duplicate_groups", gid,
+                           {"member_ids": member_ids, "relation_type": relation_type})
+        return gid
+
+    def get_duplicate_groups(self, status="pending"):
+        """获取重复检测结果列表"""
+        conn = self.get_connection(); c = conn.cursor()
+        if status:
+            c.execute("SELECT * FROM duplicate_groups WHERE status=? ORDER BY similarity_score DESC, created_at DESC", (status,))
+        else:
+            c.execute("SELECT * FROM duplicate_groups ORDER BY status ASC, similarity_score DESC, created_at DESC")
+        rows = [dict(r) for r in c.fetchall()]; conn.close()
+        return rows
+
+    def get_duplicate_group(self, group_id):
+        """获取单条重复组详情"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM duplicate_groups WHERE id=?", (group_id,))
+        r = c.fetchone(); conn.close()
+        return dict(r) if r else None
+
+    def update_duplicate_group(self, group_id, status, resolved_action=""):
+        """更新重复组状态"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE duplicate_groups
+                     SET status=?, resolved_at=datetime('now','localtime'), resolved_action=?
+                     WHERE id=?""", (status, resolved_action, group_id))
+        conn.commit(); conn.close()
+        self.log_operation("resolve_duplicate", "duplicate_groups", group_id,
+                           {"status": status, "action": resolved_action})
+
+    def get_duplicate_summary(self):
+        """获取重复检测状态摘要"""
+        conn = self.get_connection(); c = conn.cursor()
+        summary = {"pending": 0, "resolved": 0, "dismissed": 0}
+        try:
+            c.execute("SELECT status, COUNT(*) as cnt FROM duplicate_groups GROUP BY status")
+            for row in c.fetchall():
+                if row["status"] in summary:
+                    summary[row["status"]] = row["cnt"]
+        except:
+            pass  # 表可能不存在
+        conn.close()
+        return summary

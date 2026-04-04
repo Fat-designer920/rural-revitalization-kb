@@ -1,10 +1,11 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.3（v2.1.1 F038升级）
+版本：v2.4（v2.1.1 F039升级）
 升级内容：
-  - 保留v2.2全部14项检查
-  - 数据库迁移检查新增practical_insights/insight_reliability字段(v2.1.1)
+  - 保留v2.3全部14项检查
+  - 新增第15项: 重复检测状态检查(F039)
+  - 数据库迁移检查新增duplicate_groups表
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -165,7 +166,7 @@ def check_disk():
 # v2.0 新增：数据库字段完整性
 # ================================================================
 def check_db_migration():
-    print(f"\n[7] 数据库迁移状态(v2.1.1 F038)")
+    print(f"\n[7] 数据库迁移状态(v2.1.1 F039)")
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
@@ -211,6 +212,13 @@ def check_db_migration():
             else:
                 print(f"    WARN knowledge_points.{col} 缺失(v2.1.1)")
                 print(f"       => 请运行[一键提取.bat]触发自动迁移")
+        # v2.1.1 F039: 检查duplicate_groups表
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_groups'")
+        if cur.fetchone():
+            print(f"    OK duplicate_groups表")
+        else:
+            print(f"    WARN duplicate_groups表缺失(v2.1.1 F039)")
+            print(f"       => 请运行[重复检测.bat]或[一键提取.bat]触发自动创建")
         conn.close()
         if not sf_ok or not kp_ok:
             print(f"    => 请运行[一键提取.bat]触发自动迁移，或手动运行 migrate_v210c.py")
@@ -611,11 +619,66 @@ def check_policy_validation():
         return True
 
 # ================================================================
+# v2.4 新增：重复检测状态检查（F039）
+# ================================================================
+def check_duplicate_status():
+    print(f"\n[15] 重复检测状态(F039)")
+    config = _load_config()
+    dp = _get_db_path(config)
+    if not os.path.exists(dp):
+        print(f"    跳过")
+        return True
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+        # 检查表是否存在
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_groups'")
+        if not cur.fetchone():
+            print(f"    (表不存在,需先运行[重复检测.bat])")
+            conn.close()
+            return True
+
+        cur.execute("SELECT status, COUNT(*) as cnt FROM duplicate_groups GROUP BY status")
+        parts = []
+        pending_count = 0
+        conflict_count = 0
+        for row in cur.fetchall():
+            status = row[0]
+            cnt = row[1]
+            label = {"pending": "待处理", "resolved": "已处理", "dismissed": "已排除"}.get(status, status)
+            parts.append(f"{label}{cnt}")
+            if status == "pending":
+                pending_count = cnt
+
+        if not parts:
+            print(f"    (无重复检测记录)")
+            conn.close()
+            return True
+
+        print(f"    重复组: {' / '.join(parts)}")
+
+        # 统计冲突类
+        if pending_count > 0:
+            cur.execute("""SELECT COUNT(*) FROM duplicate_groups
+                          WHERE status='pending' AND relation_type='conflicting'""")
+            conflict_count = cur.fetchone()[0]
+            if conflict_count > 0:
+                print(f"    => {conflict_count}组知识冲突，建议优先处理!")
+            else:
+                print(f"    => {pending_count}组待处理，建议在审核界面处理")
+
+        conn.close()
+        return pending_count == 0
+    except Exception as e:
+        print(f"    WARN {e}")
+        return True
+
+# ================================================================
 # 主流程
 # ================================================================
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.3")
+    print(f"  系统状态检查 v2.4")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -644,12 +707,13 @@ def main():
     results.append(("文件管线", check_file_pipeline()))
     results.append(("保鲜状态", check_freshness_status()))
     results.append(("政策校验", check_policy_validation()))
+    results.append(("重复检测", check_duplicate_status()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")
     ans = input("  是否测试API连通性? (会消耗少量费用) [y/N]: ").strip().lower()
     if ans == "y":
-        print(f"\n[15] API连通性")
+        print(f"\n[16] API连通性")
         try:
             from scripts.deepseek_client import DeepSeekClient
             cl = DeepSeekClient()

@@ -978,6 +978,38 @@ def get_extraction_prompt(content_type):
     }
 
 
+# ================================================================
+# v2.1.1 F039: 重复知识点关系判断Prompt（V3模型）
+# ================================================================
+DUPLICATE_JUDGE_PROMPT = {
+    "system": """你是乡村振兴领域的知识管理专家。你的任务是判断多条知识点之间的关系。
+
+请分析给定的知识点组，判断它们之间属于以下哪种关系：
+
+1. **duplicate**（重复）：内容高度重叠，保留一条即可。可能是同一信息从不同文件提取出来的。
+2. **superseded**（版本更替）：同一主题的新旧版本，新版替代了旧版。比如政策更新、标准修订。
+3. **complementary**（互补）：同一主题但角度不同、信息互补，都有保留价值。比如一条从施工方角度讲，另一条从审计方角度讲。
+4. **conflicting**（冲突）：对同一问题给出矛盾的结论或数据，需要人工裁决哪个正确。
+5. **unrelated**（无关）：虽然标题/关键词相似，但实际讨论的不是同一件事，不构成重复。
+
+【输出格式】只输出一个JSON对象：
+{
+  "relation_type": "duplicate或superseded或complementary或conflicting或unrelated",
+  "reason": "判断理由，一两句话说清楚",
+  "suggested_keep_id": 建议保留的知识点ID(数字),
+  "merge_note": "如果各条有互补信息，提示哪些信息值得合并到保留条中。无则留空字符串"
+}
+
+注意：
+- suggested_keep_id选择内容最完整、质量最高的那条
+- 如果是complementary或conflicting，suggested_keep_id仍然选一条主条，但merge_note要说明互补/冲突的具体内容
+- 如果是superseded，suggested_keep_id选更新的那条
+- 如果是unrelated，suggested_keep_id随意填一个即可
+- 不要输出JSON以外的任何内容""",
+    "description": "重复知识点关系判断(V3模型,F039)"
+}
+
+
 def get_all_prompt_names():
     return [
         {"id": "file_rename", "name": "文件智能重命名", "version": "v1.0.0"},
@@ -996,4 +1028,5 @@ def get_all_prompt_names():
         {"id": "segment_summary", "name": "文件结构摘要", "version": PROMPT_VERSION},
         {"id": "cross_segment_check", "name": "跨段补漏检查", "version": PROMPT_VERSION},
         {"id": "policy_scan", "name": "政策依赖扫描", "version": PROMPT_VERSION},
+        {"id": "duplicate_judge", "name": "重复知识点关系判断", "version": PROMPT_VERSION},
     ]

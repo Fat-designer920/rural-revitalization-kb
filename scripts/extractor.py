@@ -1,15 +1,13 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.1 - 基于v2.1.0-d，新增举一反三(F038)
+版本：v2.1.1 F039 - 基于v2.1.1 F038，新增增量重复检测(Step 8)
 
-变更说明（v2.1.1 F038）：
-  - 解析AI输出中的practical_insights字段存入数据库
-  - _quality_check传递insights数据供V3评估可靠性
-  - V3质检结果新增insight_reliability字段写入DB
-  - 自动调用migrate_v211迁移脚本
-  - 版本号和提示信息更新为v2.1.1
-  - 保留全部v2.1.0-d功能不变
+变更说明（v2.1.1 F039）：
+  - 新增Step 8: 提取完成后增量重复检测(本地粗筛+V3精判)
+  - 导入并初始化DuplicateChecker
+  - 自动调用migrate_v211_dup迁移脚本
+  - 保留全部v2.1.1 F038功能不变
 """
 import os, sys, json, re, shutil, hashlib
 from pathlib import Path
@@ -29,6 +27,7 @@ from scripts.prompts.prompt_templates import (
 )
 from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
 from scripts.policy_validator import PolicyValidator
+from scripts.duplicate_checker import DuplicateChecker
 
 
 class Extractor:
@@ -76,6 +75,7 @@ class Extractor:
         self.extraction_model_name = None
         self.segment_max_len = 3000  # v2.1.0-d: 默认值也改为3000
         self.policy_validator = PolicyValidator(db=self.db, client=self.client)
+        self.duplicate_checker = DuplicateChecker(db=self.db, client=self.client)
 
     def select_model(self):
         print(f"\n  请选择提取模型:")
@@ -1106,12 +1106,26 @@ class Extractor:
                 except Exception as e:
                     print(f"     政策校验出错: {e}")
 
+            # === Step 8: 增量重复检测（本地粗筛+V3精判） ===
+            dup_count = 0
+            if cnt > 0 and kps:
+                try:
+                    new_ids = [info["id"] for info in kps_info if info.get("id")]
+                    if new_ids:
+                        dup_count = self.duplicate_checker.scan_incremental(new_ids)
+                except CostLimitExceeded:
+                    print(f"     费用已达上限,跳过重复检测")
+                except Exception as e:
+                    print(f"     重复检测出错: {e}")
+
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
             msg = f"{model_tag}提取{cnt}个知识点(v2.1.1)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
             if pv_count > 0:
                 msg += f" [已政策校验{pv_count}条]"
+            if dup_count > 0:
+                msg += f" [发现{dup_count}组疑似重复]"
             if extraction_notes:
                 msg += " [有补漏建议]"
             self.db.update_source_file(fid, process_status="completed", process_message=msg)
@@ -1151,7 +1165,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
         print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
         print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
-        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验+举一反三")
+        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验+举一反三+重复检测")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
@@ -1182,7 +1196,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name}")
         print(f"  Prompt版本: {get_prompt_version()}")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
-        print(f"  知识点数: 共提取{total_kps}个，已V3质检(含举一反三)+政策校验，等待人工审核")
+        print(f"  知识点数: 共提取{total_kps}个，已V3质检(含举一反三)+政策校验+重复检测，等待人工审核")
         print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")
         print(f"{'-' * 60}")
         print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
@@ -1219,6 +1233,16 @@ def main():
             try:
                 from migrate_v211 import migrate as migrate_v211
                 migrate_v211()
+            except ImportError:
+                pass
+        # v2.1.1 F039: 重复检测表迁移
+        try:
+            from scripts.migrate_v211_dup import migrate as migrate_dup
+            migrate_dup()
+        except ImportError:
+            try:
+                from migrate_v211_dup import migrate as migrate_dup
+                migrate_dup()
             except ImportError:
                 pass
         Extractor().run()

@@ -1,5 +1,29 @@
 # 变更日志
 
+## v2.1.1 第3批 -- 重复检测：F039
+
+发布日期：2026-04-04
+
+变更内容：
+- **F039 轻量重复知识点检测(9个文件)**
+  - 新增duplicate_checker.py重复检测核心模块(本地粗筛+V3精判)
+  - 新增migrate_v211_dup.py迁移脚本(创建duplicate_groups表,第14张表)
+  - 新增重复检测.bat(全库扫描入口)
+  - 新增DUPLICATE_JUDGE_PROMPT(V3判断五种关系类型: 重复/版本更替/互补/冲突/无关)
+  - 检测流程: 标题SequenceMatcher(>=0.50)+关键词Jaccard(>=0.40)本地粗筛 → Union-Find聚合 → V3语义精判
+  - extractor.py新增Step 8增量重复检测(提取后自动扫描新知识点vs全库)
+  - db_manager.py新增duplicate_groups表+5个CRUD方法+统计pending_duplicates
+  - api_server.py新增3个重复检测端点: 列表(含成员详情)/摘要/处理(保留/排除)
+  - review.html新增重复检测提醒栏+可展开处理面板(按关系类型分色+AI建议+冲突优先)
+  - check_system.py升级至v2.4，新增第15项重复检测状态检查+迁移检查新增duplicate_groups表
+  - prompt_templates.py Prompt总数从17个增至18个
+
+新增文件：duplicate_checker.py, migrate_v211_dup.py, 重复检测.bat
+修改文件：extractor.py, db_manager.py, api_server.py, review.html, check_system.py, prompt_templates.py
+数据库迁移：migrate_v211_dup.py(创建duplicate_groups表)
+
+---
+
 ## v2.1.1 第2批 -- 举一反三提取增强：F038
 
 发布日期：2026-04-03
@@ -86,25 +110,11 @@
 
 发布日期：2026-03-28
 
-变更内容：
-- 新增freshness_checker.py保鲜扫描脚本(扫描+分组报告+自动补默认周期)
-- 新增migrate_v210d.py迁移脚本(knowledge_points加freshness_note字段)
-- tag_config.py新增FRESHNESS_INTERVALS保鲜周期配置(政策90天/案例180天/经验365天/工具365天/数据90天)
-- db_manager.py新增保鲜方法：get_freshness_summary/renew_freshness/mark_knowledge_outdated
-- db_manager.py的get_all_knowledge_points新增freshness_filter参数支持
-- api_server.py新增4个保鲜端点：摘要/续期/批量续期/标记过时
-- review.html新增保鲜提醒栏+保鲜徽标+保鲜筛选+续期+批量续期+已过时灰显
-- check_system.py升级至v2.1，新增第13项保鲜状态检查
-- 新增保鲜检查.bat
-
 ---
 
 ## v2.1.0-c 第4批 -- 提取质量加固：系统检查升级
 
 发布日期：2026-03-28
-
-变更内容：
-- check_system.py从v1.0升级到v2.0，从6项检查扩展到12项
 
 ---
 
@@ -112,21 +122,11 @@
 
 发布日期：2026-03-27
 
-变更内容：
-- extractor.py新增V3质检(Step 6)
-- api_server.py新增sort_by_qa参数支持
-- review.html新增质检分数徽标和质检排序
-- 新增review_analytics.py审核反馈统计脚本+审核统计.bat
-
 ---
 
 ## v2.1.0-c 第1-2批 -- 提取质量加固：Prompt重写+智能分段+预分析
 
 发布日期：2026-03-27
-
-变更内容：
-- 第1批：prompt_templates.py深度重写(893行,15个Prompt)
-- 第2批：extractor.py重大改造(1035行)+migrate_v210c.py+一键提取.bat
 
 ---
 

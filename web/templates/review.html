@@ -229,6 +229,31 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .ir-uncertain{background:#FEF3C7;color:#92400E}
 .ir-unreliable{background:#FEE2E2;color:#991B1B}
 
+/* === Duplicate Detection (F039) === */
+.dup-bar{background:#FFF7ED;border-bottom:1px solid #FDBA74;padding:8px 28px;font-size:13px;color:#C2410C;display:none;cursor:pointer;transition:var(--transition)}
+.dup-bar:hover{background:#FFEDD5}
+.dup-bar .db-count{color:#DC2626;font-weight:700}
+.dup-bar .db-conflict{color:#991B1B;font-weight:700}
+.dup-panel{display:none;padding:16px 28px;background:#FFFBEB;border-bottom:1px solid #FDE68A}
+.dup-panel.open{display:block}
+.dup-group{background:#FFFFFF;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.dup-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
+.dup-rel{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.dup-rel-duplicate{background:#FFEDD5;color:#C2410C}
+.dup-rel-superseded{background:#DBEAFE;color:#1E40AF}
+.dup-rel-complementary{background:#D1FAE5;color:#065F46}
+.dup-rel-conflicting{background:#FEE2E2;color:#991B1B}
+.dup-score{font-size:11px;color:var(--text-muted)}
+.dup-member{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;font-size:12px;margin-bottom:4px;background:#F8FAFC;border:1px solid var(--border-light)}
+.dup-member:last-child{margin-bottom:0}
+.dup-member .dm-id{font-weight:700;color:var(--primary);min-width:36px}
+.dup-member .dm-type{font-size:10px;padding:1px 5px;border-radius:3px;background:#E0E7FF;color:#4338CA}
+.dup-member .dm-title{flex:1;color:var(--text)}
+.dup-member .dm-src{font-size:11px;color:var(--text-muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dup-member.dm-suggested{border-color:#22C55E;background:#F0FDF4}
+.dup-reason{font-size:12px;color:var(--text-secondary);margin:6px 0;padding:6px 8px;background:#F8FAFC;border-radius:4px;line-height:1.5}
+.dup-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
 .kp-excerpt.expanded{max-height:none}
@@ -322,7 +347,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.1.0-d</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.1.1</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -335,6 +360,11 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 <div class="freshness-bar" id="freshnessBar" onclick="filterByFreshness('needs_check',document.querySelector('#freshnessFilterSection .filter-item:nth-child(2)'))">
   保鲜提醒: <span class="fb-expired" id="fbExpired">0</span> 条已过期, <span class="fb-expiring" id="fbExpiring">0</span> 条即将到期 -- 点击查看
 </div>
+<!-- v2.1.1 F039: 重复检测提醒栏 -->
+<div class="dup-bar" id="dupBar" onclick="toggleDupPanel()">
+  重复检测: <span class="db-count" id="dbPending">0</span> 组待处理<span id="dbConflictHint"></span> -- 点击展开处理
+</div>
+<div class="dup-panel" id="dupPanel"></div>
 
 <!-- Main Layout -->
 <div class="main">
@@ -546,7 +576,7 @@ function getFreshnessStatus(kp){
 
 /* === Init === */
 function init(){
-  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
+  apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();loadDuplicateSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
 }
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
@@ -556,6 +586,15 @@ function loadSuggestionCount(){apiGet("/api/architecture-suggestions").then(func
 /* === v2.1.0-d: Freshness Summary === */
 function loadFreshnessSummary(){apiGet("/api/freshness/summary").then(function(s){if(s.error)return;var expired=s.expired||0;var expiring=s.expiring||0;if(expired>0||expiring>0){document.getElementById("fbExpired").textContent=expired;document.getElementById("fbExpiring").textContent=expiring;document.getElementById("freshnessBar").style.display="block"}else{document.getElementById("freshnessBar").style.display="none"}})}
 
+/* === v2.1.1 F039: Duplicate Detection === */
+var dupRelNames={duplicate:"重复",superseded:"版本更替",complementary:"互补",conflicting:"冲突",unrelated:"无关"};
+function loadDuplicateSummary(){apiGet("/api/duplicate-groups/summary").then(function(s){if(!s||s.error)return;var p=s.pending||0;if(p>0){document.getElementById("dbPending").textContent=p;document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
+function toggleDupPanel(){var panel=document.getElementById("dupPanel");if(panel.classList.contains("open")){panel.classList.remove("open");panel.innerHTML=""}else{panel.classList.add("open");panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">加载中...</div>';loadDuplicateGroups()}}
+function loadDuplicateGroups(){apiGet("/api/duplicate-groups?status=pending").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的重复组</div>';return}var h='<div style="font-weight:600;font-size:14px;margin-bottom:10px;color:#92400E">待处理: '+groups.length+' 组 (冲突类型请优先处理)</div>';groups.sort(function(a,b){var order={conflicting:0,duplicate:1,superseded:2,complementary:3};var oa=order[a.relation_type]!==undefined?order[a.relation_type]:9;var ob=order[b.relation_type]!==undefined?order[b.relation_type]:9;return oa-ob});for(var i=0;i<groups.length;i++){h+=renderDupGroup(groups[i])}panel.innerHTML=h})}
+function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid #3B82F6">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:#16A34A;font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';for(var j=0;j<members.length;j++){var m2=members[j];h+='<button class="btn btn-sm" onclick="resolveDupKeep('+g.id+','+m2.id+')">保留#'+m2.id+'</button>'}h+='<button class="btn btn-sm" style="background:#E0E7FF;color:#4338CA" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:#F1F5F9;color:var(--text-muted)" onclick="goToKp('+members[0].id+')">查看详情</button>';h+='</div></div>';return h}
+function resolveDupKeep(gid,keepId){showConfirm("确认处理","保留 #"+keepId+"，删除组内其余知识点？",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/"+gid+"/resolve",{keep_id:keepId,action:"resolve"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
+function resolveDupDismiss(gid){apiPost("/api/duplicate-groups/"+gid+"/resolve",{action:"dismiss"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary()})}
+function goToKp(kid){window.scrollTo(0,0);currentSearch="";currentStatus=null;currentPage=1;document.getElementById("searchInput").value=""+kid;currentSearch=""+kid;loadKnowledgePoints()}
 /* === Categories === */
 function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c)){allCategories=c.slice();allCategories.sort(function(a,b){return a.level1_code===b.level1_code?a.level2_code.localeCompare(b.level2_code):a.level1_code.localeCompare(b.level1_code)})}buildCategoryTree();buildCategoryDropdown()})}
 
