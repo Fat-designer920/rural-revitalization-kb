@@ -1,7 +1,7 @@
 """
-api_server.py - Flask API + 审核界面
+api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.1.1 F039 - 新增重复检测端点(duplicate-groups)
+版本：v2.1.2 F046+F033 - 管理后台(仪表盘+工具箱)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -614,6 +614,295 @@ def debug():
     except Exception as e: info["status"]="error"; info["errors"].append(str(e))
     return jsonify(info)
 
+# ================================================================
+# v2.1.2 F046+F033: 管理后台 - 仪表盘
+# ================================================================
+@app.route("/api/dashboard", methods=["GET"])
+def dashboard():
+    """聚合仪表盘全部数据，一次返回"""
+    try:
+        data = {}
+        # 基础统计（复用现有方法）
+        stats = db.get_statistics()
+        data["total_kp"] = stats.get("knowledge_points", {}).get("total", 0)
+        data["total_pending"] = stats.get("total_pending", 0)
+        data["total_confirmed"] = stats.get("total_confirmed", 0)
+        data["today_api_cost"] = stats.get("today_api_cost", 0)
+        data["pending_suggestions"] = stats.get("pending_suggestions", 0)
+        data["pending_duplicates"] = stats.get("pending_duplicates", 0)
+
+        # 按状态分布
+        data["by_status"] = stats.get("knowledge_points", {})
+
+        # 按类型分布
+        data["by_type"] = stats.get("by_type", {})
+
+        # 就绪度分布（已确认的）
+        conn = db.get_connection()
+        c = conn.cursor()
+        c.execute("""SELECT content_readiness, COUNT(*) FROM knowledge_points
+                     WHERE review_status='confirmed' GROUP BY content_readiness""")
+        rd_map = {}
+        for row in c.fetchall():
+            rd_map[row[0] or "draft"] = row[1]
+        data["by_readiness"] = rd_map
+
+        # 质检分数分布
+        c.execute("""SELECT qa_score, COUNT(*) FROM knowledge_points
+                     WHERE qa_score IS NOT NULL GROUP BY qa_score ORDER BY qa_score""")
+        qa_dist = {}
+        for row in c.fetchall():
+            qa_dist[str(row[0])] = row[1]
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL")
+        qa_dist["unscored"] = c.fetchone()[0]
+        data["qa_distribution"] = qa_dist
+
+        # 保鲜摘要
+        try:
+            data["freshness"] = db.get_freshness_summary()
+        except:
+            data["freshness"] = {"expired": 0, "expiring": 0, "fresh": 0}
+
+        # 政策校验摘要
+        try:
+            data["policy"] = db.get_policy_validation_summary()
+        except:
+            data["policy"] = {}
+
+        # 重复检测摘要
+        try:
+            data["duplicates"] = db.get_duplicate_summary()
+        except:
+            data["duplicates"] = {"pending": 0}
+
+        # 文件管线
+        pipeline = {}
+        base = PROJECT_ROOT
+        try:
+            cfg_p = PROJECT_ROOT / "config" / "settings.json"
+            if cfg_p.exists():
+                with open(cfg_p, "r", encoding="utf-8") as f:
+                    base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
+        except:
+            pass
+        for d in ["pending", "processing", "completed", "failed"]:
+            dd = base / "data" / d
+            if dd.exists():
+                pipeline[d] = len([f for f in dd.iterdir() if f.is_file() and not f.name.startswith(".")])
+            else:
+                pipeline[d] = 0
+        data["file_pipeline"] = pipeline
+
+        # 源文件统计
+        c.execute("SELECT COUNT(*) FROM source_files")
+        data["total_files"] = c.fetchone()[0]
+
+        conn.close()
+        return jsonify(data)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ================================================================
+# v2.1.2 F046: 管理后台 - 工具箱
+# ================================================================
+@app.route("/api/tools/system-check", methods=["POST"])
+def tool_system_check():
+    """执行系统检查，返回结构化结果"""
+    try:
+        from scripts.check_system import run_checks_json
+        result = run_checks_json()
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/backup", methods=["POST"])
+def tool_backup():
+    """执行一键备份"""
+    try:
+        from scripts.backup_manager import BackupManager
+        bm = BackupManager()
+        path = bm.create_backup()
+        if path:
+            status = bm.get_backup_status()
+            return jsonify({"success": True, "backup_path": path,
+                            "count": status.get("count", 0) if status else 0})
+        return jsonify({"success": False, "error": "备份失败"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/backup-list", methods=["GET"])
+def tool_backup_list():
+    """获取备份列表"""
+    try:
+        from scripts.backup_manager import BackupManager
+        bm = BackupManager()
+        backups = bm.list_backups()
+        result = []
+        for b in backups:
+            result.append({
+                "filename": b["filename"],
+                "size_mb": round(b["size_mb"], 2),
+                "datetime": b["datetime"].strftime("%Y-%m-%d %H:%M:%S"),
+                "label": b.get("label", "")
+            })
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify([])
+
+@app.route("/api/tools/backup-restore", methods=["POST"])
+def tool_backup_restore():
+    """从指定备份恢复"""
+    try:
+        d = request.get_json() or {}
+        filename = d.get("filename", "")
+        if not filename:
+            return jsonify({"error": "缺少filename参数"}), 400
+        from scripts.backup_manager import BackupManager
+        bm = BackupManager()
+        ok = bm.restore_backup(filename)
+        if ok:
+            return jsonify({"success": True, "restored_from": filename})
+        return jsonify({"success": False, "error": "恢复失败"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/freshness-scan", methods=["POST"])
+def tool_freshness_scan():
+    """执行保鲜扫描"""
+    try:
+        from scripts.freshness_checker import scan_freshness
+        result = scan_freshness()
+        # 只返回摘要，不返回完整列表（太长）
+        summary = {
+            "total_confirmed": result.get("total_confirmed", 0),
+            "stale": result.get("stale", 0),
+            "overdue": result.get("overdue", 0),
+            "due_7d": result.get("due_7d", 0),
+            "due_30d": result.get("due_30d", 0),
+            "ok": result.get("ok", 0),
+            "auto_filled": result.get("auto_filled", 0)
+        }
+        return jsonify({"success": True, "result": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/duplicate-scan", methods=["POST"])
+def tool_duplicate_scan():
+    """执行全库重复检测（同步，知识库小时可用）"""
+    try:
+        from scripts.duplicate_checker import DuplicateChecker
+        checker = DuplicateChecker(db=db)
+        new_groups = checker.scan_full()
+        summary = db.get_duplicate_summary()
+        return jsonify({"success": True, "new_groups": new_groups, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/policy-revalidate", methods=["POST"])
+def tool_policy_revalidate():
+    """对未校验知识点补跑政策校验"""
+    try:
+        from scripts.policy_validator import PolicyValidator
+        pv = PolicyValidator(db=db)
+        count = pv.run_standalone()
+        return jsonify({"success": True, "validated": count})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/review-analytics", methods=["GET"])
+def tool_review_analytics():
+    """获取审核反馈统计"""
+    try:
+        from scripts.review_analytics import get_analytics_json
+        result = get_analytics_json()
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/file-pipeline", methods=["GET"])
+def tool_file_pipeline():
+    """获取文件管线详情"""
+    try:
+        base = PROJECT_ROOT
+        try:
+            cfg_p = PROJECT_ROOT / "config" / "settings.json"
+            if cfg_p.exists():
+                with open(cfg_p, "r", encoding="utf-8") as f:
+                    base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
+        except:
+            pass
+        pipeline = {}
+        for d, desc in [("pending", "待分析"), ("processing", "处理中"),
+                        ("completed", "已完成"), ("failed", "失败隔离")]:
+            dd = base / "data" / d
+            files = []
+            if dd.exists():
+                for fp in sorted(dd.iterdir()):
+                    if fp.is_file() and not fp.name.startswith("."):
+                        files.append({
+                            "name": fp.name,
+                            "size_kb": round(fp.stat().st_size / 1024, 1),
+                            "modified": datetime.fromtimestamp(fp.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                        })
+            pipeline[d] = {"label": desc, "count": len(files), "files": files}
+        return jsonify(pipeline)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/api-cost", methods=["GET"])
+def tool_api_cost():
+    """获取API费用详情"""
+    try:
+        conn = db.get_connection()
+        c = conn.cursor()
+        today = datetime.now().strftime("%Y-%m-%d")
+        # 今日费用
+        c.execute("""SELECT SUM(cost) FROM api_call_logs
+                     WHERE date(created_at)=?""", (today,))
+        today_cost = c.fetchone()[0] or 0
+        # 按类型统计今日
+        c.execute("""SELECT call_type, COUNT(*), SUM(cost) FROM api_call_logs
+                     WHERE date(created_at)=? GROUP BY call_type ORDER BY SUM(cost) DESC""", (today,))
+        today_detail = []
+        for row in c.fetchall():
+            today_detail.append({"type": row[0], "count": row[1], "cost": round(row[2] or 0, 4)})
+        # 最近7天趋势
+        c.execute("""SELECT date(created_at) as d, SUM(cost) FROM api_call_logs
+                     WHERE date(created_at) >= date('now', '-7 days')
+                     GROUP BY d ORDER BY d""")
+        trend = []
+        for row in c.fetchall():
+            trend.append({"date": row[0], "cost": round(row[1] or 0, 4)})
+        # 费用上限
+        limit = 0
+        cfg_p = PROJECT_ROOT / "config" / "settings.json"
+        if cfg_p.exists():
+            try:
+                with open(cfg_p, "r", encoding="utf-8") as f:
+                    limit = json.load(f).get("daily_cost_limit", 0)
+            except:
+                pass
+        conn.close()
+        return jsonify({
+            "today_cost": round(today_cost, 4),
+            "daily_limit": limit,
+            "today_detail": today_detail,
+            "trend_7d": trend
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 
@@ -622,8 +911,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 审核界面 v2.1.1")
-    print(f"  三层标签审核 | 保鲜提醒 | 政策校验 | V3质检 | 举一反三 | 重复检测 | 批量操作")
+    print(f"  乡村振兴知识库 - 管理后台 v2.1.2")
+    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱)")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

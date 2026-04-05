@@ -263,6 +263,130 @@ def run_analytics():
     conn.close()
 
 
+# ================================================================
+# v2.1.2 新增：供API调用的JSON版统计（不print，返回结构化数据）
+# ================================================================
+def get_analytics_json():
+    """
+    执行审核反馈统计，返回结构化JSON结果。
+    供api_server.py的/api/tools/review-analytics端点调用。
+    """
+    db = DatabaseManager()
+    conn = db.get_connection()
+    c = conn.cursor()
+    result = {"analyzed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+    # 1. 基础数据
+    c.execute("SELECT COUNT(*) FROM knowledge_points")
+    total_kps = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed'")
+    confirmed = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='pending'")
+    pending = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='ignored'")
+    ignored = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM edit_history")
+    total_edits = c.fetchone()[0]
+    result["overview"] = {
+        "total": total_kps, "confirmed": confirmed,
+        "pending": pending, "ignored": ignored, "edits": total_edits
+    }
+
+    # 2. 字段修改频率
+    FIELD_LABELS = {
+        "title": "标题", "final_category_id": "所属分类", "final_tags": "旧标签",
+        "final_category_tags": "分类标签(L1)", "final_attribute_tags": "属性标签(L2)",
+        "final_keywords": "关键词(L3)", "reviewer_notes": "审核备注",
+        "original_excerpt": "原文摘录", "ai_extracted_content": "AI提取内容",
+        "content_readiness": "就绪度", "source_authority": "权威度", "review_status": "审核状态",
+    }
+    c.execute("SELECT edited_fields FROM edit_history WHERE edited_fields IS NOT NULL")
+    field_counts = {}
+    total_edit_records = 0
+    for row in c.fetchall():
+        fields_data = row[0]
+        if not fields_data:
+            continue
+        try:
+            fields = json.loads(fields_data) if isinstance(fields_data, str) else fields_data
+            if isinstance(fields, dict):
+                total_edit_records += 1
+                for fn in fields.keys():
+                    field_counts[fn] = field_counts.get(fn, 0) + 1
+        except:
+            pass
+    field_list = []
+    for fn, cnt in sorted(field_counts.items(), key=lambda x: -x[1]):
+        pct = (cnt * 100.0 / total_edit_records) if total_edit_records > 0 else 0
+        field_list.append({"field": fn, "label": FIELD_LABELS.get(fn, fn), "count": cnt, "pct": round(pct, 1)})
+    result["field_edits"] = {"total_records": total_edit_records, "fields": field_list}
+
+    # 3. 按类型修改率
+    TYPE_NAMES = {"policy": "政策文件", "case": "项目案例", "experience": "操盘经验",
+                  "tool": "实操工具", "data": "数据资料"}
+    c.execute("""SELECT kp.content_type, COUNT(DISTINCT kp.id) as total,
+                 COUNT(DISTINCT eh.knowledge_point_id) as edited
+                 FROM knowledge_points kp
+                 LEFT JOIN edit_history eh ON kp.id = eh.knowledge_point_id
+                 WHERE kp.review_status = 'confirmed' GROUP BY kp.content_type""")
+    type_list = []
+    for row in c.fetchall():
+        ct = row[0] or "unknown"
+        total = row[1]
+        edited = row[2]
+        rate = (edited * 100.0 / total) if total > 0 else 0
+        type_list.append({"type": ct, "label": TYPE_NAMES.get(ct, ct),
+                          "total": total, "edited": edited, "rate": round(rate, 1)})
+    result["type_edit_rates"] = type_list
+
+    # 4. 按Prompt版本
+    c.execute("""SELECT kp.prompt_version, COUNT(kp.id) as total,
+                 SUM(CASE WHEN kp.review_status='confirmed' THEN 1 ELSE 0 END) as confirmed,
+                 SUM(CASE WHEN kp.review_status='ignored' THEN 1 ELSE 0 END) as ignored_count
+                 FROM knowledge_points kp
+                 WHERE kp.prompt_version IS NOT NULL AND kp.prompt_version != ''
+                 GROUP BY kp.prompt_version ORDER BY kp.prompt_version""")
+    ver_list = []
+    for row in c.fetchall():
+        ver_list.append({"version": row[0], "total": row[1], "confirmed": row[2], "ignored": row[3]})
+    result["prompt_versions"] = ver_list
+
+    # 5. 质检分数分布
+    c.execute("SELECT qa_score, COUNT(*) FROM knowledge_points WHERE qa_score IS NOT NULL GROUP BY qa_score ORDER BY qa_score")
+    qa_list = []
+    score_labels = {1: "极差", 2: "较差", 3: "中等", 4: "良好", 5: "优秀"}
+    for row in c.fetchall():
+        qa_list.append({"score": row[0], "label": score_labels.get(row[0], str(row[0])), "count": row[1]})
+    c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL")
+    no_qa = c.fetchone()[0]
+    result["qa_distribution"] = {"scored": qa_list, "unscored": no_qa}
+
+    # 6. 质检问题分布
+    FLAG_LABELS = {
+        "independence": "独立性不足", "density": "信息密度低",
+        "granularity_coarse": "颗粒度过粗", "granularity_fine": "颗粒度过细",
+        "tag_mismatch": "标签不符", "duplicate_suspect": "疑似重复",
+    }
+    c.execute("SELECT qa_flags FROM knowledge_points WHERE qa_flags IS NOT NULL AND qa_flags != '' AND qa_flags != '[]'")
+    flag_counts = {}
+    for row in c.fetchall():
+        try:
+            flags = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            if isinstance(flags, list):
+                for fl in flags:
+                    if isinstance(fl, str) and fl:
+                        flag_counts[fl] = flag_counts.get(fl, 0) + 1
+        except:
+            pass
+    flag_list = []
+    for fl, cnt in sorted(flag_counts.items(), key=lambda x: -x[1]):
+        flag_list.append({"flag": fl, "label": FLAG_LABELS.get(fl, fl), "count": cnt})
+    result["qa_flags"] = flag_list
+
+    conn.close()
+    return result
+
+
 def main():
     try:
         run_analytics()

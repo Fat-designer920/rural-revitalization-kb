@@ -674,6 +674,245 @@ def check_duplicate_status():
         return True
 
 # ================================================================
+# v2.1.2 新增：供API调用的JSON版检查（不print，返回结构化数据）
+# ================================================================
+def run_checks_json():
+    """
+    执行所有系统检查，返回结构化JSON结果。
+    供api_server.py的/api/tools/system-check端点调用。
+    不调用print，不调用input，不影响命令行版本。
+    """
+    results = []
+    config = _load_config()
+    dp = _get_db_path(config)
+
+    # [1] Python环境
+    py_ver = sys.version.split()[0]
+    py_ok = sys.version_info >= (3, 8)
+    results.append({"name": "Python环境", "ok": py_ok, "detail": "版本 " + py_ver})
+
+    # [2] 依赖库
+    mods = {
+        "flask": "Flask", "flask_cors": "Flask-CORS", "docx": "python-docx",
+        "openpyxl": "openpyxl", "PyPDF2": "PyPDF2", "pdfplumber": "pdfplumber",
+        "PIL": "Pillow", "requests": "requests", "cryptography": "cryptography",
+        "chardet": "chardet", "jieba": "jieba"
+    }
+    missing = []
+    for m, n in mods.items():
+        try:
+            __import__(m)
+        except:
+            missing.append(n)
+    results.append({
+        "name": "依赖库",
+        "ok": len(missing) == 0,
+        "detail": "全部就绪" if not missing else "缺失: " + ", ".join(missing)
+    })
+
+    # [3] 配置文件
+    cfg_ok = config is not None and bool(config.get("deepseek_api_key_encrypted"))
+    results.append({
+        "name": "配置文件",
+        "ok": cfg_ok,
+        "detail": "正常" if cfg_ok else "配置缺失或API Key未设置"
+    })
+
+    # [4] 数据库基础
+    db_exists = os.path.exists(dp) if dp else False
+    db_detail = ""
+    if db_exists:
+        try:
+            conn = sqlite3.connect(dp)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [r[0] for r in cur.fetchall()]
+            expected = ["categories", "source_files", "knowledge_points",
+                        "operation_logs", "api_call_logs", "edit_history", "architecture_suggestions"]
+            missing_t = [t for t in expected if t not in tables]
+            size_mb = os.path.getsize(dp) / (1024 * 1024)
+            db_detail = "%d张表, %.2fMB" % (len(tables), size_mb)
+            if missing_t:
+                db_detail += ", 缺失: " + ",".join(missing_t)
+            conn.close()
+        except Exception as e:
+            db_detail = str(e)
+            missing_t = ["error"]
+    else:
+        missing_t = ["数据库不存在"]
+        db_detail = "数据库文件不存在"
+    results.append({"name": "数据库基础", "ok": db_exists and len(missing_t) == 0, "detail": db_detail})
+
+    # [5] 磁盘空间
+    try:
+        _, _, f = shutil.disk_usage(str(PROJECT_ROOT))
+        fg = f / (1024 ** 3)
+        results.append({"name": "磁盘空间", "ok": fg >= 1, "detail": "%.1fGB剩余" % fg})
+    except:
+        results.append({"name": "磁盘空间", "ok": True, "detail": "无法检测"})
+
+    # [6-15] 数据库相关检查（需要数据库存在）
+    if not db_exists:
+        for name in ["数据库迁移", "知识库健康度", "Prompt版本", "V3质检覆盖",
+                      "备份状态", "文件管线", "保鲜状态", "政策校验", "重复检测"]:
+            results.append({"name": name, "ok": True, "detail": "跳过(数据库不存在)"})
+        return {"version": "v2.4", "system_version": get_version(),
+                "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "results": results,
+                "ok_count": sum(1 for r in results if r["ok"]),
+                "total": len(results)}
+
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+
+        # [6] 数据库迁移
+        cur.execute("PRAGMA table_info(knowledge_points)")
+        kp_cols = {r[1] for r in cur.fetchall()}
+        needed_cols = ["prompt_version", "qa_score", "qa_flags", "freshness_note",
+                       "policy_dependencies", "policy_validated", "practical_insights", "insight_reliability"]
+        missing_cols = [c for c in needed_cols if c not in kp_cols]
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_groups'")
+        has_dup_table = cur.fetchone() is not None
+        mig_detail = "字段完整" if not missing_cols else "缺失: " + ",".join(missing_cols)
+        if not has_dup_table:
+            mig_detail += "; duplicate_groups表缺失"
+        results.append({"name": "数据库迁移", "ok": len(missing_cols) == 0 and has_dup_table, "detail": mig_detail})
+
+        # [7] 知识库健康度
+        cur.execute("SELECT COUNT(*) FROM knowledge_points")
+        total_kp = cur.fetchone()[0]
+        if total_kp == 0:
+            results.append({"name": "知识库健康度", "ok": True, "detail": "空库"})
+        else:
+            cur.execute("SELECT review_status, COUNT(*) FROM knowledge_points GROUP BY review_status")
+            st_map = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute("SELECT content_type, COUNT(*) FROM knowledge_points GROUP BY content_type")
+            tp_map = {r[0]: r[1] for r in cur.fetchall()}
+            tn = {"policy":"政策","case":"案例","experience":"经验","tool":"工具","data":"数据"}
+            type_str = " / ".join(["%s%d" % (tn.get(k, k), v) for k, v in tp_map.items()])
+            detail = "共%d条 (待审核%d/已确认%d/已忽略%d) | %s" % (
+                total_kp, st_map.get("pending", 0), st_map.get("confirmed", 0),
+                st_map.get("ignored", 0), type_str)
+            results.append({"name": "知识库健康度", "ok": True, "detail": detail})
+
+        # [8] Prompt版本
+        try:
+            from scripts.prompts.prompt_templates import get_prompt_version
+            current_pv = get_prompt_version()
+        except:
+            try:
+                from prompts.prompt_templates import get_prompt_version
+                current_pv = get_prompt_version()
+            except:
+                current_pv = None
+        if current_pv and total_kp > 0:
+            cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE prompt_version IS NOT NULL AND prompt_version != ? AND prompt_version != ''", (current_pv,))
+            old_count = cur.fetchone()[0]
+            results.append({"name": "Prompt版本", "ok": True,
+                            "detail": "当前%s, %d条旧版本" % (current_pv, old_count)})
+        else:
+            results.append({"name": "Prompt版本", "ok": True, "detail": current_pv or "未加载"})
+
+        # [9] V3质检覆盖
+        if total_kp > 0:
+            cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NOT NULL")
+            checked = cur.fetchone()[0]
+            pct = (checked * 100 // total_kp) if total_kp > 0 else 0
+            avg_s = 0
+            low = 0
+            if checked > 0:
+                cur.execute("SELECT AVG(qa_score) FROM knowledge_points WHERE qa_score IS NOT NULL")
+                avg_s = cur.fetchone()[0] or 0
+                cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NOT NULL AND qa_score <= 2")
+                low = cur.fetchone()[0]
+            results.append({"name": "V3质检覆盖", "ok": True,
+                            "detail": "已质检%d/%d(%d%%), 平均%.1f分, 低分%d条" % (checked, total_kp, pct, avg_s, low)})
+        else:
+            results.append({"name": "V3质检覆盖", "ok": True, "detail": "空库"})
+
+        # [10] 备份状态
+        try:
+            from scripts.backup_manager import BackupManager
+            bm = BackupManager()
+            bs = bm.get_backup_status()
+            bcount = bs.get("count", 0) if bs else 0
+            blatest = bs.get("latest", "无") if bs else "无"
+            results.append({"name": "备份状态", "ok": bcount > 0,
+                            "detail": "%d个备份, 最近: %s" % (bcount, blatest)})
+        except:
+            backup_dir = PROJECT_ROOT / "data" / "backups"
+            bcount = len(list(backup_dir.glob("*.db"))) if backup_dir.exists() else 0
+            results.append({"name": "备份状态", "ok": bcount > 0,
+                            "detail": "%d个备份文件" % bcount})
+
+        # [11] 文件管线
+        base = PROJECT_ROOT
+        if config:
+            base = Path(config.get("knowledge_base_path", str(PROJECT_ROOT)))
+        pipeline = {}
+        for d in ["pending", "processing", "completed", "failed"]:
+            dd = base / "data" / d
+            if dd.exists():
+                pipeline[d] = len([f for f in dd.iterdir() if f.is_file() and not f.name.startswith(".")])
+            else:
+                pipeline[d] = 0
+        has_stuck = pipeline.get("processing", 0) > 0
+        results.append({"name": "文件管线", "ok": not has_stuck,
+                        "detail": "待分析%d/处理中%d/已完成%d/失败%d" % (
+                            pipeline.get("pending", 0), pipeline.get("processing", 0),
+                            pipeline.get("completed", 0), pipeline.get("failed", 0))})
+
+        # [12] 保鲜状态
+        if "freshness_checked_at" in kp_cols:
+            cur.execute("""SELECT COUNT(*) FROM knowledge_points
+                           WHERE review_status='confirmed' AND (is_outdated IS NULL OR is_outdated=0)
+                             AND freshness_interval_days > 0 AND freshness_checked_at IS NOT NULL
+                             AND julianday('now') - julianday(freshness_checked_at) > freshness_interval_days""")
+            expired = cur.fetchone()[0]
+            results.append({"name": "保鲜状态", "ok": expired == 0,
+                            "detail": "%d条已过期" % expired if expired > 0 else "全部新鲜"})
+        else:
+            results.append({"name": "保鲜状态", "ok": True, "detail": "字段未迁移"})
+
+        # [13] 政策校验
+        if "policy_validated" in kp_cols:
+            cur.execute("""SELECT COUNT(*) FROM knowledge_points
+                           WHERE review_status IN ('pending','confirmed') AND policy_validated=2""")
+            pending_pv = cur.fetchone()[0]
+            results.append({"name": "政策校验", "ok": pending_pv == 0,
+                            "detail": "%d条待验证" % pending_pv if pending_pv > 0 else "全部通过"})
+        else:
+            results.append({"name": "政策校验", "ok": True, "detail": "字段未迁移"})
+
+        # [14] 重复检测
+        if has_dup_table:
+            cur.execute("SELECT COUNT(*) FROM duplicate_groups WHERE status='pending'")
+            pending_dup = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM duplicate_groups WHERE status='pending' AND relation_type='conflicting'")
+            conflict = cur.fetchone()[0]
+            detail = "%d组待处理" % pending_dup if pending_dup > 0 else "无待处理"
+            if conflict > 0:
+                detail += ", %d组冲突!" % conflict
+            results.append({"name": "重复检测", "ok": pending_dup == 0, "detail": detail})
+        else:
+            results.append({"name": "重复检测", "ok": True, "detail": "表未创建"})
+
+        conn.close()
+    except Exception as e:
+        results.append({"name": "数据库检查", "ok": False, "detail": str(e)})
+
+    return {
+        "version": "v2.4",
+        "system_version": get_version(),
+        "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "results": results,
+        "ok_count": sum(1 for r in results if r["ok"]),
+        "total": len(results)
+    }
+
+
+# ================================================================
 # 主流程
 # ================================================================
 def main():

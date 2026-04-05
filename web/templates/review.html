@@ -3,86 +3,118 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.1.0-d</title>
+<title>乡村振兴知识库 v2.1.2</title>
 <style>
 :root {
-  --primary: #4338CA;
-  --primary-light: #EEF2FF;
-  --primary-hover: #3730A3;
-  --bg: #F8FAFC;
+  --primary: #0A9B80;
+  --primary-light: #E8F5F2;
+  --primary-hover: #088F75;
+  --primary-soft: #B2E0D6;
+  --bg: #F5F5F7;
   --card: #FFFFFF;
   --sidebar-bg: #FFFFFF;
-  --border: #E2E8F0;
-  --border-light: #F1F5F9;
-  --text: #1E293B;
-  --text-secondary: #64748B;
-  --text-muted: #94A3B8;
-  --success: #059669;
-  --success-bg: #ECFDF5;
-  --warning: #D97706;
-  --warning-bg: #FFFBEB;
-  --danger: #DC2626;
-  --danger-bg: #FEF2F2;
-  --tag-A-bg:#EEF2FF; --tag-A-text:#3730A3; --tag-A-border:#C7D2FE;
-  --tag-B-bg:#ECFDF5; --tag-B-text:#065F46; --tag-B-border:#A7F3D0;
-  --tag-C-bg:#FEF3C7; --tag-C-text:#92400E; --tag-C-border:#FDE68A;
-  --tag-D-bg:#F3E8FF; --tag-D-text:#6B21A8; --tag-D-border:#DDD6FE;
-  --tag-E-bg:#FFE4E6; --tag-E-text:#9F1239; --tag-E-border:#FECDD3;
-  --tag-F-bg:#F1F5F9; --tag-F-text:#334155; --tag-F-border:#CBD5E1;
-  --kw-bg:#F8FAFC; --kw-text:#475569; --kw-border:#E2E8F0;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
-  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --shadow-md: 0 4px 6px rgba(0,0,0,.04), 0 2px 4px rgba(0,0,0,.03);
-  --shadow-lg: 0 10px 15px rgba(0,0,0,.06), 0 4px 6px rgba(0,0,0,.03);
-  --radius: 8px;
-  --radius-lg: 12px;
-  --transition: all .2s ease;
+  --border: #E5E5EA;
+  --border-light: #F2F2F7;
+  --text: #1D1D1F;
+  --text-secondary: #6E6E73;
+  --text-muted: #86868B;
+  --success: #34C759;
+  --success-bg: #E8F9EE;
+  --warning: #FF9500;
+  --warning-bg: #FFF4E6;
+  --danger: #FF3B30;
+  --danger-bg: #FFEFEE;
+  --info: #007AFF;
+  --info-bg: #EBF2FC;
+  --tag-A-bg:#E8F5F2; --tag-A-text:#0A9B80; --tag-A-border:#B2E0D6;
+  --tag-B-bg:#EBF2FC; --tag-B-text:#2565C7; --tag-B-border:#B3CDEE;
+  --tag-C-bg:#FFF4E6; --tag-C-text:#C97A2C; --tag-C-border:#FDDCAB;
+  --tag-D-bg:#F3EEFA; --tag-D-text:#7B42C6; --tag-D-border:#D4BEF0;
+  --tag-E-bg:#FDE8EC; --tag-E-text:#C93D60; --tag-E-border:#F5B5C5;
+  --tag-F-bg:#F2F2F7; --tag-F-text:#4A4A5A; --tag-F-border:#D1D1D6;
+  --kw-bg:#F5F5F7; --kw-text:#6E6E73; --kw-border:#E5E5EA;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.04);
+  --shadow: 0 2px 8px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.1);
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --transition: all .25s cubic-bezier(.4,0,.2,1);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 
 /* === Header === */
-.header{background:var(--card);border-bottom:1px solid var(--border);padding:0 28px;display:flex;justify-content:space-between;align-items:center;height:56px;position:sticky;top:0;z-index:100}
-.header-title{font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.2px}
-.header-title span{color:var(--text-muted);font-weight:400;font-size:12px;margin-left:8px}
+.header{background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,.06);padding:0 28px;display:flex;justify-content:space-between;align-items:center;height:52px;position:sticky;top:0;z-index:100}
+.header-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.header-title span{color:var(--text-muted);font-weight:400;font-size:11px;margin-left:8px;background:var(--bg);padding:2px 8px;border-radius:6px}
 .header-stats{display:flex;gap:6px}
-.stat-pill{padding:5px 14px;border-radius:20px;font-size:12px;color:var(--text-secondary);background:var(--bg);border:1px solid var(--border);cursor:default;transition:var(--transition)}
+.stat-pill{padding:4px 12px;border-radius:20px;font-size:12px;color:var(--text-secondary);background:var(--bg);border:none;cursor:default;transition:var(--transition)}
 .stat-pill .num{font-weight:700;color:var(--text);margin-left:4px}
 .stat-pill.clickable{cursor:pointer}
-.stat-pill.clickable:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+.stat-pill.clickable:hover{background:var(--primary-light);color:var(--primary)}
 
-.suggestion-bar{background:var(--warning-bg);border-bottom:1px solid #FDE68A;padding:8px 28px;font-size:13px;color:var(--warning);display:none;cursor:pointer;transition:var(--transition)}
-.suggestion-bar:hover{background:#FEF3C7}
+/* === Tab Bar === */
+.tab-bar{background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,.06);padding:0 28px;display:flex;gap:4px;position:sticky;top:52px;z-index:99}
+.tab-btn{padding:10px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:var(--transition);border-radius:0}
+.tab-btn:hover{color:var(--primary)}
+.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
 
-/* === Freshness Bar === */
-.freshness-bar{background:#FFF7ED;border-bottom:1px solid #FED7AA;padding:8px 28px;font-size:13px;color:#C2410C;display:none;cursor:pointer;transition:var(--transition)}
-.freshness-bar:hover{background:#FFEDD5}
-.freshness-bar .fb-expired{color:#DC2626;font-weight:700}
-.freshness-bar .fb-expiring{color:#D97706;font-weight:700}
+/* === Notification Bars === */
+.suggestion-bar{background:var(--warning-bg);border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.suggestion-bar:hover{background:#FFEFD4}
+.freshness-bar{background:#FFF0E6;border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.freshness-bar:hover{background:#FFE8D4}
+.freshness-bar .fb-expired{color:var(--danger);font-weight:700}
+.freshness-bar .fb-expiring{color:var(--warning);font-weight:700}
+.dup-bar{background:#FFF0E6;border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.dup-bar:hover{background:#FFE8D4}
+.dup-bar .db-count{color:var(--danger);font-weight:700}
+.dup-bar .db-conflict{color:#991B1B;font-weight:700}
+.dup-panel{display:none;padding:16px 28px;background:#FFFBF5;border-bottom:1px solid rgba(255,149,0,.1)}
+.dup-panel.open{display:block}
+.dup-group{background:#FFFFFF;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+.dup-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
+.dup-rel{display:inline-block;padding:2px 10px;border-radius:6px;font-size:11px;font-weight:600}
+.dup-rel-duplicate{background:#FFEDD5;color:#C2410C}
+.dup-rel-superseded{background:var(--info-bg);color:var(--info)}
+.dup-rel-complementary{background:var(--success-bg);color:#059669}
+.dup-rel-conflicting{background:var(--danger-bg);color:var(--danger)}
+.dup-score{font-size:11px;color:var(--text-muted)}
+.dup-member{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius);font-size:12px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border-light)}
+.dup-member:last-child{margin-bottom:0}
+.dup-member .dm-id{font-weight:700;color:var(--primary);min-width:36px}
+.dup-member .dm-type{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--primary-light);color:var(--primary)}
+.dup-member .dm-title{flex:1;color:var(--text)}
+.dup-member .dm-src{font-size:11px;color:var(--text-muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dup-member.dm-suggested{border-color:var(--success);background:#F0FFF5}
+.dup-reason{font-size:12px;color:var(--text-secondary);margin:6px 0;padding:8px 10px;background:var(--bg);border-radius:var(--radius);line-height:1.6}
+.dup-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 
 /* === Layout === */
-.main{display:flex;height:calc(100vh - 56px)}
-.sidebar{width:256px;background:var(--sidebar-bg);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;padding:20px 16px}
+.main{display:flex;height:calc(100vh - 94px)}
+.sidebar{width:240px;background:var(--sidebar-bg);border-right:1px solid var(--border-light);overflow-y:auto;flex-shrink:0;padding:20px 14px}
 .content{flex:1;overflow-y:auto;padding:24px 28px}
 
 /* === Sidebar Filters === */
-.filter-section{margin-bottom:24px}
-.filter-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding-left:12px}
-.filter-item{display:block;width:100%;text-align:left;padding:7px 12px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);transition:var(--transition);margin-bottom:1px}
+.filter-section{margin-bottom:22px}
+.filter-label{font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;padding-left:10px}
+.filter-item{display:block;width:100%;text-align:left;padding:7px 10px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);transition:var(--transition);margin-bottom:1px}
 .filter-item:hover{background:var(--primary-light);color:var(--primary)}
 .filter-item.active{background:var(--primary-light);color:var(--primary);font-weight:600}
 .filter-item .cnt{float:right;font-size:11px;background:var(--bg);padding:1px 8px;border-radius:10px;color:var(--text-muted)}
 .filter-item.active .cnt{background:var(--primary);color:#fff}
 
 .tree-group{margin-bottom:2px}
-.tree-parent{display:flex;align-items:center;width:100%;text-align:left;padding:7px 12px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text);font-weight:600;transition:var(--transition)}
+.tree-parent{display:flex;align-items:center;width:100%;text-align:left;padding:7px 10px;border:none;background:none;cursor:pointer;border-radius:var(--radius);font-size:13px;color:var(--text);font-weight:600;transition:var(--transition)}
 .tree-parent:hover{background:var(--primary-light);color:var(--primary)}
 .tree-parent.active{color:var(--primary)}
 .tree-parent .arr{margin-right:6px;font-size:9px;transition:transform .2s;display:inline-block;width:14px;color:var(--text-muted)}
 .tree-parent .arr.open{transform:rotate(90deg)}
-.tree-children{display:none;padding-left:20px}
+.tree-children{display:none;padding-left:18px}
 .tree-children.open{display:block}
-.tree-child{display:block;width:100%;text-align:left;padding:5px 10px;border:none;background:none;cursor:pointer;border-radius:6px;font-size:12px;color:var(--text-secondary);transition:var(--transition)}
+.tree-child{display:block;width:100%;text-align:left;padding:5px 10px;border:none;background:none;cursor:pointer;border-radius:8px;font-size:12px;color:var(--text-secondary);transition:var(--transition)}
 .tree-child:hover{background:var(--primary-light);color:var(--primary)}
 .tree-child.active{color:var(--primary);font-weight:600}
 
@@ -90,10 +122,10 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
 .toolbar-left{display:flex;gap:8px;align-items:center}
 .toolbar-right{display:flex;gap:8px;align-items:center}
-.search-wrap{display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:var(--transition)}
-.search-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(67,56,202,.1)}
+.search-wrap{display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:var(--transition);background:var(--card)}
+.search-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(10,155,128,.12)}
 .search-wrap input{padding:7px 12px;border:none;font-size:13px;width:220px;outline:none;background:transparent;color:var(--text)}
-.search-wrap button{padding:7px 14px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:var(--transition)}
+.search-wrap button{padding:7px 16px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:var(--transition)}
 .search-wrap button:hover{background:var(--primary-hover)}
 
 /* === Buttons === */
@@ -103,7 +135,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .btn-primary:hover{background:var(--primary-hover)}
 .btn-success{background:var(--success);color:#fff;border-color:var(--success)}
-.btn-success:hover{background:#047857}
+.btn-success:hover{background:#2DB84E}
 .btn-danger{color:var(--danger);border-color:var(--danger);background:transparent}
 .btn-danger:hover{background:var(--danger-bg)}
 .btn-warn{color:var(--warning);border-color:var(--warning);background:transparent}
@@ -111,6 +143,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .btn-ghost{border:none;background:none;color:var(--text-muted);padding:6px 10px}
 .btn-ghost:hover{color:var(--primary);background:var(--primary-light)}
 .btn-sm{padding:4px 10px;font-size:11px}
+.btn-sort-active{background:var(--primary-light);color:var(--primary);border-color:var(--primary);font-weight:600}
 
 /* === Knowledge Card === */
 .file-header{padding:10px 16px;margin:20px 0 12px;border-radius:var(--radius);font-size:13px;font-weight:600;color:var(--primary);background:var(--primary-light);display:flex;justify-content:space-between;align-items:center}
@@ -118,31 +151,31 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .file-header .fc{font-weight:400;color:var(--text-muted);font-size:12px}
 
 .kp-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:12px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition);position:relative}
-.kp-card:hover{box-shadow:var(--shadow-md);border-color:var(--border)}
-.kp-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(67,56,202,.15)}
-.kp-card.card-outdated{opacity:.6;background:#FAFAFA}
+.kp-card:hover{box-shadow:var(--shadow);border-color:var(--border)}
+.kp-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(10,155,128,.15)}
+.kp-card.card-outdated{opacity:.55;background:#FAFAFA}
 
 .kp-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
 .kp-cb{width:16px;height:16px;cursor:pointer;margin-top:3px;accent-color:var(--primary)}
-.kp-seq{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:10px;font-weight:700;color:#fff;background:var(--primary);flex-shrink:0;margin-top:1px}
-.kp-seq.type-policy{background:#4338CA}
-.kp-seq.type-case{background:#059669}
-.kp-seq.type-experience{background:#D97706}
-.kp-seq.type-tool{background:#7C3AED}
-.kp-seq.type-data{background:#0891B2}
+.kp-seq{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;margin-top:1px}
+.kp-seq.type-policy{background:#0A9B80}
+.kp-seq.type-case{background:#34C759}
+.kp-seq.type-experience{background:#FF9500}
+.kp-seq.type-tool{background:#AF52DE}
+.kp-seq.type-data{background:#007AFF}
 .kp-info{flex:1;min-width:0}
 .kp-title{font-size:15px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:6px}
 .kp-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;line-height:1.5}
-.badge-policy{background:#EEF2FF;color:#4338CA}
-.badge-case{background:#ECFDF5;color:#059669}
-.badge-experience{background:#FFFBEB;color:#D97706}
-.badge-tool{background:#F3E8FF;color:#7C3AED}
-.badge-data{background:#ECFEFF;color:#0891B2}
-.badge-pending{background:#FEF3C7;color:#92400E}
-.badge-confirmed{background:#D1FAE5;color:#065F46}
-.badge-ignored{background:#F1F5F9;color:#64748B}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;line-height:1.5}
+.badge-policy{background:var(--primary-light);color:var(--primary)}
+.badge-case{background:var(--success-bg);color:#059669}
+.badge-experience{background:var(--warning-bg);color:#C97A2C}
+.badge-tool{background:#F3EAFA;color:#AF52DE}
+.badge-data{background:var(--info-bg);color:var(--info)}
+.badge-pending{background:#FFF4E6;color:#C97A2C}
+.badge-confirmed{background:var(--success-bg);color:#059669}
+.badge-ignored{background:var(--bg);color:var(--text-muted)}
 .cat-path{font-size:12px;color:var(--text-muted)}
 .match-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
 .match-dot.yes{background:var(--success)}
@@ -150,7 +183,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 
 /* === Tags === */
 .tags-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
-.tag-chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:500;border:1px solid transparent;line-height:1.6;white-space:nowrap}
+.tag-chip{display:inline-block;padding:2px 9px;border-radius:8px;font-size:11px;font-weight:500;border:1px solid transparent;line-height:1.6;white-space:nowrap}
 .tag-A{background:var(--tag-A-bg);color:var(--tag-A-text);border-color:var(--tag-A-border)}
 .tag-B{background:var(--tag-B-bg);color:var(--tag-B-text);border-color:var(--tag-B-border)}
 .tag-C{background:var(--tag-C-bg);color:var(--tag-C-text);border-color:var(--tag-C-border)}
@@ -166,93 +199,69 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .attr-pair .attr-sep{color:var(--border);margin:0 2px}
 
 .meta-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center}
-.rd-badge,.auth-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
-.rd-draft{background:#F1F5F9;color:#64748B}
-.rd-quotable{background:#D1FAE5;color:#065F46}
-.rd-premium{background:#FEF3C7;color:#92400E}
-.auth-official{background:#DBEAFE;color:#1E40AF}
-.auth-authoritative{background:#CCFBF1;color:#115E59}
-.auth-firsthand{background:#FEF3C7;color:#92400E}
-.auth-informal{background:#F1F5F9;color:#64748B}
+.rd-badge,.auth-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600}
+.rd-draft{background:var(--bg);color:var(--text-muted)}
+.rd-quotable{background:var(--success-bg);color:#059669}
+.rd-premium{background:#FFF4E6;color:#C97A2C}
+.auth-official{background:var(--info-bg);color:var(--info)}
+.auth-authoritative{background:var(--primary-light);color:var(--primary)}
+.auth-firsthand{background:#FFF4E6;color:#C97A2C}
+.auth-informal{background:var(--bg);color:var(--text-muted)}
 
-.qa-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;line-height:1.5}
-.qa-high{background:#D1FAE5;color:#065F46}
-.qa-mid{background:#FEF3C7;color:#92400E}
-.qa-low{background:#FEE2E2;color:#991B1B}
-.qa-none{background:#F1F5F9;color:#94A3B8}
+.qa-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;line-height:1.5}
+.qa-high{background:var(--success-bg);color:#059669}
+.qa-mid{background:#FFF4E6;color:#C97A2C}
+.qa-low{background:var(--danger-bg);color:var(--danger)}
+.qa-none{background:var(--bg);color:var(--text-muted)}
 .qa-flags{display:inline-flex;flex-wrap:wrap;gap:3px;margin-left:6px}
-.qa-flag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA}
-.btn-sort-active{background:var(--primary-light);color:var(--primary);border-color:var(--primary);font-weight:600}
+.qa-flag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;background:var(--danger-bg);color:var(--danger);border:1px solid #FFCBCB}
 
 /* === Freshness Badges === */
-.fr-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5}
-.fr-fresh{background:#D1FAE5;color:#065F46}
-.fr-expiring{background:#FEF3C7;color:#92400E}
-.fr-expired{background:#FEE2E2;color:#991B1B}
-.fr-outdated{background:#F1F5F9;color:#94A3B8;text-decoration:line-through}
-.fr-unknown{background:#F1F5F9;color:#94A3B8}
+.fr-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;line-height:1.5}
+.fr-fresh{background:var(--success-bg);color:#059669}
+.fr-expiring{background:#FFF4E6;color:#C97A2C}
+.fr-expired{background:var(--danger-bg);color:var(--danger)}
+.fr-outdated{background:var(--bg);color:var(--text-muted);text-decoration:line-through}
+.fr-unknown{background:var(--bg);color:var(--text-muted)}
 .fr-note{font-size:11px;color:var(--text-muted);margin-left:6px;font-style:italic}
 
-/* === Policy Validation Badges (F028) === */
-.pv-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5}
-.pv-validated{background:#D1FAE5;color:#065F46}
-.pv-pending{background:#FEE2E2;color:#991B1B}
-.pv-exempt{background:#DBEAFE;color:#1E40AF}
-.pv-no-policy{background:#F1F5F9;color:#94A3B8}
-.pv-unchecked{background:#F1F5F9;color:#94A3B8}
-.policy-deps{background:#FEF2F2;border:1px solid #FECACA;border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px}
-.policy-deps .pd-title{font-weight:600;color:#991B1B;margin-bottom:6px}
-.policy-deps .pd-item{padding:4px 0;border-bottom:1px solid #FEE2E2}
+/* === Policy Validation Badges === */
+.pv-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;line-height:1.5}
+.pv-validated{background:var(--success-bg);color:#059669}
+.pv-pending{background:var(--danger-bg);color:var(--danger)}
+.pv-exempt{background:var(--info-bg);color:var(--info)}
+.pv-no-policy{background:var(--bg);color:var(--text-muted)}
+.pv-unchecked{background:var(--bg);color:var(--text-muted)}
+.policy-deps{background:var(--danger-bg);border:1px solid #FFCBCB;border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px}
+.policy-deps .pd-title{font-weight:600;color:var(--danger);margin-bottom:6px}
+.policy-deps .pd-item{padding:4px 0;border-bottom:1px solid #FFE5E5}
 .policy-deps .pd-item:last-child{border-bottom:none}
-.policy-deps .pd-matched{color:#065F46}
-.policy-deps .pd-unmatched{color:#DC2626;font-weight:600}
+.policy-deps .pd-matched{color:#059669}
+.policy-deps .pd-unmatched{color:var(--danger);font-weight:600}
 .policy-deps .pd-guide{font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic}
-.policy-deps-ok{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:#065F46}
+.policy-deps-ok{background:var(--success-bg);border:1px solid #A2ECBE;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:#059669}
+
+/* === Insights === */
 .insights-section{margin:6px 0;border:1px solid var(--border-light);border-radius:var(--radius);overflow:hidden}
-.insights-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);background:#F8FAFC;user-select:none}
-.insights-toggle:hover{background:#F1F5F9}
+.insights-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);background:var(--bg);user-select:none}
+.insights-toggle:hover{background:var(--border-light)}
 .insights-body{display:none;padding:8px 10px}
 .insights-body.open{display:block}
-.insight-item{margin-bottom:6px;padding:6px 8px;border-radius:4px;font-size:12px;line-height:1.5}
+.insight-item{margin-bottom:6px;padding:6px 8px;border-radius:6px;font-size:12px;line-height:1.5}
 .insight-item:last-child{margin-bottom:0}
-.ins-high{background:#F0FDF4;border-left:3px solid #22C55E}
-.ins-medium{background:#FFFBEB;border-left:3px solid #F59E0B}
-.ins-low{background:#FEF2F2;border-left:3px solid #EF4444}
-.ins-conf{display:inline-block;font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:4px}
-.ins-conf-high{background:#DCFCE7;color:#166534}
-.ins-conf-medium{background:#FEF3C7;color:#92400E}
-.ins-conf-low{background:#FEE2E2;color:#991B1B}
+.ins-high{background:#F0FFF5;border-left:3px solid var(--success)}
+.ins-medium{background:#FFF9EE;border-left:3px solid var(--warning)}
+.ins-low{background:var(--danger-bg);border-left:3px solid var(--danger)}
+.ins-conf{display:inline-block;font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;margin-right:4px}
+.ins-conf-high{background:#D5F5E3;color:#166534}
+.ins-conf-medium{background:#FFF0D4;color:#92400E}
+.ins-conf-low{background:#FFE0DE;color:#991B1B}
 .ins-text{font-weight:500;color:var(--text)}
 .ins-basis{color:var(--text-muted);font-size:11px;margin-top:2px}
-.ir-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
-.ir-reliable{background:#DCFCE7;color:#166534}
-.ir-uncertain{background:#FEF3C7;color:#92400E}
-.ir-unreliable{background:#FEE2E2;color:#991B1B}
-
-/* === Duplicate Detection (F039) === */
-.dup-bar{background:#FFF7ED;border-bottom:1px solid #FDBA74;padding:8px 28px;font-size:13px;color:#C2410C;display:none;cursor:pointer;transition:var(--transition)}
-.dup-bar:hover{background:#FFEDD5}
-.dup-bar .db-count{color:#DC2626;font-weight:700}
-.dup-bar .db-conflict{color:#991B1B;font-weight:700}
-.dup-panel{display:none;padding:16px 28px;background:#FFFBEB;border-bottom:1px solid #FDE68A}
-.dup-panel.open{display:block}
-.dup-group{background:#FFFFFF;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
-.dup-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
-.dup-rel{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
-.dup-rel-duplicate{background:#FFEDD5;color:#C2410C}
-.dup-rel-superseded{background:#DBEAFE;color:#1E40AF}
-.dup-rel-complementary{background:#D1FAE5;color:#065F46}
-.dup-rel-conflicting{background:#FEE2E2;color:#991B1B}
-.dup-score{font-size:11px;color:var(--text-muted)}
-.dup-member{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;font-size:12px;margin-bottom:4px;background:#F8FAFC;border:1px solid var(--border-light)}
-.dup-member:last-child{margin-bottom:0}
-.dup-member .dm-id{font-weight:700;color:var(--primary);min-width:36px}
-.dup-member .dm-type{font-size:10px;padding:1px 5px;border-radius:3px;background:#E0E7FF;color:#4338CA}
-.dup-member .dm-title{flex:1;color:var(--text)}
-.dup-member .dm-src{font-size:11px;color:var(--text-muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dup-member.dm-suggested{border-color:#22C55E;background:#F0FDF4}
-.dup-reason{font-size:12px;color:var(--text-secondary);margin:6px 0;padding:6px 8px;background:#F8FAFC;border-radius:4px;line-height:1.5}
-.dup-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.ir-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:500}
+.ir-reliable{background:#D5F5E3;color:#166534}
+.ir-uncertain{background:#FFF0D4;color:#92400E}
+.ir-unreliable{background:#FFE0DE;color:#991B1B}
 
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
@@ -265,7 +274,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .kp-actions{display:flex;gap:6px;padding-top:12px;border-top:1px solid var(--border-light);flex-wrap:wrap;align-items:center}
 .kp-detail{display:none;margin-top:12px}
 .kp-detail.open{display:block}
-.kp-detail pre{background:var(--bg);padding:14px;border-radius:var(--radius);font-size:11px;white-space:pre-wrap;line-height:1.6;color:var(--text-secondary);font-family:Consolas,"Courier New",monospace;max-height:400px;overflow-y:auto}
+.kp-detail pre{background:var(--bg);padding:14px;border-radius:var(--radius);font-size:11px;white-space:pre-wrap;line-height:1.6;color:var(--text-secondary);font-family:"SF Mono",Consolas,"Courier New",monospace;max-height:400px;overflow-y:auto}
 
 /* === Pagination === */
 .pagination{display:flex;justify-content:center;gap:4px;margin-top:24px;padding-bottom:24px}
@@ -275,23 +284,22 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .page-info{line-height:34px;font-size:12px;color:var(--text-muted);padding:0 8px}
 
 /* === Modals === */
-.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.4);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .modal-overlay.open{display:flex}
-.modal{background:var(--card);border-radius:var(--radius-lg);width:680px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
-.modal-header{padding:20px 24px 0;font-size:17px;font-weight:700;color:var(--text)}
+.modal{background:var(--card);border-radius:var(--radius-xl);width:680px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.modal-header{padding:24px 24px 0;font-size:17px;font-weight:700;color:var(--text)}
 .modal-body{padding:20px 24px}
-.modal-footer{padding:12px 24px 20px;display:flex;justify-content:flex-end;gap:8px}
-
+.modal-footer{padding:12px 24px 24px;display:flex;justify-content:flex-end;gap:8px}
 .field{margin-bottom:16px}
 .field label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600}
 .field input,.field textarea,.field select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--text);transition:var(--transition);background:var(--card)}
-.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(67,56,202,.08)}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(10,155,128,.1)}
 .field textarea{min-height:80px;resize:vertical;line-height:1.6}
 .field-row{display:flex;gap:12px}
 .field-row .field{flex:1}
 .field-hint{font-size:11px;color:var(--text-muted);margin-top:4px}
 
-/* === Tag Editor in Modal === */
+/* === Tag Editor === */
 .tag-editor-box{border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;min-height:40px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:var(--card)}
 .tag-editor-box .tag-chip{cursor:default}
 .tag-editor-box .tag-chip .tag-x{cursor:pointer;margin-left:4px;font-weight:700;opacity:.5;font-size:13px}
@@ -302,7 +310,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .kw-input-wrap input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px}
 
 /* === Misc === */
-.toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:var(--radius);color:#fff;font-size:13px;font-weight:500;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast{position:fixed;top:16px;right:16px;padding:12px 22px;border-radius:var(--radius-lg);color:#fff;font-size:13px;font-weight:500;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;box-shadow:var(--shadow-md)}
 .toast.show{opacity:1}
 .toast.success{background:var(--success)}
 .toast.error{background:var(--danger)}
@@ -312,18 +320,17 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .loading{text-align:center;padding:40px;color:var(--text-muted);font-size:13px}
 
 .active-filters{font-size:12px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.active-filters .af-tag{background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:4px;font-size:11px}
+.active-filters .af-tag{background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:6px;font-size:11px}
 .active-filters .af-clear{color:var(--danger);cursor:pointer;font-size:11px;margin-left:4px}
 
-.confirm-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:250;justify-content:center;align-items:center}
+.confirm-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:250;justify-content:center;align-items:center;backdrop-filter:blur(4px)}
 .confirm-overlay.open{display:flex}
-.confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;width:400px;box-shadow:var(--shadow-lg);text-align:center}
+.confirm-box{background:var(--card);border-radius:var(--radius-xl);padding:32px;width:400px;box-shadow:var(--shadow-lg);text-align:center}
 .confirm-box h3{font-size:16px;margin-bottom:8px;color:var(--text)}
 .confirm-box p{font-size:13px;color:var(--text-secondary);margin-bottom:20px;line-height:1.6}
 .confirm-box .confirm-actions{display:flex;gap:8px;justify-content:center}
 
-/* History & Suggestion cards */
-.history-item{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.history-item{border:1px solid var(--border-light);border-radius:var(--radius);padding:14px;margin-bottom:10px;background:var(--card)}
 .history-item .ht{font-size:12px;color:var(--text-muted);margin-bottom:4px}
 .history-item .hs{font-size:13px;color:var(--text);font-weight:600;margin-bottom:8px}
 .history-field{font-size:12px;margin-bottom:3px;line-height:1.6;color:var(--text-secondary)}
@@ -331,8 +338,8 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .history-field .ov{color:var(--danger);text-decoration:line-through}
 .history-field .nv{color:var(--success)}
 
-.sg-card{border:1px solid #FDE68A;border-radius:var(--radius);padding:16px;margin-bottom:10px;background:var(--warning-bg)}
-.sg-card .sg-t{font-weight:600;font-size:14px;color:var(--warning);margin-bottom:4px}
+.sg-card{border:1px solid rgba(255,149,0,.2);border-radius:var(--radius);padding:16px;margin-bottom:10px;background:var(--warning-bg)}
+.sg-card .sg-t{font-weight:600;font-size:14px;color:#C97A2C;margin-bottom:4px}
 .sg-card .sg-m{font-size:12px;color:var(--text-muted);margin-bottom:6px}
 .sg-card .sg-r{font-size:13px;color:var(--text-secondary);margin-bottom:10px;line-height:1.6}
 
@@ -340,14 +347,56 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
 .stat-row:last-child{border-bottom:none}
 .stat-bar{height:6px;background:var(--primary);border-radius:3px;margin-left:10px;min-width:2px}
 .stat-count{min-width:30px;text-align:right;color:var(--text-muted);font-size:12px;margin-left:8px}
+.stat-count.stat-empty{color:var(--danger)}
 
+/* ============================== */
+/* === Tab 2: Admin Dashboard === */
+/* ============================== */
+.admin-wrap{height:calc(100vh - 94px);overflow-y:auto;padding:28px;background:var(--bg)}
+.admin-section{margin-bottom:36px}
+.admin-title{font-size:18px;font-weight:700;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.admin-title small{font-size:12px;font-weight:400;color:var(--text-muted)}
+
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.dash-card{background:var(--card);border-radius:var(--radius-lg);padding:22px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition)}
+.dash-card:hover{box-shadow:var(--shadow)}
+.dash-card-head{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px}
+.dash-big{font-size:36px;font-weight:700;color:var(--text);line-height:1;margin-bottom:10px;letter-spacing:-1px}
+.dash-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px}
+.dash-row .dl{color:var(--text-secondary)}
+.dash-row .dv{font-weight:600;color:var(--text);min-width:30px;text-align:right}
+.dash-bar-bg{flex:1;height:6px;background:var(--bg);border-radius:3px;margin:0 12px;overflow:hidden}
+.dash-bar-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.dash-row .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dash-divider{border:none;border-top:1px solid var(--border-light);margin:10px 0}
+
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.tool-card{background:var(--card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:20px 16px;cursor:pointer;transition:var(--transition);text-align:center;user-select:none}
+.tool-card:hover{border-color:var(--primary);box-shadow:var(--shadow);transform:translateY(-1px)}
+.tool-card:active{transform:translateY(0)}
+.tool-card.running{opacity:.5;pointer-events:none}
+.tool-icon{width:40px;height:40px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;margin-bottom:10px}
+.tool-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.tool-desc{font-size:11px;color:var(--text-muted);line-height:1.4}
+
+.tool-result{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;margin-top:16px;display:none;box-shadow:var(--shadow-sm)}
+.tool-result.open{display:block}
+.tool-result-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.tool-result-title{font-weight:700;font-size:14px;color:var(--text)}
+.tool-result-close{cursor:pointer;color:var(--text-muted);font-size:18px;padding:4px 8px;border-radius:6px}
+.tool-result-close:hover{background:var(--bg);color:var(--text)}
+.tr-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px}
+.tr-item:last-child{border-bottom:none}
+.tr-ok{color:var(--success);font-weight:700;min-width:20px}
+.tr-fail{color:var(--danger);font-weight:700;min-width:20px}
+.tr-warn{color:var(--warning);font-weight:700;min-width:20px}
 </style>
 </head>
 <body>
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.1.1</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.1.2</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -355,20 +404,25 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
     <div class="stat-pill">API<span class="num" id="statCost">-</span>元</div>
   </div>
 </div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="review" onclick="switchTab('review')">知识审核</button>
+  <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">系统管理</button>
+</div>
+
+<!-- ==================== Tab 1: Knowledge Review ==================== -->
+<div id="tabReview">
 <div class="suggestion-bar" id="suggestionBar" onclick="openSuggestionsModal()">AI 发现 <b id="sgCount">0</b> 条分类建议待处理</div>
-<!-- v2.1.0-d: 保鲜提醒栏 -->
 <div class="freshness-bar" id="freshnessBar" onclick="filterByFreshness('needs_check',document.querySelector('#freshnessFilterSection .filter-item:nth-child(2)'))">
   保鲜提醒: <span class="fb-expired" id="fbExpired">0</span> 条已过期, <span class="fb-expiring" id="fbExpiring">0</span> 条即将到期 -- 点击查看
 </div>
-<!-- v2.1.1 F039: 重复检测提醒栏 -->
 <div class="dup-bar" id="dupBar" onclick="toggleDupPanel()">
   重复检测: <span class="db-count" id="dbPending">0</span> 组待处理<span id="dbConflictHint"></span> -- 点击展开处理
 </div>
 <div class="dup-panel" id="dupPanel"></div>
 
-<!-- Main Layout -->
 <div class="main">
-
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="filter-section">
@@ -378,7 +432,6 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByStatus('confirmed',this)">已确认 <span class="cnt" id="filterConfirmed">0</span></button>
       <button class="filter-item" onclick="filterByStatus('ignored',this)">已忽略 <span class="cnt" id="filterIgnored">0</span></button>
     </div>
-
     <div class="filter-section">
       <div class="filter-label">知识类型</div>
       <button class="filter-item active" onclick="filterByType(null,this)">全部类型</button>
@@ -388,9 +441,7 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByType('tool',this)">实操工具</button>
       <button class="filter-item" onclick="filterByType('data',this)">数据资料</button>
     </div>
-
     <div class="filter-section"><div class="filter-label">分类体系</div><div id="categoryFilters"></div></div>
-
     <div class="filter-section">
       <div class="filter-label">就绪度</div>
       <button class="filter-item active" onclick="filterByReadiness(null,this)">全部</button>
@@ -398,8 +449,6 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByReadiness('quotable',this)">可引用级</button>
       <button class="filter-item" onclick="filterByReadiness('premium',this)">精品级</button>
     </div>
-
-    <!-- v2.1.0-d: 保鲜筛选 -->
     <div class="filter-section" id="freshnessFilterSection">
       <div class="filter-label">保鲜状态</div>
       <button class="filter-item active" onclick="filterByFreshness(null,this)">全部</button>
@@ -408,8 +457,6 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <button class="filter-item" onclick="filterByFreshness('expiring',this)">即将到期</button>
       <button class="filter-item" onclick="filterByFreshness('outdated',this)">已过时</button>
     </div>
-
-    <!-- v2.1.0-d F028: 政策校验筛选 -->
     <div class="filter-section" id="policyFilterSection">
       <div class="filter-label">政策校验</div>
       <button class="filter-item active" onclick="filterByPolicy(null,this)">全部</button>
@@ -439,8 +486,75 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
     <div class="pagination" id="pagination"></div>
   </div>
 </div>
+</div>
 
-<!-- Edit Modal -->
+<!-- ==================== Tab 2: System Admin ==================== -->
+<div id="tabAdmin" style="display:none">
+<div class="admin-wrap">
+  <!-- Dashboard -->
+  <div class="admin-section">
+    <div class="admin-title">仪表盘 <small>-- 知识库运行状态总览</small>
+      <button class="btn btn-sm" style="margin-left:auto" onclick="loadDashboard()">刷新</button>
+    </div>
+    <div id="dashContent"><div class="loading">正在加载...</div></div>
+  </div>
+  <!-- Toolbox -->
+  <div class="admin-section">
+    <div class="admin-title">工具箱 <small>-- 点击执行，结果在下方展示</small></div>
+    <div class="tool-grid">
+      <div class="tool-card" id="tc-syscheck" onclick="runTool('syscheck')">
+        <div class="tool-icon" style="background:var(--info-bg);color:var(--info)">S</div>
+        <div class="tool-name">系统检查</div>
+        <div class="tool-desc">检查系统各项状态</div>
+      </div>
+      <div class="tool-card" id="tc-backup" onclick="runTool('backup')">
+        <div class="tool-icon" style="background:var(--success-bg);color:var(--success)">B</div>
+        <div class="tool-name">一键备份</div>
+        <div class="tool-desc">备份当前数据库</div>
+      </div>
+      <div class="tool-card" id="tc-restore" onclick="runTool('restore')">
+        <div class="tool-icon" style="background:#F3EAFA;color:#AF52DE">R</div>
+        <div class="tool-name">恢复备份</div>
+        <div class="tool-desc">查看并恢复历史备份</div>
+      </div>
+      <div class="tool-card" id="tc-freshness" onclick="runTool('freshness')">
+        <div class="tool-icon" style="background:var(--warning-bg);color:var(--warning)">F</div>
+        <div class="tool-name">保鲜扫描</div>
+        <div class="tool-desc">扫描过期知识点</div>
+      </div>
+      <div class="tool-card" id="tc-duplicate" onclick="runTool('duplicate')">
+        <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">D</div>
+        <div class="tool-name">全库重复检测</div>
+        <div class="tool-desc">扫描重复知识点</div>
+      </div>
+      <div class="tool-card" id="tc-policy" onclick="runTool('policy')">
+        <div class="tool-icon" style="background:var(--primary-light);color:var(--primary)">P</div>
+        <div class="tool-name">政策补跑</div>
+        <div class="tool-desc">补跑未校验知识点</div>
+      </div>
+      <div class="tool-card" id="tc-analytics" onclick="runTool('analytics')">
+        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">A</div>
+        <div class="tool-name">审核统计</div>
+        <div class="tool-desc">查看审核反馈分析</div>
+      </div>
+      <div class="tool-card" id="tc-apicost" onclick="runTool('apicost')">
+        <div class="tool-icon" style="background:var(--bg);color:var(--text-secondary)">$</div>
+        <div class="tool-name">API费用</div>
+        <div class="tool-desc">查看费用详情与趋势</div>
+      </div>
+    </div>
+    <div class="tool-result" id="toolResult">
+      <div class="tool-result-head">
+        <div class="tool-result-title" id="toolResultTitle">结果</div>
+        <span class="tool-result-close" onclick="closeToolResult()">&times;</span>
+      </div>
+      <div id="toolResultBody"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ==================== Modals (shared) ==================== -->
 <div class="modal-overlay" id="editModal"><div class="modal" style="width:740px">
   <div class="modal-header" id="editModalTitle">编辑知识点</div>
   <div class="modal-body">
@@ -469,20 +583,18 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
       <div class="field-hint">实操启示由R1提取时自动推导,V3质检评估可靠性</div>
     </div>
     <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
-    <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:Consolas,monospace"></textarea></div>
+    <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:'SF Mono',Consolas,monospace"></textarea></div>
     <div class="field"><label>审核备注</label><textarea id="editNotes" style="min-height:60px"></textarea></div>
   </div>
   <div class="modal-footer" id="editModalActions"></div>
 </div></div>
 
-<!-- History Modal -->
 <div class="modal-overlay" id="historyModal"><div class="modal">
   <div class="modal-header">修改历史</div>
   <div class="modal-body" id="historyContent"></div>
   <div class="modal-footer"><button class="btn" onclick="closeModal('historyModal')">关闭</button></div>
 </div></div>
 
-<!-- Add Category Modal -->
 <div class="modal-overlay" id="addCatModal"><div class="modal" style="width:480px">
   <div class="modal-header">新增分类</div>
   <div class="modal-body">
@@ -495,21 +607,18 @@ body{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",-apple-sys
   <div class="modal-footer"><button class="btn" onclick="closeModal('addCatModal')">取消</button><button class="btn btn-primary" onclick="submitAddCategory()">确认新增</button></div>
 </div></div>
 
-<!-- AI Suggestions Modal -->
 <div class="modal-overlay" id="suggestionsModal"><div class="modal" style="width:580px">
   <div class="modal-header">AI 分类建议</div>
   <div class="modal-body" id="suggestionsContent"></div>
   <div class="modal-footer"><button class="btn" onclick="closeModal('suggestionsModal')">关闭</button></div>
 </div></div>
 
-<!-- Stats Modal -->
 <div class="modal-overlay" id="statsModal"><div class="modal" style="width:540px">
   <div class="modal-header">分类概览</div>
   <div class="modal-body" id="statsContent"></div>
   <div class="modal-footer"><button class="btn" onclick="closeModal('statsModal')">关闭</button></div>
 </div></div>
 
-<!-- Confirm Dialog -->
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -530,6 +639,7 @@ var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var tagDefs=null,tagNameToGroup={};
 var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
 var confirmCallback=null;
+var currentTab="review";
 
 var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
@@ -553,15 +663,12 @@ function parseTags(v){if(!v)return[];if(typeof v==="string"){try{v=JSON.parse(v)
 function parseObj(v){if(!v)return{};if(typeof v==="string"){try{return JSON.parse(v)}catch(e){return{}}}if(typeof v==="object"&&!Array.isArray(v))return v;return{}}
 function closeModal(id){document.getElementById(id).classList.remove("open")}
 
-/* === Confirm dialog === */
 function showConfirm(title,msg,cb){document.getElementById("confirmTitle").textContent=title;document.getElementById("confirmMsg").textContent=msg;confirmCallback=cb;document.getElementById("confirmDlg").classList.add("open")}
 function closeConfirm(ok){document.getElementById("confirmDlg").classList.remove("open");if(confirmCallback)confirmCallback(ok);confirmCallback=null}
 
-/* === Tag name -> group code mapping === */
 function buildTagMap(){tagNameToGroup={};if(!tagDefs||!tagDefs.layer1)return;var l1=tagDefs.layer1;var groups=Object.keys(l1);for(var i=0;i<groups.length;i++){var gc=groups[i],tags=l1[gc].tags;for(var j=0;j<tags.length;j++){tagNameToGroup[tags[j].name]=gc}}}
 function tagClass(name){var g=tagNameToGroup[name];return g?"tag-"+g:"tag-kw"}
 
-/* === Freshness helpers === */
 function getFreshnessStatus(kp){
   if(kp.is_outdated)return"outdated";
   if(!kp.freshness_checked_at||!kp.freshness_interval_days)return"unknown";
@@ -574,6 +681,18 @@ function getFreshnessStatus(kp){
   return"fresh";
 }
 
+/* === Tab Switching === */
+function switchTab(tab){
+  currentTab=tab;
+  document.getElementById("tabReview").style.display=tab==="review"?"":"none";
+  document.getElementById("tabAdmin").style.display=tab==="admin"?"":"none";
+  var btns=document.querySelectorAll(".tab-btn");
+  for(var i=0;i<btns.length;i++){
+    btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
+  }
+  if(tab==="admin")loadDashboard();
+}
+
 /* === Init === */
 function init(){
   apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();loadDuplicateSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
@@ -583,24 +702,22 @@ function loadStatistics(){apiGet("/api/statistics").then(function(s){document.ge
 
 function loadSuggestionCount(){apiGet("/api/architecture-suggestions").then(function(list){if(Array.isArray(list)&&list.length>0){document.getElementById("sgCount").textContent=list.length;document.getElementById("suggestionBar").style.display="block"}})}
 
-/* === v2.1.0-d: Freshness Summary === */
 function loadFreshnessSummary(){apiGet("/api/freshness/summary").then(function(s){if(s.error)return;var expired=s.expired||0;var expiring=s.expiring||0;if(expired>0||expiring>0){document.getElementById("fbExpired").textContent=expired;document.getElementById("fbExpiring").textContent=expiring;document.getElementById("freshnessBar").style.display="block"}else{document.getElementById("freshnessBar").style.display="none"}})}
 
-/* === v2.1.1 F039: Duplicate Detection === */
+/* === Duplicate Detection === */
 var dupRelNames={duplicate:"重复",superseded:"版本更替",complementary:"互补",conflicting:"冲突",unrelated:"无关"};
 function loadDuplicateSummary(){apiGet("/api/duplicate-groups/summary").then(function(s){if(!s||s.error)return;var p=s.pending||0;if(p>0){document.getElementById("dbPending").textContent=p;document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
 function toggleDupPanel(){var panel=document.getElementById("dupPanel");if(panel.classList.contains("open")){panel.classList.remove("open");panel.innerHTML=""}else{panel.classList.add("open");panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">加载中...</div>';loadDuplicateGroups()}}
-function loadDuplicateGroups(){apiGet("/api/duplicate-groups?status=pending").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的重复组</div>';return}var h='<div style="font-weight:600;font-size:14px;margin-bottom:10px;color:#92400E">待处理: '+groups.length+' 组 (冲突类型请优先处理)</div>';groups.sort(function(a,b){var order={conflicting:0,duplicate:1,superseded:2,complementary:3};var oa=order[a.relation_type]!==undefined?order[a.relation_type]:9;var ob=order[b.relation_type]!==undefined?order[b.relation_type]:9;return oa-ob});for(var i=0;i<groups.length;i++){h+=renderDupGroup(groups[i])}panel.innerHTML=h})}
-function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid #3B82F6">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:#16A34A;font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';for(var j=0;j<members.length;j++){var m2=members[j];h+='<button class="btn btn-sm" onclick="resolveDupKeep('+g.id+','+m2.id+')">保留#'+m2.id+'</button>'}h+='<button class="btn btn-sm" style="background:#E0E7FF;color:#4338CA" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:#F1F5F9;color:var(--text-muted)" onclick="goToKp('+members[0].id+')">查看详情</button>';h+='</div></div>';return h}
+function loadDuplicateGroups(){apiGet("/api/duplicate-groups?status=pending").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的重复组</div>';return}var h='<div style="font-weight:600;font-size:14px;margin-bottom:10px;color:#C97A2C">待处理: '+groups.length+' 组 (冲突类型请优先处理)</div>';groups.sort(function(a,b){var order={conflicting:0,duplicate:1,superseded:2,complementary:3};var oa=order[a.relation_type]!==undefined?order[a.relation_type]:9;var ob=order[b.relation_type]!==undefined?order[b.relation_type]:9;return oa-ob});for(var i=0;i<groups.length;i++){h+=renderDupGroup(groups[i])}panel.innerHTML=h})}
+function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid var(--info)">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:var(--success);font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';for(var j=0;j<members.length;j++){var m2=members[j];h+='<button class="btn btn-sm" onclick="resolveDupKeep('+g.id+','+m2.id+')">保留#'+m2.id+'</button>'}h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="goToKp('+members[0].id+')">查看详情</button>';h+='</div></div>';return h}
 function resolveDupKeep(gid,keepId){showConfirm("确认处理","保留 #"+keepId+"，删除组内其余知识点？",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/"+gid+"/resolve",{keep_id:keepId,action:"resolve"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
 function resolveDupDismiss(gid){apiPost("/api/duplicate-groups/"+gid+"/resolve",{action:"dismiss"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary()})}
-function goToKp(kid){window.scrollTo(0,0);currentSearch="";currentStatus=null;currentPage=1;document.getElementById("searchInput").value=""+kid;currentSearch=""+kid;loadKnowledgePoints()}
+function goToKp(kid){switchTab("review");window.scrollTo(0,0);currentSearch="";currentStatus=null;currentPage=1;document.getElementById("searchInput").value=""+kid;currentSearch=""+kid;loadKnowledgePoints()}
+
 /* === Categories === */
 function loadCategories(){apiGet("/api/categories").then(function(c){if(Array.isArray(c)){allCategories=c.slice();allCategories.sort(function(a,b){return a.level1_code===b.level1_code?a.level2_code.localeCompare(b.level2_code):a.level1_code.localeCompare(b.level1_code)})}buildCategoryTree();buildCategoryDropdown()})}
-
 function buildCategoryTree(){var cf=document.getElementById("categoryFilters");var h='<button class="filter-item active" onclick="filterByCat(null,null,this)">全部分类</button>';var tree={},order=[];for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!tree[x.level1_code]){tree[x.level1_code]={name:x.level1_name,children:[]};order.push(x.level1_code)}tree[x.level1_code].children.push(x)}for(var i=0;i<order.length;i++){var code=order[i],g=tree[code];h+='<div class="tree-group"><button class="tree-parent" onclick="toggleTree(this,\''+code+'\')" ondblclick="filterByCat(null,\''+code+'\',this)"><span class="arr">&#9654;</span>'+esc(g.name)+'</button><div class="tree-children" id="treeC_'+code+'">';for(var j=0;j<g.children.length;j++){var c2=g.children[j];h+='<button class="tree-child" onclick="filterByCat('+c2.id+',null,this)">'+esc(c2.level2_name)+'</button>'}h+='</div></div>'}cf.innerHTML=h}
 function toggleTree(btn,code){var list=document.getElementById("treeC_"+code);var arrow=btn.querySelector(".arr");if(list.classList.contains("open")){list.classList.remove("open");arrow.classList.remove("open")}else{list.classList.add("open");arrow.classList.add("open")}}
-
 function buildCategoryDropdown(){var sel=document.getElementById("editCategory");sel.innerHTML='<option value="">请选择分类</option>';var lastL1="";for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(x.level1_name!==lastL1){if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<optgroup label="'+esc(x.level1_name)+'">';lastL1=x.level1_name}sel.innerHTML+='<option value="'+x.id+'">'+esc(x.level2_name)+'</option>'}if(lastL1)sel.innerHTML+='</optgroup>';sel.innerHTML+='<option value="__ADD__" style="color:var(--primary);font-weight:600">+ 新增分类...</option>';var addSel=document.getElementById("addCatParent");addSel.innerHTML="";var seen={};for(var i=0;i<allCategories.length;i++){var x=allCategories[i];if(!seen[x.level1_code]){addSel.innerHTML+='<option value="'+x.level1_code+'" data-name="'+esc(x.level1_name)+'">'+esc(x.level1_name)+'</option>';seen[x.level1_code]=true}}}
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
@@ -612,7 +729,6 @@ function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){current
 function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;currentStatus=null;var stSection=document.querySelectorAll(".filter-section")[0];var stBtns=stSection.querySelectorAll(".filter-item");for(var si=0;si<stBtns.length;si++)stBtns[si].classList.remove("active");stBtns[0].classList.add("active");renderBatchButtons();var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
-
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
 function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
@@ -628,27 +744,19 @@ function renderCard(kp,seq){
 var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
 var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
 var matched=!!kp.suggested_category_id;
-
-/* Three-layer tags */
 var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
 var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
 var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
 var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
-
-/* QA score & flags */
 var qaScore=kp.qa_score,qaFlags=kp.qa_flags||[];
 if(typeof qaFlags==="string"){try{qaFlags=JSON.parse(qaFlags)}catch(e){qaFlags=[]}}
 if(!Array.isArray(qaFlags))qaFlags=[];
 var qaH="";
 if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
-
-/* Freshness status */
 var frSt=getFreshnessStatus(kp);
 var frH='<span class="fr-badge fr-'+frSt+'">'+esc(FRN[frSt]||frSt)+'</span>';
 if(kp.freshness_note&&(frSt==="fresh"||frSt==="expiring")){frH+='<span class="fr-note">'+esc(kp.freshness_note)+'</span>'}
 var isOutdated=!!kp.is_outdated;
-
-/* Policy validation status (F028) */
 var pvVal=kp.policy_validated;
 var pvH="";
 if(pvVal===2){pvH='<span class="pv-badge pv-pending">待政策验证</span>'}
@@ -656,8 +764,6 @@ else if(pvVal===1){pvH='<span class="pv-badge pv-validated">政策已验证</spa
 else if(pvVal===3){pvH='<span class="pv-badge pv-exempt">已豁免</span>'}
 else if(pvVal===4){pvH=""}
 else if(tp!=="policy"){pvH='<span class="pv-badge pv-unchecked">未校验</span>'}
-
-/* Policy dependencies detail (F028) */
 var pdH="";
 var pdeps=kp.policy_dependencies;
 if(typeof pdeps==="string"){try{pdeps=JSON.parse(pdeps)}catch(e){pdeps=[]}}
@@ -669,8 +775,6 @@ pdH+='</div>'}
 else if(pvVal===1&&pdeps.length>0){
 var matchedNames=[];for(var pi=0;pi<pdeps.length;pi++){if(pdeps[pi].matched)matchedNames.push(pdeps[pi].name||pdeps[pi].number)}
 if(matchedNames.length>0){pdH='<div class="policy-deps-ok">&#10003; 已验证政策: '+esc(matchedNames.join(", "))+'</div>'}}
-
-/* v2.1.1 F038: Practical insights */
 var insightsH="";
 var pInsights=kp.practical_insights;
 if(typeof pInsights==="string"){try{pInsights=JSON.parse(pInsights)}catch(e){pInsights=[]}}
@@ -684,23 +788,16 @@ if(irVal&&IRN[irVal])insightsH+=' <span class="ir-badge ir-'+irVal+'">V3评估: 
 insightsH+='</div><div class="insights-body" id="insights-'+kp.id+'">';
 for(var ii=0;ii<pInsights.length;ii++){var ins=pInsights[ii];var conf=ins.confidence||"medium";insightsH+='<div class="insight-item ins-'+conf+'"><span class="ins-conf ins-conf-'+conf+'">'+esc(CONF_CN[conf]||conf)+'</span><span class="ins-text">'+esc(ins.insight||"")+'</span>';if(ins.basis)insightsH+='<div class="ins-basis">依据: '+esc(ins.basis)+'</div>';insightsH+='</div>'}
 insightsH+='</div></div>'}
-
-/* Tag chips HTML */
 var tagH="";for(var t=0;t<catTags.length;t++)tagH+='<span class="tag-chip '+tagClass(catTags[t])+'">'+esc(catTags[t])+'</span>';
 var attrH="";for(var a=0;a<ak.length;a++){if(attrs[ak[a]]){if(attrH)attrH+='<span class="attr-sep">/</span>';attrH+='<span class="attr-pair"><span class="attr-k">'+esc(getDimName(ak[a]))+'</span> <span class="attr-v">'+esc(attrs[ak[a]])+'</span></span>'}}
 var kwH="";for(var k=0;k<kws.length&&k<8;k++)kwH+='<span class="tag-chip tag-kw">'+esc(kws[k])+'</span>';if(kws.length>8)kwH+='<span class="tag-chip tag-kw">+'+(kws.length-8)+'</span>';
-
-/* AI key fields */
 var ex=kp.ai_extracted_content;if(typeof ex==="string")try{ex=JSON.parse(ex)}catch(e){ex={}}
 if(!ex)ex={};
 var kf=getKeyFields(tp,ex);
-
-/* Actions */
 var ah="";
-if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:#1E40AF;border-color:#1E40AF" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#7C3AED;border-color:#7C3AED" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:#DC2626;border-color:#DC2626" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:#059669;border-color:#059669" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:#1E40AF;border-color:#1E40AF" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#7C3AED;border-color:#7C3AED" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:#94A3B8;border-color:#CBD5E1" onclick="deleteKp('+kp.id+')">删除</button>'}
-
+if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
 +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
 +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
@@ -733,29 +830,26 @@ function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-p
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
 function toggleInsights(id){var body=document.getElementById("insights-"+id);var arr=document.getElementById("insArr-"+id);if(body){var isOpen=body.classList.toggle("open");if(arr)arr.innerHTML=isOpen?"&#9660;":"&#9654;"}}
 
-/* === v2.1.0-d: Freshness Actions === */
-function renewFreshness(id){var note=prompt("保鲜备注（可留空）:\n例如: 2026年3月核实，该政策仍为现行有效文件");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
+function renewFreshness(id){var note=prompt("保鲜备注（可留空）:");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
 function markOutdated(id){showConfirm("标记已过时","此知识点将标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（可留空）:");apiPost("/api/knowledge-points/"+id+"/mark-outdated",{reason:reason||""}).then(function(r){if(r.success){showToast("已标记过时","info");refreshData();loadFreshnessSummary()}})})}
-function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:\n例如: 本批次知识点已核实均为现行有效");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
-function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){showToast("已标记"+r.marked+"条过时","info");selectedIds={};refreshData();loadFreshnessSummary()}})})}
+function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
+function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){showToast("已标记"+r.marked+"条过时","info");selectedIds={};refreshData();loadFreshnessSummary()}})})}
 function batchRestoreToPending(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量恢复","将"+ids.length+"条知识点恢复到待审核状态?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-restore-to-pending",{ids:ids}).then(function(r){if(r.success){showToast("已恢复"+r.restored+"条","success");selectedIds={};refreshData()}})})}
-/* === v2.1.0-d F028: Policy Validation Actions === */
-function exemptPolicy(id){showConfirm("豁免政策校验","此知识点将标记为不需要政策校验(人工豁免)。确认?",function(ok){if(!ok)return;var reason=prompt("豁免原因(可留空):\n例如: 纯操盘经验,不依赖特定政策");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/exempt-policy",{reason:reason||""}).then(function(r){if(r.success){showToast("已豁免","info");refreshData()}else{showToast("操作失败: "+(r.error||""),"error")}})})}
+function exemptPolicy(id){showConfirm("豁免政策校验","此知识点将标记为不需要政策校验(人工豁免)。确认?",function(ok){if(!ok)return;var reason=prompt("豁免原因(可留空):");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/exempt-policy",{reason:reason||""}).then(function(r){if(r.success){showToast("已豁免","info");refreshData()}else{showToast("操作失败: "+(r.error||""),"error")}})})}
 function revalidatePolicy(id){showConfirm("重新校验","将重新调用AI扫描此知识点的政策引用并匹配知识库。确认?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+id+"/revalidate-policy").then(function(r){if(r.success){showToast("重新校验完成","success");refreshData()}else{showToast("校验失败: "+(r.error||""),"error")}})})}
 
 /* === Batch === */
-function batchRemoveConfirmed(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量移除","将"+ids.length+"条已确认知识点移除出库(变为已忽略)?",function(ok){if(!ok)return;var reason=prompt("移除原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids,reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除"+r.ignored+"条","info");selectedIds={};refreshData()}})})}
+function batchRemoveConfirmed(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量移除","将"+ids.length+"条已确认知识点移除出库?",function(ok){if(!ok)return;var reason=prompt("移除原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids,reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除"+r.ignored+"条","info");selectedIds={};refreshData()}})})}
 function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
 function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){showToast("已忽略"+r.ignored+"个","info");selectedIds={};refreshData()}})})}
 function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
 function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);updateBatch()}
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}updateBatch()}
 function updateBatch(){var n=Object.keys(selectedIds).length;var btns=document.querySelectorAll("#batchButtons button");for(var i=0;i<btns.length;i++){btns[i].disabled=n===0;var base=btns[i].getAttribute("data-label");if(base)btns[i].textContent=n>0?base+"("+n+")":base}}
-
 function renderBatchButtons(){var h="",st=currentStatus;
 if(!st||st==="pending"){h+='<button class="btn btn-success btn-sm" data-label="确认入库" onclick="batchConfirm()" disabled>确认入库</button>';h+='<button class="btn btn-warn btn-sm" data-label="批量忽略" onclick="batchIgnore()" disabled>批量忽略</button>'}
-if(!st||st==="confirmed"){h+='<button class="btn btn-sm" data-label="批量续期" onclick="batchRenewFreshness()" disabled style="color:#059669;border-color:#059669">批量续期</button>';h+='<button class="btn btn-sm" data-label="批量标记过时" onclick="batchMarkOutdated()" disabled style="color:#DC2626;border-color:#DC2626">批量标记过时</button>';h+='<button class="btn btn-warn btn-sm" data-label="批量移除" onclick="batchRemoveConfirmed()" disabled>批量移除</button>'}
-if(!st||st==="ignored"){h+='<button class="btn btn-sm" data-label="批量恢复" onclick="batchRestoreToPending()" disabled style="color:#059669;border-color:#059669">批量恢复</button>'}
+if(!st||st==="confirmed"){h+='<button class="btn btn-sm" data-label="批量续期" onclick="batchRenewFreshness()" disabled style="color:var(--success);border-color:var(--success)">批量续期</button>';h+='<button class="btn btn-sm" data-label="批量标记过时" onclick="batchMarkOutdated()" disabled style="color:var(--danger);border-color:var(--danger)">批量标记过时</button>';h+='<button class="btn btn-warn btn-sm" data-label="批量移除" onclick="batchRemoveConfirmed()" disabled>批量移除</button>'}
+if(!st||st==="ignored"){h+='<button class="btn btn-sm" data-label="批量恢复" onclick="batchRestoreToPending()" disabled style="color:var(--success);border-color:var(--success)">批量恢复</button>'}
 h+='<button class="btn btn-danger btn-sm" data-label="批量删除" onclick="batchDelete()" disabled>批量删除</button>';
 document.getElementById("batchButtons").innerHTML=h}
 
@@ -773,8 +867,6 @@ document.getElementById("editReadiness").value=kp.content_readiness||"draft";
 document.getElementById("editAuthority").value=kp.source_authority||"firsthand";
 document.getElementById("editFreshnessInterval").value=kp.freshness_interval_days||"";
 document.getElementById("editFreshnessNote").value=kp.freshness_note||"";
-
-/* Policy deps display (F028, readonly) */
 var pdField=document.getElementById("editPolicyDepsField");
 var pdDiv=document.getElementById("editPolicyDeps");
 var pvSt=kp.policy_validated;
@@ -784,10 +876,8 @@ if(!Array.isArray(pdArr))pdArr=[];
 if(pvSt&&pvSt>0&&pdArr.length>0){
 pdField.style.display="block";
 var pdHtml="<div style='margin-bottom:6px;font-weight:600'>状态: "+esc(PVN[String(pvSt)]||"未知")+"</div>";
-for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:#065F46'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:#DC2626'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
+for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:#059669'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:var(--danger)'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
 pdDiv.innerHTML=pdHtml}else{pdField.style.display="none"}
-
-/* v2.1.1 F038: Insights display (readonly) */
 var insField=document.getElementById("editInsightsField");
 var insDiv=document.getElementById("editInsights");
 var insArr=kp.practical_insights;
@@ -795,25 +885,20 @@ if(typeof insArr==="string"){try{insArr=JSON.parse(insArr)}catch(e){insArr=[]}}
 if(!Array.isArray(insArr))insArr=[];
 if(insArr.length>0){
 insField.style.display="block";
-var irVal=kp.insight_reliability;
+var irVal2=kp.insight_reliability;
 var insHtml="";
-if(irVal&&IRN[irVal]){insHtml+="<div style='margin-bottom:6px;font-weight:600'>V3可靠性评估: <span class='ir-badge ir-"+irVal+"'>"+esc(IRN[irVal])+"</span></div>"}
+if(irVal2&&IRN[irVal2]){insHtml+="<div style='margin-bottom:6px;font-weight:600'>V3可靠性评估: <span class='ir-badge ir-"+irVal2+"'>"+esc(IRN[irVal2])+"</span></div>"}
 for(var ii=0;ii<insArr.length;ii++){var ins=insArr[ii];var conf=ins.confidence||"medium";insHtml+="<div class='insight-item ins-"+conf+"'><span class='ins-conf ins-conf-"+conf+"'>"+esc(CONF_CN[conf]||conf)+"</span><span class='ins-text'>"+esc(ins.insight||"")+"</span>";if(ins.basis)insHtml+="<div class='ins-basis'>依据: "+esc(ins.basis)+"</div>";insHtml+="</div>"}
 insDiv.innerHTML=insHtml}else{insField.style.display="none"}
-
-/* Layer 1 tags */
 var ft=parseTags(kp.final_category_tags);var st=parseTags(kp.suggested_category_tags);
 editL1Tags=ft.length>0?ft.slice():st.slice();
 renderL1Editor();buildL1Dropdown();
-/* Layer 2 attrs */
 var fa=parseObj(kp.final_attribute_tags);var sa=parseObj(kp.suggested_attribute_tags);
 editL2Attrs=Object.keys(fa).length>0?JSON.parse(JSON.stringify(fa)):JSON.parse(JSON.stringify(sa));
 renderL2Editor(kp.content_type);
-/* Keywords */
 var fk=parseTags(kp.final_keywords);var sk=parseTags(kp.suggested_keywords);
 editKws=fk.length>0?fk.slice():sk.slice();
 renderKwEditor();
-
 var title,acts='<button class="btn" onclick="closeModal(\'editModal\')">取消</button>';
 if(editingKpStatus==="pending"){title="编辑知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存</button><button class="btn btn-success" onclick="saveAndConfirm()">保存并确认</button>'}
 else if(editingKpStatus==="confirmed"){title="编辑已入库知识点";acts+='<button class="btn btn-primary" onclick="saveEdit()">保存修改</button>'}
@@ -828,7 +913,7 @@ function buildL1Dropdown(){var sel=document.getElementById("layer1Dropdown");sel
 function onL1Add(){var sel=document.getElementById("layer1Dropdown");var val=sel.value;if(!val)return;editL1Tags.push(val);sel.value="";renderL1Editor();buildL1Dropdown()}
 function removeL1(i){editL1Tags.splice(i,1);renderL1Editor();buildL1Dropdown()}
 
-function renderL2Editor(contentType){var c=document.getElementById("layer2Editor");if(!tagDefs||!tagDefs.layer2){c.innerHTML="<p style='color:var(--text-muted);font-size:12px'>标签定义未加载</p>";return}var h="";var dims=Object.keys(tagDefs.layer2);for(var i=0;i<dims.length;i++){var dk=dims[i],dim=tagDefs.layer2[dk];var applies=dim.applies_to;if(applies&&applies.length>0){var match=false;for(var a=0;a<applies.length;a++){if(applies[a]===contentType){match=true;break}}if(!match)continue}var cur=editL2Attrs[dk]||"";if(dim.values&&dim.values.length>0){h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><select onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px"><option value="">--</option>';for(var v=0;v<dim.values.length;v++){var sv=dim.values[v];h+='<option value="'+esc(sv)+'"'+(cur===sv?" selected":"")+'>'+esc(sv)+'</option>'}h+='</select></div>'}else{h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><input type="text" value="'+esc(cur)+'" onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px" placeholder="自由填写"></div>'}}c.innerHTML=h||"<p style='color:var(--text-muted);font-size:12px'>该类型无属性维度</p>"}
+function renderL2Editor(contentType){var c=document.getElementById("layer2Editor");if(!tagDefs||!tagDefs.layer2){c.innerHTML="<p style='color:var(--text-muted);font-size:12px'>标签定义未加载</p>";return}var h="";var dims=Object.keys(tagDefs.layer2);for(var i=0;i<dims.length;i++){var dk=dims[i],dim=tagDefs.layer2[dk];var applies=dim.applies_to;if(applies&&applies.length>0){var match=false;for(var a=0;a<applies.length;a++){if(applies[a]===contentType){match=true;break}}if(!match)continue}var cur=editL2Attrs[dk]||"";if(dim.values&&dim.values.length>0){h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><select onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px"><option value="">--</option>';for(var v=0;v<dim.values.length;v++){var sv=dim.values[v];h+='<option value="'+esc(sv)+'"'+(cur===sv?" selected":"")+'>'+esc(sv)+'</option>'}h+='</select></div>'}else{h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:70px;font-size:12px;color:var(--text-muted)">'+esc(dim.name)+'</label><input type="text" value="'+esc(cur)+'" onchange="editL2Attrs[\''+dk+'\']=this.value" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px" placeholder="自由填写"></div>'}}c.innerHTML=h||"<p style='color:var(--text-muted);font-size:12px'>该类型无属性维度</p>"}
 function renderKwEditor(){var c=document.getElementById("kwEditor");var h="";for(var i=0;i<editKws.length;i++){h+='<span class="tag-chip tag-kw">'+esc(editKws[i])+'<span class="tag-x" onclick="removeKw('+i+')">&times;</span></span>'}if(!h)h='<span style="color:var(--text-muted);font-size:12px">暂无关键词</span>';c.innerHTML=h}
 function addKw(){var inp=document.getElementById("kwInput");var v=inp.value.trim();if(!v)return;var dup=false;for(var i=0;i<editKws.length;i++){if(editKws[i]===v){dup=true;break}}if(!dup)editKws.push(v);inp.value="";renderKwEditor()}
 function removeKw(i){editKws.splice(i,1);renderKwEditor()}
@@ -836,7 +921,6 @@ function removeKw(i){editKws.splice(i,1);renderKwEditor()}
 function saveEdit(){var id=document.getElementById("editKpId").value;
 var aiText=document.getElementById("editAiContent").value;var aiObj=null;
 if(aiText){try{aiObj=JSON.parse(aiText)}catch(e){showToast("AI提取内容JSON格式有误","error");return}}
-/* Collect L2 attrs - remove empty */
 var cleanL2={};var l2k=Object.keys(editL2Attrs);for(var i=0;i<l2k.length;i++){if(editL2Attrs[l2k[i]])cleanL2[l2k[i]]=editL2Attrs[l2k[i]]}
 var fi=parseInt(document.getElementById("editFreshnessInterval").value);
 var d={title:document.getElementById("editTitle").value,
@@ -868,28 +952,239 @@ apiPut("/api/knowledge-points/"+id,upd).then(function(){
 apiPost("/api/knowledge-points/"+id+"/confirm",{final_category_id:upd.final_category_id,reviewer_notes:document.getElementById("editNotes").value}).then(function(r){
 if(r.success){showToast("已保存并确认","success");closeModal("editModal");refreshData();loadFreshnessSummary()}})})}
 
-/* === History Modal === */
+/* === History / Suggestions / Stats / Category Modals === */
 function openHistory(id){document.getElementById("historyContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("historyModal").classList.add("open");apiGet("/api/knowledge-points/"+id+"/history").then(function(list){var c=document.getElementById("historyContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无修改记录</h3></div>';return}var h="";for(var i=0;i<list.length;i++){var it=list[i],fields=it.edited_fields||{};h+='<div class="history-item"><div class="ht">'+esc(it.created_at)+'</div><div class="hs">'+esc(it.edit_summary||"人工编辑")+'</div>';var fks=Object.keys(fields);for(var j=0;j<fks.length;j++){var fn=fks[j],ch=fields[fn],lab=FIELD_NAMES[fn]||fn;h+='<div class="history-field"><span class="fl">'+esc(lab)+'</span>: <span class="ov">'+esc(fmtVal(fn,ch.old))+'</span> -> <span class="nv">'+esc(fmtVal(fn,ch.new))+'</span></div>'}h+='<button class="btn btn-warn btn-sm" style="margin-top:8px" onclick="restoreVer('+id+','+it.id+')">回滚到此版本</button></div>'}c.innerHTML=h})}
 function fmtVal(fn,val){if(val===null||val===undefined)return"(空)";if(fn==="final_tags"||fn==="final_category_tags"||fn==="final_keywords"){if(Array.isArray(val))return val.join(", ");try{var a=JSON.parse(val);if(Array.isArray(a))return a.join(", ")}catch(e){}return String(val)}if(fn==="final_attribute_tags"){if(typeof val==="object")return JSON.stringify(val);return String(val)}if(fn==="final_category_id"){if(!val)return"(未选择)";for(var i=0;i<allCategories.length;i++){if(allCategories[i].id==val)return allCategories[i].level2_name}return"#"+val}if(fn==="content_readiness")return RN[val]||val;if(fn==="source_authority")return AN[val]||val;if(fn==="freshness_interval_days")return val+"天";return String(val)}
 function restoreVer(kid,hid){showConfirm("回滚确认","确认回滚到此历史版本?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+kid+"/restore-version/"+hid).then(function(r){if(r.success){showToast("回滚成功","success");closeModal("historyModal");loadKnowledgePoints()}})})}
-
-/* === Add Category === */
 function onAddCatLevelChange(){var v=document.getElementById("addCatLevel").value;document.getElementById("addCatParentField").style.display=v==="level2"?"block":"none";document.getElementById("addCatL1NameField").style.display=v==="level1"?"block":"none"}
 function openAddCatModal(){document.getElementById("addCatLevel").value="level2";onAddCatLevelChange();document.getElementById("addCatName").value="";document.getElementById("addCatDesc").value="";document.getElementById("addCatL1Name").value="";document.getElementById("addCatModal").classList.add("open")}
 function submitAddCategory(){var level=document.getElementById("addCatLevel").value;var l2Name=document.getElementById("addCatName").value.trim();var desc=document.getElementById("addCatDesc").value.trim();if(!l2Name){showToast("请输入分类名称","error");return}var body={level2_name:l2Name,description:desc};if(level==="level1"){var l1Name=document.getElementById("addCatL1Name").value.trim();if(!l1Name){showToast("请输入一级分类名称","error");return}body.is_new_level1=true;body.level1_name=l1Name;body.level1_code=""}else{var ps=document.getElementById("addCatParent");body.level1_code=ps.value;body.level1_name=ps.options[ps.selectedIndex].getAttribute("data-name")}apiPost("/api/categories/add",body).then(function(r){if(r.success){showToast("已新增: "+r.category.level2_name,"success");closeModal("addCatModal");loadCategories();document.getElementById("editCategory").value=r.category.id}else showToast("失败:"+(r.error||""),"error")})}
-
-/* === AI Suggestions === */
 function openSuggestionsModal(){document.getElementById("suggestionsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("suggestionsModal").classList.add("open");apiGet("/api/architecture-suggestions").then(function(list){var c=document.getElementById("suggestionsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无待处理建议</h3></div>';return}var h="";var typeNames={"add_level1":"新增一级分类",add_level2:"新增二级分类",rename:"重命名",split:"拆分",merge:"合并"};for(var i=0;i<list.length;i++){var s=list[i];h+='<div class="sg-card"><div class="sg-t">'+esc(typeNames[s.suggestion_type]||s.suggestion_type)+": "+esc(s.suggested_name)+'</div><div class="sg-m">层级: '+esc(s.suggested_level)+' | '+esc(s.created_at)+'</div><div class="sg-r">'+esc(s.reason)+'</div><div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="approveSg('+s.id+')">采纳</button><button class="btn btn-danger btn-sm" onclick="rejectSg('+s.id+')">忽略</button></div></div>'}c.innerHTML=h})}
 function approveSg(id){apiPost("/api/architecture-suggestions/"+id+"/approve").then(function(r){if(r.success){showToast("已采纳","success");openSuggestionsModal();loadStatistics()}})}
 function rejectSg(id){apiPost("/api/architecture-suggestions/"+id+"/reject").then(function(r){if(r.success){showToast("已忽略","info");openSuggestionsModal();loadStatistics()}})}
-
-/* === Stats Modal === */
 function openStatsModal(){document.getElementById("statsContent").innerHTML='<div class="loading">加载中...</div>';document.getElementById("statsModal").classList.add("open");apiGet("/api/categories/stats").then(function(list){var c=document.getElementById("statsContent");if(!Array.isArray(list)||!list.length){c.innerHTML='<div class="empty-state" style="padding:20px"><h3>暂无分类数据</h3></div>';return}var maxC=0;for(var i=0;i<list.length;i++){if(list[i].kp_count>maxC)maxC=list[i].kp_count}var h="",lastL1="";for(var i=0;i<list.length;i++){var s=list[i];if(s.level1_name!==lastL1){h+='<div style="font-weight:600;font-size:14px;margin:14px 0 6px;color:var(--text);border-bottom:1px solid var(--border-light);padding-bottom:4px">'+esc(s.level1_name)+'</div>';lastL1=s.level1_name}var bw=maxC>0?Math.max(2,Math.round(s.kp_count/maxC*180)):2;h+='<div class="stat-row"><span style="min-width:140px;color:var(--text-secondary);font-size:13px">'+esc(s.level2_name)+'</span><div class="stat-bar" style="width:'+bw+'px"></div><span class="stat-count'+(s.kp_count===0?" stat-empty":"")+'">'+s.kp_count+'</span></div>'}c.innerHTML=h})}
 
 /* === Pagination === */
 function renderPagination(total,page,pp){var pages=Math.ceil(total/pp),c=document.getElementById("pagination");if(pages<=1){c.innerHTML="";return}var h="";if(page>1)h+='<button onclick="goToPage('+(page-1)+')">上一页</button>';for(var i=1;i<=pages;i++){if(i===1||i===pages||(i>=page-2&&i<=page+2))h+='<button class="'+(i===page?"active":"")+'" onclick="goToPage('+i+')">'+i+"</button>";else if(i===page-3||i===page+3)h+='<span class="page-info">...</span>'}if(page<pages)h+='<button onclick="goToPage('+(page+1)+')">下一页</button>';h+='<span class="page-info">共'+total+'条</span>';c.innerHTML=h}
 function goToPage(p){currentPage=p;loadKnowledgePoints();document.querySelector(".content").scrollTo({top:0,behavior:"smooth"})}
 function refreshData(){selectedIds={};document.getElementById("selectAll").checked=false;loadStatistics();loadKnowledgePoints();loadFreshnessSummary()}
+
+/* ============================================= */
+/* === Tab 2: Dashboard & Toolbox (v2.1.2)   === */
+/* ============================================= */
+function loadDashboard(){
+  var c=document.getElementById("dashContent");
+  c.innerHTML='<div class="loading">正在加载仪表盘...</div>';
+  apiGet("/api/dashboard").then(function(d){
+    if(d.error){c.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}
+    renderDashboard(d);
+  });
+}
+
+function renderDashboard(d){
+  var h='<div class="dash-grid">';
+  /* Card 1: Total KP */
+  var bs=d.by_status||{};
+  h+='<div class="dash-card"><div class="dash-card-head">知识点总量</div><div class="dash-big">'+(d.total_kp||0)+'</div>';
+  h+=dRow("dot","#FF9500","待审核",bs.pending||0);
+  h+=dRow("dot","#34C759","已入库",bs.confirmed||0);
+  h+=dRow("dot","#86868B","已忽略",bs.ignored||0);
+  h+='</div>';
+
+  /* Card 2: By Type */
+  var bt=d.by_type||{};var btTotal=0;var btKeys=Object.keys(bt);for(var i=0;i<btKeys.length;i++)btTotal+=bt[btKeys[i]];
+  var TC={"policy":"#0A9B80","case":"#34C759","experience":"#FF9500","tool":"#AF52DE","data":"#007AFF"};
+  h+='<div class="dash-card"><div class="dash-card-head">内容类型分布</div>';
+  var tpKeys=["policy","case","experience","tool","data"];
+  for(var i=0;i<tpKeys.length;i++){var tk=tpKeys[i];var tv=bt[tk]||0;h+=dBar(TC[tk]||"#86868B",TN[tk]||tk,tv,btTotal)}
+  h+='</div>';
+
+  /* Card 3: Readiness */
+  var rd=d.by_readiness||{};var rdTotal=(rd.draft||0)+(rd.quotable||0)+(rd.premium||0);
+  h+='<div class="dash-card"><div class="dash-card-head">就绪度分布 (已入库)</div>';
+  h+=dBar("#86868B","草稿级",rd.draft||0,rdTotal);
+  h+=dBar("#34C759","可引用级",rd.quotable||0,rdTotal);
+  h+=dBar("#FF9500","精品级",rd.premium||0,rdTotal);
+  h+='</div>';
+
+  /* Card 4: QA Distribution */
+  var qa=d.qa_distribution||{};
+  h+='<div class="dash-card"><div class="dash-card-head">质检分数分布</div>';
+  var qaKeys=["5","4","3","2","1"];var qaMax=0;for(var i=0;i<qaKeys.length;i++){var qv=qa[qaKeys[i]]||0;if(qv>qaMax)qaMax=qv}
+  for(var i=0;i<qaKeys.length;i++){var qv=qa[qaKeys[i]]||0;var qc=parseInt(qaKeys[i])>=4?"#34C759":parseInt(qaKeys[i])===3?"#FF9500":"#FF3B30";h+=dBar(qc,qaKeys[i]+"分",qv,qaMax>0?qaMax:1)}
+  h+=dRow("dot","#86868B","未质检",qa.unscored||0);
+  h+='</div>';
+
+  /* Card 5: Freshness */
+  var fr=d.freshness||{};
+  h+='<div class="dash-card"><div class="dash-card-head">保鲜状态</div>';
+  h+=dRow("dot","#FF3B30","已过期",fr.expired||0);
+  h+=dRow("dot","#FF9500","即将到期",fr.expiring||0);
+  h+=dRow("dot","#34C759","新鲜",fr.fresh||0);
+  if(fr.outdated)h+=dRow("dot","#86868B","已过时",fr.outdated||0);
+  h+='</div>';
+
+  /* Card 6: Policy */
+  var pv=d.policy||{};
+  h+='<div class="dash-card"><div class="dash-card-head">政策校验</div>';
+  h+=dRow("dot","#34C759","已验证",pv.validated||0);
+  h+=dRow("dot","#FF3B30","待验证",pv.pending||0);
+  h+=dRow("dot","#007AFF","已豁免",pv.exempt||0);
+  h+=dRow("dot","#86868B","未校验",pv.unvalidated||0);
+  h+=dRow("dot","#E5E5EA","不涉及",pv.no_policy||0);
+  h+='</div>';
+
+  /* Card 7: Duplicates */
+  var dup=d.duplicates||{};
+  h+='<div class="dash-card"><div class="dash-card-head">重复检测</div>';
+  h+=dRow("dot","#FF9500","待处理",dup.pending||0);
+  h+=dRow("dot","#34C759","已处理",dup.resolved||0);
+  h+=dRow("dot","#86868B","已排除",dup.dismissed||0);
+  h+='</div>';
+
+  /* Card 8: File Pipeline */
+  var fp=d.file_pipeline||{};
+  h+='<div class="dash-card"><div class="dash-card-head">文件管线</div>';
+  h+=dRow("dot","#FF9500","待分析",fp.pending||0);
+  h+=dRow("dot","#007AFF","处理中",fp.processing||0);
+  h+=dRow("dot","#34C759","已完成",fp.completed||0);
+  h+=dRow("dot","#FF3B30","失败",fp.failed||0);
+  h+='<hr class="dash-divider">'+dRow("","","源文件总数",d.total_files||0);
+  h+='</div>';
+
+  /* Card 9: API Cost */
+  h+='<div class="dash-card"><div class="dash-card-head">今日API费用</div>';
+  h+='<div class="dash-big" style="color:var(--primary)">'+String.fromCharCode(165)+(d.today_api_cost||0).toFixed(2)+'</div>';
+  h+=dRow("","","待处理建议",d.pending_suggestions||0);
+  h+=dRow("","","待处理重复",d.pending_duplicates||0);
+  h+='</div>';
+
+  h+='</div>';
+  document.getElementById("dashContent").innerHTML=h;
+}
+
+function dRow(dotType,dotColor,label,val){
+  var h='<div class="dash-row">';
+  if(dotType==="dot")h+='<span class="dl"><span class="dot" style="background:'+dotColor+'"></span>'+esc(label)+'</span>';
+  else h+='<span class="dl">'+esc(label)+'</span>';
+  h+='<span class="dv">'+val+'</span></div>';
+  return h;
+}
+function dBar(color,label,val,total){
+  var pct=total>0?Math.round(val/total*100):0;
+  return '<div class="dash-row"><span class="dl">'+esc(label)+'</span><div class="dash-bar-bg"><div class="dash-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="dv">'+val+'</span></div>';
+}
+
+/* === Toolbox === */
+function closeToolResult(){document.getElementById("toolResult").classList.remove("open")}
+function showToolResult(title,html){
+  document.getElementById("toolResultTitle").textContent=title;
+  document.getElementById("toolResultBody").innerHTML=html;
+  document.getElementById("toolResult").classList.add("open");
+  document.getElementById("toolResult").scrollIntoView({behavior:"smooth"});
+}
+
+function runTool(name){
+  var card=document.getElementById("tc-"+name);
+  if(card)card.classList.add("running");
+  var done=function(){if(card)card.classList.remove("running")};
+
+  if(name==="syscheck"){
+    apiPost("/api/tools/system-check").then(function(r){done();
+      if(r.error){showToolResult("系统检查","<p style='color:var(--danger)'>检查失败: "+esc(r.error)+"</p>");return}
+      var checks=r.checks||[];var h="";
+      for(var i=0;i<checks.length;i++){var ck=checks[i];var icon=ck.status==="ok"?'<span class="tr-ok">&#10003;</span>':ck.status==="warn"?'<span class="tr-warn">!</span>':'<span class="tr-fail">&#10007;</span>';
+      h+='<div class="tr-item">'+icon+'<span>'+esc(ck.name||ck.label||("检查#"+(i+1)))+'</span><span style="margin-left:auto;color:var(--text-muted);font-size:12px">'+esc(ck.detail||"")+'</span></div>'}
+      var summary=r.summary||{};h+='<div style="margin-top:12px;font-size:13px;color:var(--text-secondary)">通过: '+(summary.passed||0)+' / 总计: '+(summary.total||0)+'</div>';
+      showToolResult("系统检查结果",h);
+    });
+  }
+  else if(name==="backup"){
+    apiPost("/api/tools/backup").then(function(r){done();
+      if(r.success){showToast("备份成功","success");showToolResult("一键备份","<p style='color:var(--success)'>备份完成，共 "+esc(r.count||"?")+" 个备份</p>")}
+      else{showToolResult("备份失败","<p style='color:var(--danger)'>"+esc(r.error||"未知错误")+"</p>")}
+    });
+  }
+  else if(name==="restore"){
+    apiGet("/api/tools/backup-list").then(function(list){done();
+      if(!list||!list.length){showToolResult("恢复备份","<p>暂无可用备份</p>");return}
+      var h='<p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">选择要恢复的备份（恢复前建议先执行一键备份）：</p>';
+      for(var i=0;i<list.length;i++){var b=list[i];
+      h+='<div class="tr-item"><span style="font-weight:600">'+esc(b.filename)+'</span><span style="color:var(--text-muted);font-size:12px;margin-left:8px">'+esc(b.datetime)+'</span><span style="color:var(--text-muted);font-size:12px;margin-left:8px">'+b.size_mb+'MB</span><button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="doRestore(\''+esc(b.filename)+'\')">恢复</button></div>'}
+      showToolResult("恢复备份",h);
+    });
+  }
+  else if(name==="freshness"){
+    apiPost("/api/tools/freshness-scan").then(function(r){done();
+      if(r.error){showToolResult("保鲜扫描","<p style='color:var(--danger)'>扫描失败: "+esc(r.error)+"</p>");return}
+      var s=r.result||{};
+      var h='';
+      h+=dRow("dot","#FF3B30","已过期",s.stale||s.overdue||0);
+      h+=dRow("dot","#FF9500","7天内到期",s.due_7d||0);
+      h+=dRow("dot","#007AFF","30天内到期",s.due_30d||0);
+      h+=dRow("dot","#34C759","正常",s.ok||0);
+      if(s.auto_filled)h+=dRow("dot","#86868B","自动补充保鲜期",s.auto_filled||0);
+      h+='<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">已确认知识点总数: '+(s.total_confirmed||0)+'</div>';
+      showToolResult("保鲜扫描结果",h);
+      loadFreshnessSummary();
+    });
+  }
+  else if(name==="duplicate"){
+    apiPost("/api/tools/duplicate-scan").then(function(r){done();
+      if(r.error){showToolResult("全库重复检测","<p style='color:var(--danger)'>检测失败: "+esc(r.error)+"</p>");return}
+      var s=r.summary||{};
+      var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">扫描完成，新发现 '+(r.new_groups||0)+' 组</p>';
+      h+=dRow("dot","#FF9500","待处理",s.pending||0);
+      h+=dRow("dot","#34C759","已处理",s.resolved||0);
+      h+=dRow("dot","#86868B","已排除",s.dismissed||0);
+      showToolResult("全库重复检测结果",h);
+      loadDuplicateSummary();loadDashboard();
+    });
+  }
+  else if(name==="policy"){
+    apiPost("/api/tools/policy-revalidate").then(function(r){done();
+      if(r.error){showToolResult("政策补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
+      showToolResult("政策补跑结果","<p style='color:var(--success);font-weight:600'>完成，共校验 "+(r.validated||0)+" 条知识点</p>");
+      loadDashboard();
+    });
+  }
+  else if(name==="analytics"){
+    apiGet("/api/tools/review-analytics").then(function(r){done();
+      if(r.error){showToolResult("审核统计","<p style='color:var(--danger)'>获取失败: "+esc(r.error)+"</p>");return}
+      var h="";
+      if(r.total_reviewed!==undefined)h+=dRow("","","已审核总数",r.total_reviewed||0);
+      if(r.confirmed!==undefined)h+=dRow("","","确认入库",r.confirmed||0);
+      if(r.ignored!==undefined)h+=dRow("","","已忽略",r.ignored||0);
+      if(r.deleted!==undefined)h+=dRow("","","已删除",r.deleted||0);
+      if(r.edited!==undefined)h+=dRow("","","编辑过",r.edited||0);
+      if(r.avg_qa_score!==undefined)h+=dRow("","","平均质检分",r.avg_qa_score||"-");
+      if(r.top_flags&&r.top_flags.length){h+='<div style="margin-top:10px;font-weight:600;font-size:13px">常见质检问题:</div>';for(var i=0;i<r.top_flags.length;i++){var tf=r.top_flags[i];h+='<div class="tr-item"><span>'+esc(QF[tf.flag]||tf.flag)+'</span><span class="dv">'+tf.count+'</span></div>'}}
+      if(!h)h='<pre style="font-size:12px;max-height:400px;overflow:auto">'+esc(JSON.stringify(r,null,2))+'</pre>';
+      showToolResult("审核统计",h);
+    });
+  }
+  else if(name==="apicost"){
+    apiGet("/api/tools/api-cost").then(function(r){done();
+      if(r.error){showToolResult("API费用","<p style='color:var(--danger)'>获取失败: "+esc(r.error)+"</p>");return}
+      var h='<div class="dash-row"><span class="dl">今日费用</span><span class="dv" style="font-size:18px;color:var(--primary)">'+String.fromCharCode(165)+(r.today_cost||0).toFixed(4)+'</span></div>';
+      if(r.daily_limit)h+='<div class="dash-row"><span class="dl">每日上限</span><span class="dv">'+String.fromCharCode(165)+r.daily_limit+'</span></div>';
+      if(r.today_detail&&r.today_detail.length){h+='<div style="margin-top:12px;font-weight:600;font-size:13px;margin-bottom:6px">今日按类型:</div>';for(var i=0;i<r.today_detail.length;i++){var td=r.today_detail[i];h+='<div class="tr-item"><span>'+esc(td.type)+'</span><span style="color:var(--text-muted);font-size:12px;margin-left:8px">'+td.count+'次</span><span class="dv">'+String.fromCharCode(165)+td.cost.toFixed(4)+'</span></div>'}}
+      if(r.trend_7d&&r.trend_7d.length){h+='<div style="margin-top:12px;font-weight:600;font-size:13px;margin-bottom:6px">近7天趋势:</div>';for(var i=0;i<r.trend_7d.length;i++){var t=r.trend_7d[i];h+='<div class="tr-item"><span>'+esc(t.date)+'</span><span class="dv">'+String.fromCharCode(165)+t.cost.toFixed(4)+'</span></div>'}}
+      showToolResult("API费用详情",h);
+    });
+  }
+  else{done()}
+}
+
+function doRestore(filename){
+  showConfirm("确认恢复","将从备份 "+filename+" 恢复数据库，当前数据将被覆盖。确认?",function(ok){
+    if(!ok)return;
+    apiPost("/api/tools/backup-restore",{filename:filename}).then(function(r){
+      if(r.success){showToast("恢复成功","success");closeToolResult();loadDashboard()}
+      else{showToast("恢复失败: "+(r.error||""),"error")}
+    });
+  });
+}
 
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}
 </script>

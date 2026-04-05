@@ -1,5 +1,41 @@
 # 变更日志
 
+## v2.1.2 第1批 -- 管理后台框架+仪表盘+工具箱：F046+F033
+
+发布日期：2026-04-05
+
+变更内容：
+- **F046+F033 管理后台框架+仪表盘+工具箱(交付A+B共4+1个文件)**
+  - **交付A（后端API）：**
+    - api_server.py新增GET /api/dashboard聚合仪表盘(9大数据板块一次返回)
+    - api_server.py新增POST /api/tools/system-check系统检查(JSON输出)
+    - api_server.py新增POST /api/tools/backup一键备份
+    - api_server.py新增GET /api/tools/backup-list备份列表
+    - api_server.py新增POST /api/tools/backup-restore恢复备份
+    - api_server.py新增POST /api/tools/freshness-scan保鲜扫描
+    - api_server.py新增POST /api/tools/duplicate-scan全库重复检测
+    - api_server.py新增POST /api/tools/policy-revalidate政策补跑
+    - api_server.py新增GET /api/tools/review-analytics审核统计(JSON输出)
+    - api_server.py新增GET /api/tools/file-pipeline文件管线详情
+    - api_server.py新增GET /api/tools/api-cost API费用详情(含7天趋势)
+    - check_system.py升级至v2.5，新增run_checks_json()支持JSON输出
+    - review_analytics.py新增get_analytics_json()支持JSON输出
+    - 新增启动后台.bat替代原启动审核界面.bat
+  - **交付B（前端UI）：**
+    - review.html全面改版：Apple风格+Pantone 2026配色(Teal Green主色调)
+    - 新增Tab框架：Tab 1知识审核(全部原有功能) | Tab 2系统管理
+    - Tab 2仪表盘：9个数据卡片(知识点总量/类型分布/就绪度/质检分数/保鲜/政策/重复/文件管线/API费用)
+    - Tab 2工具箱：8个操作按钮(系统检查/一键备份/恢复备份/保鲜扫描/全库重复检测/政策补跑/审核统计/API费用)
+    - 工具箱点击后在下方结果面板展示返回结果
+    - CSS全面重构：毛玻璃Header、圆角14px卡片、柔和阴影、清新配色
+    - 版本号v2.1.1升级至v2.1.2
+
+新增文件：启动后台.bat
+修改文件：api_server.py, check_system.py, review_analytics.py, review.html
+删除文件：启动审核界面.bat(被启动后台.bat替代)
+
+---
+
 ## v2.1.1 第3批 -- 重复检测：F039
 
 发布日期：2026-04-04
@@ -50,59 +86,17 @@
 
 发布日期：2026-04-03
 
-变更内容：
-- **F041 bat文件统一修复(3个文件)**
-  - 保鲜检查.bat: 补充cd /d "%~dp0"+title+PYTHONIOENCODING，统一标准风格
-  - 审核统计.bat: 去除%~dp0在set PYTHON_CMD中的使用，统一标准风格
-  - 政策补跑.bat: 去除%~dp0在set PYTHON_CMD中的使用+去除-c内联Python调用
-  - policy_validator.py新增`__main__`入口，政策补跑.bat改为直接调用脚本
-- **F040 审核界面Bug修复(2个Bug)**
-  - Bug1: filterByCat切分类时自动重置审核状态为"全部"，避免分类+状态组合下无结果
-  - Bug2: getDimName处理stakeholder_2等带_数字后缀的属性key翻译
-
-修改文件：policy_validator.py, review.html, 保鲜检查.bat, 审核统计.bat, 政策补跑.bat
-
 ---
 
 ## v2.1.0-d 第2批 -- 政策依赖校验前端：F028审核界面+系统检查
 
 发布日期：2026-03-29
 
-变更内容：
-- migrate_v210d.py新增policy_dependencies和policy_validated字段迁移
-- db_manager.py新增get_policy_validation_summary()政策校验状态摘要
-- db_manager.py的get_all_knowledge_points新增policy_filter参数支持
-- api_server.py新增3个政策校验端点：摘要/人工豁免/重新校验
-- api_server.py新增policy筛选参数支持
-- api_server.py的_safe()新增policy_dependencies JSON解析
-- review.html新增政策校验徽标(已验证/待验证/已豁免/未校验)
-- review.html新增待验证知识点政策依赖详情展开(未匹配政策+查找指引)
-- review.html新增侧边栏政策校验筛选(全部/待验证/已验证/已豁免/未校验/不涉及)
-- review.html新增豁免校验+重新校验按钮
-- review.html新增编辑弹窗政策依赖只读展示
-- check_system.py升级至v2.2，新增第14项政策校验状态检查
-- check_system.py迁移检查扩展policy_dependencies+policy_validated
-- 新增政策补跑.bat(对历史知识点补跑政策校验)
-
-新增文件：政策补跑.bat
-修改文件：migrate_v210d.py, db_manager.py, api_server.py, review.html, check_system.py
-数据库迁移：migrate_v210d.py(knowledge_points+policy_dependencies+policy_validated)
-
 ---
 
 ## v2.1.0-d 第1.5批 -- 政策依赖校验后端：F028核心模块
 
 发布日期：2026-03-29
-
-变更内容：
-- 新增policy_validator.py政策依赖校验模块(V3扫描+KB匹配+就绪度锁定)
-- extractor.py新增Step 7政策依赖校验集成
-- prompt_templates.py新增POLICY_SCAN_PROMPT(V3扫描政策引用)
-- tag_config.py新增POLICY_LOOKUP_GUIDE(政策查找指引模板)
-- db_manager.py的update_knowledge_point允许policy_dependencies/policy_validated
-
-新增文件：policy_validator.py
-修改文件：extractor.py, prompt_templates.py, tag_config.py, db_manager.py
 
 ---
 
