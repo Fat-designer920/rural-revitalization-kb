@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.1.2 F046+F033 - 管理后台(仪表盘+工具箱)
+版本：v2.1.2 F046+F033+F044+F047 - 管理后台(仪表盘+工具箱+提取管理+长任务)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -15,6 +15,33 @@ from scripts.db_manager import DatabaseManager
 app = Flask(__name__)
 CORS(app)
 db = DatabaseManager()
+
+# ================================================================
+# v2.1.2 F047: 长任务管理器
+# ================================================================
+_task_lock = threading.Lock()
+_task = {
+    "running": False,
+    "type": "",       # preprocess | extract | reextract
+    "started_at": None,
+    "progress": {
+        "total_files": 0,
+        "current_file": 0,
+        "current_filename": "",
+        "current_step": "",
+        "total_extracted": 0,
+        "message": ""
+    },
+    "result": None,
+    "error": None
+}
+
+def _task_update_progress(data):
+    """供Extractor回调更新进度"""
+    with _task_lock:
+        for k, v in data.items():
+            if k in _task["progress"]:
+                _task["progress"][k] = v
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
     if _p.exists():
@@ -903,6 +930,195 @@ def tool_api_cost():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+# ================================================================
+# v2.1.2 F047: 长任务端点(预处理/提取/进度)
+# ================================================================
+@app.route("/api/tasks/progress", methods=["GET"])
+def task_progress():
+    """获取当前任务进度"""
+    with _task_lock:
+        return jsonify({
+            "running": _task["running"],
+            "type": _task["type"],
+            "started_at": _task["started_at"],
+            "progress": dict(_task["progress"]),
+            "result": _task["result"],
+            "error": _task["error"]
+        })
+
+@app.route("/api/tasks/preprocess", methods=["POST"])
+def task_preprocess():
+    """启动文件预处理(后台线程)"""
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "preprocess"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {"total_files": 0, "current_file": 0, "current_filename": "",
+                             "current_step": "启动预处理", "total_extracted": 0, "message": ""}
+        _task["result"] = None
+        _task["error"] = None
+
+    def _run():
+        try:
+            try:
+                from scripts.preprocessor import main as pp_main
+            except ImportError:
+                from preprocessor import main as pp_main
+            _task_update_progress({"current_step": "执行预处理", "message": "正在处理文件..."})
+            pp_main()
+            with _task_lock:
+                _task["result"] = {"success": True, "message": "预处理完成"}
+                _task["progress"]["current_step"] = "完成"
+                _task["progress"]["message"] = "预处理完成"
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "预处理任务已启动"})
+
+@app.route("/api/tasks/extract", methods=["POST"])
+def task_extract():
+    """启动知识提取(后台线程)"""
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "extract"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {"total_files": 0, "current_file": 0, "current_filename": "",
+                             "current_step": "启动提取引擎", "total_extracted": 0, "message": ""}
+        _task["result"] = None
+        _task["error"] = None
+
+    d = request.get_json() or {}
+    model_key = d.get("model", "1")
+
+    def _run():
+        try:
+            from scripts.extractor import Extractor
+            ext = Extractor(progress_callback=_task_update_progress)
+            result = ext.run_headless(model_key=model_key)
+            with _task_lock:
+                _task["result"] = result
+                _task["progress"]["current_step"] = "完成"
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "提取任务已启动"})
+
+# ================================================================
+# v2.1.2 F044: 版本重提取
+# ================================================================
+@app.route("/api/tools/reextract-scan", methods=["GET"])
+def reextract_scan():
+    """扫描旧Prompt版本的知识点，按源文件分组"""
+    try:
+        try:
+            from scripts.prompts.prompt_templates import get_prompt_version
+            current_pv = get_prompt_version()
+        except:
+            try:
+                from prompts.prompt_templates import get_prompt_version
+                current_pv = get_prompt_version()
+            except:
+                current_pv = "unknown"
+        rows = db.get_reextract_scan(current_pv)
+        return jsonify({"current_version": current_pv, "files": rows})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/reextract", methods=["POST"])
+def task_reextract():
+    """执行版本重提取(备份→删除旧知识点→重置源文件状态→启动提取)"""
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "reextract"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {"total_files": 0, "current_file": 0, "current_filename": "",
+                             "current_step": "准备重提取", "total_extracted": 0, "message": ""}
+        _task["result"] = None
+        _task["error"] = None
+
+    d = request.get_json() or {}
+    file_ids = d.get("file_ids", [])
+    model_key = d.get("model", "1")
+
+    if not file_ids:
+        with _task_lock:
+            _task["running"] = False
+        return jsonify({"error": "未选择文件"}), 400
+
+    def _run():
+        try:
+            # Step 1: 自动备份
+            _task_update_progress({"current_step": "自动备份", "message": "正在备份数据库..."})
+            try:
+                from scripts.backup_manager import BackupManager
+                bm = BackupManager()
+                bm.create_backup("reextract_auto")
+            except Exception as e:
+                print(f"  [WARN] 自动备份失败: {e}")
+
+            # Step 2: 删除旧知识点 + 重置源文件状态
+            _task_update_progress({"current_step": "删除旧知识点", "message": "正在清理旧数据...",
+                                   "total_files": len(file_ids)})
+            total_deleted = 0
+            for idx, fid in enumerate(file_ids, 1):
+                sf = db.get_source_file(fid)
+                fn = (sf.get("renamed_filename") or sf.get("original_filename", "")) if sf else str(fid)
+                _task_update_progress({"current_file": idx, "current_filename": fn,
+                                       "message": "清理: " + fn})
+                deleted = db.delete_kps_by_source_file(fid)
+                total_deleted += deleted
+                # 重置源文件状态为processing
+                db.update_source_file(fid, process_status="processing",
+                                      process_message="待重提取(v2.1.2)")
+
+            _task_update_progress({"message": "已删除%d条旧知识点，开始重提取..." % total_deleted,
+                                   "current_step": "启动提取引擎"})
+
+            # Step 3: 启动提取
+            from scripts.extractor import Extractor
+            ext = Extractor(progress_callback=_task_update_progress)
+            result = ext.run_headless(model_key=model_key)
+            result["deleted_old"] = total_deleted
+            with _task_lock:
+                _task["result"] = result
+                _task["progress"]["current_step"] = "完成"
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "重提取任务已启动", "file_count": len(file_ids)})
+    import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
+
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 
@@ -912,7 +1128,7 @@ def main():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
     print(f"  乡村振兴知识库 - 管理后台 v2.1.2")
-    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱)")
+    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理)")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

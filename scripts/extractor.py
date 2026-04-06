@@ -1,7 +1,7 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.1 F039 - 基于v2.1.1 F038，新增增量重复检测(Step 8)
+版本：v2.1.2 F044 - 基于v2.1.1 F039，新增进度回调+headless运行模式
 
 变更说明（v2.1.1 F039）：
   - 新增Step 8: 提取完成后增量重复检测(本地粗筛+V3精判)
@@ -58,7 +58,7 @@ class Extractor:
     VALID_READINESS = set(CONTENT_READINESS.keys())
     VALID_AUTHORITY = set(SOURCE_AUTHORITY.keys())
 
-    def __init__(self):
+    def __init__(self, progress_callback=None):
         p = PROJECT_ROOT / "config" / "settings.json"
         with open(p, "r", encoding="utf-8") as f:
             self.config = json.load(f)
@@ -76,6 +76,7 @@ class Extractor:
         self.segment_max_len = 3000  # v2.1.0-d: 默认值也改为3000
         self.policy_validator = PolicyValidator(db=self.db, client=self.client)
         self.duplicate_checker = DuplicateChecker(db=self.db, client=self.client)
+        self._progress_callback = progress_callback
 
     def select_model(self):
         print(f"\n  请选择提取模型:")
@@ -94,6 +95,21 @@ class Extractor:
                 print(f"\n  已选择: {opt['name']} ({opt['model']})")
                 return
             print(f"  无效输入,请输入 1 或 2")
+
+    def set_model(self, model_key="1"):
+        """非交互式模型选择，供API调用"""
+        opt = self.MODEL_OPTIONS.get(model_key, self.MODEL_OPTIONS["1"])
+        self.extraction_model = opt["model"]
+        self.extraction_model_name = opt["name"]
+        self.segment_max_len = opt["segment_max"]
+
+    def _report_progress(self, **kw):
+        """向进度回调报告当前状态"""
+        if self._progress_callback:
+            try:
+                self._progress_callback(kw)
+            except:
+                pass
 
     @staticmethod
     def calculate_file_hash(file_path):
@@ -935,6 +951,7 @@ class Extractor:
             # === Step 1: V3预分析 ===
             pre_result = None
             print(f"     [Step 1] V3预分析...")
+            self._report_progress(current_step="Step 1/8 V3预分析")
             pre_result = self._pre_analyze(content, fn)
             if pre_result == "SKIP_FILE":
                 self.db.update_source_file(fid, process_status="processing",
@@ -983,6 +1000,7 @@ class Extractor:
 
             # === Step 2: 智能分段 ===
             print(f"     [Step 2] 智能分段...")
+            self._report_progress(current_step="Step 2/8 智能分段")
             segs, file_structure = self._smart_segment(content, pre_result, fn)
             if len(segs) > 1:
                 seg_lens = [len(s) for s in segs]
@@ -1006,6 +1024,7 @@ class Extractor:
 
             # === Step 4: R1逐段提取(带上下文接力) ===
             print(f"     [Step 4] AI提取中,请耐心等待...")
+            self._report_progress(current_step="Step 4/8 AI提取")
             kps = []
             for i, seg in enumerate(segs, 1):
                 if len(segs) > 1:
@@ -1027,6 +1046,7 @@ class Extractor:
             extraction_notes = ""
             if len(segs) > 1:
                 print(f"\n     [Step 5] 跨段补漏检查...")
+                self._report_progress(current_step="Step 5/8 跨段补漏")
                 missed = self._cross_segment_check(fn, file_structure, kps)
                 if missed:
                     extraction_notes = json.dumps(missed, ensure_ascii=False)
@@ -1090,6 +1110,7 @@ class Extractor:
             qc_count = 0
             if cnt > 0:
                 print(f"\n     [Step 6] V3质检({cnt}条知识点)...")
+                self._report_progress(current_step="Step 6/8 V3质检")
                 content_summary = ""
                 if pre_result and isinstance(pre_result, dict):
                     content_summary = pre_result.get("content_overview", "")
@@ -1099,6 +1120,7 @@ class Extractor:
             pv_count = 0
             if cnt > 0:
                 print(f"\n     [Step 7] 政策依赖校验({cnt}条知识点)...")
+                self._report_progress(current_step="Step 7/8 政策校验")
                 try:
                     pv_count = self.policy_validator.validate_batch(kps, kps_info, ctype)
                 except CostLimitExceeded:
@@ -1109,6 +1131,7 @@ class Extractor:
             # === Step 8: 增量重复检测（本地粗筛+V3精判） ===
             dup_count = 0
             if cnt > 0 and kps:
+                self._report_progress(current_step="Step 8/8 重复检测")
                 try:
                     new_ids = [info["id"] for info in kps_info if info.get("id")]
                     if new_ids:
@@ -1170,9 +1193,13 @@ class Extractor:
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
         all_kps_info = []
+        self._report_progress(total_files=len(files), current_file=0, current_filename="",
+                              current_step="准备开始", total_extracted=0, message="开始提取")
         for i, rec in enumerate(files, 1):
             fn = rec.get("renamed_filename") or rec["original_filename"]
             print(f"\n[{i}/{len(files)}] {fn}")
+            self._report_progress(total_files=len(files), current_file=i, current_filename=fn,
+                                  current_step="开始处理", total_extracted=total_kps, message="")
             r = self.extract_from_file(rec)
             if r["success"]:
                 ok += 1
@@ -1201,6 +1228,58 @@ class Extractor:
         print(f"{'-' * 60}")
         print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
         print(f"{'=' * 60}")
+
+    def run_headless(self, model_key="1"):
+        """非交互式运行，供管理后台API调用。返回结果字典。"""
+        self.set_model(model_key)
+        # 自动执行迁移
+        try:
+            from scripts.migrate_v210c import migrate; migrate()
+        except ImportError: pass
+        try:
+            from scripts.migrate_v210d_f028 import migrate as m2; m2()
+        except ImportError: pass
+        try:
+            from scripts.migrate_v211 import migrate as m3; m3()
+        except ImportError: pass
+        try:
+            from scripts.migrate_v211_dup import migrate as m4; m4()
+        except ImportError: pass
+
+        files = self.get_processing_files()
+        if not files:
+            self._report_progress(message="无待提取文件", total_files=0, current_file=0,
+                                  current_step="完成", total_extracted=0)
+            return {"success": True, "ok": 0, "fail": 0, "skip": 0, "total_kps": 0, "message": "无待提取文件"}
+
+        total_kps, ok, fail, skip = 0, 0, 0, 0
+        all_kps_info = []
+        self._report_progress(total_files=len(files), current_file=0, current_filename="",
+                              current_step="准备开始", total_extracted=0, message="开始提取")
+        for i, rec in enumerate(files, 1):
+            fn = rec.get("renamed_filename") or rec["original_filename"]
+            self._report_progress(total_files=len(files), current_file=i, current_filename=fn,
+                                  current_step="开始处理", total_extracted=total_kps)
+            r = self.extract_from_file(rec)
+            if r["success"]:
+                ok += 1
+                total_kps += r["knowledge_count"]
+                all_kps_info.extend(r.get("kps_info", []))
+            elif "重复" in r.get("error", "") or "跳过" in r.get("error", ""):
+                skip += 1
+            else:
+                fail += 1
+                if "费用上限" in r.get("error", ""):
+                    break
+
+        if all_kps_info:
+            self._check_category_suggestions(all_kps_info)
+
+        self._report_progress(total_files=len(files), current_file=len(files),
+                              current_step="完成", total_extracted=total_kps,
+                              message="提取完成: %d成功/%d跳过/%d失败, 共%d条知识点" % (ok, skip, fail, total_kps))
+        return {"success": True, "ok": ok, "fail": fail, "skip": skip, "total_kps": total_kps,
+                "message": "提取完成"}
 
 
 def main():

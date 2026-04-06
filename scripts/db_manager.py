@@ -510,6 +510,42 @@ class DatabaseManager:
         self.log_operation("physical_delete", "knowledge_points", kp_id)
 
     # ================================================================
+    # v2.1.2 F044: 版本重提取
+    # ================================================================
+    def get_reextract_scan(self, current_prompt_version):
+        """扫描需要重提取的知识点，按源文件分组"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT sf.id as file_id, sf.original_filename, sf.renamed_filename,
+                   kp.prompt_version, COUNT(kp.id) as kp_count
+            FROM knowledge_points kp
+            JOIN source_files sf ON kp.source_file_id = sf.id
+            WHERE (kp.prompt_version IS NULL OR kp.prompt_version != ?)
+              AND kp.review_status != 'ignored'
+            GROUP BY sf.id, kp.prompt_version
+            ORDER BY sf.original_filename
+        """, (current_prompt_version,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def delete_kps_by_source_file(self, source_file_id):
+        """删除指定源文件的所有知识点及关联数据，返回删除数量"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT id FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
+        kp_ids = [r[0] for r in c.fetchall()]
+        for kp_id in kp_ids:
+            c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
+            c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+        c.execute("DELETE FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
+        conn.commit(); conn.close()
+        if kp_ids:
+            self.log_operation("reextract_delete", "knowledge_points", source_file_id,
+                               {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
+        return len(kp_ids)
+
+    # ================================================================
     # 编辑历史
     # ================================================================
     def add_edit_history(self, kp_id, edited_fields, edit_summary=""):

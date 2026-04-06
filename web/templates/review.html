@@ -385,6 +385,26 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .tool-result-title{font-weight:700;font-size:14px;color:var(--text)}
 .tool-result-close{cursor:pointer;color:var(--text-muted);font-size:18px;padding:4px 8px;border-radius:6px}
 .tool-result-close:hover{background:var(--bg);color:var(--text)}
+/* Task Progress */
+.task-progress{background:var(--card);border:1px solid var(--primary);border-radius:var(--radius-lg);padding:18px;margin-top:16px;box-shadow:var(--shadow-sm)}
+.task-progress-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.task-progress-title{font-weight:700;font-size:14px;color:var(--primary)}
+.task-progress-step{font-size:12px;color:var(--text-secondary);background:var(--primary-light);padding:2px 10px;border-radius:10px}
+.task-bar-bg{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin-bottom:8px}
+.task-bar-fill{height:100%;background:var(--primary);border-radius:4px;transition:width .3s ease}
+.task-info{display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:4px}
+.task-message{font-size:12px;color:var(--text-muted);margin-top:4px}
+.task-done{border-color:var(--success)}
+.task-done .task-progress-title{color:var(--success)}
+.task-done .task-bar-fill{background:var(--success)}
+.task-err{border-color:var(--danger)}
+.task-err .task-progress-title{color:var(--danger)}
+/* Reextract file list */
+.rex-file{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:13px}
+.rex-file:last-child{border-bottom:none}
+.rex-file label{flex:1;cursor:pointer}
+.rex-ver{font-size:11px;color:var(--text-muted);background:var(--bg);padding:1px 8px;border-radius:8px}
+.rex-cnt{font-size:12px;color:var(--text-secondary);min-width:50px;text-align:right}
 .tr-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px}
 .tr-item:last-child{border-bottom:none}
 .tr-ok{color:var(--success);font-weight:700;min-width:20px}
@@ -549,6 +569,48 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <span class="tool-result-close" onclick="closeToolResult()">&times;</span>
       </div>
       <div id="toolResultBody"></div>
+    </div>
+  </div>
+  <!-- Extract Management (v2.1.2 F044+F047) -->
+  <div class="admin-section">
+    <div class="admin-title">提取管理 <small>-- 文件预处理、知识提取、版本重提取</small></div>
+    <div class="tool-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="tool-card" id="tc-preprocess" onclick="startTask('preprocess')">
+        <div class="tool-icon" style="background:#E8F5E9;color:#2E7D32">1</div>
+        <div class="tool-name">处理新文件</div>
+        <div class="tool-desc">扫描pending文件夹并预处理</div>
+      </div>
+      <div class="tool-card" id="tc-extract" onclick="startTask('extract')">
+        <div class="tool-icon" style="background:#E3F2FD;color:#1565C0">2</div>
+        <div class="tool-name">一键提取</div>
+        <div class="tool-desc">提取知识点(R1深度推理)</div>
+      </div>
+      <div class="tool-card" id="tc-reextract" onclick="showReextractPanel()">
+        <div class="tool-icon" style="background:#FFF3E0;color:#E65100">3</div>
+        <div class="tool-name">版本重提取</div>
+        <div class="tool-desc">升级旧版本知识点</div>
+      </div>
+    </div>
+    <!-- Task Progress Panel -->
+    <div class="task-progress" id="taskProgress" style="display:none">
+      <div class="task-progress-head">
+        <span class="task-progress-title" id="taskTitle">任务进行中</span>
+        <span class="task-progress-step" id="taskStep"></span>
+      </div>
+      <div class="task-bar-bg"><div class="task-bar-fill" id="taskBar" style="width:0%"></div></div>
+      <div class="task-info">
+        <span id="taskFile"></span>
+        <span id="taskCount"></span>
+      </div>
+      <div class="task-message" id="taskMsg"></div>
+    </div>
+    <!-- Reextract Panel -->
+    <div class="tool-result" id="reextractPanel">
+      <div class="tool-result-head">
+        <div class="tool-result-title">版本重提取</div>
+        <span class="tool-result-close" onclick="document.getElementById('reextractPanel').classList.remove('open')">&times;</span>
+      </div>
+      <div id="reextractBody"><div class="loading">正在扫描...</div></div>
     </div>
   </div>
 </div>
@@ -1092,10 +1154,10 @@ function runTool(name){
   if(name==="syscheck"){
     apiPost("/api/tools/system-check").then(function(r){done();
       if(r.error){showToolResult("系统检查","<p style='color:var(--danger)'>检查失败: "+esc(r.error)+"</p>");return}
-      var checks=r.checks||[];var h="";
-      for(var i=0;i<checks.length;i++){var ck=checks[i];var icon=ck.status==="ok"?'<span class="tr-ok">&#10003;</span>':ck.status==="warn"?'<span class="tr-warn">!</span>':'<span class="tr-fail">&#10007;</span>';
-      h+='<div class="tr-item">'+icon+'<span>'+esc(ck.name||ck.label||("检查#"+(i+1)))+'</span><span style="margin-left:auto;color:var(--text-muted);font-size:12px">'+esc(ck.detail||"")+'</span></div>'}
-      var summary=r.summary||{};h+='<div style="margin-top:12px;font-size:13px;color:var(--text-secondary)">通过: '+(summary.passed||0)+' / 总计: '+(summary.total||0)+'</div>';
+      var checks=r.results||[];var h="";
+      for(var i=0;i<checks.length;i++){var ck=checks[i];var icon=ck.ok?'<span class="tr-ok">&#10003;</span>':'<span class="tr-fail">&#10007;</span>';
+      h+='<div class="tr-item">'+icon+'<span>'+esc(ck.name||("检查#"+(i+1)))+'</span><span style="margin-left:auto;color:var(--text-muted);font-size:12px">'+esc(ck.detail||"")+'</span></div>'}
+      h+='<div style="margin-top:12px;font-size:13px;color:var(--text-secondary)">通过: '+(r.ok_count||0)+' / 总计: '+(r.total||0)+'</div>';
       showToolResult("系统检查结果",h);
     });
   }
@@ -1182,6 +1244,120 @@ function doRestore(filename){
     apiPost("/api/tools/backup-restore",{filename:filename}).then(function(r){
       if(r.success){showToast("恢复成功","success");closeToolResult();loadDashboard()}
       else{showToast("恢复失败: "+(r.error||""),"error")}
+    });
+  });
+}
+
+/* ============================================= */
+/* === Extract Management (v2.1.2 F044+F047) === */
+/* ============================================= */
+var _pollTimer=null;
+
+function startTask(type){
+  if(type==="preprocess"){
+    apiPost("/api/tasks/preprocess").then(function(r){
+      if(r.error){showToast(r.error,"error");return}
+      showTaskProgress("处理新文件");startPolling();
+    });
+  }else if(type==="extract"){
+    apiPost("/api/tasks/extract",{model:"1"}).then(function(r){
+      if(r.error){showToast(r.error,"error");return}
+      showTaskProgress("一键提取(R1)");startPolling();
+    });
+  }
+}
+
+function showTaskProgress(title){
+  var p=document.getElementById("taskProgress");
+  p.style.display="block";p.className="task-progress";
+  document.getElementById("taskTitle").textContent=title;
+  document.getElementById("taskStep").textContent="启动中...";
+  document.getElementById("taskBar").style.width="0%";
+  document.getElementById("taskFile").textContent="";
+  document.getElementById("taskCount").textContent="";
+  document.getElementById("taskMsg").textContent="";
+  p.scrollIntoView({behavior:"smooth"});
+  // 禁用提取管理按钮
+  var btns=["tc-preprocess","tc-extract","tc-reextract"];
+  for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.add("running")}
+}
+
+function startPolling(){
+  if(_pollTimer)clearInterval(_pollTimer);
+  _pollTimer=setInterval(function(){
+    apiGet("/api/tasks/progress").then(function(r){
+      if(!r.running&&!_pollTimer)return;
+      var pg=r.progress||{};
+      document.getElementById("taskStep").textContent=pg.current_step||"";
+      var pct=0;
+      if(pg.total_files>0)pct=Math.round(pg.current_file/pg.total_files*100);
+      document.getElementById("taskBar").style.width=pct+"%";
+      document.getElementById("taskFile").textContent=pg.current_filename?("当前: "+pg.current_filename):"";
+      document.getElementById("taskCount").textContent=pg.total_files>0?(pg.current_file+"/"+pg.total_files+" 文件"):"";
+      if(pg.total_extracted>0)document.getElementById("taskCount").textContent+=" | "+pg.total_extracted+"条知识点";
+      document.getElementById("taskMsg").textContent=pg.message||"";
+      if(!r.running){
+        clearInterval(_pollTimer);_pollTimer=null;
+        var p=document.getElementById("taskProgress");
+        if(r.error){
+          p.className="task-progress task-err";
+          document.getElementById("taskTitle").textContent="任务出错";
+          document.getElementById("taskMsg").textContent=r.error;
+        }else{
+          p.className="task-progress task-done";
+          document.getElementById("taskBar").style.width="100%";
+          var res=r.result||{};
+          document.getElementById("taskTitle").textContent="任务完成";
+          var msg=res.message||"完成";
+          if(res.ok!==undefined)msg=res.ok+"个成功 / "+res.skip+"个跳过 / "+res.fail+"个失败, 共"+res.total_kps+"条知识点";
+          if(res.deleted_old)msg="(已删除"+res.deleted_old+"条旧知识点) "+msg;
+          document.getElementById("taskMsg").textContent=msg;
+        }
+        // 恢复按钮
+        var btns=["tc-preprocess","tc-extract","tc-reextract"];
+        for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.remove("running")}
+        // 刷新仪表盘
+        loadDashboard();
+      }
+    });
+  },2000);
+}
+
+function showReextractPanel(){
+  var panel=document.getElementById("reextractPanel");
+  panel.classList.add("open");
+  document.getElementById("reextractBody").innerHTML='<div class="loading">正在扫描旧版本知识点...</div>';
+  apiGet("/api/tools/reextract-scan").then(function(r){
+    if(r.error){document.getElementById("reextractBody").innerHTML='<p style="color:var(--danger)">'+esc(r.error)+'</p>';return}
+    var files=r.files||[];var cv=r.current_version||"?";
+    if(!files.length){document.getElementById("reextractBody").innerHTML='<p style="color:var(--success);font-weight:600">所有知识点已是最新版本 ('+esc(cv)+')</p>';return}
+    var totalKp=0;for(var i=0;i<files.length;i++)totalKp+=files[i].kp_count;
+    var h='<p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">当前Prompt版本: <b>'+esc(cv)+'</b> | 共发现 <b>'+files.length+'</b> 个文件 / <b>'+totalKp+'</b> 条知识点需要重提取</p>';
+    h+='<div style="margin-bottom:10px"><label style="font-size:12px;cursor:pointer"><input type="checkbox" id="rexSelectAll" onchange="rexToggleAll(this.checked)"> 全选</label></div>';
+    for(var i=0;i<files.length;i++){var f=files[i];
+      var fn=f.renamed_filename||f.original_filename||("文件#"+f.file_id);
+      h+='<div class="rex-file"><input type="checkbox" class="rex-cb" value="'+f.file_id+'" checked><label>'+esc(fn)+'</label><span class="rex-ver">'+esc(f.prompt_version||"无版本")+'</span><span class="rex-cnt">'+f.kp_count+'条</span></div>';
+    }
+    h+='<div style="margin-top:14px;text-align:right"><button class="btn btn-primary" onclick="doReextract()">确认重提取</button></div>';
+    document.getElementById("reextractBody").innerHTML=h;
+  });
+}
+
+function rexToggleAll(checked){
+  var cbs=document.querySelectorAll(".rex-cb");
+  for(var i=0;i<cbs.length;i++)cbs[i].checked=checked;
+}
+
+function doReextract(){
+  var cbs=document.querySelectorAll(".rex-cb:checked");
+  var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));
+  if(!ids.length){showToast("请至少选择一个文件","error");return}
+  showConfirm("确认重提取","将对 "+ids.length+" 个文件执行重提取：自动备份 -> 删除旧知识点 -> 重新提取。确认?",function(ok){
+    if(!ok)return;
+    document.getElementById("reextractPanel").classList.remove("open");
+    apiPost("/api/tasks/reextract",{file_ids:ids,model:"1"}).then(function(r){
+      if(r.error){showToast(r.error,"error");return}
+      showTaskProgress("版本重提取("+ids.length+"个文件)");startPolling();
     });
   });
 }
