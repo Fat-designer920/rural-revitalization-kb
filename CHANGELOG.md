@@ -1,5 +1,32 @@
 # 变更日志
 
+## v2.1.2 第2批 -- 版本重提取+长任务支持+提取管理：F044+F047
+
+发布日期：2026-04-06
+
+变更内容：
+- **F044 版本重提取**
+  - api_server.py新增GET /api/tools/reextract-scan扫描旧版本知识点(按Prompt版本分组统计)
+  - api_server.py新增POST /api/tasks/reextract版本重提取(自动备份→删除旧知识点→重置源文件状态→后台提取)
+  - db_manager.py新增get_reextract_scan()按Prompt版本分组扫描
+  - db_manager.py新增delete_kps_by_source_file()按源文件删除知识点(含操作日志)
+  - review.html新增版本重提取面板(扫描→文件列表→勾选→执行)
+- **F047 长任务后台执行**
+  - api_server.py新增_task全局字典管理长任务状态(type/running/progress/steps/error/done)
+  - api_server.py新增GET /api/tasks/progress长任务进度轮询
+  - api_server.py新增POST /api/tasks/preprocess文件预处理(threading后台执行)
+  - api_server.py新增POST /api/tasks/extract知识提取(threading后台执行+进度回调)
+  - extractor.py新增progress_callback参数支持进度回调
+  - extractor.py支持headless运行模式(无交互确认)
+  - review.html新增长任务进度面板(进度条+步骤信息+完成/错误状态，2秒轮询)
+- **提取管理**
+  - review.html Tab 2新增提取管理区域(文件预处理/知识提取/版本重提取三个操作卡片)
+  - 日常提取操作从bat文件迁移到管理后台
+
+修改文件：api_server.py, db_manager.py, extractor.py, review.html
+
+---
+
 ## v2.1.2 第1批 -- 管理后台框架+仪表盘+工具箱：F046+F033
 
 发布日期：2026-04-05
@@ -24,15 +51,12 @@
   - **交付B（前端UI）：**
     - review.html全面改版：Apple风格+Pantone 2026配色(Teal Green主色调)
     - 新增Tab框架：Tab 1知识审核(全部原有功能) | Tab 2系统管理
-    - Tab 2仪表盘：9个数据卡片(知识点总量/类型分布/就绪度/质检分数/保鲜/政策/重复/文件管线/API费用)
-    - Tab 2工具箱：8个操作按钮(系统检查/一键备份/恢复备份/保鲜扫描/全库重复检测/政策补跑/审核统计/API费用)
-    - 工具箱点击后在下方结果面板展示返回结果
+    - Tab 2仪表盘：9个数据卡片
+    - Tab 2工具箱：8个操作按钮
     - CSS全面重构：毛玻璃Header、圆角14px卡片、柔和阴影、清新配色
-    - 版本号v2.1.1升级至v2.1.2
 
 新增文件：启动后台.bat
 修改文件：api_server.py, check_system.py, review_analytics.py, review.html
-删除文件：启动审核界面.bat(被启动后台.bat替代)
 
 ---
 
@@ -45,18 +69,15 @@
   - 新增duplicate_checker.py重复检测核心模块(本地粗筛+V3精判)
   - 新增migrate_v211_dup.py迁移脚本(创建duplicate_groups表,第14张表)
   - 新增重复检测.bat(全库扫描入口)
-  - 新增DUPLICATE_JUDGE_PROMPT(V3判断五种关系类型: 重复/版本更替/互补/冲突/无关)
-  - 检测流程: 标题SequenceMatcher(>=0.50)+关键词Jaccard(>=0.40)本地粗筛 → Union-Find聚合 → V3语义精判
-  - extractor.py新增Step 8增量重复检测(提取后自动扫描新知识点vs全库)
-  - db_manager.py新增duplicate_groups表+5个CRUD方法+统计pending_duplicates
-  - api_server.py新增3个重复检测端点: 列表(含成员详情)/摘要/处理(保留/排除)
-  - review.html新增重复检测提醒栏+可展开处理面板(按关系类型分色+AI建议+冲突优先)
-  - check_system.py升级至v2.4，新增第15项重复检测状态检查+迁移检查新增duplicate_groups表
-  - prompt_templates.py Prompt总数从17个增至18个
+  - 新增DUPLICATE_JUDGE_PROMPT(V3判断五种关系类型)
+  - extractor.py新增Step 8增量重复检测
+  - db_manager.py新增duplicate_groups表+5个CRUD方法
+  - api_server.py新增3个重复检测端点
+  - review.html新增重复检测提醒栏+处理面板
+  - check_system.py升级至v2.4
 
 新增文件：duplicate_checker.py, migrate_v211_dup.py, 重复检测.bat
 修改文件：extractor.py, db_manager.py, api_server.py, review.html, check_system.py, prompt_templates.py
-数据库迁移：migrate_v211_dup.py(创建duplicate_groups表)
 
 ---
 
@@ -66,19 +87,12 @@
 
 变更内容：
 - **F038 举一反三提取增强(7个文件)**
-  - 新增migrate_v211.py迁移脚本（knowledge_points新增practical_insights+insight_reliability列）
-  - prompt_templates.py: PROMPT_VERSION改v2.1.1，新增PRACTICAL_INSIGHTS_INSTRUCTION共享策略块
-  - prompt_templates.py: 5个提取Prompt输出结构新增practical_insights数组字段（含insight/basis/confidence三要素）
-  - prompt_templates.py: QC_CHECK_PROMPT从5维度扩展到6维度（新增举一反三可靠性），输出新增insight_reliability
-  - extractor.py: 解析practical_insights存入DB、_quality_check传递insights、解析insight_reliability写DB、自动调用v211迁移
-  - db_manager.py: add_knowledge_point新增practical_insights参数，update_knowledge_point允许practical_insights和insight_reliability
-  - api_server.py: _safe()新增practical_insights JSON解析
-  - review.html: 卡片新增实操启示折叠区带三色可信度标记（high绿/medium黄/low红），insight_reliability徽标，编辑弹窗只读展示
-  - check_system.py: 迁移检查新增v2.1.1字段，版本升至v2.3
+  - 新增migrate_v211.py迁移脚本
+  - prompt_templates.py: 新增PRACTICAL_INSIGHTS_INSTRUCTION+QC扩展6维度
+  - extractor.py/db_manager.py/api_server.py/review.html/check_system.py同步更新
 
 新增文件：migrate_v211.py
 修改文件：prompt_templates.py, extractor.py, db_manager.py, api_server.py, review.html, check_system.py
-数据库迁移：migrate_v211.py（knowledge_points + practical_insights + insight_reliability）
 
 ---
 
