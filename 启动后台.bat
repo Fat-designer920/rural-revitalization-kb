@@ -13,7 +13,7 @@ if exist "python\python.exe" (
     if %errorlevel%==0 (
         set PYTHON_CMD=python
     ) else (
-        echo [错误] 未找到Python，请安装Python 3.8+或将便携版Python放在项目根目录的python文件夹中
+        echo [错误] 未找到Python，请安装Python 3.8+或将便携版Python放入项目根目录的python文件夹中
         pause
         exit /b 1
     )

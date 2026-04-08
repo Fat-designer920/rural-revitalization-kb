@@ -48,14 +48,10 @@ def main():
         if not desktop.exists(): desktop = Path.home()/"桌面"
         if desktop.exists():
             vbs = f'''Set s=WScript.CreateObject("WScript.Shell")
-Set lnk=s.CreateShortcut("{desktop}\\知识库审核界面.lnk")
-lnk.TargetPath="{PROJECT_ROOT}\\启动审核界面.bat"
+Set lnk=s.CreateShortcut("{desktop}\\乡村振兴知识库.lnk")
+lnk.TargetPath="{PROJECT_ROOT}\\启动后台.bat"
 lnk.WorkingDirectory="{PROJECT_ROOT}"
-lnk.Save
-Set lnk2=s.CreateShortcut("{desktop}\\处理新文件.lnk")
-lnk2.TargetPath="{PROJECT_ROOT}\\处理新文件.bat"
-lnk2.WorkingDirectory="{PROJECT_ROOT}"
-lnk2.Save'''
+lnk.Save'''
             vp = PROJECT_ROOT/"_tmp.vbs"
             with open(vp,"w",encoding="gbk") as f: f.write(vbs)
             os.system(f'cscript //nologo "{vp}"'); os.remove(vp)
@@ -77,8 +73,8 @@ lnk2.Save'''
         print("  系统初始化完成!")
         print("\n  接下来:")
         print("  1. 将文件放入 data/pending/")
-        print("  2. 双击[处理新文件.bat]")
-        print("  3. 双击[启动审核界面.bat]审核")
+        print("  2. 双击桌面[乡村振兴知识库]快捷方式启动管理后台")
+        print("  3. 在Tab2系统管理中完成文件预处理和知识提取")
     else: print("  初始化完成,但有文件缺失,请检查。")
     print("="*60)
     input("\n按回车退出...")

@@ -583,13 +583,20 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <div class="tool-card" id="tc-extract" onclick="startTask('extract')">
         <div class="tool-icon" style="background:#E3F2FD;color:#1565C0">2</div>
         <div class="tool-name">一键提取</div>
-        <div class="tool-desc">提取知识点(R1深度推理)</div>
+        <div class="tool-desc">提取知识点</div>
       </div>
       <div class="tool-card" id="tc-reextract" onclick="showReextractPanel()">
         <div class="tool-icon" style="background:#FFF3E0;color:#E65100">3</div>
         <div class="tool-name">版本重提取</div>
         <div class="tool-desc">升级旧版本知识点</div>
       </div>
+    </div>
+    <div style="margin:10px 0 6px;display:flex;align-items:center;gap:8px">
+      <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">提取模型:</label>
+      <select id="extractModelSelect" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text-primary);outline:none">
+        <option value="1" selected>R1 深度推理 (精准,较慢)</option>
+        <option value="2">V3 快速提取 (快速,性价比高)</option>
+      </select>
     </div>
     <!-- Task Progress Panel -->
     <div class="task-progress" id="taskProgress" style="display:none">
@@ -1260,9 +1267,11 @@ function startTask(type){
       showTaskProgress("处理新文件");startPolling();
     });
   }else if(type==="extract"){
-    apiPost("/api/tasks/extract",{model:"1"}).then(function(r){
+    var mdl=document.getElementById("extractModelSelect").value;
+    var mName=mdl==="2"?"V3快速":"R1深度";
+    apiPost("/api/tasks/extract",{model:mdl}).then(function(r){
       if(r.error){showToast(r.error,"error");return}
-      showTaskProgress("一键提取(R1)");startPolling();
+      showTaskProgress("一键提取("+mName+")");startPolling();
     });
   }
 }
@@ -1355,7 +1364,7 @@ function doReextract(){
   showConfirm("确认重提取","将对 "+ids.length+" 个文件执行重提取：自动备份 -> 删除旧知识点 -> 重新提取。确认?",function(ok){
     if(!ok)return;
     document.getElementById("reextractPanel").classList.remove("open");
-    apiPost("/api/tasks/reextract",{file_ids:ids,model:"1"}).then(function(r){
+    apiPost("/api/tasks/reextract",{file_ids:ids,model:document.getElementById("extractModelSelect").value}).then(function(r){
       if(r.error){showToast(r.error,"error");return}
       showTaskProgress("版本重提取("+ids.length+"个文件)");startPolling();
     });

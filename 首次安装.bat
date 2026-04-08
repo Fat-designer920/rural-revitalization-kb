@@ -1,30 +1,35 @@
 @echo off
-title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£…
+title Ïç´åÕñĞËÖªÊ¶¿â - Ê×´Î°²×°
 cd /d "%~dp0"
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 echo.
 echo   ========================================
-echo   ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£…å‘å¯¼
+echo   Ïç´åÕñĞËÖªÊ¶¿â - Ê×´Î°²×°Ïòµ¼
 echo   ========================================
 echo.
-echo   [1/3] å®‰è£…ä¾èµ–åº“...
+echo   [1/3] °²×°ÒÀÀµ¿â...
 echo.
-%PYTHON_CMD% -m pip install --upgrade pip
-%PYTHON_CMD% -m pip install requests flask cryptography pdfplumber python-docx openpyxl Pillow
+%PYTHON_CMD% -m pip install --upgrade pip 2>nul
+%PYTHON_CMD% -m pip install requests flask cryptography pdfplumber python-docx openpyxl Pillow 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo   ³¢ÊÔ±¸ÓÃ°²×°·½Ê½...
+    %PYTHON_CMD% -m pip install --break-system-packages requests flask cryptography pdfplumber python-docx openpyxl Pillow
+)
 echo.
-echo   [2/3] åˆå§‹åŒ–ç³»ç»Ÿ...
+echo   [2/3] ³õÊ¼»¯ÏµÍ³...
 echo.
 %PYTHON_CMD% scripts\setup.py
 echo.
-echo   [3/3] å¯åŠ¨é…ç½®å‘å¯¼...
+echo   [3/3] Æô¶¯ÅäÖÃÏòµ¼...
 echo.
 %PYTHON_CMD% scripts\config_wizard.py
 echo.
 echo   ========================================
-echo   é¦–æ¬¡å®‰è£…å®Œæˆ!
-echo   ä¸‹ä¸€æ­¥: å°†æ–‡ä»¶æ”¾å…¥ data\pending\ æ–‡ä»¶å¤¹
-echo   ç„¶ååŒå‡»[å¤„ç†æ–°æ–‡ä»¶.bat]å¼€å§‹ä½¿ç”¨
+echo   Ê×´Î°²×°Íê³É!
+echo   ÏÂÒ»²½: Ë«»÷[Æô¶¯ºóÌ¨.bat]½øÈë¹ÜÀíºóÌ¨
+echo   ÔÚTab2ÏµÍ³¹ÜÀíÖĞÍê³ÉÎÄ¼şÔ¤´¦ÀíºÍÖªÊ¶ÌáÈ¡
 echo   ========================================
 pause

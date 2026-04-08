@@ -1,7 +1,7 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.2 F044 - 基于v2.1.1 F039，新增进度回调+headless运行模式
+版本：v2.1.2 F044+bugfix - 基于v2.1.1 F039，新增进度回调+headless运行模式+headless input跳过
 
 变更说明（v2.1.1 F039）：
   - 新增Step 8: 提取完成后增量重复检测(本地粗筛+V3精判)
@@ -77,6 +77,7 @@ class Extractor:
         self.policy_validator = PolicyValidator(db=self.db, client=self.client)
         self.duplicate_checker = DuplicateChecker(db=self.db, client=self.client)
         self._progress_callback = progress_callback
+        self._headless = False  # v2.1.2 bugfix: headless模式跳过所有input()
 
     def select_model(self):
         print(f"\n  请选择提取模型:")
@@ -102,6 +103,7 @@ class Extractor:
         self.extraction_model = opt["model"]
         self.extraction_model_name = opt["name"]
         self.segment_max_len = opt["segment_max"]
+        self._headless = True  # API调用时启用headless模式
 
     def _report_progress(self, **kw):
         """向进度回调报告当前状态"""
@@ -131,6 +133,9 @@ class Extractor:
             if exist_status == "completed" and "提取" in exist_msg and "知识点" in exist_msg and "未提取到" not in exist_msg:
                 print(f"     [发现重复] 该文件已成功处理过(MD5指纹相同)")
                 print(f"       原记录: {exist_name} | {exist_msg}")
+                if self._headless:
+                    print(f"     [headless] 自动重新分析")
+                    return False, file_hash
                 while True:
                     answer = input("     是否重新分析? (Y=重新分析 / N=跳过): ").strip().upper()
                     if answer == "Y":
@@ -347,6 +352,9 @@ class Extractor:
 
         # 3次失败，暂停让用户选择
         print(f"\n     [预分析未能完成] 可能是网络问题")
+        if self._headless:
+            print(f"     [headless] 自动跳过预分析，使用文件名推断分类")
+            return None
         while True:
             choice = input("     [1]重试 [2]跳过预分析直接提取 [3]跳过该文件: ").strip()
             if choice == "1":
@@ -977,16 +985,19 @@ class Extractor:
                     if warnings:
                         for w in warnings:
                             print(f"     [提醒] {w}")
-                    while True:
-                        answer = input(f"     该文件价值较低(评分{q_score}/5), 继续提取? (Y=继续 / N=跳过): ").strip().upper()
-                        if answer == "Y":
-                            print(f"     好的,继续提取"); break
-                        elif answer == "N":
-                            self.db.update_source_file(fid, process_status="completed",
-                                                       process_message=f"V3预分析评分{q_score}/5,用户选择跳过")
-                            self._move_to_completed(fp, fn); self._clean_pending(original_fn)
-                            result["error"] = "低价值文件已跳过"; return result
-                        else: print(f"     请输入 Y 或 N")
+                    if self._headless:
+                        print(f"     [headless] 低价值文件(评分{q_score}/5)，自动继续提取")
+                    else:
+                        while True:
+                            answer = input(f"     该文件价值较低(评分{q_score}/5), 继续提取? (Y=继续 / N=跳过): ").strip().upper()
+                            if answer == "Y":
+                                print(f"     好的,继续提取"); break
+                            elif answer == "N":
+                                self.db.update_source_file(fid, process_status="completed",
+                                                           process_message=f"V3预分析评分{q_score}/5,用户选择跳过")
+                                self._move_to_completed(fp, fn); self._clean_pending(original_fn)
+                                result["error"] = "低价值文件已跳过"; return result
+                            else: print(f"     请输入 Y 或 N")
                 # 保存预分析结果
                 self.db.update_source_file(fid,
                     pre_analysis_result=json.dumps(pre_result, ensure_ascii=False),
@@ -1013,14 +1024,17 @@ class Extractor:
                 est_cost = self._estimate_extraction_cost(segs)
                 print(f"     预估费用: R1提取约{est_cost:.2f}元 + V3辅助<0.2元")
                 if est_cost > 5.0:
-                    while True:
-                        answer = input(f"     预估费用较高({est_cost:.1f}元), 继续? (Y/N): ").strip().upper()
-                        if answer == "Y": break
-                        elif answer == "N":
-                            self.db.update_source_file(fid, process_status="processing",
-                                                       process_message=f"费用预估{est_cost:.1f}元,用户暂缓")
-                            result["error"] = "用户暂缓(费用)"; return result
-                        else: print(f"     请输入 Y 或 N")
+                    if self._headless:
+                        print(f"     [headless] 费用较高({est_cost:.1f}元)，自动继续")
+                    else:
+                        while True:
+                            answer = input(f"     预估费用较高({est_cost:.1f}元), 继续? (Y/N): ").strip().upper()
+                            if answer == "Y": break
+                            elif answer == "N":
+                                self.db.update_source_file(fid, process_status="processing",
+                                                           process_message=f"费用预估{est_cost:.1f}元,用户暂缓")
+                                result["error"] = "用户暂缓(费用)"; return result
+                            else: print(f"     请输入 Y 或 N")
 
             # === Step 4: R1逐段提取(带上下文接力) ===
             print(f"     [Step 4] AI提取中,请耐心等待...")

@@ -1,5 +1,24 @@
 # 变更日志
 
+## v2.1.2 bugfix -- headless模式input跳过+模型选择下拉框
+
+发布日期：2026-04-08
+
+变更内容：
+- **extractor.py headless模式bugfix**
+  - 新增self._headless标志位，set_model()时自动设为True
+  - check_duplicate(): headless时自动重新分析，不阻塞等待用户输入
+  - _pre_analyze(): headless时预分析3次失败自动跳过预分析
+  - 低价值文件(评分<=2): headless时自动继续提取
+  - 高费用(>5元): headless时自动继续提取
+- **review.html模型选择下拉框**
+  - 提取管理区域新增"提取模型"下拉选择框(R1深度推理/V3快速提取)
+  - 一键提取和版本重提取均读取下拉框选择的模型值
+
+修改文件：extractor.py, review.html
+
+---
+
 ## v2.1.2 第2批 -- 版本重提取+长任务支持+提取管理：F044+F047
 
 发布日期：2026-04-06
