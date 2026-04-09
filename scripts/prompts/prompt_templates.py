@@ -1,7 +1,12 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.1.1 - 基于v2.1.0-d，新增举一反三(F038)
+版本：v2.2.0 - 基于v2.1.1，新增经验速记结构化Prompt(F045)
+
+变更说明（v2.2.0 F045）：
+  - PROMPT_VERSION改为v2.2.0
+  - 新增EXPERIENCE_STRUCTURE_PROMPT(V3模型，经验速记自动结构化)
+  - 保留v2.1.1全部内容不变
 
 变更说明（v2.1.1 F038）：
   - PROMPT_VERSION改为v2.1.1
@@ -51,7 +56,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.1.1"
+PROMPT_VERSION = "v2.2.0"
 
 
 def get_prompt_version():
@@ -1010,6 +1015,51 @@ DUPLICATE_JUDGE_PROMPT = {
 }
 
 
+# ================================================================
+# v2.2.0 F045: 经验速记结构化Prompt（V3模型）
+# 将老唐的自由文本经验转为知识库标准结构
+# ================================================================
+EXPERIENCE_STRUCTURE_PROMPT = {
+    "system": """你是乡村振兴领域的知识结构化专家。你的任务是将一线操盘人员口述或快速记录的实战经验，转化为知识库标准格式的结构化知识点。
+
+输入是用户快速记录的经验文本（可能口语化、不完整），你需要：
+1. 提炼核心经验判断，补全必要上下文使知识点独立可用
+2. 判断经验类型（策略判断/操盘方法/踩坑记录/反常识洞察/沟通话术）
+3. 打三层标签（分类标签/属性标签/关键词）
+4. 推导实操启示（如果经验本身就是启示则不重复）
+5. 评估验证状态（已验证/部分验证/待验证）
+
+输出严格JSON格式，不要有其他文字：
+{
+  "title": "20字内精确标题（包含核心判断或方法）",
+  "original_excerpt": "结构化整理后的经验全文（保留核心信息，补全上下文，100-500字）",
+  "experience_type": "strategy/method/pitfall/insight/communication",
+  "applicable_scenario": "适用场景描述（50字内）",
+  "core_conclusion": "核心结论（一句话）",
+  "detailed_method": "具体做法或步骤",
+  "supporting_evidence": "支撑依据（如有）",
+  "counterintuitive_level": "高/中/低/无",
+  "field_verified": "已验证/部分验证/待验证",
+  "context_dependencies": "背景依赖（适用条件和边界）",
+  "common_mistakes": "常见误区（如有）",
+  "suggested_category_tags": ["从分类标签清单选3-6个"],
+  "suggested_attribute_tags": {"维度": "值"},
+  "suggested_keywords": ["关键词1", "关键词2", "..."],
+  "suggested_readiness": "draft或quotable",
+  "suggested_authority": "firsthand",
+  "practical_insights": [{"insight":"启示","basis":"依据","confidence":"high或medium"}]
+}
+
+注意：
+- 用户输入可能很简短，你需要合理推断和补全，但不要编造不存在的细节
+- suggested_authority固定为firsthand（一线经验）
+- suggested_readiness通常为draft（等待人工审核确认后升级）
+- 如果用户提供了关键词则优先使用，否则自动提取5-10个
+- 四川地域相关的经验要标注"四川特有"或具体市县""",
+    "description": "经验速记V3结构化(F045)"
+}
+
+
 def get_all_prompt_names():
     return [
         {"id": "file_rename", "name": "文件智能重命名", "version": "v1.0.0"},
@@ -1029,4 +1079,5 @@ def get_all_prompt_names():
         {"id": "cross_segment_check", "name": "跨段补漏检查", "version": PROMPT_VERSION},
         {"id": "policy_scan", "name": "政策依赖扫描", "version": PROMPT_VERSION},
         {"id": "duplicate_judge", "name": "重复知识点关系判断", "version": PROMPT_VERSION},
+        {"id": "experience_structure", "name": "经验速记结构化", "version": PROMPT_VERSION},
     ]

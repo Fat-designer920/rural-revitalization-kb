@@ -1,11 +1,11 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.4（v2.1.1 F039升级）
+版本：v2.5（v2.2.0 F029+F045升级）
 升级内容：
-  - 保留v2.3全部14项检查
-  - 新增第15项: 重复检测状态检查(F039)
-  - 数据库迁移检查新增duplicate_groups表
+  - 保留v2.4全部15项检查
+  - 新增第16项: 专家注解与经验速记状态检查(F029+F045)
+  - 数据库迁移检查新增annotations表+source_type字段
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -166,7 +166,7 @@ def check_disk():
 # v2.0 新增：数据库字段完整性
 # ================================================================
 def check_db_migration():
-    print(f"\n[7] 数据库迁移状态(v2.1.1 F039)")
+    print(f"\n[7] 数据库迁移状态(v2.2.0 F029+F045)")
     config = _load_config()
     dp = _get_db_path(config)
     if not os.path.exists(dp):
@@ -212,6 +212,14 @@ def check_db_migration():
             else:
                 print(f"    WARN knowledge_points.{col} 缺失(v2.1.1)")
                 print(f"       => 请运行[一键提取.bat]触发自动迁移")
+        # v2.2.0 F045: 检查source_type字段
+        kp_new_v220 = ["source_type"]
+        for col in kp_new_v220:
+            if col in kp_cols:
+                print(f"    OK knowledge_points.{col}")
+            else:
+                print(f"    WARN knowledge_points.{col} 缺失(v2.2.0)")
+                print(f"       => 请运行迁移脚本 migrate_v220.py")
         # v2.1.1 F039: 检查duplicate_groups表
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_groups'")
         if cur.fetchone():
@@ -219,6 +227,19 @@ def check_db_migration():
         else:
             print(f"    WARN duplicate_groups表缺失(v2.1.1 F039)")
             print(f"       => 请运行[重复检测.bat]或[一键提取.bat]触发自动创建")
+        # v2.2.0 F029: 检查annotations表
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='annotations'")
+        if cur.fetchone():
+            print(f"    OK annotations表")
+        else:
+            print(f"    WARN annotations表缺失(v2.2.0 F029)")
+            print(f"       => 请运行迁移脚本 migrate_v220.py")
+        # v2.2.0 F045: 检查source_type字段
+        if "source_type" in kp_cols:
+            print(f"    OK knowledge_points.source_type")
+        else:
+            print(f"    WARN knowledge_points.source_type 缺失(v2.2.0)")
+            print(f"       => 请运行迁移脚本 migrate_v220.py")
         conn.close()
         if not sf_ok or not kp_ok:
             print(f"    => 请运行[一键提取.bat]触发自动迁移，或手动运行 migrate_v210c.py")
@@ -674,6 +695,53 @@ def check_duplicate_status():
         return True
 
 # ================================================================
+# v2.5 新增：专家注解与经验速记状态检查（F029+F045）
+# ================================================================
+def check_annotation_status():
+    print(f"\n[16] 专家注解与经验速记(F029+F045)")
+    config = _load_config()
+    dp = _get_db_path(config)
+    if not os.path.exists(dp):
+        print(f"    跳过")
+        return True
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='annotations'")
+        if not cur.fetchone():
+            print(f"    (annotations表不存在,需运行migrate_v220.py)")
+            conn.close()
+            return True
+        cur.execute("SELECT COUNT(*) FROM annotations")
+        total_ann = cur.fetchone()[0]
+        if total_ann == 0:
+            print(f"    注解: 0条 (尚未添加注解)")
+        else:
+            cur.execute("SELECT annotation_type, COUNT(*) FROM annotations GROUP BY annotation_type")
+            ann_parts = []
+            for row in cur.fetchall():
+                at_name = {"agree":"实战验证","disagree":"不同意","supplement":"补充",
+                           "correction":"纠错","experience":"经验补充"}.get(row[0], row[0])
+                ann_parts.append(f"{at_name}{row[1]}")
+            print(f"    注解: {total_ann}条 ({' / '.join(ann_parts)})")
+            cur.execute("SELECT COUNT(DISTINCT knowledge_point_id) FROM annotations")
+            annotated_kps = cur.fetchone()[0]
+            print(f"    已注解知识点: {annotated_kps}条")
+        cur.execute("PRAGMA table_info(knowledge_points)")
+        kp_cols2 = {r[1] for r in cur.fetchall()}
+        if "source_type" in kp_cols2:
+            cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='experience_note'")
+            exp_count = cur.fetchone()[0]
+            print(f"    经验速记入库: {exp_count}条")
+        else:
+            print(f"    (source_type字段未迁移)")
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"    WARN {e}")
+        return True
+
+# ================================================================
 # v2.1.2 新增：供API调用的JSON版检查（不print，返回结构化数据）
 # ================================================================
 def run_checks_json():
@@ -754,7 +822,7 @@ def run_checks_json():
     # [6-15] 数据库相关检查（需要数据库存在）
     if not db_exists:
         for name in ["数据库迁移", "知识库健康度", "Prompt版本", "V3质检覆盖",
-                      "备份状态", "文件管线", "保鲜状态", "政策校验", "重复检测"]:
+                      "备份状态", "文件管线", "保鲜状态", "政策校验", "重复检测", "注解与速记"]:
             results.append({"name": name, "ok": True, "detail": "跳过(数据库不存在)"})
         return {"version": "v2.4", "system_version": get_version(),
                 "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -770,14 +838,19 @@ def run_checks_json():
         cur.execute("PRAGMA table_info(knowledge_points)")
         kp_cols = {r[1] for r in cur.fetchall()}
         needed_cols = ["prompt_version", "qa_score", "qa_flags", "freshness_note",
-                       "policy_dependencies", "policy_validated", "practical_insights", "insight_reliability"]
+                       "policy_dependencies", "policy_validated", "practical_insights", "insight_reliability",
+                       "source_type"]
         missing_cols = [c for c in needed_cols if c not in kp_cols]
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_groups'")
         has_dup_table = cur.fetchone() is not None
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='annotations'")
+        has_ann_table = cur.fetchone() is not None
         mig_detail = "字段完整" if not missing_cols else "缺失: " + ",".join(missing_cols)
         if not has_dup_table:
             mig_detail += "; duplicate_groups表缺失"
-        results.append({"name": "数据库迁移", "ok": len(missing_cols) == 0 and has_dup_table, "detail": mig_detail})
+        if not has_ann_table:
+            mig_detail += "; annotations表缺失"
+        results.append({"name": "数据库迁移", "ok": len(missing_cols) == 0 and has_dup_table and has_ann_table, "detail": mig_detail})
 
         # [7] 知识库健康度
         cur.execute("SELECT COUNT(*) FROM knowledge_points")
@@ -898,12 +971,28 @@ def run_checks_json():
         else:
             results.append({"name": "重复检测", "ok": True, "detail": "表未创建"})
 
+        # [15] 专家注解与经验速记(v2.2.0)
+        if has_ann_table:
+            cur2 = conn.cursor()
+            cur2.execute("SELECT COUNT(*) FROM annotations")
+            total_ann = cur2.fetchone()[0]
+            cur2.execute("SELECT COUNT(DISTINCT knowledge_point_id) FROM annotations")
+            annotated_kps = cur2.fetchone()[0]
+            ann_detail = "%d条注解, %d个知识点已注解" % (total_ann, annotated_kps)
+            if "source_type" in kp_cols:
+                cur2.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='experience_note'")
+                exp_cnt = cur2.fetchone()[0]
+                ann_detail += ", %d条经验速记" % exp_cnt
+            results.append({"name": "注解与速记", "ok": True, "detail": ann_detail})
+        else:
+            results.append({"name": "注解与速记", "ok": True, "detail": "表未创建(需运行migrate_v220.py)"})
+
         conn.close()
     except Exception as e:
         results.append({"name": "数据库检查", "ok": False, "detail": str(e)})
 
     return {
-        "version": "v2.4",
+        "version": "v2.5",
         "system_version": get_version(),
         "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "results": results,
@@ -917,7 +1006,7 @@ def run_checks_json():
 # ================================================================
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.4")
+    print(f"  系统状态检查 v2.5")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -947,6 +1036,7 @@ def main():
     results.append(("保鲜状态", check_freshness_status()))
     results.append(("政策校验", check_policy_validation()))
     results.append(("重复检测", check_duplicate_status()))
+    results.append(("注解与速记", check_annotation_status()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")

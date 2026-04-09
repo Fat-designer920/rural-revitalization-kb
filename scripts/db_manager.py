@@ -1,12 +1,12 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.1.1 F039 - 新增duplicate_groups表+重复检测CRUD
+版本：v2.2.0 F029+F045 - 新增annotations表+经验速记支持
 
-数据库表（14张）：
+数据库表（15张）：
   categories - 知识库分类体系（5大类27+子类）
   source_files - 原始文件记录
-  knowledge_points - 知识点（核心表，v2.0.0新增多个字段）
+  knowledge_points - 知识点（核心表，v2.2.0新增source_type字段）
   knowledge_versions - 知识点版本快照（预留）
   architecture_suggestions - AI分类建议
   edit_history - 编辑历史记录
@@ -18,6 +18,7 @@ db_manager.py - SQLite数据库管理模块
   api_call_logs - API调用日志
   notion_sync_log - Notion同步日志（预留）
   duplicate_groups - 重复检测结果（v2.1.1 F039新增）
+  annotations - 专家注解（v2.2.0 F029新增）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -208,6 +209,16 @@ class DatabaseManager:
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+        # --- v2.2.0 专家注解 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            knowledge_point_id INTEGER NOT NULL,
+            annotation_type TEXT NOT NULL
+                CHECK(annotation_type IN ('agree','disagree','supplement','correction','experience')),
+            content TEXT DEFAULT '',
+            tags TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
         # --- v2.1.1 F039 重复检测结果 ---
         c.execute("""CREATE TABLE IF NOT EXISTS duplicate_groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,6 +248,7 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_kr_target ON knowledge_relations(target_kp_id)",
             "CREATE INDEX IF NOT EXISTS idx_kul_kpid ON knowledge_usage_log(knowledge_point_id)",
             "CREATE INDEX IF NOT EXISTS idx_dg_status ON duplicate_groups(status)",
+            "CREATE INDEX IF NOT EXISTS idx_ann_kpid ON annotations(knowledge_point_id)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -353,14 +365,16 @@ class DatabaseManager:
                             source_page="", source_keyword="",
                             content_readiness="draft", source_authority="firsthand",
                             prompt_version="",
-                            practical_insights=None):
+                            practical_insights=None,
+                            source_type="extracted"):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
-             content_readiness, source_authority, prompt_version, practical_insights)
-            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)""",
+             content_readiness, source_authority, prompt_version, practical_insights,
+             source_type)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
              suggested_category_id,
@@ -370,13 +384,15 @@ class DatabaseManager:
              json.dumps(suggested_tags or [], ensure_ascii=False),
              source_page, source_keyword,
              content_readiness, source_authority, prompt_version,
-             json.dumps(practical_insights or [], ensure_ascii=False)))
+             json.dumps(practical_insights or [], ensure_ascii=False),
+             source_type))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,
                                  category_id=None, level1_code=None,
                                  search_query=None, content_readiness=None,
                                  freshness_filter=None, policy_filter=None,
+                                 source_type_filter=None,
                                  page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
@@ -392,11 +408,20 @@ class DatabaseManager:
             params.extend([level1_code, level1_code])
         if search_query:
             sq = f"%{search_query}%"
-            where.append("""(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
+            # 支持按ID精确查找(如从重复检测跳转)
+            try:
+                kid = int(search_query)
+                where.append("""(kp.id = ? OR kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
                             OR kp.suggested_keywords LIKE ? OR kp.final_keywords LIKE ?
                             OR kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?
                             OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)""")
-            params.extend([sq]*9)
+                params.extend([kid] + [sq]*9)
+            except ValueError:
+                where.append("""(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
+                            OR kp.suggested_keywords LIKE ? OR kp.final_keywords LIKE ?
+                            OR kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?
+                            OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)""")
+                params.extend([sq]*9)
         # v2.1.0-d: 保鲜状态筛选
         if freshness_filter:
             if freshness_filter == "expired":
@@ -433,6 +458,12 @@ class DatabaseManager:
                 where.append("kp.policy_validated = 3")
             elif policy_filter == "no_policy":
                 where.append("kp.policy_validated = 4")
+        # v2.2.0: 来源类型筛选
+        if source_type_filter:
+            if source_type_filter == "extracted":
+                where.append("(kp.source_type='extracted' OR kp.source_type IS NULL)")
+            elif source_type_filter == "manual":
+                where.append("kp.source_type='manual'")
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -946,5 +977,66 @@ class DatabaseManager:
                     summary[row["status"]] = row["cnt"]
         except:
             pass  # 表可能不存在
+        conn.close()
+        return summary
+
+    # ================================================================
+    # v2.2.0 F029: 专家注解
+    # ================================================================
+    def add_annotation(self, kp_id, annotation_type, content="", tags=None):
+        """添加一条专家注解"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO annotations (knowledge_point_id, annotation_type, content, tags)
+                     VALUES (?, ?, ?, ?)""",
+                  (kp_id, annotation_type, content,
+                   json.dumps(tags or [], ensure_ascii=False)))
+        aid = c.lastrowid
+        conn.commit(); conn.close()
+        self.log_operation("add_annotation", "annotations", aid,
+                           {"kp_id": kp_id, "type": annotation_type})
+        return aid
+
+    def get_annotations_by_kp(self, kp_id):
+        """获取某知识点的全部注解"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT * FROM annotations WHERE knowledge_point_id=?
+                     ORDER BY created_at ASC""", (kp_id,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            if isinstance(r.get("tags"), str):
+                try:
+                    r["tags"] = json.loads(r["tags"])
+                except:
+                    r["tags"] = []
+        return rows
+
+    def delete_annotation(self, annotation_id):
+        """删除一条注解"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("DELETE FROM annotations WHERE id=?", (annotation_id,))
+        conn.commit(); conn.close()
+        self.log_operation("delete_annotation", "annotations", annotation_id)
+
+    def get_annotation_count_by_kp(self, kp_id):
+        """获取某知识点的注解数量"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM annotations WHERE knowledge_point_id=?", (kp_id,))
+        n = c.fetchone()[0]; conn.close(); return n
+
+    def get_annotation_summary(self):
+        """注解统计摘要"""
+        conn = self.get_connection(); c = conn.cursor()
+        summary = {"annotated_kps": 0, "total_annotations": 0, "by_type": {}}
+        try:
+            c.execute("SELECT COUNT(DISTINCT knowledge_point_id) FROM annotations")
+            summary["annotated_kps"] = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM annotations")
+            summary["total_annotations"] = c.fetchone()[0]
+            c.execute("SELECT annotation_type, COUNT(*) FROM annotations GROUP BY annotation_type")
+            for row in c.fetchall():
+                summary["by_type"][row[0]] = row[1]
+        except:
+            pass
         conn.close()
         return summary

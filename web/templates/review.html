@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.1.2</title>
+<title>乡村振兴知识库 v2.2.0</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -263,6 +263,50 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .ir-uncertain{background:#FFF0D4;color:#92400E}
 .ir-unreliable{background:#FFE0DE;color:#991B1B}
 
+/* === Annotations (v2.2.0 F029) === */
+.ann-section{margin:8px 0;border:1px solid var(--border-light);border-radius:var(--radius);overflow:hidden}
+.ann-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary);background:var(--bg);user-select:none}
+.ann-toggle:hover{background:var(--border-light)}
+.ann-toggle .ann-count{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--primary);color:#fff;font-weight:700}
+.ann-body{display:none;padding:8px 10px}
+.ann-body.open{display:block}
+.ann-item{display:flex;gap:8px;padding:6px 8px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:6px;border-left:3px solid var(--border)}
+.ann-item:last-child{margin-bottom:0}
+.ann-item.ann-agree{background:#F0FFF5;border-left-color:var(--success)}
+.ann-item.ann-disagree{background:var(--danger-bg);border-left-color:var(--danger)}
+.ann-item.ann-supplement{background:var(--info-bg);border-left-color:var(--info)}
+.ann-item.ann-correction{background:#FFF4E6;border-left-color:var(--warning)}
+.ann-item.ann-experience{background:#F3EAFA;border-left-color:#AF52DE}
+.ann-type{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.ann-type-agree{background:#D5F5E3;color:#166534}
+.ann-type-disagree{background:#FFE0DE;color:#991B1B}
+.ann-type-supplement{background:#D4E7FC;color:#1E40AF}
+.ann-type-correction{background:#FFF0D4;color:#92400E}
+.ann-type-experience{background:#E8D5F5;color:#6B21A8}
+.ann-content{flex:1;color:var(--text)}
+.ann-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.ann-tag{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--primary-light);color:var(--primary)}
+.ann-time{font-size:10px;color:var(--text-muted);white-space:nowrap}
+.ann-del{font-size:10px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
+.ann-del:hover{color:var(--danger)}
+.ann-form{padding:8px 10px;border-top:1px solid var(--border-light);background:var(--bg)}
+.ann-form-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}
+.ann-form select,.ann-form input,.ann-form textarea{padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit}
+.ann-form textarea{flex:1;min-height:36px;resize:vertical}
+.ann-form-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.ann-form-tag{font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--card);color:var(--text-secondary);transition:var(--transition)}
+.ann-form-tag.selected{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
+.ann-form-actions{display:flex;gap:6px;justify-content:flex-end}
+
+/* === Quick Note (v2.2.0 F045) === */
+.qn-form{background:var(--card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:22px;box-shadow:var(--shadow-sm)}
+.qn-form .field{margin-bottom:14px}
+.qn-form label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600}
+.qn-form input,.qn-form textarea,.qn-form select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--text);background:var(--card)}
+.qn-form input:focus,.qn-form textarea:focus,.qn-form select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(10,155,128,.1)}
+.qn-form textarea{min-height:100px;resize:vertical;line-height:1.6}
+.qn-form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
 .kp-excerpt.expanded{max-height:none}
@@ -416,7 +460,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.1.2</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.2.0</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -485,6 +529,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <button class="filter-item" onclick="filterByPolicy('exempt',this)">已豁免</button>
       <button class="filter-item" onclick="filterByPolicy('unvalidated',this)">未校验</button>
       <button class="filter-item" onclick="filterByPolicy('no_policy',this)">不涉及</button>
+    </div>
+    <div class="filter-section">
+      <div class="filter-label">来源类型</div>
+      <button class="filter-item active" onclick="filterBySourceType(null,this)">全部</button>
+      <button class="filter-item" onclick="filterBySourceType('extracted',this)">文件提取</button>
+      <button class="filter-item" onclick="filterBySourceType('experience_note',this)">经验速记</button>
     </div>
   </div>
 
@@ -569,6 +619,22 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <span class="tool-result-close" onclick="closeToolResult()">&times;</span>
       </div>
       <div id="toolResultBody"></div>
+    </div>
+  </div>
+  <!-- Quick Note (v2.2.0 F045) -->
+  <div class="admin-section">
+    <div class="admin-title">经验速记 <small>-- 3分钟快速记录实战经验，V3自动结构化入库</small></div>
+    <div class="qn-form">
+      <div class="field"><label>标题 (一句话说清楚核心经验)</label><input type="text" id="qnTitle" placeholder="例: 拆旧时机选择秋收后春节前效果最好"></div>
+      <div class="field"><label>经验内容 (详细描述你的经验、判断依据、实际效果)</label><textarea id="qnContent" placeholder="把你想记录的经验写下来，越详细越好。V3会自动帮你结构化成知识点。&#10;&#10;可以包含: 做法、原因、效果、注意事项、适用条件等"></textarea></div>
+      <div class="field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>知识类型</label><select id="qnType"><option value="experience" selected>操盘经验</option><option value="case">项目案例</option><option value="tool">实操工具</option><option value="data">数据资料</option></select></div>
+        <div style="flex:2"><label>关键词 (逗号分隔，可留空由V3自动生成)</label><input type="text" id="qnKeywords" placeholder="例: 拆旧,时机,群众工作"></div>
+      </div>
+      <div class="qn-form-actions">
+        <button class="btn" onclick="clearQuickNote()">清空</button>
+        <button class="btn btn-primary" id="qnSubmitBtn" onclick="submitQuickNote()">保存并结构化</button>
+      </div>
     </div>
   </div>
   <!-- Extract Management (v2.1.2 F044+F047) -->
@@ -703,12 +769,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null,currentSourceType=null;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var tagDefs=null,tagNameToGroup={};
 var editL1Tags=[],editL2Attrs={},editKws=[],editingKpStatus="";
 var confirmCallback=null;
 var currentTab="review";
+var annotationTags=[];
 
 var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",tool:"实操工具",data:"数据资料"};
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
@@ -719,6 +786,8 @@ var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"�
 var PVN={"0":"未校验","1":"已验证","2":"待验证","3":"已豁免","4":"无需校验"};
 var IRN={"reliable":"可靠","uncertain":"存疑","unreliable":"不可靠","no_insights":"无启示"};
 var CONF_CN={"high":"依据充分","medium":"合理推断","low":"待验证"};
+var ATN={"agree":"实战验证","disagree":"不同意","supplement":"补充","correction":"纠错","experience":"经验补充"};
+var STN={"extracted":"文件提取","experience_note":"经验速记","manual":"手动录入"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
 
 /* === API helpers === */
@@ -765,6 +834,7 @@ function switchTab(tab){
 /* === Init === */
 function init(){
   apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();loadDuplicateSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
+  apiGet("/api/annotation-tags").then(function(t){if(Array.isArray(t))annotationTags=t});
 }
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
@@ -778,9 +848,10 @@ var dupRelNames={duplicate:"重复",superseded:"版本更替",complementary:"互
 function loadDuplicateSummary(){apiGet("/api/duplicate-groups/summary").then(function(s){if(!s||s.error)return;var p=s.pending||0;if(p>0){document.getElementById("dbPending").textContent=p;document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
 function toggleDupPanel(){var panel=document.getElementById("dupPanel");if(panel.classList.contains("open")){panel.classList.remove("open");panel.innerHTML=""}else{panel.classList.add("open");panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">加载中...</div>';loadDuplicateGroups()}}
 function loadDuplicateGroups(){apiGet("/api/duplicate-groups?status=pending").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的重复组</div>';return}var h='<div style="font-weight:600;font-size:14px;margin-bottom:10px;color:#C97A2C">待处理: '+groups.length+' 组 (冲突类型请优先处理)</div>';groups.sort(function(a,b){var order={conflicting:0,duplicate:1,superseded:2,complementary:3};var oa=order[a.relation_type]!==undefined?order[a.relation_type]:9;var ob=order[b.relation_type]!==undefined?order[b.relation_type]:9;return oa-ob});for(var i=0;i<groups.length;i++){h+=renderDupGroup(groups[i])}panel.innerHTML=h})}
-function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid var(--info)">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:var(--success);font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';for(var j=0;j<members.length;j++){var m2=members[j];h+='<button class="btn btn-sm" onclick="resolveDupKeep('+g.id+','+m2.id+')">保留#'+m2.id+'</button>'}h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="goToKp('+members[0].id+')">查看详情</button>';h+='</div></div>';return h}
+function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid var(--info)">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:var(--success);font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';for(var j=0;j<members.length;j++){var m2=members[j];h+='<button class="btn btn-sm" onclick="resolveDupKeep('+g.id+','+m2.id+')">保留#'+m2.id+'</button>'}h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="toggleDupDetail(this)">查看详情</button>';h+='</div>';h+='<div class="dup-detail-content" style="display:none;margin-top:10px">';for(var k=0;k<members.length;k++){var mk=members[k];var aiC=mk.ai_extracted_content||"";if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}var excerpt=mk.original_excerpt||"";h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--primary)">#'+mk.id+' '+esc(mk.title)+'</div>';if(excerpt){h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><b>原文摘录:</b> '+esc(excerpt)+'</div>'}if(aiC&&typeof aiC==="object"){var coreC=aiC.core_conclusion||aiC.policy_content||aiC.case_summary||"";if(coreC){h+='<div style="font-size:12px;color:var(--text-secondary)"><b>核心内容:</b> '+esc(coreC)+'</div>'}}h+='</div>'}h+='</div></div>';return h}
 function resolveDupKeep(gid,keepId){showConfirm("确认处理","保留 #"+keepId+"，删除组内其余知识点？",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/"+gid+"/resolve",{keep_id:keepId,action:"resolve"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
 function resolveDupDismiss(gid){apiPost("/api/duplicate-groups/"+gid+"/resolve",{action:"dismiss"}).then(function(r){if(r.error){alert("处理失败: "+r.error);return}loadDuplicateGroups();loadDuplicateSummary()})}
+function toggleDupDetail(btn){var panel=btn.parentElement.nextElementSibling;if(panel&&panel.className==="dup-detail-content"){var show=panel.style.display==="none";panel.style.display=show?"block":"none";btn.textContent=show?"收起详情":"查看详情"}}
 function goToKp(kid){switchTab("review");window.scrollTo(0,0);currentSearch="";currentStatus=null;currentPage=1;document.getElementById("searchInput").value=""+kid;currentSearch=""+kid;loadKnowledgePoints()}
 
 /* === Categories === */
@@ -791,22 +862,23 @@ function buildCategoryDropdown(){var sel=document.getElementById("editCategory")
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
 function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterBySourceType(f,btn){currentSourceType=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;currentStatus=null;var stSection=document.querySelectorAll(".filter-section")[0];var stBtns=stSection.querySelectorAll(".filter-item");for(var si=0;si<stBtns.length;si++)stBtns[si].classList.remove("active");stBtns[0].classList.add("active");renderBatchButtons();var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
@@ -873,9 +945,10 @@ return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"
 +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
 +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+irH+'</div>'
 +pdH+insightsH
++'<div class="ann-section" id="annSec-'+kp.id+'"><div class="ann-toggle" onclick="toggleAnnotations('+kp.id+')"><span id="annArr-'+kp.id+'">&#9654;</span> 专家注解 <span class="ann-count" id="annCnt-'+kp.id+'">0</span></div><div class="ann-body" id="annBody-'+kp.id+'"><div style="text-align:center;color:var(--text-muted);font-size:12px;padding:6px">点击展开加载</div></div></div>'
 +(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
 +(kf?'<div class="kp-fields">'+kf+'</div>':"")
-+'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
++'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" style="color:var(--primary)" onclick="showAnnotateForm('+kp.id+')">+ 注解</button><button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
 +'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
 }
 
@@ -898,6 +971,118 @@ function removeConfirmed(id){var reason=prompt("将此知识点从已入库中�
 function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复到待审核","success");refreshData()}})}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
 function toggleInsights(id){var body=document.getElementById("insights-"+id);var arr=document.getElementById("insArr-"+id);if(body){var isOpen=body.classList.toggle("open");if(arr)arr.innerHTML=isOpen?"&#9660;":"&#9654;"}}
+
+/* === Annotations (v2.2.0 F029) === */
+function toggleAnnotations(id){
+  var body=document.getElementById("annBody-"+id);
+  var arr=document.getElementById("annArr-"+id);
+  if(!body)return;
+  var isOpen=body.classList.toggle("open");
+  if(arr)arr.innerHTML=isOpen?"&#9660;":"&#9654;";
+  if(isOpen)loadAnnotations(id);
+}
+function loadAnnotations(id){
+  var body=document.getElementById("annBody-"+id);
+  body.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:6px">加载中...</div>';
+  apiGet("/api/knowledge-points/"+id+"/annotations").then(function(anns){
+    if(!Array.isArray(anns))anns=[];
+    var cnt=document.getElementById("annCnt-"+id);
+    if(cnt)cnt.textContent=anns.length;
+    if(!anns.length){body.innerHTML='<div style="color:var(--text-muted);font-size:12px;padding:6px">暂无注解，点击下方"+ 注解"添加</div>';return}
+    var h="";
+    for(var i=0;i<anns.length;i++){
+      var a=anns[i];var at=a.annotation_type||"supplement";
+      h+='<div class="ann-item ann-'+at+'">';
+      h+='<span class="ann-type ann-type-'+at+'">'+esc(ATN[at]||at)+'</span>';
+      h+='<div class="ann-content">'+esc(a.content||"(无内容)");
+      var tags=a.tags;if(typeof tags==="string"){try{tags=JSON.parse(tags)}catch(e){tags=[]}}
+      if(Array.isArray(tags)&&tags.length){h+='<div class="ann-tags">';for(var j=0;j<tags.length;j++)h+='<span class="ann-tag">'+esc(tags[j])+'</span>';h+='</div>'}
+      h+='</div>';
+      h+='<span class="ann-time">'+esc((a.created_at||"").substring(0,16))+'</span>';
+      h+='<span class="ann-del" onclick="deleteAnnotation('+a.id+','+id+')">删除</span>';
+      h+='</div>';
+    }
+    body.innerHTML=h;
+  });
+}
+function showAnnotateForm(id){
+  var sec=document.getElementById("annSec-"+id);
+  if(!sec)return;
+  var body=document.getElementById("annBody-"+id);
+  if(!body.classList.contains("open")){toggleAnnotations(id)}
+  // 如果已有表单则不重复添加
+  if(document.getElementById("annForm-"+id))return;
+  var h='<div class="ann-form" id="annForm-'+id+'">';
+  h+='<div class="ann-form-row"><select id="annType-'+id+'" style="min-width:90px" onchange="onAnnTypeChange('+id+')">';
+  h+='<option value="agree">实战验证</option><option value="supplement">补充</option>';
+  h+='<option value="disagree">不同意</option><option value="correction">纠错</option>';
+  h+='<option value="experience">经验补充</option></select>';
+  h+='<textarea id="annText-'+id+'" placeholder="写下你的注解...（实战验证可留空）"></textarea></div>';
+  h+='<div class="ann-form-tags" id="annTagsBox-'+id+'">';
+  for(var i=0;i<annotationTags.length;i++){
+    h+='<span class="ann-form-tag" data-tag="'+esc(annotationTags[i])+'" onclick="toggleAnnTag(this)">'+esc(annotationTags[i])+'</span>';
+  }
+  h+='</div>';
+  h+='<div class="ann-form-actions"><button class="btn btn-sm" onclick="cancelAnnotateForm('+id+')">取消</button>';
+  h+='<button class="btn btn-primary btn-sm" onclick="submitAnnotation('+id+')">提交注解</button></div></div>';
+  body.insertAdjacentHTML("beforeend",h);
+  body.scrollTop=body.scrollHeight;
+}
+function onAnnTypeChange(id){
+  var sel=document.getElementById("annType-"+id);
+  var textarea=document.getElementById("annText-"+id);
+  if(sel.value==="agree"){textarea.placeholder="实战验证可留空，也可补充说明"}
+  else if(sel.value==="disagree"||sel.value==="correction"){textarea.placeholder="请填写理由（必填）"}
+  else{textarea.placeholder="写下你的补充内容..."}
+}
+function toggleAnnTag(el){el.classList.toggle("selected")}
+function cancelAnnotateForm(id){var f=document.getElementById("annForm-"+id);if(f)f.remove()}
+function submitAnnotation(id){
+  var annType=document.getElementById("annType-"+id).value;
+  var content=document.getElementById("annText-"+id).value.trim();
+  var tagEls=document.querySelectorAll("#annTagsBox-"+id+" .ann-form-tag.selected");
+  var tags=[];for(var i=0;i<tagEls.length;i++)tags.push(tagEls[i].getAttribute("data-tag"));
+  if((annType==="disagree"||annType==="correction")&&!content){showToast("反对或纠错注解必须填写理由","error");return}
+  apiPost("/api/knowledge-points/"+id+"/annotations",{annotation_type:annType,content:content,tags:tags}).then(function(r){
+    if(r.success){showToast("注解已添加","success");cancelAnnotateForm(id);loadAnnotations(id)}
+    else{showToast("添加失败: "+(r.error||""),"error")}
+  });
+}
+function deleteAnnotation(aid,kid){
+  showConfirm("删除注解","确认删除这条注解?",function(ok){
+    if(!ok)return;
+    apiDel("/api/annotations/"+aid).then(function(r){
+      if(r.success){showToast("已删除","info");loadAnnotations(kid)}
+      else{showToast("删除失败","error")}
+    });
+  });
+}
+
+/* === Quick Note (v2.2.0 F045) === */
+function submitQuickNote(){
+  var title=document.getElementById("qnTitle").value.trim();
+  var content=document.getElementById("qnContent").value.trim();
+  var contentType=document.getElementById("qnType").value;
+  var keywords=document.getElementById("qnKeywords").value.trim();
+  if(!title){showToast("请填写标题","error");return}
+  if(!content){showToast("请填写经验内容","error");return}
+  var btn=document.getElementById("qnSubmitBtn");
+  btn.disabled=true;btn.textContent="保存中...";
+  apiPost("/api/quicknote",{title:title,content:content,content_type:contentType,keywords:keywords}).then(function(r){
+    btn.disabled=false;btn.textContent="保存并结构化";
+    if(r.success){
+      showToast(r.message||"已保存","success");
+      clearQuickNote();
+      loadDashboard();
+    }else{showToast("保存失败: "+(r.error||""),"error")}
+  });
+}
+function clearQuickNote(){
+  document.getElementById("qnTitle").value="";
+  document.getElementById("qnContent").value="";
+  document.getElementById("qnType").value="experience";
+  document.getElementById("qnKeywords").value="";
+}
 
 function renewFreshness(id){var note=prompt("保鲜备注（可留空）:");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
 function markOutdated(id){showConfirm("标记已过时","此知识点将标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（可留空）:");apiPost("/api/knowledge-points/"+id+"/mark-outdated",{reason:reason||""}).then(function(r){if(r.success){showToast("已标记过时","info");refreshData();loadFreshnessSummary()}})})}
@@ -1126,6 +1311,19 @@ function renderDashboard(d){
   h+='<div class="dash-big" style="color:var(--primary)">'+String.fromCharCode(165)+(d.today_api_cost||0).toFixed(2)+'</div>';
   h+=dRow("","","待处理建议",d.pending_suggestions||0);
   h+=dRow("","","待处理重复",d.pending_duplicates||0);
+  h+='</div>';
+
+  /* Card 10: Annotations (v2.2.0) */
+  var ann=d.annotations||{};var annByType=ann.by_type||{};
+  h+='<div class="dash-card"><div class="dash-card-head">专家注解</div>';
+  h+='<div class="dash-big">'+((ann.total_annotations||0))+'</div>';
+  h+=dRow("dot","#34C759","实战验证",annByType.agree||0);
+  h+=dRow("dot","#007AFF","补充",annByType.supplement||0);
+  h+=dRow("dot","#FF3B30","不同意/纠错",(annByType.disagree||0)+(annByType.correction||0));
+  h+=dRow("dot","#AF52DE","经验补充",annByType.experience||0);
+  h+='<hr class="dash-divider">';
+  h+=dRow("","","已注解知识点",ann.annotated_kps||0);
+  h+=dRow("","","经验速记入库",d.manual_kps||0);
   h+='</div>';
 
   h+='</div>';

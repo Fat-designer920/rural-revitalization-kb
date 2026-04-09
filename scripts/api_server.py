@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.1.2 F046+F033+F044+F047 - 管理后台(仪表盘+工具箱+提取管理+长任务)
+版本：v2.2.0 F029+F045 - 专家注解+经验速记+管理后台(仪表盘+工具箱+提取管理+长任务)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -104,6 +104,7 @@ def get_kps():
         sort_by_qa = request.args.get("sort_by_qa", None)
         freshness_filter = request.args.get("freshness", None)
         policy_filter = request.args.get("policy", None)
+        source_type_filter = request.args.get("source_type", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -112,6 +113,7 @@ def get_kps():
             content_readiness=request.args.get("readiness",None),
             freshness_filter=freshness_filter,
             policy_filter=policy_filter,
+            source_type_filter=source_type_filter,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -386,6 +388,98 @@ def revalidate_policy(kid):
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # ================================================================
+# v2.2.0 F029: 专家注解
+# ================================================================
+@app.route("/api/knowledge-points/<int:kid>/annotations", methods=["GET"])
+def get_annotations(kid):
+    """获取某知识点的全部注解"""
+    try:
+        anns = db.get_annotations_by_kp(kid)
+        return jsonify(anns)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify([])
+
+@app.route("/api/knowledge-points/<int:kid>/annotations", methods=["POST"])
+def add_annotation(kid):
+    """添加注解"""
+    try:
+        kp = db.get_knowledge_point(kid)
+        if not kp: return jsonify({"error":"not found"}),404
+        d = request.get_json() or {}
+        ann_type = d.get("annotation_type", "")
+        content = d.get("content", "").strip()
+        tags = d.get("tags", [])
+        if ann_type not in ("agree","disagree","supplement","correction","experience"):
+            return jsonify({"error":"无效的注解类型"}),400
+        if ann_type in ("disagree","correction") and not content:
+            return jsonify({"error":"反对或纠错注解必须填写理由"}),400
+        # agree类型自动添加"老唐实战验证"标签
+        if ann_type == "agree" and "老唐实战验证" not in tags:
+            tags.append("老唐实战验证")
+        aid = db.add_annotation(kid, ann_type, content, tags)
+        return jsonify({"success":True, "id":aid})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
+@app.route("/api/annotations/<int:aid>", methods=["DELETE"])
+def delete_annotation(aid):
+    """删除注解"""
+    try:
+        db.delete_annotation(aid)
+        return jsonify({"success":True})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
+@app.route("/api/annotation-tags", methods=["GET"])
+def get_annotation_tags():
+    """返回预设注解标签列表"""
+    try:
+        from scripts.experience_notes import ANNOTATION_TAGS
+        return jsonify(ANNOTATION_TAGS)
+    except ImportError:
+        try:
+            from experience_notes import ANNOTATION_TAGS
+            return jsonify(ANNOTATION_TAGS)
+        except:
+            return jsonify(["老唐实战验证","有实战案例佐证","需要现场确认","已过时需更新",
+                           "四川特有经验","可直接用于培训","可用于投标方案","需要补充政策依据",
+                           "客户常问的问题","反常识但正确"])
+
+# ================================================================
+# v2.2.0 F045: 经验速记
+# ================================================================
+@app.route("/api/quicknote", methods=["POST"])
+def quicknote():
+    """经验速记：接收表单 → V3结构化 → 入库"""
+    try:
+        d = request.get_json() or {}
+        title = (d.get("title") or "").strip()
+        content = (d.get("content") or "").strip()
+        content_type = d.get("content_type", "experience")
+        keywords_raw = (d.get("keywords") or "").strip()
+        if not title:
+            return jsonify({"error":"标题不能为空"}),400
+        if not content:
+            return jsonify({"error":"内容不能为空"}),400
+        keywords = [kw.strip() for kw in keywords_raw.split(",") if kw.strip()] if keywords_raw else None
+        try:
+            from scripts.experience_notes import ExperienceNotes
+        except ImportError:
+            from experience_notes import ExperienceNotes
+        en = ExperienceNotes(db=db)
+        kp_id = en.structure_and_save(title, content, content_type, keywords)
+        if kp_id:
+            return jsonify({"success":True, "kp_id":kp_id,
+                           "message":"已保存并结构化，请到知识审核Tab查看"})
+        return jsonify({"error":"保存失败，请检查控制台日志"}),500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
+# ================================================================
 # v2.1.1 F039: 重复检测
 # ================================================================
 @app.route("/api/duplicate-groups", methods=["GET"])
@@ -416,7 +510,9 @@ def get_duplicate_groups():
                             "source_file": kp.get("renamed_filename") or kp.get("original_filename", ""),
                             "review_status": kp.get("review_status", ""),
                             "content_readiness": kp.get("content_readiness", "draft"),
-                            "qa_score": kp.get("qa_score")
+                            "qa_score": kp.get("qa_score"),
+                            "original_excerpt": (kp.get("original_excerpt") or "")[:500],
+                            "ai_extracted_content": kp.get("ai_extracted_content") or ""
                         })
                     else:
                         members_detail.append({"id": mid, "title": "(已删除)", "content_type": "unknown"})
@@ -720,9 +816,22 @@ def dashboard():
                 pipeline[d] = 0
         data["file_pipeline"] = pipeline
 
-        # 源文件统计
-        c.execute("SELECT COUNT(*) FROM source_files")
-        data["total_files"] = c.fetchone()[0]
+        # 源文件统计(用文件夹实际文件数之和,与管线一致)
+        data["total_files"] = sum(pipeline.values())
+
+        # v2.2.0: 注解统计
+        try:
+            data["annotations"] = db.get_annotation_summary()
+        except:
+            data["annotations"] = {"annotated_kps": 0, "total_annotations": 0, "by_type": {}}
+
+        # v2.2.0: 手动录入统计
+        try:
+            c2 = conn.cursor()
+            c2.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='manual'")
+            data["manual_kps"] = c2.fetchone()[0]
+        except:
+            data["manual_kps"] = 0
 
         conn.close()
         return jsonify(data)
@@ -894,18 +1003,18 @@ def tool_api_cost():
         c = conn.cursor()
         today = datetime.now().strftime("%Y-%m-%d")
         # 今日费用
-        c.execute("""SELECT SUM(cost) FROM api_call_logs
-                     WHERE date(created_at)=?""", (today,))
+        c.execute("""SELECT SUM(estimated_cost) FROM api_call_logs
+                     WHERE call_date=?""", (today,))
         today_cost = c.fetchone()[0] or 0
         # 按类型统计今日
-        c.execute("""SELECT call_type, COUNT(*), SUM(cost) FROM api_call_logs
-                     WHERE date(created_at)=? GROUP BY call_type ORDER BY SUM(cost) DESC""", (today,))
+        c.execute("""SELECT call_type, COUNT(*), SUM(estimated_cost) FROM api_call_logs
+                     WHERE call_date=? GROUP BY call_type ORDER BY SUM(estimated_cost) DESC""", (today,))
         today_detail = []
         for row in c.fetchall():
             today_detail.append({"type": row[0], "count": row[1], "cost": round(row[2] or 0, 4)})
         # 最近7天趋势
-        c.execute("""SELECT date(created_at) as d, SUM(cost) FROM api_call_logs
-                     WHERE date(created_at) >= date('now', '-7 days')
+        c.execute("""SELECT call_date as d, SUM(estimated_cost) FROM api_call_logs
+                     WHERE call_date >= date('now','localtime','-7 days')
                      GROUP BY d ORDER BY d""")
         trend = []
         for row in c.fetchall():
@@ -963,15 +1072,18 @@ def task_preprocess():
     def _run():
         try:
             try:
-                from scripts.preprocessor import main as pp_main
+                from scripts.preprocessor import Preprocessor
             except ImportError:
-                from preprocessor import main as pp_main
+                from preprocessor import Preprocessor
             _task_update_progress({"current_step": "执行预处理", "message": "正在处理文件..."})
-            pp_main()
+            proc = Preprocessor()
+            results = proc.run()
+            ok = sum(1 for r in results if r.get("success"))
+            fail = len(results) - ok
             with _task_lock:
-                _task["result"] = {"success": True, "message": "预处理完成"}
+                _task["result"] = {"success": True, "message": "预处理完成: 成功%d 失败%d" % (ok, fail), "ok": ok, "fail": fail}
                 _task["progress"]["current_step"] = "完成"
-                _task["progress"]["message"] = "预处理完成"
+                _task["progress"]["message"] = "预处理完成: 成功%d 失败%d" % (ok, fail)
         except Exception as e:
             traceback.print_exc()
             with _task_lock:
@@ -1127,8 +1239,8 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.1.2")
-    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理)")
+    print(f"  乡村振兴知识库 - 管理后台 v2.2.0")
+    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

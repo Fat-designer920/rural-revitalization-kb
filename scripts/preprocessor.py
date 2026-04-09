@@ -46,6 +46,16 @@ class Preprocessor:
                 result["error"]="内容过少"; return result
             result["content"] = content
 
+            # 文件级去重: 检查hash是否已存在
+            fhash = rr.get("file_hash")
+            if fhash:
+                existing = self.db.check_file_hash_exists(fhash)
+                if existing:
+                    ename = existing.get("renamed_filename") or existing.get("original_filename") or "?"
+                    print(f"     [跳过] 文件已存在(#{existing['id']} {ename}, 状态:{existing.get('process_status','')})")
+                    result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
+                    return result
+
             print(f"     AI分析中...")
             up = FILE_RENAME_PROMPT["user_prompt_template"].format(
                 original_filename=fi["name"], file_type=fi["type"], content_preview=content[:3000])
