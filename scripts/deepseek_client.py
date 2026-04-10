@@ -1,9 +1,9 @@
 """
-deepseek_client.py - DeepSeek API封装
+deepseek_client.py - DeepSeek API封装 + 硅基流动OCR
 路径：scripts/deepseek_client.py
-版本：v1.0.1 - R1模型支持 + 增强JSON解析 + 截断修复 + 无人为上限
+版本：v2.2.0 bugfix - 新增硅基流动视觉模型OCR(扫描件PDF+图片)
 """
-import os, sys, json, time, base64, re, requests
+import os, sys, json, time, base64, re, requests, tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -49,6 +49,16 @@ class DeepSeekClient:
         enc = self.config.get("deepseek_api_key_encrypted", "")
         if not enc:
             raise ValueError("未配置API Key")
+        from scripts.config_wizard import decrypt_value
+        return decrypt_value(enc)
+
+    def _get_siliconflow_api_key(self):
+        enc = self.config.get("siliconflow_api_key_encrypted", "")
+        if not enc:
+            raise ValueError(
+                "未配置硅基流动API Key，请运行配置向导设置。\n"
+                "硅基流动API用于扫描件PDF和图片的OCR识别。"
+            )
         from scripts.config_wizard import decrypt_value
         return decrypt_value(enc)
 
@@ -307,30 +317,157 @@ class DeepSeekClient:
 
         return result
 
-    def ocr_image(self, image_path, call_type="ocr"):
-        self._check_cost()
+    # ============================================================
+    # 硅基流动OCR（扫描件PDF + 图片识别）
+    # ============================================================
+
+    def ocr_image(self, file_path, call_type="ocr"):
+        """
+        OCR识别入口：自动判断文件类型。
+        - PDF文件：逐页渲染为图片后OCR
+        - 图片文件：直接OCR
+        使用硅基流动视觉模型（Qwen2.5-VL-72B-Instruct）
+        """
+        ext = Path(file_path).suffix.lower()
+        if ext == ".pdf":
+            return self._ocr_pdf(file_path, call_type)
+        else:
+            return self._ocr_single_image(file_path, call_type)
+
+    def _ocr_single_image(self, image_path, call_type="ocr"):
+        """用硅基流动视觉模型OCR识别单张图片"""
+        sf_key = self._get_siliconflow_api_key()
+        sf_base = self.config.get("siliconflow_base_url", "https://api.siliconflow.cn/v1")
+        sf_model = self.config.get("siliconflow_model", "Qwen/Qwen2.5-VL-72B-Instruct")
+
         with open(image_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         ext = Path(image_path).suffix.lower()
-        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}.get(ext, "image/jpeg")
+        mime_map = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".bmp": "image/bmp"
+        }
+        mime = mime_map.get(ext, "image/png")
+
         payload = {
-            "model": self.model,
+            "model": sf_model,
             "messages": [
-                {"role": "system", "content": "你是OCR专家,请精确识别图片中所有文字,保持原始排版。"},
+                {"role": "system",
+                 "content": "你是OCR专家。请精确识别图片中所有文字，保持原始排版和层级结构。如有表格，用markdown表格格式输出。"},
                 {"role": "user", "content": [
                     {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    {"type": "text", "text": "请识别图片中所有文字。"}
+                    {"type": "text", "text": "请识别图片中的所有文字，保持原始排版。如有表格请保留表格结构。"}
                 ]}
             ],
             "max_tokens": 4096
         }
-        resp = self._request("chat/completions", payload)
-        content = resp["choices"][0]["message"]["content"]
-        u = resp.get("usage", {})
-        inp, out = u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
-        cost = self._estimate_cost(self.model, inp, out)
-        self.db.log_api_call(call_type, self.model, inp, out, cost)
-        return {"content": content, "input_tokens": inp, "output_tokens": out, "estimated_cost": cost}
+
+        headers = {"Authorization": f"Bearer {sf_key}", "Content-Type": "application/json"}
+        url = f"{sf_base}/chat/completions"
+
+        last_err = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                r = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                if r.status_code == 200:
+                    resp = r.json()
+                    content = resp["choices"][0]["message"]["content"]
+                    u = resp.get("usage", {})
+                    inp = u.get("prompt_tokens", 0)
+                    out = u.get("completion_tokens", 0)
+                    # 硅基流动费用估算(Qwen2.5-VL-72B约4元/百万token)
+                    cost = round((inp + out) * 4.0 / 1e6, 6)
+                    self.db.log_api_call(call_type, sf_model, inp, out, cost)
+                    return {
+                        "content": content,
+                        "input_tokens": inp,
+                        "output_tokens": out,
+                        "estimated_cost": cost
+                    }
+                if r.status_code == 401:
+                    raise ValueError("硅基流动API Key无效，请在配置向导中重新设置")
+                if r.status_code == 429 or r.status_code >= 500:
+                    wait = min(60, 2 ** attempt * 3)
+                    print(f"    硅基流动API错误({r.status_code}), {wait}秒后重试...")
+                    time.sleep(wait)
+                    last_err = f"HTTP {r.status_code}"
+                    continue
+                raise Exception(f"硅基流动API错误({r.status_code}): {r.text[:300]}")
+            except requests.exceptions.Timeout:
+                wait = min(60, 2 ** attempt * 5)
+                print(f"    硅基流动超时, {wait}秒后重试...")
+                time.sleep(wait)
+                last_err = "timeout"
+            except requests.exceptions.ConnectionError:
+                wait = min(60, 2 ** attempt * 5)
+                print(f"    硅基流动网络错误, {wait}秒后重试...")
+                time.sleep(wait)
+                last_err = "connection"
+            except (ValueError, Exception) as e:
+                raise
+        raise Exception(f"硅基流动OCR失败(重试{self.max_retries}次): {last_err}")
+
+    def _ocr_pdf(self, pdf_path, call_type="ocr"):
+        """扫描件PDF OCR：用pymupdf逐页渲染为图片，再调硅基流动识别"""
+        try:
+            import fitz  # pymupdf
+        except ImportError:
+            raise ImportError(
+                "缺少pymupdf库，请运行: pip install pymupdf\n"
+                "pymupdf用于将扫描件PDF渲染为图片以便OCR识别。"
+            )
+
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        print(f"     扫描件PDF共{total_pages}页，逐页OCR中...")
+
+        all_text = []
+        total_cost = 0
+        total_inp = 0
+        total_out = 0
+
+        for i in range(total_pages):
+            page = doc[i]
+            print(f"     OCR第{i + 1}/{total_pages}页...", end="", flush=True)
+
+            # 渲染为图片(200 DPI，平衡清晰度和文件大小)
+            mat = fitz.Matrix(200 / 72, 200 / 72)
+            pix = page.get_pixmap(matrix=mat)
+
+            # 保存临时PNG文件
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp_path = tmp.name
+                pix.save(tmp_path)
+
+                result = self._ocr_single_image(tmp_path, call_type)
+                page_text = result.get("content", "")
+                if page_text and page_text.strip():
+                    all_text.append(f"[第{i + 1}页]\n{page_text.strip()}")
+                total_cost += result.get("estimated_cost", 0)
+                total_inp += result.get("input_tokens", 0)
+                total_out += result.get("output_tokens", 0)
+                print(f" OK")
+            except Exception as e:
+                print(f" 失败({e})")
+            finally:
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+
+        doc.close()
+
+        content = "\n\n".join(all_text)
+        print(f"     OCR完成! 识别{len(all_text)}/{total_pages}页, 费用~{total_cost:.4f}元")
+        return {
+            "content": content,
+            "input_tokens": total_inp,
+            "output_tokens": total_out,
+            "estimated_cost": total_cost
+        }
 
     def get_today_usage(self):
         cost = self.db.get_today_api_cost()

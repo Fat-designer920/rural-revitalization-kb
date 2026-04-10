@@ -40,10 +40,15 @@ class Preprocessor:
             if not rr["success"]: result["error"]=rr["error"]; return result
             content = rr["content"]
             if rr.get("metadata",{}).get("needs_ocr"):
-                print(f"     图片OCR中...")
-                content = self.client.ocr_image(fi["path"])["content"]
+                if fi["type"] == "pdf":
+                    print(f"     扫描件PDF，调用硅基流动OCR...")
+                else:
+                    print(f"     图片文件，调用硅基流动OCR...")
+                ocr_result = self.client.ocr_image(fi["path"])
+                content = ocr_result["content"]
+                print(f"     OCR费用: ~{ocr_result.get('estimated_cost', 0):.4f}元")
             if not content or len(content.strip())<20:
-                result["error"]="内容过少"; return result
+                result["error"]="内容过少(OCR识别失败或文件为空)"; return result
             result["content"] = content
 
             # 文件级去重: 检查hash是否已存在
