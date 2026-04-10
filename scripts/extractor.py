@@ -1,7 +1,11 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.2 F044+bugfix - 基于v2.1.1 F039，新增进度回调+headless运行模式+headless input跳过
+版本：v2.1.2 F044+bugfix2 - 基于v2.1.2 bugfix，新增QC分批质检防截断
+
+变更说明（v2.1.2 bugfix2）：
+  - QC质检分批调用(每批15条),防止知识点过多导致V3输出截断
+  - 批内kp_index自动还原为全局index
 
 变更说明（v2.1.1 F039）：
   - 新增Step 8: 提取完成后增量重复检测(本地粗筛+V3精判)
@@ -705,12 +709,13 @@ class Extractor:
         """V3质检：对同一文件的所有知识点进行6维度评分（v2.1.1: 含举一反三可靠性）。
         kps: 原始AI提取的知识点列表（含完整内容）
         kps_info: 写入DB后的info列表（含kp_id和practical_insights）
-        返回成功质检的数量。"""
+        返回成功质检的数量。
+        v2.1.2 bugfix: 分批质检(每批15条),防止知识点过多导致V3输出截断。"""
         if not kps or not kps_info:
             return 0
 
-        # 构建知识点JSON（与QC_CHECK_PROMPT模板的{knowledge_points_json}对应）
-        kp_for_qc = []
+        # 构建全部知识点的QC数据
+        all_kp_for_qc = []
         for i, kp in enumerate(kps):
             qc_item = {
                 "index": i,
@@ -724,35 +729,63 @@ class Extractor:
                 insights = kps_info[i].get("practical_insights", [])
                 if insights:
                     qc_item["practical_insights"] = insights
-            kp_for_qc.append(qc_item)
+            all_kp_for_qc.append(qc_item)
 
-        knowledge_points_json = json.dumps(kp_for_qc, ensure_ascii=False, indent=2)
+        # 分批质检，每批最多15条，防止V3输出过长被截断
+        QC_BATCH_SIZE = 15
+        all_results = []
+        total_cost = 0
         prompt = QC_CHECK_PROMPT
-        up = prompt["user_prompt_template"].format(
-            filename=filename,
-            file_summary=content_summary or "(无摘要)",
-            kp_count=len(kps),
-            knowledge_points_json=knowledge_points_json
-        )
+
+        batches = [all_kp_for_qc[i:i + QC_BATCH_SIZE]
+                   for i in range(0, len(all_kp_for_qc), QC_BATCH_SIZE)]
+        batch_count = len(batches)
+
+        if batch_count > 1:
+            print(f"     知识点较多({len(kps)}条),分{batch_count}批质检...")
 
         try:
-            ai = self.client.chat_with_json(
-                prompt["system_prompt"], up, temperature=0.2,
-                call_type="qc_check", model_override="deepseek-chat")
-            parsed = ai.get("parsed_json")
-            cost = ai.get("estimated_cost", 0)
+            for batch_idx, batch in enumerate(batches):
+                knowledge_points_json = json.dumps(batch, ensure_ascii=False, indent=2)
+                up = prompt["user_prompt_template"].format(
+                    filename=filename,
+                    file_summary=content_summary or "(无摘要)",
+                    kp_count=len(batch),
+                    knowledge_points_json=knowledge_points_json
+                )
 
-            if not parsed or not isinstance(parsed, dict):
-                print(f"     质检返回格式异常(花费{cost:.4f}元)")
+                ai = self.client.chat_with_json(
+                    prompt["system_prompt"], up, temperature=0.2,
+                    call_type="qc_check", model_override="deepseek-chat")
+                parsed = ai.get("parsed_json")
+                cost = ai.get("estimated_cost", 0)
+                total_cost += cost
+
+                if not parsed or not isinstance(parsed, dict):
+                    print(f"     第{batch_idx+1}批质检返回格式异常(花费{cost:.4f}元)")
+                    continue
+
+                results = parsed.get("qa_results", [])
+                if not results:
+                    print(f"     第{batch_idx+1}批质检无结果(花费{cost:.4f}元)")
+                    continue
+
+                # 修正kp_index: batch内V3返回的是批内序号,需还原为全局index
+                for qr in results:
+                    batch_local_idx = qr.get("kp_index", -1)
+                    if 0 <= batch_local_idx < len(batch):
+                        qr["kp_index"] = batch[batch_local_idx]["index"]
+
+                all_results.extend(results)
+
+                if batch_count > 1:
+                    print(f"     第{batch_idx+1}/{batch_count}批完成: {len(results)}条(花费{cost:.4f}元)")
+
+            if not all_results:
+                print(f"     质检无结果(总花费{total_cost:.4f}元)")
                 return 0
 
-            # QC_CHECK_PROMPT返回的数组字段名是qa_results
-            results = parsed.get("qa_results", [])
-            if not results:
-                print(f"     质检无结果(花费{cost:.4f}元)")
-                return 0
-
-            print(f"     质检完成: {len(results)}条评分(花费{cost:.4f}元)")
+            print(f"     质检完成: {len(all_results)}条评分(总花费{total_cost:.4f}元)")
 
             # 统计分数分布
             scores = []
