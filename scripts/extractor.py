@@ -255,6 +255,12 @@ class Extractor:
                 shutil.copy2(fp, str(dest))
                 if str(self.processing) in str(fp): os.remove(fp)
                 print(f"     文件已归档至: completed/{dest.name}")
+            # 同时移动.md伴侣文件
+            md_src = Path(fp).with_suffix(".md")
+            if md_src.exists() and str(self.processing) in str(md_src):
+                md_dest = dest.with_suffix(".md")
+                shutil.copy2(str(md_src), str(md_dest))
+                os.remove(str(md_src))
         except Exception as e: print(f"     ! 文件归档失败: {e}")
 
     def _move_to_failed(self, fp, fn):
@@ -267,6 +273,10 @@ class Extractor:
                 shutil.copy2(fp, str(dest))
                 if str(self.processing) in str(fp): os.remove(fp)
                 print(f"     文件已隔离至: failed/{dest.name}")
+            # 同时移动.md伴侣文件
+            md_src = Path(fp).with_suffix(".md")
+            if md_src.exists() and str(self.processing) in str(md_src):
+                os.remove(str(md_src))
         except Exception as e: print(f"     ! 文件隔离失败: {e}")
 
     # ================================================================
@@ -942,17 +952,24 @@ class Extractor:
                 result["error"] = "重复文件已跳过"; return result
             self.db.update_source_file(fid, file_hash=file_hash)
 
-            rr = self.reader.read_file(fp)
-            if not rr["success"]:
-                result["error"] = rr["error"]
-                print(f"     [FAIL] 文件读取失败: {result['error']}")
-                self._move_to_failed(fp, fn); self._clean_pending(original_fn)
-                self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
-                return result
-            content = rr["content"]
-            if rr.get("metadata", {}).get("needs_ocr"):
-                print(f"     图片文件,先进行OCR识别...")
-                content = self.client.ocr_image(fp)["content"]
+            # 优先读取预处理生成的.md文件(避免重复OCR/解析)
+            md_path = Path(fp).with_suffix(".md") if not fp.endswith(".md") else None
+            if md_path and md_path.exists():
+                print(f"     读取预处理内容: {md_path.name}")
+                with open(str(md_path), "r", encoding="utf-8") as mdf:
+                    content = mdf.read()
+            else:
+                rr = self.reader.read_file(fp)
+                if not rr["success"]:
+                    result["error"] = rr["error"]
+                    print(f"     [FAIL] 文件读取失败: {result['error']}")
+                    self._move_to_failed(fp, fn); self._clean_pending(original_fn)
+                    self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
+                    return result
+                content = rr["content"]
+                if rr.get("metadata", {}).get("needs_ocr"):
+                    print(f"     需要OCR识别(无预处理缓存)...")
+                    content = self.client.ocr_image(fp)["content"]
 
             ctype = self._determine_type(rec, content)
 

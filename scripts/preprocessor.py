@@ -56,10 +56,28 @@ class Preprocessor:
             if fhash:
                 existing = self.db.check_file_hash_exists(fhash)
                 if existing:
+                    e_status = existing.get("process_status", "")
                     ename = existing.get("renamed_filename") or existing.get("original_filename") or "?"
-                    print(f"     [跳过] 文件已存在(#{existing['id']} {ename}, 状态:{existing.get('process_status','')})")
-                    result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
-                    return result
+                    # 已完成提取的文件才真正跳过
+                    if e_status == "completed":
+                        print(f"     [跳过] 文件已存在(#{existing['id']} {ename}, 状态:{e_status})")
+                        result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
+                        return result
+                    # processing/failed状态:检查物理文件是否还在
+                    e_file = self.processing / ename
+                    if e_file.exists():
+                        print(f"     [跳过] 文件已在处理中(#{existing['id']} {ename})")
+                        result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
+                        return result
+                    # 物理文件已不存在,清理旧记录,允许重新处理
+                    print(f"     旧记录#{existing['id']}物理文件已不存在,清理后重新处理")
+                    try:
+                        conn = self.db.get_connection()
+                        conn.execute("DELETE FROM source_files WHERE id=?", (existing['id'],))
+                        conn.commit()
+                        conn.close()
+                    except Exception as de:
+                        print(f"     ! 清理旧记录失败: {de}")
 
             print(f"     AI分析中...")
             up = FILE_RENAME_PROMPT["user_prompt_template"].format(
@@ -80,6 +98,14 @@ class Preprocessor:
             cnt = 1
             while dest.exists(): dest = self.processing/f"{renamed}_{cnt}{ext}"; cnt+=1
             shutil.copy2(fi["path"], str(dest))
+
+            # 保存提取内容为markdown文件(避免提取时重复读取/OCR)
+            md_name = dest.stem + ".md"
+            md_path = self.processing / md_name
+            with open(str(md_path), "w", encoding="utf-8") as mf:
+                mf.write(f"# {fi['name']}\n\n")
+                mf.write(content)
+            print(f"     已保存预处理内容: {md_name}")
 
             result.update({"success":True,"file_id":fid,"renamed":dest.name,"content_type":parsed.get("content_type","policy")})
             print(f"     [OK] -> {dest.name} [{result['content_type']}]")

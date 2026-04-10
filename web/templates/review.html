@@ -1306,11 +1306,15 @@ function renderDashboard(d){
   h+='<hr class="dash-divider">'+dRow("","","源文件总数",d.total_files||0);
   h+='</div>';
 
-  /* Card 9: API Cost */
+  /* Card 9: API Cost - Enhanced */
+  var apiCost=d.today_api_cost||0;
+  var costTrend=d.api_trend_7d||[];
+  var costDetail=d.api_today_detail||[];
   h+='<div class="dash-card"><div class="dash-card-head">今日API费用</div>';
-  h+='<div class="dash-big" style="color:var(--primary)">'+String.fromCharCode(165)+(d.today_api_cost||0).toFixed(2)+'</div>';
-  h+=dRow("","","待处理建议",d.pending_suggestions||0);
-  h+=dRow("","","待处理重复",d.pending_duplicates||0);
+  h+='<div class="dash-big" style="color:var(--primary)">'+String.fromCharCode(165)+apiCost.toFixed(2)+'</div>';
+  if(d.daily_limit)h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:8px">上限 '+String.fromCharCode(165)+d.daily_limit+'/天</div>';
+  if(costDetail.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:6px 0 4px">今日分类:</div>';for(var ci=0;ci<costDetail.length&&ci<4;ci++){var cd=costDetail[ci];h+='<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--text-secondary)"><span>'+esc(cd.type)+' <span style="color:var(--text-muted)">'+cd.count+'次</span></span><span>'+String.fromCharCode(165)+cd.cost.toFixed(4)+'</span></div>'}}
+  if(costTrend.length>1){h+='<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 4px">近7天趋势:</div>';var maxC=0;for(var ti=0;ti<costTrend.length;ti++){if(costTrend[ti].cost>maxC)maxC=costTrend[ti].cost}if(maxC===0)maxC=1;for(var ti=0;ti<costTrend.length;ti++){var t=costTrend[ti];var pctW=Math.max(2,Math.round(t.cost/maxC*100));h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:10px;color:var(--text-muted);min-width:42px">'+t.date.slice(5)+'</span><div style="flex:1;height:14px;background:var(--bg);border-radius:4px;overflow:hidden"><div style="width:'+pctW+'%;height:100%;background:var(--primary);border-radius:4px;min-width:2px"></div></div><span style="font-size:10px;color:var(--text-secondary);min-width:40px;text-align:right">'+String.fromCharCode(165)+t.cost.toFixed(2)+'</span></div>'}}
   h+='</div>';
 
   /* Card 10: Annotations (v2.2.0) */
@@ -1516,7 +1520,7 @@ function startPolling(){
           var res=r.result||{};
           document.getElementById("taskTitle").textContent="任务完成";
           var msg=res.message||"完成";
-          if(res.ok!==undefined)msg=res.ok+"个成功 / "+res.skip+"个跳过 / "+res.fail+"个失败, 共"+res.total_kps+"条知识点";
+          if(res.ok!==undefined){msg=res.ok+"个成功";if(res.skip)msg+=" / "+res.skip+"个跳过";msg+=" / "+(res.fail||0)+"个失败";if(res.total_kps!==undefined)msg+=", 共"+res.total_kps+"条知识点"}
           if(res.deleted_old)msg="(已删除"+res.deleted_old+"条旧知识点) "+msg;
           document.getElementById("taskMsg").textContent=msg;
         }

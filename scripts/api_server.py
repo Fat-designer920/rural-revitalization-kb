@@ -754,6 +754,40 @@ def dashboard():
         data["pending_suggestions"] = stats.get("pending_suggestions", 0)
         data["pending_duplicates"] = stats.get("pending_duplicates", 0)
 
+        # API费用: 直接从api_call_logs查询(与api-cost端点保持一致)
+        conn = db.get_connection()
+        c = conn.cursor()
+        today = datetime.now().strftime("%Y-%m-%d")
+        c.execute("SELECT SUM(estimated_cost) FROM api_call_logs WHERE call_date=?", (today,))
+        today_cost_direct = c.fetchone()[0] or 0
+        data["today_api_cost"] = round(today_cost_direct, 4)
+
+        # API费用上限
+        try:
+            cfg_p2 = PROJECT_ROOT / "config" / "settings.json"
+            if cfg_p2.exists():
+                with open(cfg_p2, "r", encoding="utf-8") as f2:
+                    data["daily_limit"] = json.load(f2).get("daily_cost_limit", 0)
+        except:
+            data["daily_limit"] = 0
+
+        # 今日按类型统计
+        c.execute("""SELECT call_type, COUNT(*), SUM(estimated_cost) FROM api_call_logs
+                     WHERE call_date=? GROUP BY call_type ORDER BY SUM(estimated_cost) DESC""", (today,))
+        api_detail = []
+        for row in c.fetchall():
+            api_detail.append({"type": row[0], "count": row[1], "cost": round(row[2] or 0, 4)})
+        data["api_today_detail"] = api_detail
+
+        # 近7天趋势
+        c.execute("""SELECT call_date, SUM(estimated_cost) FROM api_call_logs
+                     WHERE call_date >= date('now','localtime','-7 days')
+                     GROUP BY call_date ORDER BY call_date""")
+        trend = []
+        for row in c.fetchall():
+            trend.append({"date": row[0], "cost": round(row[1] or 0, 4)})
+        data["api_trend_7d"] = trend
+
         # 按状态分布
         data["by_status"] = stats.get("knowledge_points", {})
 
@@ -761,8 +795,6 @@ def dashboard():
         data["by_type"] = stats.get("by_type", {})
 
         # 就绪度分布（已确认的）
-        conn = db.get_connection()
-        c = conn.cursor()
         c.execute("""SELECT content_readiness, COUNT(*) FROM knowledge_points
                      WHERE review_status='confirmed' GROUP BY content_readiness""")
         rd_map = {}
@@ -811,7 +843,7 @@ def dashboard():
         for d in ["pending", "processing", "completed", "failed"]:
             dd = base / "data" / d
             if dd.exists():
-                pipeline[d] = len([f for f in dd.iterdir() if f.is_file() and not f.name.startswith(".")])
+                pipeline[d] = len([f for f in dd.iterdir() if f.is_file() and not f.name.startswith(".") and not f.suffix == ".md"])
             else:
                 pipeline[d] = 0
         data["file_pipeline"] = pipeline
@@ -1081,7 +1113,7 @@ def task_preprocess():
             ok = sum(1 for r in results if r.get("success"))
             fail = len(results) - ok
             with _task_lock:
-                _task["result"] = {"success": True, "message": "预处理完成: 成功%d 失败%d" % (ok, fail), "ok": ok, "fail": fail}
+                _task["result"] = {"success": True, "message": "预处理完成: 成功%d 失败%d" % (ok, fail), "ok": ok, "fail": fail, "skip": 0}
                 _task["progress"]["current_step"] = "完成"
                 _task["progress"]["message"] = "预处理完成: 成功%d 失败%d" % (ok, fail)
         except Exception as e:
