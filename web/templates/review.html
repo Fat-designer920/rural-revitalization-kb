@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.2.0</title>
+<title>乡村振兴知识库 v2.2.0-fix2</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -308,8 +308,10 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .qn-form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 
 /* === Card Sections === */
-.kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative}
+.kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative;cursor:pointer;transition:max-height .3s ease}
 .kp-excerpt.expanded{max-height:none}
+.kp-excerpt-toggle{display:none;text-align:center;padding:2px 0;font-size:11px;color:var(--primary);cursor:pointer;background:linear-gradient(transparent,var(--bg) 40%);position:absolute;bottom:0;left:0;right:0;height:28px;line-height:28px}
+.kp-excerpt-toggle.visible{display:block}
 .kp-fields{margin-bottom:10px}
 .kp-fields dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px}
 .kp-fields dt{color:var(--text-muted);font-weight:600;white-space:nowrap}
@@ -322,7 +324,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* === Pagination === */
 .pagination{display:flex;justify-content:center;gap:4px;margin-top:24px;padding-bottom:24px}
-.pagination button{min-width:34px;height:34px;border:1px solid var(--border);background:var(--card);border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--text-secondary);transition:var(--transition)}
+.pagination button{min-width:34px;height:34px;padding:0 12px;border:1px solid var(--border);background:var(--card);border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--text-secondary);transition:var(--transition);white-space:nowrap}
 .pagination button:hover{border-color:var(--primary);color:var(--primary)}
 .pagination button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .page-info{line-height:34px;font-size:12px;color:var(--text-muted);padding:0 8px}
@@ -828,7 +830,16 @@ function switchTab(tab){
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
-  if(tab==="admin")loadDashboard();
+  if(tab==="admin"){loadDashboard();checkRunningTask()}
+}
+function checkRunningTask(){
+  apiGet("/api/tasks/progress").then(function(r){
+    if(r.running){
+      var titles={"preprocess":"预处理进行中","extract":"知识提取进行中","reextract":"版本重提取进行中"};
+      showTaskProgress(titles[r.type]||"任务进行中");
+      startPolling();
+    }
+  });
 }
 
 /* === Init === */
@@ -876,7 +887,7 @@ function doSearch(){currentSearch=document.getElementById("searchInput").value.t
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;initExcerptToggles();renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
 function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
@@ -946,7 +957,7 @@ return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"
 +'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+irH+'</div>'
 +pdH+insightsH
 +'<div class="ann-section" id="annSec-'+kp.id+'"><div class="ann-toggle" onclick="toggleAnnotations('+kp.id+')"><span id="annArr-'+kp.id+'">&#9654;</span> 专家注解 <span class="ann-count" id="annCnt-'+kp.id+'">0</span></div><div class="ann-body" id="annBody-'+kp.id+'"><div style="text-align:center;color:var(--text-muted);font-size:12px;padding:6px">点击展开加载</div></div></div>'
-+(kp.original_excerpt?'<div class="kp-excerpt">'+esc(kp.original_excerpt)+'</div>':"")
++(kp.original_excerpt?'<div class="kp-excerpt" id="excerpt-'+kp.id+'" onclick="toggleExcerpt('+kp.id+')">'+esc(kp.original_excerpt)+'<span class="kp-excerpt-toggle" id="excerptToggle-'+kp.id+'">展开全文</span></div>':"")
 +(kf?'<div class="kp-fields">'+kf+'</div>':"")
 +'<div class="kp-actions">'+ah+'<button class="btn-ghost btn-sm" style="color:var(--primary)" onclick="showAnnotateForm('+kp.id+')">+ 注解</button><button class="btn-ghost btn-sm" onclick="toggleDetail('+kp.id+')">展开JSON</button></div>'
 +'<div class="kp-detail" id="detail-'+kp.id+'"><pre>'+esc(JSON.stringify(ex,null,2))+'</pre></div></div>';
@@ -970,6 +981,8 @@ function deleteKp(id){showConfirm("永久删除","此操作不可恢复，确定
 function removeConfirmed(id){var reason=prompt("将此知识点从已入库中移除\n请输入原因:");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/ignore",{reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除","info");refreshData()}})}
 function restoreToPending(id){apiPost("/api/knowledge-points/"+id+"/restore-to-pending").then(function(r){if(r.success){showToast("已恢复到待审核","success");refreshData()}})}
 function toggleDetail(id){document.getElementById("detail-"+id).classList.toggle("open")}
+function toggleExcerpt(id){var el=document.getElementById("excerpt-"+id);var tg=document.getElementById("excerptToggle-"+id);if(!el)return;var isExp=el.classList.toggle("expanded");if(tg)tg.textContent=isExp?"收起":"展开全文"}
+function initExcerptToggles(){var els=document.querySelectorAll(".kp-excerpt");for(var i=0;i<els.length;i++){if(els[i].scrollHeight>els[i].clientHeight+4){var tg=els[i].querySelector(".kp-excerpt-toggle");if(tg)tg.className="kp-excerpt-toggle visible"}}}
 function toggleInsights(id){var body=document.getElementById("insights-"+id);var arr=document.getElementById("insArr-"+id);if(body){var isOpen=body.classList.toggle("open");if(arr)arr.innerHTML=isOpen?"&#9660;":"&#9654;"}}
 
 /* === Annotations (v2.2.0 F029) === */
@@ -1276,6 +1289,7 @@ function renderDashboard(d){
   h+=dRow("dot","#FF9500","即将到期",fr.expiring||0);
   h+=dRow("dot","#34C759","新鲜",fr.fresh||0);
   if(fr.outdated)h+=dRow("dot","#86868B","已过时",fr.outdated||0);
+  if(fr.managed!==undefined)h+='<hr class="dash-divider">'+dRow("","","已设保鲜周期",fr.managed||0);
   h+='</div>';
 
   /* Card 6: Policy */
@@ -1306,14 +1320,12 @@ function renderDashboard(d){
   h+='<hr class="dash-divider">'+dRow("","","源文件总数",d.total_files||0);
   h+='</div>';
 
-  /* Card 9: API Cost - Enhanced */
+  /* Card 9: API Cost - Simplified */
   var apiCost=d.today_api_cost||0;
   var costTrend=d.api_trend_7d||[];
-  var costDetail=d.api_today_detail||[];
   h+='<div class="dash-card"><div class="dash-card-head">今日API费用</div>';
   h+='<div class="dash-big" style="color:var(--primary)">'+String.fromCharCode(165)+apiCost.toFixed(2)+'</div>';
   if(d.daily_limit)h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:8px">上限 '+String.fromCharCode(165)+d.daily_limit+'/天</div>';
-  if(costDetail.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:6px 0 4px">今日分类:</div>';for(var ci=0;ci<costDetail.length&&ci<4;ci++){var cd=costDetail[ci];h+='<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--text-secondary)"><span>'+esc(cd.type)+' <span style="color:var(--text-muted)">'+cd.count+'次</span></span><span>'+String.fromCharCode(165)+cd.cost.toFixed(4)+'</span></div>'}}
   if(costTrend.length>1){h+='<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 4px">近7天趋势:</div>';var maxC=0;for(var ti=0;ti<costTrend.length;ti++){if(costTrend[ti].cost>maxC)maxC=costTrend[ti].cost}if(maxC===0)maxC=1;for(var ti=0;ti<costTrend.length;ti++){var t=costTrend[ti];var pctW=Math.max(2,Math.round(t.cost/maxC*100));h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:10px;color:var(--text-muted);min-width:42px">'+t.date.slice(5)+'</span><div style="flex:1;height:14px;background:var(--bg);border-radius:4px;overflow:hidden"><div style="width:'+pctW+'%;height:100%;background:var(--primary);border-radius:4px;min-width:2px"></div></div><span style="font-size:10px;color:var(--text-secondary);min-width:40px;text-align:right">'+String.fromCharCode(165)+t.cost.toFixed(2)+'</span></div>'}}
   h+='</div>';
 

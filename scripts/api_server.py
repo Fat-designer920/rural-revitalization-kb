@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.2.0 F029+F045 - 专家注解+经验速记+管理后台(仪表盘+工具箱+提取管理+长任务)
+版本：v2.2.0 bugfix-2 - 仪表盘数据修复+审核界面UI优化
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -745,18 +745,29 @@ def dashboard():
     """聚合仪表盘全部数据，一次返回"""
     try:
         data = {}
-        # 基础统计（复用现有方法）
-        stats = db.get_statistics()
-        data["total_kp"] = stats.get("knowledge_points", {}).get("total", 0)
-        data["total_pending"] = stats.get("total_pending", 0)
-        data["total_confirmed"] = stats.get("total_confirmed", 0)
-        data["today_api_cost"] = stats.get("today_api_cost", 0)
-        data["pending_suggestions"] = stats.get("pending_suggestions", 0)
-        data["pending_duplicates"] = stats.get("pending_duplicates", 0)
-
-        # API费用: 直接从api_call_logs查询(与api-cost端点保持一致)
         conn = db.get_connection()
         c = conn.cursor()
+
+        # 按状态分布(直接SQL,不依赖get_statistics)
+        c.execute("SELECT review_status, COUNT(*) FROM knowledge_points GROUP BY review_status")
+        by_status = {}
+        total_kp = 0
+        for row in c.fetchall():
+            by_status[row[0] or "pending"] = row[1]
+            total_kp += row[1]
+        data["by_status"] = by_status
+        data["total_kp"] = total_kp
+        data["total_pending"] = by_status.get("pending", 0)
+        data["total_confirmed"] = by_status.get("confirmed", 0)
+
+        # 按类型分布(全部知识点,不限confirmed)
+        c.execute("SELECT content_type, COUNT(*) FROM knowledge_points GROUP BY content_type")
+        by_type = {}
+        for row in c.fetchall():
+            by_type[row[0] or "policy"] = row[1]
+        data["by_type"] = by_type
+
+        # API费用: 直接从api_call_logs查询
         today = datetime.now().strftime("%Y-%m-%d")
         c.execute("SELECT SUM(estimated_cost) FROM api_call_logs WHERE call_date=?", (today,))
         today_cost_direct = c.fetchone()[0] or 0
@@ -771,7 +782,7 @@ def dashboard():
         except:
             data["daily_limit"] = 0
 
-        # 今日按类型统计
+        # 今日按类型统计(保留供API详情弹窗使用)
         c.execute("""SELECT call_type, COUNT(*), SUM(estimated_cost) FROM api_call_logs
                      WHERE call_date=? GROUP BY call_type ORDER BY SUM(estimated_cost) DESC""", (today,))
         api_detail = []
@@ -788,12 +799,6 @@ def dashboard():
             trend.append({"date": row[0], "cost": round(row[1] or 0, 4)})
         data["api_trend_7d"] = trend
 
-        # 按状态分布
-        data["by_status"] = stats.get("knowledge_points", {})
-
-        # 按类型分布
-        data["by_type"] = stats.get("by_type", {})
-
         # 就绪度分布（已确认的）
         c.execute("""SELECT content_readiness, COUNT(*) FROM knowledge_points
                      WHERE review_status='confirmed' GROUP BY content_readiness""")
@@ -802,9 +807,9 @@ def dashboard():
             rd_map[row[0] or "draft"] = row[1]
         data["by_readiness"] = rd_map
 
-        # 质检分数分布
-        c.execute("""SELECT qa_score, COUNT(*) FROM knowledge_points
-                     WHERE qa_score IS NOT NULL GROUP BY qa_score ORDER BY qa_score""")
+        # 质检分数分布(CAST为整数避免4.0 vs "4"不匹配)
+        c.execute("""SELECT CAST(qa_score AS INTEGER) as qs, COUNT(*) FROM knowledge_points
+                     WHERE qa_score IS NOT NULL GROUP BY qs ORDER BY qs""")
         qa_dist = {}
         for row in c.fetchall():
             qa_dist[str(row[0])] = row[1]
@@ -815,8 +820,11 @@ def dashboard():
         # 保鲜摘要
         try:
             data["freshness"] = db.get_freshness_summary()
+            # 已设保鲜周期的知识点数
+            c.execute("SELECT COUNT(*) FROM knowledge_points WHERE freshness_interval_days IS NOT NULL AND freshness_interval_days > 0")
+            data["freshness"]["managed"] = c.fetchone()[0]
         except:
-            data["freshness"] = {"expired": 0, "expiring": 0, "fresh": 0}
+            data["freshness"] = {"expired": 0, "expiring": 0, "fresh": 0, "managed": 0}
 
         # 政策校验摘要
         try:
@@ -860,7 +868,7 @@ def dashboard():
         # v2.2.0: 手动录入统计
         try:
             c2 = conn.cursor()
-            c2.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='manual'")
+            c2.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='experience_note'")
             data["manual_kps"] = c2.fetchone()[0]
         except:
             data["manual_kps"] = 0

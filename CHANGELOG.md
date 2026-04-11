@@ -1,5 +1,28 @@
 # 变更日志
 
+## v2.2.0 bugfix-2 -- 仪表盘数据修复+审核界面UI优化
+
+发布日期：2026-04-11
+
+变更内容：
+- **仪表盘数据修复**
+  - api_server.py: dashboard端点全部改为直接SQL查询,不依赖get_statistics()
+  - api_server.py: total_kp直接GROUP BY求和(修复显示0的bug)
+  - api_server.py: by_type统计全部知识点(修复只统计confirmed的bug)
+  - api_server.py: qa_distribution用CAST(qa_score AS INTEGER)(修复浮点数key不匹配导致全0)
+  - api_server.py: freshness新增managed字段(已设保鲜周期的知识点数)
+  - api_server.py: manual_kps查询条件修正为experience_note(原来用manual查不到)
+- **审核界面UI优化**
+  - review.html: 原文摘录区支持展开/收起(内容超120px显示展开全文按钮)
+  - review.html: 分页按钮padding自适应(修复"下一页"按钮畸形)
+  - review.html: API费用卡片精简(移除分类明细,只保留总额+上限+7天趋势)
+  - review.html: 保鲜卡片新增"已设保鲜周期"计数
+  - review.html: Tab2切换时自动检测运行中任务并恢复进度显示
+
+修改文件：api_server.py, review.html
+
+---
+
 ## v2.2.0 bugfix -- 扫描件PDF OCR + 预处理markdown缓存 + API费用UI增强
 
 发布日期：2026-04-11
