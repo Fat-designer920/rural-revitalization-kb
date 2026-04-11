@@ -1,5 +1,31 @@
 # 变更日志
 
+## v2.2.0 bugfix-4 -- 来源属性感知+系统性文章合并规则
+
+发布日期：2026-04-11
+
+变更内容：
+- **来源属性感知（SOURCE_NATURE_INSTRUCTION）**
+  - prompt_templates.py: 新增SOURCE_NATURE_INSTRUCTION共享策略块（6种来源类型→分类策略映射）
+  - prompt_templates.py: 注入全部5个提取Prompt，位于DOCUMENT_FORM_INSTRUCTION之后
+  - prompt_templates.py: PRE_ANALYSIS_PROMPT新增source_nature输出字段
+  - prompt_templates.py: CONTEXT_RELAY_TEMPLATE新增source_nature传递
+  - extractor.py: 从预分析结果提取source_nature，传递给R1提取上下文
+  - extractor.py: _build_context_relay单段文件也传递来源属性
+  - 解决：第三方调研报告被全部分成"操盘经验"的分类失准问题
+- **系统性文章合并规则增强**
+  - prompt_templates.py: DOCUMENT_FORM_INSTRUCTION新增3条合并规则
+  - 总分合并：总述段不单独提取（信息已被分述覆盖）
+  - 因果链不拆分：同一主题的原因分析+对策建议合并为一条
+  - 论点去重：核心结论相同的"为什么"和"怎么做"合并保留更完整的那条
+  - 解决：系统性文章17条知识点有重叠、粒度偏细的问题
+- **Prompt版本升级**
+  - prompt_templates.py: PROMPT_VERSION升级v2.2.3
+
+修改文件：prompt_templates.py, extractor.py
+
+---
+
 ## v2.2.0 bugfix-3 -- 文档形态感知+类型中文映射+摘录滚动
 
 发布日期：2026-04-11

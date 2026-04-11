@@ -1,7 +1,12 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.1.2 F044+bugfix2 - 基于v2.1.2 bugfix，新增QC分批质检防截断
+版本：v2.2.3 - 来源属性感知传递
+
+变更说明（v2.2.3）：
+  - 从预分析结果提取source_nature字段，传递给R1提取上下文
+  - _build_context_relay新增source_nature参数，单段文件也传递来源属性
+  - 配合prompt_templates.py v2.2.3的SOURCE_NATURE_INSTRUCTION使用
 
 变更说明（v2.1.2 bugfix2）：
   - QC质检分批调用(每批15条),防止知识点过多导致V3输出截断
@@ -627,9 +632,24 @@ class Extractor:
     # ================================================================
     # v2.1.0-c 新增：上下文接力信息构建
     # ================================================================
-    def _build_context_relay(self, seg_idx, total_segs, file_structure, prev_kps):
-        """构建分段提取的上下文接力信息。单段文件返回空字符串。"""
+    def _build_context_relay(self, seg_idx, total_segs, file_structure, prev_kps, source_nature=""):
+        """构建分段提取的上下文接力信息。
+        v2.2.3: 单段文件也传递来源属性信息。"""
+        # v2.2.3: 来源属性描述
+        SOURCE_NATURE_DESC = {
+            "official_policy": "政府发文/法规/通知（应分到政策库）",
+            "research_report": "第三方调研分析/行业研究（应分到案例库或经验库/反常识洞察，不是操盘经验）",
+            "personal_experience": "作者本人操盘记录/工作笔记（应分到经验库）",
+            "project_case": "具体项目案例报告（应分到案例库）",
+            "tool_template": "模板/合同/清单（应分到工具库）",
+            "data_material": "数据表/统计资料（应分到数据库）",
+        }
+        nature_text = SOURCE_NATURE_DESC.get(source_nature, "(未识别)") if source_nature else "(未识别)"
+
         if total_segs <= 1:
+            # v2.2.3: 单段文件也传递来源属性
+            if source_nature:
+                return f"\n=== 文档来源属性 ===\n本文档来源属性: {source_nature} — {nature_text}\n请据此选择正确的分类方向。\n"
             return ""
         # 前段已提取的知识点标题
         if prev_kps:
@@ -640,6 +660,7 @@ class Extractor:
         return CONTEXT_RELAY_TEMPLATE.format(
             total_segments=total_segs,
             current_segment=seg_idx,
+            source_nature=f"{source_nature} — {nature_text}" if source_nature else "(未识别)",
             file_structure_summary=file_structure or "(结构摘要不可用)",
             previous_titles=titles_text
         )
@@ -1054,6 +1075,12 @@ class Extractor:
                     suggested_content_type=ctype)
 
             prompt = get_extraction_prompt(ctype)
+            # v2.2.3: 提取来源属性
+            source_nature = ""
+            if pre_result and isinstance(pre_result, dict):
+                source_nature = pre_result.get("source_nature", "")
+                if source_nature:
+                    print(f"     来源属性: {source_nature}")
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
             print(f"     提取模型: {self.extraction_model} ({self.extraction_model_name})")
@@ -1094,7 +1121,7 @@ class Extractor:
                 if len(segs) > 1:
                     print(f"\n     --- 第{i}/{len(segs)}段 ({len(seg)}字) ---")
                 # 构建上下文接力信息
-                relay_prefix = self._build_context_relay(i, len(segs), file_structure, kps)
+                relay_prefix = self._build_context_relay(i, len(segs), file_structure, kps, source_nature=source_nature)
                 seg_kps = self._extract_with_auto_split(
                     seg, f"{fn}(第{i}/{len(segs)}段)" if len(segs) > 1 else fn,
                     prompt, ctype, relay_prefix=relay_prefix)

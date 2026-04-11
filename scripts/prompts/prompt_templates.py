@@ -1,7 +1,16 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.2.2 - 文档形态感知（颗粒度适配系统性文章/框架文件/数据表）
+版本：v2.2.3 - 来源属性感知+系统性文章合并规则
+
+变更说明（v2.2.3）：
+  - 新增SOURCE_NATURE_INSTRUCTION共享策略块（来源属性→分类策略映射）
+  - 注入全部5个提取Prompt，位于DOCUMENT_FORM_INSTRUCTION之后
+  - PRE_ANALYSIS_PROMPT新增source_nature输出字段（6种来源类型）
+  - CONTEXT_RELAY_TEMPLATE新增source_nature传递
+  - DOCUMENT_FORM_INSTRUCTION系统性文章新增3条合并规则（总分合并/因果链不拆分/论点去重）
+  - 解决：第三方调研报告被全部分成"操盘经验"、系统性文章知识点重叠过多
+  - PROMPT_VERSION升级v2.2.3
 
 变更说明（v2.2.2）：
   - 新增DOCUMENT_FORM_INSTRUCTION共享策略块（文档形态识别→颗粒度适配）
@@ -69,7 +78,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.2.2"
+PROMPT_VERSION = "v2.2.3"
 
 
 def get_prompt_version():
@@ -157,6 +166,10 @@ DOCUMENT_FORM_INSTRUCTION = """
 → 一套完整的对策建议（目标+措施+预期效果）= 一条知识点
 → 一个独立的深度洞察（反常识判断+论证依据）= 一条知识点
 → 关键原则：论证链是这类文章最大的价值，拆碎后每条都变成孤立的"正确的废话"
+→ **合并规则（必须遵守）**：
+  1. 总分合并：如果文章有"总述段"概括后跟分述段展开，只提取分述，不单独提取总述（总述信息已被分述覆盖，单独提取等于重复）
+  2. 因果链不拆分：同一主题的"原因分析"和"对策建议"如果构成直接因果对应关系（问题A→对策A），合并为一条知识点，保留完整论证链
+  3. 论点去重：如果两条知识点的核心结论相同，只是一条侧重"为什么"、一条侧重"怎么做"，合并保留更完整的那条
 
 **形态C - 框架/大纲文件**（编制大纲、章节结构说明、模板框架、标准体系、评审要点清单）
 → 合并为1-3条整体性知识点，保留完整结构
@@ -169,6 +182,36 @@ DOCUMENT_FORM_INSTRUCTION = """
 → 同一测算模型的多个参数 = 一条知识点（而非每个参数拆一条）
 
 识别完形态后，在extraction_notes中注明你识别的文档形态（如"本文为系统性分析文章，按论证链提取"），然后按对应策略开始提取。
+"""
+
+SOURCE_NATURE_INSTRUCTION = """
+## 文档来源属性与分类策略（v2.2.3新增，必须遵守）
+
+文档的来源属性决定了分类方向。请根据预分析提供的source_nature（或你自行判断），选择正确的分类策略：
+
+- **research_report**（第三方调研分析、行业研究、学术论文）：
+  → 优先分到"案例库/失败与风险案例"（如果内容以问题诊断和风险分析为主）
+  → 或分到"经验库/反常识洞察"（如果内容以深度洞察、行业判断为主）
+  → 绝不能分到"操盘经验"，因为这不是作者本人的操盘记录
+  → experience_type优先选insight（反常识洞察）或pitfall（踩坑记录），而非method/strategy
+
+- **personal_experience**（作者本人的操盘记录、工作笔记、复盘总结）：
+  → 分到"经验库"各子类（策略判断/操盘方法/踩坑记录/反常识洞察/沟通话术）
+  → experience_type根据内容选择strategy/method/pitfall/insight/communication
+
+- **official_policy**（政府发文、法规、通知、规范性文件）：
+  → 分到"政策库"各子类
+
+- **project_case**（具体项目的案例报告、实施方案、验收报告）：
+  → 分到"案例库"各子类
+
+- **tool_template**（模板、合同、清单等工具性文档）：
+  → 分到"工具库"各子类
+
+- **data_material**（数据表、统计资料、测算模型）：
+  → 分到"数据库"各子类
+
+如果上下文中有source_nature信息，以该信息为准；如果没有，请根据文档内容自行判断来源属性。
 """
 
 PRACTICAL_INSIGHTS_INSTRUCTION = """
@@ -251,6 +294,9 @@ CONTEXT_RELAY_TEMPLATE = """
 === 分段提取上下文（请仔细阅读） ===
 本文件共{total_segments}段，当前是第{current_segment}段。
 
+【文档来源属性】
+{source_nature}
+
 【文件整体结构摘要】
 {file_structure_summary}
 
@@ -311,7 +357,7 @@ TAG_SUGGESTION_PROMPT = {
 # ============================================================
 
 _POLICY_EXTRACT_BASE = {
-    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + """
+    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
 
 你是乡村振兴政策分析专家，拥有20年土地政策实操经验。你的任务是从政策文件中萃取可直接用于付费产品的高质量知识点。
 
@@ -412,7 +458,7 @@ _POLICY_EXTRACT_BASE = {
 }
 
 _CASE_EXTRACT_BASE = {
-    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + """
+    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
 
 你是乡村振兴项目咨询顾问，拥有丰富的项目操盘经验。你的任务是从案例材料中萃取可直接用于付费产品的高质量知识点。
 
@@ -507,7 +553,7 @@ _CASE_EXTRACT_BASE = {
 }
 
 _EXPERIENCE_EXTRACT_BASE = {
-    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + """
+    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
 
 你是知识管理顾问，擅长从实战经验中萃取可复用的操盘智慧。你的任务是从经验材料中萃取可直接用于付费产品的高质量知识点。
 
@@ -601,7 +647,7 @@ _EXPERIENCE_EXTRACT_BASE = {
 }
 
 _TOOL_EXTRACT_BASE = {
-    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + """
+    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
 
 你是实操工具整理专家。你的任务是从模板/工具文件中萃取可直接用于付费产品的结构化知识点。
 
@@ -672,7 +718,7 @@ _TOOL_EXTRACT_BASE = {
 }
 
 _DATA_EXTRACT_BASE = {
-    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + """
+    "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
 
 你是数据分析专家，擅长从数据资料中萃取可直接用于付费产品的数据知识点。
 
@@ -768,6 +814,7 @@ PRE_ANALYSIS_PROMPT = {
   "category_reason": "分类理由（30字内）",
   "content_overview": "内容概述（100字内）",
   "content_type": "policy/case/experience/tool/data",
+  "source_nature": "文档来源属性，从以下6种选1个：official_policy（政府发文/法规/通知）/ research_report（第三方调研分析/行业研究/学术论文）/ personal_experience（作者本人操盘记录/工作笔记）/ project_case（具体项目案例报告/实施方案）/ tool_template（模板/合同/清单）/ data_material（数据表/统计资料）",
   "has_tables": true或false,
   "has_numerical_data": true或false,
   "segment_boundaries": [
