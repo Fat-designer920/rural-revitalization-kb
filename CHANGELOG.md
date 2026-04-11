@@ -1,5 +1,37 @@
 # 变更日志
 
+## v2.2.0 bugfix -- 扫描件PDF OCR + 预处理markdown缓存 + API费用UI增强
+
+发布日期：2026-04-11
+
+变更内容：
+- **扫描件PDF OCR修复（硅基流动API）**
+  - deepseek_client.py: ocr_image()改用硅基流动Qwen2.5-VL-72B视觉模型
+  - deepseek_client.py: 新增_ocr_pdf()用pymupdf逐页渲染后OCR
+  - deepseek_client.py: 新增_ocr_single_image()调用硅基流动API
+  - deepseek_client.py: 新增_get_siliconflow_api_key()读取硅基API Key
+  - config_wizard.py: 新增第4项硅基流动API Key配置+测试按钮
+  - 新增依赖: pymupdf
+- **预处理markdown缓存（消除双重OCR）**
+  - preprocessor.py: 预处理后将内容保存为.md缓存文件到processing目录
+  - extractor.py: 优先读取.md伴侣缓存文件,无缓存时才读原文件
+  - extractor.py: _move_to_completed/_move_to_failed同步移动.md伴侣文件
+  - api_server.py: 文件管线计数排除.md伴侣文件
+- **预处理智能hash去重修复**
+  - preprocessor.py: completed状态才跳过;processing/failed状态检查物理文件是否存在
+  - preprocessor.py: 物理文件已不存在时清理旧DB记录,允许重新处理
+- **任务完成undefined显示修复**
+  - api_server.py: 预处理结果新增skip字段
+  - review.html: skip/total_kps安全处理,不再显示undefined
+- **API费用数据统一+可视化增强**
+  - api_server.py: 仪表盘API费用改为直接从api_call_logs查询(与详情弹窗一致)
+  - api_server.py: 仪表盘新增api_today_detail/api_trend_7d/daily_limit字段
+  - review.html: API费用卡片增强(上限显示+今日分类明细+7天趋势柱状图)
+
+修改文件：deepseek_client.py, preprocessor.py, extractor.py, api_server.py, review.html, config_wizard.py
+
+---
+
 ## v2.2.0 第1批 -- 专家注解+经验速记：F029+F045
 
 发布日期：2026-04-09
@@ -43,39 +75,11 @@
 
 发布日期：2026-04-08
 
-变更内容：
-- **extractor.py headless模式bugfix**
-  - 新增self._headless标志位，set_model()时自动设为True
-  - check_duplicate(): headless时自动重新分析，不阻塞等待用户输入
-  - _pre_analyze(): headless时预分析3次失败自动跳过预分析
-  - 低价值文件(评分<=2): headless时自动继续提取
-  - 高费用(>5元): headless时自动继续提取
-- **review.html模型选择下拉框**
-  - 提取管理区域新增"提取模型"下拉选择框(R1深度推理/V3快速提取)
-  - 一键提取和版本重提取均读取下拉框选择的模型值
-
-修改文件：extractor.py, review.html
-
 ---
 
 ## v2.1.2 第2批 -- 版本重提取+长任务支持+提取管理：F044+F047
 
 发布日期：2026-04-06
-
-变更内容：
-- **F044 版本重提取**
-  - api_server.py新增GET /api/tools/reextract-scan扫描旧版本知识点
-  - api_server.py新增POST /api/tasks/reextract版本重提取
-  - db_manager.py新增get_reextract_scan()+delete_kps_by_source_file()
-  - review.html新增版本重提取面板
-- **F047 长任务后台执行**
-  - api_server.py新增_task全局字典+GET /api/tasks/progress+POST preprocess/extract
-  - extractor.py新增progress_callback+headless运行模式
-  - review.html新增长任务进度面板
-- **提取管理**
-  - review.html Tab 2新增提取管理区域
-
-修改文件：api_server.py, db_manager.py, extractor.py, review.html
 
 ---
 
