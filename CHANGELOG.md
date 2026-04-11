@@ -1,5 +1,23 @@
 # 变更日志
 
+## v2.2.0 bugfix-3 -- 文档形态感知+类型中文映射+摘录滚动
+
+发布日期：2026-04-11
+
+变更内容：
+- **提取Prompt文档形态感知**
+  - prompt_templates.py: 新增DOCUMENT_FORM_INSTRUCTION共享策略块(4种文档形态→颗粒度适配)
+  - prompt_templates.py: 注入全部5个提取Prompt，解决编制大纲拆太碎、系统性文章论证链断裂问题
+  - prompt_templates.py: SELF_CHECK_INSTRUCTION新增第6条文档形态适配检验
+  - prompt_templates.py: PROMPT_VERSION升级v2.2.2
+- **审核界面显示修复**
+  - review.html: 新增ETN映射，experience_type从英文代码改为中文显示
+  - review.html: 原文摘录展开改为max-height:360px+滚动条方案
+
+修改文件：prompt_templates.py, review.html
+
+---
+
 ## v2.2.0 bugfix-2 -- 仪表盘数据修复+审核界面UI优化
 
 发布日期：2026-04-11

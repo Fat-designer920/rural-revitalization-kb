@@ -309,8 +309,9 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* === Card Sections === */
 .kp-excerpt{background:var(--bg);padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.8;max-height:120px;overflow:hidden;color:var(--text-secondary);margin-bottom:10px;position:relative;cursor:pointer;transition:max-height .3s ease}
-.kp-excerpt.expanded{max-height:none}
+.kp-excerpt.expanded{max-height:360px;overflow-y:auto;padding-bottom:10px}
 .kp-excerpt-toggle{display:none;text-align:center;padding:2px 0;font-size:11px;color:var(--primary);cursor:pointer;background:linear-gradient(transparent,var(--bg) 40%);position:absolute;bottom:0;left:0;right:0;height:28px;line-height:28px}
+.kp-excerpt.expanded .kp-excerpt-toggle{position:sticky;background:var(--bg);margin:0 -14px;padding:0 14px}
 .kp-excerpt-toggle.visible{display:block}
 .kp-fields{margin-bottom:10px}
 .kp-fields dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px}
@@ -788,6 +789,7 @@ var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"�
 var PVN={"0":"未校验","1":"已验证","2":"待验证","3":"已豁免","4":"无需校验"};
 var IRN={"reliable":"可靠","uncertain":"存疑","unreliable":"不可靠","no_insights":"无启示"};
 var CONF_CN={"high":"依据充分","medium":"合理推断","low":"待验证"};
+var ETN={strategy:"策略判断",method:"操盘方法",pitfall:"踩坑记录",insight:"反常识洞察",communication:"沟通汇报"};
 var ATN={"agree":"实战验证","disagree":"不同意","supplement":"补充","correction":"纠错","experience":"经验补充"};
 var STN={"extracted":"文件提取","experience_note":"经验速记","manual":"手动录入"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
@@ -972,7 +974,7 @@ if(ATTR_KEY_CN[code])return ATTR_KEY_CN[code];
 if(baseCode!==code&&ATTR_KEY_CN[baseCode])return ATTR_KEY_CN[baseCode];
 return code}
 
-function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v)h+="<dt>"+esc(fs[i][1])+"</dt><dd>"+esc(String(v))+"</dd>"}return h?"<dl>"+h+"</dl>":""}
+function getKeyFields(tp,d){var m={policy:[["policy_name","政策名称"],["issuing_body","发布机构"],["core_provisions","核心条款"],["implementation_points","执行要点"]],"case":[["project_name","项目名称"],["location","所在地"],["scale","规模"],["core_strategy","核心策略"],["funding_sources","资金结构"]],experience:[["experience_type","类型"],["applicable_scenario","场景"],["core_conclusion","核心结论"]],tool:[["tool_type","工具类型"],["applicable_scenario","场景"],["core_structure","结构"]],data:[["data_topic","主题"],["data_source","来源"],["key_values","关键数值"],["data_year","年份"]]};var fs=m[tp]||m.policy,h="";for(var i=0;i<fs.length;i++){var v=d[fs[i][0]];if(v){var dv=String(v);if(fs[i][0]==="experience_type")dv=ETN[v]||dv;h+="<dt>"+esc(fs[i][1])+"</dt><dd>"+esc(dv)+"</dd>"}}return h?"<dl>"+h+"</dl>":""}
 
 /* === Actions === */
 function confirmKp(id){apiPost("/api/knowledge-points/"+id+"/confirm").then(function(r){if(r.success){showToast("已确认入库","success");delete selectedIds[id];refreshData()}})}
