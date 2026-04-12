@@ -672,6 +672,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <option value="1" selected>R1 深度推理 (精准,较慢)</option>
         <option value="2">V3 快速提取 (快速,性价比高)</option>
       </select>
+      <span style="color:var(--border);margin:0 4px">|</span>
+      <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+        <input type="checkbox" id="forceReprocessCheck" style="margin:0;cursor:pointer">
+        <span>强制重新处理</span>
+      </label>
+      <span style="font-size:11px;color:var(--text-muted)">(已完成文件将删除旧知识点后重跑)</span>
     </div>
     <!-- Task Progress Panel -->
     <div class="task-progress" id="taskProgress" style="display:none">
@@ -1486,9 +1492,14 @@ function startTask(type){
   if(type==="preprocess"){
     var docOrigin=document.getElementById("docOriginSelect").value;
     var originLabel=docOrigin==="self"?"我的经验文档":"外部文献";
-    apiPost("/api/tasks/preprocess",{doc_origin:docOrigin}).then(function(r){
+    var forceReprocess=document.getElementById("forceReprocessCheck").checked;
+    var postData={doc_origin:docOrigin};
+    if(forceReprocess)postData.force_reprocess=true;
+    var titleLabel="处理新文件("+originLabel+")";
+    if(forceReprocess)titleLabel="强制重处理("+originLabel+")";
+    apiPost("/api/tasks/preprocess",postData).then(function(r){
       if(r.error){showToast(r.error,"error");return}
-      showTaskProgress("处理新文件("+originLabel+")");startPolling();
+      showTaskProgress(titleLabel);startPolling();
     });
   }else if(type==="extract"){
     var mdl=document.getElementById("extractModelSelect").value;

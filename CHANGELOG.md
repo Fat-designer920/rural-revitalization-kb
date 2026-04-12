@@ -1,5 +1,26 @@
 # 变更日志
 
+## v2.2.0 bugfix-6 -- 强制重新处理已完成文件+annotations清理修复
+
+发布日期：2026-04-12
+
+变更内容：
+- **强制重新处理已完成文件**
+  - preprocessor.py: 新增force_reprocess参数,勾选后completed文件不跳过
+  - preprocessor.py: 强制重处理时先删旧知识点+注解+source_files记录+completed旧文件+.md缓存
+  - preprocessor.py: 新增_clean_completed_file()方法+self.completed路径
+  - api_server.py: POST /api/tasks/preprocess接受force_reprocess参数并透传
+  - review.html: 提取管理区新增"强制重新处理"勾选框+灰字提示
+  - review.html: startTask()读取勾选框状态传参,标题区分普通/强制模式
+- **删除知识点时annotations遗漏修复**
+  - db_manager.py: delete_kps_by_source_file()补上DELETE FROM annotations(修复版本重提取遗漏注解)
+  - db_manager.py: delete_knowledge_point()补上DELETE FROM annotations(修复物理删除遗漏注解)
+
+修改文件：preprocessor.py, db_manager.py, api_server.py, review.html
+
+---
+
+
 ## v2.2.0 bugfix-5 -- 文档来源属性(doc_origin)
 
 发布日期：2026-04-12

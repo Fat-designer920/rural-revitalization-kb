@@ -1,6 +1,7 @@
 """
 preprocessor.py - 智能预处理(重命名+标签)
 路径：scripts/preprocessor.py
+版本：v2.2.0 bugfix-6 - 强制重新处理已完成文件
 """
 import os,sys,json,shutil
 from pathlib import Path
@@ -22,6 +23,7 @@ class Preprocessor:
         self.db = DatabaseManager()
         self.pending = Path(self.config.get("pending_path", PROJECT_ROOT/"data"/"pending"))
         self.processing = Path(self.config.get("processing_path", PROJECT_ROOT/"data"/"processing"))
+        self.completed = Path(self.config.get("completed_path", PROJECT_ROOT/"data"/"completed"))
 
     def scan(self):
         files = self.reader.scan_directory(str(self.pending))
@@ -31,7 +33,25 @@ class Preprocessor:
         for c in '<>:"/\\|?*': name = name.replace(c,"_")
         return name[:60].strip()
 
-    def preprocess_file(self, fi, doc_origin="external"):
+    def _clean_completed_file(self, ename):
+        """清理completed目录中的旧文件及.md伴侣文件"""
+        old_file = self.completed / ename
+        if old_file.exists():
+            try:
+                old_file.unlink()
+                print(f"     已清理completed旧文件: {ename}")
+            except Exception as e:
+                print(f"     ! 清理旧文件失败: {e}")
+        # 清理.md伴侣文件
+        old_md = self.completed / (Path(ename).stem + ".md")
+        if old_md.exists():
+            try:
+                old_md.unlink()
+                print(f"     已清理completed旧缓存: {old_md.name}")
+            except Exception as e:
+                print(f"     ! 清理旧缓存失败: {e}")
+
+    def preprocess_file(self, fi, doc_origin="external", force_reprocess=False):
         result = {"success":False,"file_id":None,"renamed":"","content_type":"","content":"","error":""}
         try:
             print(f"\n  >> 正在处理: {fi['name']}")
@@ -58,26 +78,53 @@ class Preprocessor:
                 if existing:
                     e_status = existing.get("process_status", "")
                     ename = existing.get("renamed_filename") or existing.get("original_filename") or "?"
-                    # 已完成提取的文件才真正跳过
+                    e_id = existing["id"]
+                    # 已完成提取的文件
                     if e_status == "completed":
-                        print(f"     [跳过] 文件已存在(#{existing['id']} {ename}, 状态:{e_status})")
-                        result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
-                        return result
+                        if force_reprocess:
+                            # 强制重新处理: 删旧知识点+注解+source_file记录+completed旧文件
+                            print(f"     [强制重处理] 删除旧数据(#{e_id} {ename})...")
+                            deleted_count = self.db.delete_kps_by_source_file(e_id)
+                            print(f"     已删除 {deleted_count} 条旧知识点")
+                            try:
+                                conn = self.db.get_connection()
+                                conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
+                                conn.commit()
+                                conn.close()
+                            except Exception as de:
+                                print(f"     ! 清理source_files记录失败: {de}")
+                            self._clean_completed_file(ename)
+                            # 不return，继续走正常预处理流程
+                        else:
+                            print(f"     [跳过] 文件已存在(#{e_id} {ename}, 状态:{e_status})")
+                            result["error"] = "重复文件(已存在#%d %s)" % (e_id, ename)
+                            return result
                     # processing/failed状态:检查物理文件是否还在
-                    e_file = self.processing / ename
-                    if e_file.exists():
-                        print(f"     [跳过] 文件已在处理中(#{existing['id']} {ename})")
-                        result["error"] = "重复文件(已存在#%d %s)" % (existing["id"], ename)
-                        return result
-                    # 物理文件已不存在,清理旧记录,允许重新处理
-                    print(f"     旧记录#{existing['id']}物理文件已不存在,清理后重新处理")
-                    try:
-                        conn = self.db.get_connection()
-                        conn.execute("DELETE FROM source_files WHERE id=?", (existing['id'],))
-                        conn.commit()
-                        conn.close()
-                    except Exception as de:
-                        print(f"     ! 清理旧记录失败: {de}")
+                    elif e_status in ("processing", "failed"):
+                        e_file = self.processing / ename
+                        if e_file.exists():
+                            print(f"     [跳过] 文件已在处理中(#{e_id} {ename})")
+                            result["error"] = "重复文件(已存在#%d %s)" % (e_id, ename)
+                            return result
+                        # 物理文件已不存在,清理旧记录,允许重新处理
+                        print(f"     旧记录#{e_id}物理文件已不存在,清理后重新处理")
+                        try:
+                            conn = self.db.get_connection()
+                            conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
+                            conn.commit()
+                            conn.close()
+                        except Exception as de:
+                            print(f"     ! 清理旧记录失败: {de}")
+                    else:
+                        # 其他未知状态,也清理旧记录
+                        print(f"     旧记录#{e_id}状态异常({e_status}),清理后重新处理")
+                        try:
+                            conn = self.db.get_connection()
+                            conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
+                            conn.commit()
+                            conn.close()
+                        except Exception as de:
+                            print(f"     ! 清理旧记录失败: {de}")
 
             print(f"     AI分析中...")
             up = FILE_RENAME_PROMPT["user_prompt_template"].format(
@@ -114,10 +161,12 @@ class Preprocessor:
         except Exception as e: result["error"]=f"{type(e).__name__}:{e}"; print(f"     [FAIL] {result['error']}")
         return result
 
-    def run(self, doc_origin="external"):
+    def run(self, doc_origin="external", force_reprocess=False):
         print("="*60)
         print("  乡村振兴知识库 - 文件预处理")
         print("="*60)
+        if force_reprocess:
+            print("  [!] 强制重新处理模式: 已完成文件将删除旧知识点后重新处理")
         usage = self.client.get_today_usage()
         print(f"\n  今日API: {usage['today_cost']}元/{usage['daily_limit']}元 ({usage['usage_percent']}%)")
         files = self.scan()
@@ -130,7 +179,7 @@ class Preprocessor:
         results, ok, fail = [], 0, 0
         for i, fi in enumerate(files,1):
             print(f"\n[{i}/{len(files)}]", end="")
-            r = self.preprocess_file(fi, doc_origin=doc_origin); results.append(r)
+            r = self.preprocess_file(fi, doc_origin=doc_origin, force_reprocess=force_reprocess); results.append(r)
             if r["success"]: ok+=1
             else:
                 fail+=1

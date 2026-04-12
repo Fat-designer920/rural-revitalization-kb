@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.2.0 bugfix-5 - 新增doc_origin文档来源属性
+版本：v2.2.0 bugfix-6 - 删除知识点时同步清理annotations
 
 数据库表（15张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -533,6 +533,7 @@ class DatabaseManager:
     def delete_knowledge_point(self, kp_id):
         """物理删除知识点及其关联数据（不可恢复）"""
         conn = self.get_connection(); c = conn.cursor()
+        c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
         c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
         c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
         c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
@@ -566,6 +567,7 @@ class DatabaseManager:
         c.execute("SELECT id FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
         kp_ids = [r[0] for r in c.fetchall()]
         for kp_id in kp_ids:
+            c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
             c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
