@@ -660,7 +660,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">升级旧版本知识点</div>
       </div>
     </div>
-    <div style="margin:10px 0 6px;display:flex;align-items:center;gap:8px">
+    <div style="margin:10px 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">文档来源:</label>
+      <select id="docOriginSelect" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text-primary);outline:none">
+        <option value="external" selected>外部文献</option>
+        <option value="self">我的经验文档</option>
+      </select>
+      <span style="color:var(--border);margin:0 4px">|</span>
       <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">提取模型:</label>
       <select id="extractModelSelect" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text-primary);outline:none">
         <option value="1" selected>R1 深度推理 (精准,较慢)</option>
@@ -1478,9 +1484,11 @@ var _pollTimer=null;
 
 function startTask(type){
   if(type==="preprocess"){
-    apiPost("/api/tasks/preprocess").then(function(r){
+    var docOrigin=document.getElementById("docOriginSelect").value;
+    var originLabel=docOrigin==="self"?"我的经验文档":"外部文献";
+    apiPost("/api/tasks/preprocess",{doc_origin:docOrigin}).then(function(r){
       if(r.error){showToast(r.error,"error");return}
-      showTaskProgress("处理新文件");startPolling();
+      showTaskProgress("处理新文件("+originLabel+")");startPolling();
     });
   }else if(type==="extract"){
     var mdl=document.getElementById("extractModelSelect").value;

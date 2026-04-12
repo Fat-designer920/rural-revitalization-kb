@@ -1,5 +1,23 @@
 # 变更日志
 
+## v2.2.0 bugfix-5 -- 文档来源属性(doc_origin)
+
+发布日期：2026-04-12
+
+变更内容：
+- **文档来源属性**
+  - db_manager.py: add_source_file()新增doc_origin参数(self/external)
+  - preprocessor.py: 预处理流程透传doc_origin到source_files表
+  - api_server.py: POST /api/tasks/preprocess接受doc_origin参数
+  - extractor.py: doc_origin='self'时强制source_nature=personal_experience+authority=firsthand
+  - review.html: 提取管理区新增"文档来源"下拉框(外部文献/我的经验文档)
+  - migrate_v220_bf5.py: source_files表新增doc_origin字段(默认external)
+
+修改文件：db_manager.py, preprocessor.py, api_server.py, extractor.py, review.html
+新增文件：migrate_v220_bf5.py
+
+---
+
 ## v2.2.0 bugfix-4 -- 来源属性感知+系统性文章合并规则
 
 发布日期：2026-04-11

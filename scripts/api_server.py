@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.2.0 bugfix-2 - 仪表盘数据修复+审核界面UI优化
+版本：v2.2.0 bugfix-5 - 文档来源属性(doc_origin)
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -1109,6 +1109,12 @@ def task_preprocess():
         _task["result"] = None
         _task["error"] = None
 
+    # v2.2.0 bugfix-5: 读取文档来源属性
+    d = request.get_json() or {}
+    doc_origin = d.get("doc_origin", "external")
+    if doc_origin not in ("self", "external"):
+        doc_origin = "external"
+
     def _run():
         try:
             try:
@@ -1117,7 +1123,7 @@ def task_preprocess():
                 from preprocessor import Preprocessor
             _task_update_progress({"current_step": "执行预处理", "message": "正在处理文件..."})
             proc = Preprocessor()
-            results = proc.run()
+            results = proc.run(doc_origin=doc_origin)
             ok = sum(1 for r in results if r.get("success"))
             fail = len(results) - ok
             with _task_lock:

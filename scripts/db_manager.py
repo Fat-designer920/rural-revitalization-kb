@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.2.0 F029+F045 - 新增annotations表+经验速记支持
+版本：v2.2.0 bugfix-5 - 新增doc_origin文档来源属性
 
 数据库表（15张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -325,16 +325,16 @@ class DatabaseManager:
     # ================================================================
     # 文件管理
     # ================================================================
-    def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None):
+    def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None, doc_origin="external"):
         conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash) VALUES (?,?,?,?,?)",
-                  (original_filename, file_path, file_type, file_size, file_hash))
+        c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash,doc_origin) VALUES (?,?,?,?,?,?)",
+                  (original_filename, file_path, file_type, file_size, file_hash, doc_origin))
         fid = c.lastrowid; conn.commit(); conn.close(); return fid
 
     def update_source_file(self, file_id, **kw):
         conn = self.get_connection(); c = conn.cursor()
         allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash",
-                    "pre_analysis_result","suggested_content_type","segment_plan"]
+                    "pre_analysis_result","suggested_content_type","segment_plan","doc_origin"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed: sets.append(f"{k}=?"); vals.append(v)

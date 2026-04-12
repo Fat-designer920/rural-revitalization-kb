@@ -31,7 +31,7 @@ class Preprocessor:
         for c in '<>:"/\\|?*': name = name.replace(c,"_")
         return name[:60].strip()
 
-    def preprocess_file(self, fi):
+    def preprocess_file(self, fi, doc_origin="external"):
         result = {"success":False,"file_id":None,"renamed":"","content_type":"","content":"","error":""}
         try:
             print(f"\n  >> 正在处理: {fi['name']}")
@@ -88,7 +88,7 @@ class Preprocessor:
             ext = Path(fi["name"]).suffix
             renamed = self._sanitize(parsed.get("renamed_filename", Path(fi["name"]).stem))
             fid = self.db.add_source_file(fi["name"], fi["path"], fi["type"],
-                int(fi["size_mb"]*1024*1024), rr.get("file_hash"))
+                int(fi["size_mb"]*1024*1024), rr.get("file_hash"), doc_origin=doc_origin)
             self.db.update_source_file(fid, renamed_filename=renamed+ext,
                 domain_tags=json.dumps(parsed.get("domain_tags",[]),ensure_ascii=False),
                 region_tag=parsed.get("region_tag",""), policy_level=parsed.get("policy_level",""),
@@ -114,7 +114,7 @@ class Preprocessor:
         except Exception as e: result["error"]=f"{type(e).__name__}:{e}"; print(f"     [FAIL] {result['error']}")
         return result
 
-    def run(self):
+    def run(self, doc_origin="external"):
         print("="*60)
         print("  乡村振兴知识库 - 文件预处理")
         print("="*60)
@@ -130,7 +130,7 @@ class Preprocessor:
         results, ok, fail = [], 0, 0
         for i, fi in enumerate(files,1):
             print(f"\n[{i}/{len(files)}]", end="")
-            r = self.preprocess_file(fi); results.append(r)
+            r = self.preprocess_file(fi, doc_origin=doc_origin); results.append(r)
             if r["success"]: ok+=1
             else:
                 fail+=1

@@ -1,12 +1,12 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.2.3 - 来源属性感知传递
+版本：v2.2.0 bugfix-5 - 文档来源属性(doc_origin)驱动权威度
 
-变更说明（v2.2.3）：
-  - 从预分析结果提取source_nature字段，传递给R1提取上下文
-  - _build_context_relay新增source_nature参数，单段文件也传递来源属性
-  - 配合prompt_templates.py v2.2.3的SOURCE_NATURE_INSTRUCTION使用
+变更说明（v2.2.0 bugfix-5）：
+  - 从source_files记录读取doc_origin字段
+  - doc_origin='self'时：强制source_nature='personal_experience'，强制authority='firsthand'
+  - 覆盖V3预分析的source_nature判断，确保个人经验文档标注正确
 
 变更说明（v2.1.2 bugfix2）：
   - QC质检分批调用(每批15条),防止知识点过多导致V3输出截断
@@ -1079,8 +1079,13 @@ class Extractor:
             source_nature = ""
             if pre_result and isinstance(pre_result, dict):
                 source_nature = pre_result.get("source_nature", "")
-                if source_nature:
-                    print(f"     来源属性: {source_nature}")
+            # v2.2.0 bugfix-5: doc_origin覆盖——用户标记的来源优先于V3预分析
+            doc_origin = rec.get("doc_origin", "external")
+            if doc_origin == "self":
+                source_nature = "personal_experience"
+                print(f"     文档来源: 我的经验文档(doc_origin=self, 强制authority=firsthand)")
+            elif source_nature:
+                print(f"     来源属性: {source_nature}")
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
             print(f"     提取模型: {self.extraction_model} ({self.extraction_model_name})")
@@ -1152,6 +1157,10 @@ class Extractor:
                     cat_code = kp.get("suggested_category_code", "")
                     cat = self.db.find_category_by_code(cat_code)
                     tags = self._sanitize_tags(kp)
+
+                    # v2.2.0 bugfix-5: doc_origin='self'强制firsthand权威度
+                    if doc_origin == "self":
+                        tags["authority"] = "firsthand"
 
                     # v2.1.1 F038: 解析practical_insights
                     raw_insights = kp.get("practical_insights", [])
