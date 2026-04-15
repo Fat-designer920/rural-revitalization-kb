@@ -208,6 +208,27 @@ def update(kid):
 # ================================================================
 # 批量操作
 # ================================================================
+@app.route("/api/knowledge-points/ids", methods=["GET"])
+def get_kp_ids():
+    """返回当前筛选条件下的所有知识点ID（用于全选全部）"""
+    try:
+        r = db.get_all_knowledge_points(
+            review_status=request.args.get("status"),
+            content_type=request.args.get("type"),
+            category_id=request.args.get("category",None,type=int),
+            level1_code=request.args.get("level1",None),
+            search_query=request.args.get("search",None),
+            content_readiness=request.args.get("readiness",None),
+            freshness_filter=request.args.get("freshness",None),
+            policy_filter=request.args.get("policy",None),
+            source_type_filter=request.args.get("source_type",None),
+            page=1, per_page=99999)
+        ids = [item["id"] for item in (r.get("items") or [])]
+        return jsonify({"ids":ids, "total":len(ids)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e),"ids":[],"total":0}),500
+
 @app.route("/api/knowledge-points/batch-confirm", methods=["POST"])
 def batch_confirm():
     try:
@@ -535,32 +556,85 @@ def duplicate_summary():
 
 @app.route("/api/duplicate-groups/<int:gid>/resolve", methods=["POST"])
 def resolve_duplicate(gid):
-    """处理重复组：保留指定知识点，删除其余"""
+    """处理重复组：保留指定知识点，删除其余（支持keep_ids多选）"""
     try:
         group = db.get_duplicate_group(gid)
         if not group: return jsonify({"error":"not found"}),404
         d = request.get_json() or {}
-        keep_id = d.get("keep_id")
-        action = d.get("action", "resolve")  # resolve=保留一条删其余, dismiss=全部保留
+        action = d.get("action", "resolve")  # resolve=保留勾选删其余, dismiss=全部保留
         if action == "dismiss":
             db.update_duplicate_group(gid, "dismissed", "人工判定：非重复，全部保留")
             return jsonify({"success":True, "action":"dismissed"})
-        if not keep_id:
-            return jsonify({"error":"缺少keep_id参数"}),400
+        # 支持keep_ids(多选)和keep_id(单选，向下兼容)
+        keep_ids = d.get("keep_ids")
+        if not keep_ids:
+            keep_id = d.get("keep_id")
+            if keep_id:
+                keep_ids = [keep_id]
+        if not keep_ids:
+            return jsonify({"error":"缺少keep_ids参数"}),400
         member_ids = _parse(group["member_ids"])
         if not isinstance(member_ids, list):
             return jsonify({"error":"member_ids格式错误"}),500
-        if keep_id not in member_ids:
-            return jsonify({"error":"keep_id不在组成员中"}),400
-        # 删除其余知识点
+        for kid in keep_ids:
+            if kid not in member_ids:
+                return jsonify({"error":"keep_id #%d 不在组成员中" % kid}),400
+        # 删除未勾选的知识点
         deleted = []
         for mid in member_ids:
-            if mid != keep_id:
+            if mid not in keep_ids:
                 db.delete_knowledge_point(mid)
                 deleted.append(mid)
-        action_desc = "保留#%d，删除#%s" % (keep_id, ",".join(str(x) for x in deleted))
+        if deleted:
+            action_desc = "保留#%s，删除#%s" % (",".join(str(x) for x in keep_ids), ",".join(str(x) for x in deleted))
+        else:
+            action_desc = "全部保留(勾选了所有成员)"
         db.update_duplicate_group(gid, "resolved", action_desc)
-        return jsonify({"success":True, "kept":keep_id, "deleted":deleted, "action":"resolved"})
+        return jsonify({"success":True, "kept":keep_ids, "deleted":deleted, "action":"resolved"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error":str(e)}),500
+
+@app.route("/api/duplicate-groups/batch-resolve", methods=["POST"])
+def batch_resolve_duplicates():
+    """批量处理重复组：支持按AI建议处理或全部标记非重复"""
+    try:
+        d = request.get_json() or {}
+        group_ids = d.get("group_ids", [])
+        action = d.get("action", "ai_suggest")  # ai_suggest=按AI建议保留, dismiss=全部标记非重复
+        if not group_ids:
+            return jsonify({"error":"请选择至少一个重复组"}),400
+        resolved = 0
+        dismissed = 0
+        errors = []
+        for gid in group_ids:
+            try:
+                group = db.get_duplicate_group(gid)
+                if not group: continue
+                if action == "dismiss":
+                    db.update_duplicate_group(gid, "dismissed", "批量标记非重复")
+                    dismissed += 1
+                elif action == "ai_suggest":
+                    judgment = _parse(group.get("ai_judgment"))
+                    if isinstance(judgment, dict) and judgment.get("suggested_keep_id"):
+                        keep_id = judgment["suggested_keep_id"]
+                        member_ids = _parse(group["member_ids"])
+                        if isinstance(member_ids, list) and keep_id in member_ids:
+                            deleted = []
+                            for mid in member_ids:
+                                if mid != keep_id:
+                                    db.delete_knowledge_point(mid)
+                                    deleted.append(mid)
+                            action_desc = "批量AI建议: 保留#%d，删除#%s" % (keep_id, ",".join(str(x) for x in deleted))
+                            db.update_duplicate_group(gid, "resolved", action_desc)
+                            resolved += 1
+                        else:
+                            errors.append("组#%d: AI建议ID不在成员中" % gid)
+                    else:
+                        errors.append("组#%d: 无AI建议" % gid)
+            except Exception as ex:
+                errors.append("组#%d: %s" % (gid, str(ex)))
+        return jsonify({"success":True, "resolved":resolved, "dismissed":dismissed, "errors":errors})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error":str(e)}),500
