@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.2.0 bugfix-6 - 删除知识点时同步清理annotations
+版本：v2.2.0 - 完整表结构（合并全部迁移脚本字段）
 
 数据库表（15张）：
   categories - 知识库分类体系（5大类27+子类）
@@ -71,6 +71,12 @@ class DatabaseManager:
             process_status TEXT DEFAULT 'pending'
                 CHECK(process_status IN ('pending','processing','completed','failed')),
             process_message TEXT DEFAULT '',
+            -- v2.1.0-c: 预分析结果
+            pre_analysis_result TEXT DEFAULT '',
+            suggested_content_type TEXT DEFAULT '',
+            segment_plan TEXT DEFAULT '',
+            -- v2.2.0: 文档来源属性
+            doc_origin TEXT DEFAULT 'external',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
         # --- 知识点（核心表） ---
@@ -115,6 +121,19 @@ class DatabaseManager:
                 CHECK(access_level IN ('open','standard','premium')),
             freshness_checked_at TEXT DEFAULT NULL,
             freshness_interval_days INTEGER DEFAULT 180,
+            -- v2.1.0: 提取与质检
+            prompt_version TEXT DEFAULT '',
+            qa_score REAL DEFAULT 0.0,
+            qa_flags TEXT DEFAULT '[]',
+            freshness_note TEXT DEFAULT '',
+            -- v2.1.0: 政策依赖校验
+            policy_dependencies TEXT DEFAULT '[]',
+            policy_validated INTEGER DEFAULT 0,
+            -- v2.1.1: 举一反三
+            practical_insights TEXT DEFAULT '[]',
+            insight_reliability TEXT DEFAULT NULL,
+            -- v2.2.0: 来源类型
+            source_type TEXT DEFAULT 'extracted',
             -- 时间戳
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
