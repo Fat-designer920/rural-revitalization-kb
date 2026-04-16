@@ -411,7 +411,7 @@ class DatabaseManager:
                                  category_id=None, level1_code=None,
                                  search_query=None, content_readiness=None,
                                  freshness_filter=None, policy_filter=None,
-                                 source_type_filter=None,
+                                 source_type_filter=None, qa_score_filter=None,
                                  page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
@@ -481,8 +481,21 @@ class DatabaseManager:
         if source_type_filter:
             if source_type_filter == "extracted":
                 where.append("(kp.source_type='extracted' OR kp.source_type IS NULL)")
+            elif source_type_filter == "experience_note":
+                where.append("kp.source_type='experience_note'")
             elif source_type_filter == "manual":
                 where.append("kp.source_type='manual'")
+        # v2.2.2: 质检分数筛选
+        if qa_score_filter:
+            if qa_score_filter == "unscored":
+                where.append("(kp.qa_score IS NULL)")
+            else:
+                try:
+                    qs = int(qa_score_filter)
+                    where.append("CAST(kp.qa_score AS INTEGER)=?")
+                    params.append(qs)
+                except ValueError:
+                    pass
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -1000,6 +1013,25 @@ class DatabaseManager:
             pass  # 表可能不存在
         conn.close()
         return summary
+
+    def dismiss_all_pending_duplicates(self):
+        """清理所有pending重复组(标记为dismissed)"""
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("""UPDATE duplicate_groups
+                         SET status='dismissed',
+                             resolved_at=datetime('now','localtime'),
+                             resolved_action='v2.2.2批量清理假阳性'
+                         WHERE status='pending'""")
+            count = c.rowcount
+            conn.commit()
+        except:
+            count = 0
+        conn.close()
+        if count > 0:
+            self.log_operation("dismiss_all_pending_duplicates", "duplicate_groups",
+                               details={"dismissed_count": count})
+        return count
 
     # ================================================================
     # v2.2.0 F029: 专家注解

@@ -1,11 +1,13 @@
 """
 duplicate_checker.py - 重复知识点检测模块
 路径：scripts/duplicate_checker.py
-版本：v2.1.1 F039
+版本：v2.2.2 F051
 
 功能：
   - 本地粗筛：标题相似度(SequenceMatcher) + 关键词重叠(Jaccard)
   - V3精判：判断关系类型(重复/版本更替/互补/冲突/无关)
+  - v2.2.2: 无client不建组(防假阳性), 互补类型不建组, 阈值收紧
+  - v2.2.2: reset_and_rescan清理重扫功能
   - 支持全库扫描和增量扫描(提取后自动)
   - 结果存入duplicate_groups表供审核界面处理
 """
@@ -21,9 +23,9 @@ from scripts.db_manager import DatabaseManager
 from scripts.prompts.prompt_templates import DUPLICATE_JUDGE_PROMPT
 
 # === 阈值配置 ===
-TITLE_SIM_THRESHOLD = 0.50    # 标题相似度阈值
-KEYWORD_JACCARD_THRESHOLD = 0.40  # 关键词Jaccard系数阈值
-COMBINED_THRESHOLD = 0.55    # 综合得分阈值 (title*0.7 + keyword*0.3)
+TITLE_SIM_THRESHOLD = 0.65    # 标题相似度阈值(v2.2.2上调,政策文件术语重叠大)
+KEYWORD_JACCARD_THRESHOLD = 0.50  # 关键词Jaccard系数阈值
+COMBINED_THRESHOLD = 0.65    # 综合得分阈值 (title*0.7 + keyword*0.3)
 MAX_GROUP_SIZE_FOR_V3 = 6    # 发送给V3的最大组大小
 
 
@@ -97,6 +99,19 @@ class DuplicateChecker:
         if created > 0:
             print(f"     发现{created}组疑似重复，请在审核界面处理")
         return created
+
+    def reset_and_rescan(self):
+        """v2.2.2: 清理所有pending假阳性后重新全库扫描(含V3精判)"""
+        # 第一步: 清理现有pending组
+        dismissed = self.db.dismiss_all_pending_duplicates()
+        print(f"\n  [重复检测] 已清理{dismissed}组旧的待处理结果")
+
+        # 第二步: 全库重新扫描(V3精判)
+        if not self.client:
+            print(f"  [ERROR] 清理重扫需要AI客户端,请检查API配置")
+            return 0
+
+        return self.scan_full()
 
     # ================================================================
     # 第一阶段：本地粗筛
@@ -275,6 +290,11 @@ class DuplicateChecker:
         kp_map = {kp["id"]: kp for kp in kps}
         created = 0
 
+        # v2.2.2: 无client时不建组(避免大量假阳性)
+        if not self.client:
+            print(f"  [WARN] 无AI客户端,跳过V3精判(不创建重复组)")
+            return 0
+
         for group in groups:
             members = group["members"]
             max_score = group["max_score"]
@@ -283,21 +303,11 @@ class DuplicateChecker:
             if len(members) > MAX_GROUP_SIZE_FOR_V3:
                 members = members[:MAX_GROUP_SIZE_FOR_V3]
 
-            if self.client:
-                judgment = self._call_v3_judge(members, kp_map)
-            else:
-                # 无client时用本地默认判断
-                judgment = {
-                    "relation_type": "duplicate",
-                    "reason": "标题/关键词高度相似(本地检测,未经AI确认)",
-                    "suggested_keep_id": members[0],
-                    "merge_note": ""
-                }
-
+            judgment = self._call_v3_judge(members, kp_map)
             relation_type = judgment.get("relation_type", "duplicate")
 
-            # 如果V3判断为unrelated(无关)，不创建组
-            if relation_type == "unrelated":
+            # v2.2.2: 无关和互补都不建组(互补知识点各有价值不需要去重)
+            if relation_type in ("unrelated", "complementary"):
                 continue
 
             self.db.add_duplicate_group(
@@ -320,12 +330,16 @@ class DuplicateChecker:
                 if not kp:
                     continue
                 kws = list(kp.get("_keywords", set()))[:5]
+                # v2.2.2: 加入原文摘录让V3看到更完整的上下文
+                excerpt = (kp.get("original_excerpt") or "")[:300]
+                summary = kp.get("_summary", "")[:200]
                 desc = (
                     f"【知识点{idx}】ID={kid}\n"
                     f"  标题: {kp['title']}\n"
                     f"  类型: {kp.get('content_type','未知')}\n"
                     f"  关键词: {', '.join(kws) if kws else '无'}\n"
-                    f"  内容摘要: {kp.get('_summary', '无')[:200]}"
+                    f"  内容摘要: {summary if summary else '无'}\n"
+                    f"  原文摘录: {excerpt if excerpt else '无'}"
                 )
                 kp_descriptions.append(desc)
 

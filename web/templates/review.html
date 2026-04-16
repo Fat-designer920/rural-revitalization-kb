@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.2.1</title>
+<title>乡村振兴知识库 v2.2.2</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -428,6 +428,8 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .dash-bar-bg{flex:1;height:6px;background:var(--bg);border-radius:3px;margin:0 12px;overflow:hidden}
 .dash-bar-fill{height:100%;border-radius:3px;transition:width .5s ease}
 .dash-row .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dash-row.clickable{cursor:pointer;border-radius:6px;padding:5px 6px;margin:0 -6px;transition:background .15s}
+.dash-row.clickable:hover{background:var(--primary-light)}
 .dash-divider{border:none;border-top:1px solid var(--border-light);margin:10px 0}
 
 .tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
@@ -476,7 +478,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.2.1</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.2.2</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -528,6 +530,16 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <button class="filter-item" onclick="filterByReadiness('draft',this)">草稿级</button>
       <button class="filter-item" onclick="filterByReadiness('quotable',this)">可引用级</button>
       <button class="filter-item" onclick="filterByReadiness('premium',this)">精品级</button>
+    </div>
+    <div class="filter-section" id="qaScoreFilterSection">
+      <div class="filter-label">质检分数</div>
+      <button class="filter-item active" onclick="filterByQaScore(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByQaScore('5',this)">5分</button>
+      <button class="filter-item" onclick="filterByQaScore('4',this)">4分</button>
+      <button class="filter-item" onclick="filterByQaScore('3',this)">3分</button>
+      <button class="filter-item" onclick="filterByQaScore('2',this)">2分</button>
+      <button class="filter-item" onclick="filterByQaScore('1',this)">1分</button>
+      <button class="filter-item" onclick="filterByQaScore('unscored',this)">未质检</button>
     </div>
     <div class="filter-section" id="freshnessFilterSection">
       <div class="filter-label">保鲜状态</div>
@@ -612,12 +624,22 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <div class="tool-card" id="tc-duplicate" onclick="runTool('duplicate')">
         <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">D</div>
         <div class="tool-name">全库重复检测</div>
-        <div class="tool-desc">扫描重复知识点</div>
+        <div class="tool-desc">增量扫描新重复</div>
+      </div>
+      <div class="tool-card" id="tc-dupReset" onclick="runTool('dupReset')">
+        <div class="tool-icon" style="background:#FFE0DE;color:#991B1B">R</div>
+        <div class="tool-name">清理并重扫</div>
+        <div class="tool-desc">清除假阳性后V3重扫</div>
       </div>
       <div class="tool-card" id="tc-policy" onclick="runTool('policy')">
         <div class="tool-icon" style="background:var(--primary-light);color:var(--primary)">P</div>
         <div class="tool-name">政策补跑</div>
         <div class="tool-desc">补跑未校验知识点</div>
+      </div>
+      <div class="tool-card" id="tc-qaBackfill" onclick="runTool('qaBackfill')">
+        <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">Q</div>
+        <div class="tool-name">质检补跑</div>
+        <div class="tool-desc">补跑未质检知识点</div>
       </div>
       <div class="tool-card" id="tc-analytics" onclick="runTool('analytics')">
         <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">A</div>
@@ -798,7 +820,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null,currentSourceType=null;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null,currentSourceType=null,currentQaScore=null;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var lastLoadTotal=0,batchAllMode=false;
 var tagDefs=null,tagNameToGroup={};
@@ -908,23 +930,50 @@ function buildCategoryDropdown(){var sel=document.getElementById("editCategory")
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
 function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterBySourceType(f,btn){currentSourceType=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByQaScore(q,btn){currentQaScore=q;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function dashJump(filterType,value){
+  switchTab("review");
+  currentPage=1;currentSearch="";currentCategory=null;currentLevel1=null;
+  currentStatus=null;currentType=null;currentReadiness=null;currentQaScore=null;
+  currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;
+  document.getElementById("searchInput").value="";
+  if(filterType==="status")currentStatus=value;
+  else if(filterType==="type")currentType=value;
+  else if(filterType==="readiness"){currentStatus="confirmed";currentReadiness=value}
+  else if(filterType==="qa_score")currentQaScore=value;
+  else if(filterType==="freshness"){currentStatus="confirmed";currentFreshness=value}
+  else if(filterType==="policy")currentPolicyFilter=value;
+  else if(filterType==="dup_pending"){toggleDupPanel();return}
+  resetFilters();
+  /* highlight correct sidebar buttons */
+  var sections=document.querySelectorAll(".filter-section");
+  for(var s=0;s<sections.length;s++){
+    var items=sections[s].querySelectorAll(".filter-item");
+    for(var i=0;i<items.length;i++){
+      var isFirst=(i===0);
+      items[i].classList.toggle("active",isFirst)
+    }
+  }
+  selectedIds={};document.getElementById("selectAll").checked=false;
+  renderBatchButtons();loadKnowledgePoints()
+}
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;currentStatus=null;var stSection=document.querySelectorAll(".filter-section")[0];var stBtns=stSection.querySelectorAll(".filter-item");for(var si=0;si<stBtns.length;si++)stBtns[si].classList.remove("active");stBtns[0].classList.add("active");renderBatchButtons();var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){lastLoadTotal=d.total||0;hideBatchAllBanner();if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;initExcerptToggles();renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaScore)u+="&qa_score="+currentQaScore;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){lastLoadTotal=d.total||0;hideBatchAllBanner();if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;initExcerptToggles();renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentQaScore)p.push("质检:"+(currentQaScore==="unscored"?"未质检":currentQaScore+"分"));if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
@@ -1147,7 +1196,7 @@ function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.leng
 function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
 function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);batchAllMode=false;hideBatchAllBanner();updateBatch()}
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}batchAllMode=false;if(ck&&lastLoadTotal>cbs.length){var banner=document.getElementById("batchAllBanner");banner.innerHTML="已选当前页 "+cbs.length+" 条。<a onclick=\"selectAllMatching()\">选择本次筛选的全部 "+lastLoadTotal+" 条</a>";banner.style.display="block"}else{hideBatchAllBanner()}updateBatch()}
-function selectAllMatching(){var u="/api/knowledge-points/ids?";if(currentStatus)u+="status="+currentStatus+"&";if(currentType)u+="type="+currentType+"&";if(currentCategory)u+="category="+currentCategory+"&";else if(currentLevel1)u+="level1="+currentLevel1+"&";if(currentSearch)u+="search="+encodeURIComponent(currentSearch)+"&";if(currentReadiness)u+="readiness="+currentReadiness+"&";if(currentFreshness)u+="freshness="+currentFreshness+"&";if(currentPolicyFilter)u+="policy="+currentPolicyFilter+"&";if(currentSourceType)u+="source_type="+currentSourceType+"&";apiGet(u).then(function(r){var ids=r.ids||[];selectedIds={};for(var i=0;i<ids.length;i++)selectedIds[ids[i]]=true;batchAllMode=true;var cbs=document.querySelectorAll(".kp-cb");for(var i=0;i<cbs.length;i++){cbs[i].checked=true;var card=cbs[i].closest(".kp-card");if(card)card.classList.add("selected")}var banner=document.getElementById("batchAllBanner");banner.innerHTML="已选择全部 "+ids.length+" 条知识点（跨所有页面）。<a onclick=\"clearBatchAll()\">取消全选</a>";banner.style.display="block";updateBatch()})}
+function selectAllMatching(){var u="/api/knowledge-points/ids?";if(currentStatus)u+="status="+currentStatus+"&";if(currentType)u+="type="+currentType+"&";if(currentCategory)u+="category="+currentCategory+"&";else if(currentLevel1)u+="level1="+currentLevel1+"&";if(currentSearch)u+="search="+encodeURIComponent(currentSearch)+"&";if(currentReadiness)u+="readiness="+currentReadiness+"&";if(currentFreshness)u+="freshness="+currentFreshness+"&";if(currentPolicyFilter)u+="policy="+currentPolicyFilter+"&";if(currentSourceType)u+="source_type="+currentSourceType+"&";if(currentQaScore)u+="qa_score="+currentQaScore+"&";apiGet(u).then(function(r){var ids=r.ids||[];selectedIds={};for(var i=0;i<ids.length;i++)selectedIds[ids[i]]=true;batchAllMode=true;var cbs=document.querySelectorAll(".kp-cb");for(var i=0;i<cbs.length;i++){cbs[i].checked=true;var card=cbs[i].closest(".kp-card");if(card)card.classList.add("selected")}var banner=document.getElementById("batchAllBanner");banner.innerHTML="已选择全部 "+ids.length+" 条知识点（跨所有页面）。<a onclick=\"clearBatchAll()\">取消全选</a>";banner.style.display="block";updateBatch()})}
 function clearBatchAll(){selectedIds={};batchAllMode=false;document.getElementById("selectAll").checked=false;var cbs=document.querySelectorAll(".kp-cb");for(var i=0;i<cbs.length;i++){cbs[i].checked=false;var card=cbs[i].closest(".kp-card");if(card)card.classList.remove("selected")}hideBatchAllBanner();updateBatch()}
 function hideBatchAllBanner(){var b=document.getElementById("batchAllBanner");if(b)b.style.display="none"}
 function updateBatch(){var n=Object.keys(selectedIds).length;var btns=document.querySelectorAll("#batchButtons button");for(var i=0;i<btns.length;i++){btns[i].disabled=n===0;var base=btns[i].getAttribute("data-label");if(base)btns[i].textContent=n>0?base+"("+n+")":base}}
@@ -1291,9 +1340,9 @@ function renderDashboard(d){
   /* Card 1: Total KP */
   var bs=d.by_status||{};
   h+='<div class="dash-card"><div class="dash-card-head">知识点总量</div><div class="dash-big">'+(d.total_kp||0)+'</div>';
-  h+=dRow("dot","#FF9500","待审核",bs.pending||0);
-  h+=dRow("dot","#34C759","已入库",bs.confirmed||0);
-  h+=dRow("dot","#86868B","已忽略",bs.ignored||0);
+  h+=dRow("dot","#FF9500","待审核",bs.pending||0,"dashJump('status','pending')");
+  h+=dRow("dot","#34C759","已入库",bs.confirmed||0,"dashJump('status','confirmed')");
+  h+=dRow("dot","#86868B","已忽略",bs.ignored||0,"dashJump('status','ignored')");
   h+='</div>';
 
   /* Card 2: By Type */
@@ -1301,49 +1350,49 @@ function renderDashboard(d){
   var TC={"policy":"#0A9B80","case":"#34C759","experience":"#FF9500","tool":"#AF52DE","data":"#007AFF"};
   h+='<div class="dash-card"><div class="dash-card-head">内容类型分布</div>';
   var tpKeys=["policy","case","experience","tool","data"];
-  for(var i=0;i<tpKeys.length;i++){var tk=tpKeys[i];var tv=bt[tk]||0;h+=dBar(TC[tk]||"#86868B",TN[tk]||tk,tv,btTotal)}
+  for(var i=0;i<tpKeys.length;i++){var tk=tpKeys[i];var tv=bt[tk]||0;h+=dBar(TC[tk]||"#86868B",TN[tk]||tk,tv,btTotal,"dashJump('type','"+tk+"')")}
   h+='</div>';
 
   /* Card 3: Readiness */
   var rd=d.by_readiness||{};var rdTotal=(rd.draft||0)+(rd.quotable||0)+(rd.premium||0);
   h+='<div class="dash-card"><div class="dash-card-head">就绪度分布 (已入库)</div>';
-  h+=dBar("#86868B","草稿级",rd.draft||0,rdTotal);
-  h+=dBar("#34C759","可引用级",rd.quotable||0,rdTotal);
-  h+=dBar("#FF9500","精品级",rd.premium||0,rdTotal);
+  h+=dBar("#86868B","草稿级",rd.draft||0,rdTotal,"dashJump('readiness','draft')");
+  h+=dBar("#34C759","可引用级",rd.quotable||0,rdTotal,"dashJump('readiness','quotable')");
+  h+=dBar("#FF9500","精品级",rd.premium||0,rdTotal,"dashJump('readiness','premium')");
   h+='</div>';
 
   /* Card 4: QA Distribution */
   var qa=d.qa_distribution||{};
   h+='<div class="dash-card"><div class="dash-card-head">质检分数分布</div>';
   var qaKeys=["5","4","3","2","1"];var qaMax=0;for(var i=0;i<qaKeys.length;i++){var qv=qa[qaKeys[i]]||0;if(qv>qaMax)qaMax=qv}
-  for(var i=0;i<qaKeys.length;i++){var qv=qa[qaKeys[i]]||0;var qc=parseInt(qaKeys[i])>=4?"#34C759":parseInt(qaKeys[i])===3?"#FF9500":"#FF3B30";h+=dBar(qc,qaKeys[i]+"分",qv,qaMax>0?qaMax:1)}
-  h+=dRow("dot","#86868B","未质检",qa.unscored||0);
+  for(var i=0;i<qaKeys.length;i++){var qv=qa[qaKeys[i]]||0;var qc=parseInt(qaKeys[i])>=4?"#34C759":parseInt(qaKeys[i])===3?"#FF9500":"#FF3B30";h+=dBar(qc,qaKeys[i]+"分",qv,qaMax>0?qaMax:1,"dashJump('qa_score','"+qaKeys[i]+"')")}
+  h+=dRow("dot","#86868B","未质检",qa.unscored||0,"dashJump('qa_score','unscored')");
   h+='</div>';
 
   /* Card 5: Freshness */
   var fr=d.freshness||{};
   h+='<div class="dash-card"><div class="dash-card-head">保鲜状态</div>';
-  h+=dRow("dot","#FF3B30","已过期",fr.expired||0);
-  h+=dRow("dot","#FF9500","即将到期",fr.expiring||0);
-  h+=dRow("dot","#34C759","新鲜",fr.fresh||0);
-  if(fr.outdated)h+=dRow("dot","#86868B","已过时",fr.outdated||0);
+  h+=dRow("dot","#FF3B30","已过期",fr.expired||0,"dashJump('freshness','expired')");
+  h+=dRow("dot","#FF9500","即将到期",fr.expiring||0,"dashJump('freshness','expiring_soon')");
+  h+=dRow("dot","#34C759","新鲜",fr.fresh||0,"dashJump('freshness','fresh')");
+  if(fr.outdated)h+=dRow("dot","#86868B","已过时",fr.outdated||0,"dashJump('freshness','outdated')");
   if(fr.managed!==undefined)h+='<hr class="dash-divider">'+dRow("","","已设保鲜周期",fr.managed||0);
   h+='</div>';
 
   /* Card 6: Policy */
   var pv=d.policy||{};
   h+='<div class="dash-card"><div class="dash-card-head">政策校验</div>';
-  h+=dRow("dot","#34C759","已验证",pv.validated||0);
-  h+=dRow("dot","#FF3B30","待验证",pv.pending||0);
-  h+=dRow("dot","#007AFF","已豁免",pv.exempt||0);
-  h+=dRow("dot","#86868B","未校验",pv.unvalidated||0);
-  h+=dRow("dot","#E5E5EA","不涉及",pv.no_policy||0);
+  h+=dRow("dot","#34C759","已验证",pv.validated||0,"dashJump('policy','validated')");
+  h+=dRow("dot","#FF3B30","待验证",pv.pending||0,"dashJump('policy','pending_validation')");
+  h+=dRow("dot","#007AFF","已豁免",pv.exempt||0,"dashJump('policy','exempt')");
+  h+=dRow("dot","#86868B","未校验",pv.unvalidated||0,"dashJump('policy','unvalidated')");
+  h+=dRow("dot","#E5E5EA","不涉及",pv.no_policy||0,"dashJump('policy','no_policy')");
   h+='</div>';
 
   /* Card 7: Duplicates */
   var dup=d.duplicates||{};
   h+='<div class="dash-card"><div class="dash-card-head">重复检测</div>';
-  h+=dRow("dot","#FF9500","待处理",dup.pending||0);
+  h+=dRow("dot","#FF9500","待处理",dup.pending||0,"dashJump('dup_pending','')");
   h+=dRow("dot","#34C759","已处理",dup.resolved||0);
   h+=dRow("dot","#86868B","已排除",dup.dismissed||0);
   h+='</div>';
@@ -1384,16 +1433,18 @@ function renderDashboard(d){
   document.getElementById("dashContent").innerHTML=h;
 }
 
-function dRow(dotType,dotColor,label,val){
-  var h='<div class="dash-row">';
+function dRow(dotType,dotColor,label,val,jumpAction){
+  var cls=jumpAction?'class="dash-row clickable" onclick="'+jumpAction+'"':'class="dash-row"';
+  var h='<div '+cls+'>';
   if(dotType==="dot")h+='<span class="dl"><span class="dot" style="background:'+dotColor+'"></span>'+esc(label)+'</span>';
   else h+='<span class="dl">'+esc(label)+'</span>';
   h+='<span class="dv">'+val+'</span></div>';
   return h;
 }
-function dBar(color,label,val,total){
+function dBar(color,label,val,total,jumpAction){
   var pct=total>0?Math.round(val/total*100):0;
-  return '<div class="dash-row"><span class="dl">'+esc(label)+'</span><div class="dash-bar-bg"><div class="dash-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="dv">'+val+'</span></div>';
+  var cls=jumpAction?'class="dash-row clickable" onclick="'+jumpAction+'"':'class="dash-row"';
+  return '<div '+cls+'><span class="dl">'+esc(label)+'</span><div class="dash-bar-bg"><div class="dash-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="dv">'+val+'</span></div>';
 }
 
 /* === Toolbox === */
@@ -1462,6 +1513,22 @@ function runTool(name){
       loadDuplicateSummary();loadDashboard();
     });
   }
+  else if(name==="dupReset"){
+    showConfirm("清理并重扫","将清除所有待处理的重复组(标记为假阳性)，然后用AI深度判断重新扫描全库。费用约几毛钱。确认?",function(ok){
+      if(!ok){done();return}
+      showToolResult("清理并重扫",'<div class="loading">正在清理旧结果并用AI重新扫描全库，请耐心等待...</div>');
+      apiPost("/api/tools/duplicate-reset-rescan").then(function(r){done();
+        if(r.error){showToolResult("清理并重扫","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
+        var s=r.summary||{};
+        var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">已清理 '+(r.dismissed||0)+' 组假阳性，AI重扫发现 '+(r.new_groups||0)+' 组真实重复</p>';
+        h+=dRow("dot","#FF9500","待处理",s.pending||0);
+        h+=dRow("dot","#34C759","已处理",s.resolved||0);
+        h+=dRow("dot","#86868B","已排除",s.dismissed||0);
+        showToolResult("清理并重扫结果",h);
+        loadDuplicateSummary();loadDashboard();
+      });
+    });
+  }
   else if(name==="policy"){
     apiPost("/api/tools/policy-revalidate").then(function(r){done();
       if(r.error){showToolResult("政策补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
@@ -1482,6 +1549,21 @@ function runTool(name){
       if(r.top_flags&&r.top_flags.length){h+='<div style="margin-top:10px;font-weight:600;font-size:13px">常见质检问题:</div>';for(var i=0;i<r.top_flags.length;i++){var tf=r.top_flags[i];h+='<div class="tr-item"><span>'+esc(QF[tf.flag]||tf.flag)+'</span><span class="dv">'+tf.count+'</span></div>'}}
       if(!h)h='<pre style="font-size:12px;max-height:400px;overflow:auto">'+esc(JSON.stringify(r,null,2))+'</pre>';
       showToolResult("审核统计",h);
+    });
+  }
+  else if(name==="qaBackfill"){
+    showConfirm("质检补跑","将对所有未质检的知识点补跑V3质检评估。确认?",function(ok){
+      if(!ok){done();return}
+      showToolResult("质检补跑",'<div class="loading">正在补跑质检，请耐心等待...</div>');
+      apiPost("/api/tools/qa-backfill").then(function(r){done();
+        if(r.error){showToolResult("质检补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
+        var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">'+esc(r.message||"完成")+'</p>';
+        h+=dRow("","","已质检",r.checked||0);
+        h+=dRow("","","失败",r.errors||0);
+        h+=dRow("","","待处理总数",r.total||0);
+        showToolResult("质检补跑结果",h);
+        loadDashboard();
+      });
     });
   }
   else if(name==="apicost"){

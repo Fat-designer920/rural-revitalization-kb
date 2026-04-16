@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.2.0 bugfix-6 - 强制重新处理已完成文件
+版本：v2.2.2 F051-F054 - 质量管控增强
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -105,6 +105,7 @@ def get_kps():
         freshness_filter = request.args.get("freshness", None)
         policy_filter = request.args.get("policy", None)
         source_type_filter = request.args.get("source_type", None)
+        qa_score_filter = request.args.get("qa_score", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -114,6 +115,7 @@ def get_kps():
             freshness_filter=freshness_filter,
             policy_filter=policy_filter,
             source_type_filter=source_type_filter,
+            qa_score_filter=qa_score_filter,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -222,6 +224,7 @@ def get_kp_ids():
             freshness_filter=request.args.get("freshness",None),
             policy_filter=request.args.get("policy",None),
             source_type_filter=request.args.get("source_type",None),
+            qa_score_filter=request.args.get("qa_score",None),
             page=1, per_page=99999)
         ids = [item["id"] for item in (r.get("items") or [])]
         return jsonify({"ids":ids, "total":len(ids)})
@@ -1044,13 +1047,106 @@ def tool_freshness_scan():
 
 @app.route("/api/tools/duplicate-scan", methods=["POST"])
 def tool_duplicate_scan():
-    """执行全库重复检测（同步，知识库小时可用）"""
+    """执行全库重复检测（含V3精判）"""
     try:
         from scripts.duplicate_checker import DuplicateChecker
-        checker = DuplicateChecker(db=db)
+        from scripts.deepseek_client import DeepSeekClient
+        try:
+            client = DeepSeekClient()
+        except Exception as ce:
+            return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
+        checker = DuplicateChecker(db=db, client=client)
         new_groups = checker.scan_full()
         summary = db.get_duplicate_summary()
         return jsonify({"success": True, "new_groups": new_groups, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/duplicate-reset-rescan", methods=["POST"])
+def tool_duplicate_reset_rescan():
+    """v2.2.2: 清理所有pending假阳性后用V3重新全库扫描"""
+    try:
+        from scripts.duplicate_checker import DuplicateChecker
+        from scripts.deepseek_client import DeepSeekClient
+        try:
+            client = DeepSeekClient()
+        except Exception as ce:
+            return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
+        checker = DuplicateChecker(db=db, client=client)
+        dismissed = db.dismiss_all_pending_duplicates()
+        new_groups = checker.scan_full()
+        summary = db.get_duplicate_summary()
+        return jsonify({"success": True, "dismissed": dismissed,
+                        "new_groups": new_groups, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/qa-backfill", methods=["POST"])
+def tool_qa_backfill():
+    """v2.2.2 F054: 质检补跑 - 对未质检知识点补跑V3质检"""
+    try:
+        from scripts.deepseek_client import DeepSeekClient
+        from scripts.prompts.prompt_templates import QC_CHECK_PROMPT
+        client = DeepSeekClient()
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT id, title, content_type, ai_extracted_content,
+                     original_excerpt, practical_insights
+                     FROM knowledge_points
+                     WHERE qa_score IS NULL AND review_status IN ('pending','confirmed')""")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        if not rows:
+            return jsonify({"success": True, "checked": 0, "message": "所有知识点已质检，无需补跑"})
+        checked = 0; errors = 0
+        for kp in rows:
+            try:
+                ai_content = kp.get("ai_extracted_content", "{}")
+                if isinstance(ai_content, str):
+                    try: ai_content = json.loads(ai_content)
+                    except: ai_content = {}
+                insights = kp.get("practical_insights", "[]")
+                if isinstance(insights, str):
+                    try: insights = json.loads(insights)
+                    except: insights = []
+                user_content = (
+                    f"知识点ID: {kp['id']}\n"
+                    f"标题: {kp['title']}\n"
+                    f"类型: {kp['content_type']}\n"
+                    f"原文摘录: {(kp.get('original_excerpt') or '')[:500]}\n"
+                    f"AI提取内容: {json.dumps(ai_content, ensure_ascii=False)[:1500]}\n"
+                    f"实操启示: {json.dumps(insights, ensure_ascii=False)[:500]}"
+                )
+                result = client.chat_with_json(
+                    system_prompt=QC_CHECK_PROMPT["system"],
+                    user_prompt=user_content,
+                    temperature=0.1, max_tokens=1024,
+                    call_type="qc_backfill",
+                    model_override="deepseek-chat"
+                )
+                parsed = result.get("parsed_json", {})
+                if parsed and isinstance(parsed, dict):
+                    qa_score = parsed.get("overall_score")
+                    qa_flags = parsed.get("flags", [])
+                    ir = parsed.get("insight_reliability")
+                    update_data = {}
+                    if qa_score is not None:
+                        update_data["qa_score"] = qa_score
+                    if qa_flags:
+                        update_data["qa_flags"] = qa_flags
+                    if ir:
+                        update_data["insight_reliability"] = ir
+                    if update_data:
+                        db.update_knowledge_point(kp["id"], **update_data)
+                        checked += 1
+                else:
+                    errors += 1
+            except Exception as ex:
+                print(f"  QC backfill error for #{kp['id']}: {ex}")
+                errors += 1
+        return jsonify({"success": True, "checked": checked, "errors": errors,
+                        "total": len(rows), "message": f"已质检{checked}条，失败{errors}条"})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
