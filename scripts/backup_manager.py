@@ -1,13 +1,31 @@
 """
 备份恢复管理器
-版本: v2.1.0-a
-功能: 数据库一键备份、恢复、清理
+版本: v2.2.3
+功能: 数据库一键备份、恢复、清理 + 关键操作自动备份钩子（F060）
+
+v2.2.3 新增：
+  - BackupFailedError 异常类
+  - operation_hook(op_name) 关键操作触发钩子
+    5个触发点：版本重提取/批量重跑/重复合并/体检采纳/全库清空重扫
+    失败时先写 operation_events(severity='error') 再 raise
+  - cleanup_by_op_name() 按操作名分组保留最近N个
+  - enforce_size_limit() 总量超限时按时间清理
+  - 保留策略：每类操作保留5个 + backups目录总量超2GB时清理老备份
 """
 
 import os
 import sys
 import sqlite3
 from datetime import datetime, timedelta
+
+
+class BackupFailedError(Exception):
+    """
+    v2.2.3 F060: 备份失败异常
+    当 operation_hook() 无法创建备份时抛出，调用方可精确catch
+    以便终止破坏性操作（批量重跑/重复合并/全库重扫等）
+    """
+    pass
 
 
 class BackupManager:
@@ -201,6 +219,172 @@ class BackupManager:
             'latest_filename': backups[0]['filename'],
             'total_size_mb': round(sum(b['size_mb'] for b in backups), 2)
         }
+
+    # --------------------------------------------------
+    # v2.2.3 F060: 关键操作强制备份钩子
+    # --------------------------------------------------
+
+    # 每类 op_name 保留的最大备份数
+    OP_KEEP_PER_NAME = 5
+    # backups目录总量上限（MB），超出按时间清理
+    TOTAL_SIZE_LIMIT_MB = 2048
+
+    def operation_hook(self, op_name):
+        """
+        F060: 关键操作前强制自动备份，失败则终止操作
+
+        5个触发点调用：
+          - extractor.py 版本重提取（F044）
+          - api_server.py 批量重跑（F059）
+          - api_server.py 重复合并
+          - health_checker.py 体检采纳（F048）
+          - api_server.py 全库清空重扫（F049）
+
+        调用方式:
+          from backup_manager import BackupManager, BackupFailedError
+          try:
+              BackupManager().operation_hook('pre_batch_rerun')
+          except BackupFailedError as e:
+              return jsonify({"status":"error","message":"备份失败，操作已终止"}), 500
+
+        行为：
+          1. 调 create_backup(label=op_name) 生成备份
+          2. 成功：调 cleanup_by_op_name(op_name) 执行每类保留5个
+                  + enforce_size_limit() 执行总量上限
+          3. 失败：先写 operation_events(severity='error', event_type='backup_failed')
+                  再 raise BackupFailedError
+
+        参数: op_name - 操作标识，建议用 snake_case
+              如 pre_batch_rerun / pre_reextract / pre_dup_merge / pre_polish_apply / pre_full_rescan
+        返回: 成功返回备份文件路径，失败raise BackupFailedError
+        """
+        print("[operation_hook] 触发点: {}".format(op_name))
+        backup_path = self.create_backup(label=op_name)
+
+        if backup_path is None:
+            # 备份失败：先写结构化事件日志，再抛异常终止操作
+            self._log_backup_event(
+                event_type='backup_failed',
+                severity='error',
+                op_name=op_name,
+                payload={'reason': 'create_backup returned None'}
+            )
+            raise BackupFailedError(
+                "操作前备份失败（op={}），已终止破坏性操作。请检查磁盘空间和数据库文件权限。".format(op_name)
+            )
+
+        # 备份成功：写事件日志
+        self._log_backup_event(
+            event_type='backup_trigger',
+            severity='info',
+            op_name=op_name,
+            payload={'backup_path': os.path.basename(backup_path)}
+        )
+
+        # 执行保留策略
+        try:
+            self.cleanup_by_op_name(op_name, keep=self.OP_KEEP_PER_NAME)
+            self.enforce_size_limit(limit_mb=self.TOTAL_SIZE_LIMIT_MB)
+        except Exception as e:
+            # 清理失败不影响主操作，仅警告
+            print("[operation_hook] 清理策略执行异常（不影响主操作）: {}".format(e))
+
+        return backup_path
+
+    def cleanup_by_op_name(self, op_name, keep=5):
+        """
+        按操作名分组保留最近N个，超出部分删除
+
+        例：op_name='pre_batch_rerun' keep=5
+            如果该类备份已有8个，删掉最老的3个
+        """
+        backups = self.list_backups()
+        # 筛选同 op_name 的备份（label精确匹配）
+        same_op = [b for b in backups if b.get('label') == op_name]
+        if len(same_op) <= keep:
+            return 0
+
+        deleted = 0
+        # list_backups 已按时间倒序，保留前keep个，删掉后面的
+        for b in same_op[keep:]:
+            try:
+                os.remove(b['filepath'])
+                deleted += 1
+                print("[cleanup_by_op_name] 删除旧备份: {}".format(b['filename']))
+            except Exception as e:
+                print("[cleanup_by_op_name] 删除失败 {}: {}".format(b['filename'], e))
+
+        if deleted > 0:
+            print("[cleanup_by_op_name] op={} 已清理 {} 个老备份（保留最新 {} 个）".format(
+                op_name, deleted, keep))
+        return deleted
+
+    def enforce_size_limit(self, limit_mb=2048):
+        """
+        backups目录总量上限：超过limit_mb时按时间从老到新删除
+        保留兜底：即使总量超限，也至少为每类op_name保留1个最新备份
+
+        默认上限 2GB。
+        """
+        backups = self.list_backups()
+        total_mb = sum(b['size_mb'] for b in backups)
+        if total_mb <= limit_mb:
+            return 0
+
+        # 建立"每类op_name最新一个"的保留白名单
+        protected = set()
+        seen_labels = set()
+        for b in backups:  # 倒序（最新在前）
+            label = b.get('label', '') or '__unlabeled__'
+            if label not in seen_labels:
+                protected.add(b['filepath'])
+                seen_labels.add(label)
+
+        # 按时间正序（老的优先删）
+        deleted = 0
+        for b in sorted(backups, key=lambda x: x['datetime']):
+            if total_mb <= limit_mb:
+                break
+            if b['filepath'] in protected:
+                continue
+            try:
+                os.remove(b['filepath'])
+                total_mb -= b['size_mb']
+                deleted += 1
+                print("[enforce_size_limit] 删除旧备份: {} ({:.1f}MB)".format(
+                    b['filename'], b['size_mb']))
+            except Exception as e:
+                print("[enforce_size_limit] 删除失败 {}: {}".format(b['filename'], e))
+
+        if deleted > 0:
+            print("[enforce_size_limit] 总量超限({} MB)，已清理 {} 个老备份，当前总量约 {:.1f} MB".format(
+                limit_mb, deleted, total_mb))
+        return deleted
+
+    def _log_backup_event(self, event_type, severity, op_name, payload=None):
+        """
+        内部辅助：调用 db_manager.log_operation_event 写事件日志
+        延迟导入 DatabaseManager 避免循环依赖
+        任何异常静默吞掉（日志不能打断主流程）
+        """
+        try:
+            # 延迟导入避免循环依赖
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from db_manager import DatabaseManager
+
+            # 使用和当前db_path相同的数据库
+            db = DatabaseManager(db_path=self.db_path)
+            p = dict(payload) if payload else {}
+            p['op_name'] = op_name
+            db.log_operation_event(
+                event_type=event_type,
+                module='backup',
+                severity=severity,
+                payload=p
+            )
+        except Exception as e:
+            # 日志失败不影响主流程，仅stdout提示
+            print("[_log_backup_event 失败] {}".format(e))
 
 
 # ==================================================

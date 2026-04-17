@@ -1,12 +1,19 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.2.0 - 完整表结构（合并全部迁移脚本字段）
+版本：v2.2.3 - F057/F058/F061 地基层
 
-数据库表（15张）：
+v2.2.3 新增（hotfix）：
+  - source_files 表: truncation_count / recovery_runs / last_recovery_at
+  - knowledge_points 表: qa_source（batch/small_batch/single/rule_fallback）
+  - 新表 operation_events: 结构化事件日志（截断/降级/兜底/备份）
+  - 新方法 log_operation_event / get_qc_rerun_candidates
+  - update_knowledge_point 白名单追加 qa_source
+
+数据库表（16张）：
   categories - 知识库分类体系（5大类27+子类）
-  source_files - 原始文件记录
-  knowledge_points - 知识点（核心表，v2.2.0新增source_type字段）
+  source_files - 原始文件记录（v2.2.3新增3字段用于截断补救追溯）
+  knowledge_points - 知识点（核心表，v2.2.3新增qa_source字段）
   knowledge_versions - 知识点版本快照（预留）
   architecture_suggestions - AI分类建议
   edit_history - 编辑历史记录
@@ -19,6 +26,7 @@ db_manager.py - SQLite数据库管理模块
   notion_sync_log - Notion同步日志（预留）
   duplicate_groups - 重复检测结果（v2.1.1 F039新增）
   annotations - 专家注解（v2.2.0 F029新增）
+  operation_events - 结构化事件日志（v2.2.3 F057/F058/F060新增）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -77,6 +85,10 @@ class DatabaseManager:
             segment_plan TEXT DEFAULT '',
             -- v2.2.0: 文档来源属性
             doc_origin TEXT DEFAULT 'external',
+            -- v2.2.3 F057: 截断补救追溯
+            truncation_count INTEGER DEFAULT 0,
+            recovery_runs INTEGER DEFAULT 0,
+            last_recovery_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')))""")
         # --- 知识点（核心表） ---
@@ -125,6 +137,8 @@ class DatabaseManager:
             prompt_version TEXT DEFAULT '',
             qa_score REAL DEFAULT 0.0,
             qa_flags TEXT DEFAULT '[]',
+            -- v2.2.3 F058: 质检来源追溯（batch/small_batch/single/rule_fallback）
+            qa_source TEXT DEFAULT 'batch',
             freshness_note TEXT DEFAULT '',
             -- v2.1.0: 政策依赖校验
             policy_dependencies TEXT DEFAULT '[]',
@@ -251,6 +265,23 @@ class DatabaseManager:
             resolved_at TEXT DEFAULT NULL,
             resolved_action TEXT DEFAULT ''
         )""")
+        # --- v2.2.3 F057/F058/F060 结构化事件日志 ---
+        # event_type: truncation_recovery / qc_downgrade / rule_fallback / backup_trigger / backup_failed
+        # module: extractor / qc / backup
+        # severity: info / warning / error
+        c.execute("""CREATE TABLE IF NOT EXISTS operation_events (
+            event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            event_type TEXT NOT NULL,
+            module TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'info'
+                CHECK(severity IN ('info','warning','error')),
+            related_file_id INTEGER,
+            related_kp_id INTEGER,
+            payload_json TEXT DEFAULT '{}',
+            FOREIGN KEY (related_file_id) REFERENCES source_files(id),
+            FOREIGN KEY (related_kp_id) REFERENCES knowledge_points(id)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -268,6 +299,10 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_kul_kpid ON knowledge_usage_log(knowledge_point_id)",
             "CREATE INDEX IF NOT EXISTS idx_dg_status ON duplicate_groups(status)",
             "CREATE INDEX IF NOT EXISTS idx_ann_kpid ON annotations(knowledge_point_id)",
+            # v2.2.3 operation_events 索引
+            "CREATE INDEX IF NOT EXISTS idx_events_time ON operation_events(event_time)",
+            "CREATE INDEX IF NOT EXISTS idx_events_type ON operation_events(event_type)",
+            "CREATE INDEX IF NOT EXISTS idx_events_file ON operation_events(related_file_id)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -527,7 +562,7 @@ class DatabaseManager:
                     "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
                     "content_readiness","source_authority","access_level",
                     "freshness_checked_at","freshness_interval_days","freshness_note",
-                    "prompt_version","qa_score","qa_flags",
+                    "prompt_version","qa_score","qa_flags","qa_source",
                     "policy_dependencies","policy_validated",
                     "practical_insights","insight_reliability"]
         sets, vals = [], []
@@ -1093,3 +1128,144 @@ class DatabaseManager:
             pass
         conn.close()
         return summary
+
+    # ================================================================
+    # v2.2.3 F057/F058/F060: 结构化事件日志 + 质检补跑候选
+    # ================================================================
+    def log_operation_event(self, event_type, module, severity="info",
+                            file_id=None, kp_id=None, payload=None):
+        """
+        写入结构化事件日志（供F062端到端测试Agent审计）
+
+        event_type: truncation_recovery / qc_downgrade / rule_fallback /
+                    backup_trigger / backup_failed 等
+        module: extractor / qc / backup
+        severity: info / warning / error
+        file_id: 关联source_files.id（可选）
+        kp_id: 关联knowledge_points.id（可选）
+        payload: dict或任意可json序列化对象，写入payload_json字段
+        """
+        if severity not in ("info", "warning", "error"):
+            severity = "info"
+        if payload is None:
+            payload_str = "{}"
+        elif isinstance(payload, (dict, list)):
+            try:
+                payload_str = json.dumps(payload, ensure_ascii=False, default=str)
+            except Exception:
+                payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
+        else:
+            payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
+
+        try:
+            conn = self.get_connection(); c = conn.cursor()
+            c.execute("""INSERT INTO operation_events
+                (event_time, event_type, module, severity,
+                 related_file_id, related_kp_id, payload_json)
+                VALUES (datetime('now','localtime'), ?, ?, ?, ?, ?, ?)""",
+                (event_type, module, severity, file_id, kp_id, payload_str))
+            event_id = c.lastrowid
+            conn.commit(); conn.close()
+            return event_id
+        except Exception as e:
+            # 事件日志写入失败不应打断主流程，降级为stdout
+            print("[log_operation_event 失败] event_type={} module={} err={}".format(
+                event_type, module, e))
+            return None
+
+    def get_operation_events(self, event_type=None, severity=None,
+                             module=None, file_id=None, limit=500):
+        """读取事件日志（供前端报告页 / F062审计员用）"""
+        conn = self.get_connection(); c = conn.cursor()
+        where, vals = [], []
+        if event_type:
+            where.append("event_type=?"); vals.append(event_type)
+        if severity:
+            where.append("severity=?"); vals.append(severity)
+        if module:
+            where.append("module=?"); vals.append(module)
+        if file_id is not None:
+            where.append("related_file_id=?"); vals.append(file_id)
+        sql = "SELECT * FROM operation_events"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY event_id DESC LIMIT ?"
+        vals.append(int(limit))
+        c.execute(sql, vals)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def get_qc_rerun_candidates(self):
+        """
+        F061 质检补跑：扫描需要重跑质检的知识点
+        命中条件（任一即可）：
+          1. qa_score IS NULL（从未质检过）
+          2. qa_flags 包含 "格式异常"（V3返回格式错误导致质检失败）
+        返回知识点dict列表（含source_file_id/title/qa_source等）
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT kp.id, kp.source_file_id, kp.title, kp.content_type,
+                   kp.qa_score, kp.qa_flags, kp.qa_source, kp.review_status,
+                   kp.original_excerpt, kp.ai_extracted_content,
+                   kp.practical_insights,
+                   sf.original_filename, sf.renamed_filename
+            FROM knowledge_points kp
+            LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+            WHERE (kp.qa_score IS NULL OR kp.qa_score = 0.0)
+               OR kp.qa_flags LIKE '%格式异常%'
+            ORDER BY kp.source_file_id, kp.id
+        """)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def get_qc_rerun_summary(self):
+        """F061 质检补跑候选摘要（前端按钮边显示数量用）"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN qa_score IS NULL OR qa_score=0.0 THEN 1 ELSE 0 END) as unscored,
+                   SUM(CASE WHEN qa_flags LIKE '%格式异常%' THEN 1 ELSE 0 END) as format_err
+            FROM knowledge_points
+            WHERE (qa_score IS NULL OR qa_score = 0.0)
+               OR qa_flags LIKE '%格式异常%'
+        """)
+        r = c.fetchone()
+        conn.close()
+        return {
+            "total": r[0] or 0,
+            "unscored": r[1] or 0,
+            "format_err": r[2] or 0
+        }
+
+    def increment_truncation_count(self, file_id):
+        """F057: 触发截断补救时+1"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE source_files
+            SET truncation_count = COALESCE(truncation_count, 0) + 1,
+                recovery_runs = COALESCE(recovery_runs, 0) + 1,
+                last_recovery_at = datetime('now','localtime')
+            WHERE id=?""", (file_id,))
+        conn.commit(); conn.close()
+
+    def get_truncation_summary(self):
+        """F057: 截断统计摘要（供仪表盘/报告用）"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT COUNT(*) FROM source_files
+            WHERE COALESCE(truncation_count, 0) > 0""")
+        affected_files = c.fetchone()[0] or 0
+        c.execute("""SELECT COALESCE(SUM(truncation_count), 0),
+                            COALESCE(SUM(recovery_runs), 0)
+                     FROM source_files""")
+        r = c.fetchone()
+        total_truncations = r[0] or 0
+        total_recovery_runs = r[1] or 0
+        conn.close()
+        return {
+            "affected_files": affected_files,
+            "total_truncations": total_truncations,
+            "total_recovery_runs": total_recovery_runs
+        }
+
