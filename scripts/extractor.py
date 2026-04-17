@@ -1,7 +1,32 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.2.0 bugfix-5 - 文档来源属性(doc_origin)驱动权威度
+版本：v2.2.3 - F057截断自动补救 + F058质检三级降级链
+
+变更说明（v2.2.3 F057+F058 hotfix）：
+  F057 截断自动补救：
+    - R1输出截断时，用最后一条kp的excerpt定位安全分界线，取尾段重提
+    - 段长降级序列：current → current/2（最多3次，最小500字）
+    - 定位失败记warning事件并保留已提取部分，不再整段重来
+    - 每次触发调 db.increment_truncation_count(file_id) + log_operation_event
+    - 移除"截断后 early-return 保留残片"的冒进逻辑
+  F058 质检三级降级链：
+    - L0 批量15/批 → L1 小批3/批最多2轮 → L2 逐条(QC_CHECK_SINGLE_PROMPT) → L3 规则兜底
+    - 每条kp必有qa_score + qa_source，禁止"跳过"灰色地带
+    - qa_source 值域：batch / small_batch / single / rule_fallback
+    - 规则兜底3项：excerpt长度30-800字 / 必填字段 / excerpt在原文中存在性
+    - 守门员机制：整段结束前扫未处理kp强制兜底
+    - 顺手修v2.1.2分批质检残留bug：原代码内层循环 `for qr in results` 应为 `for qr in all_results`
+  新增辅助方法：
+    _recover_from_truncation / _locate_cut_boundary / _dedupe_kps_by_excerpt（F057）
+    _build_qc_items / _qc_batch_call / _qc_single_call / _qc_rule_fallback
+    _write_qc_result / _excerpt_in_source / _print_qc_summary（F058）
+  接口变更：
+    _extract_single 返回值由"kps列表 / 'TRUNCATED'"改为统一dict {kps,truncated,last_excerpt,raw_parsed,cost}
+    _extract_with_auto_split 签名增加 file_id 参数
+    _quality_check 签名增加 source_content 参数（供规则兜底做excerpt存在性检查）
+  类级常量：
+    QC_FLAG_MAP 从 _quality_check 内部提升到类级（三级降级共用）
 
 变更说明（v2.2.0 bugfix-5）：
   - 从source_files记录读取doc_origin字段
@@ -32,7 +57,7 @@ from scripts.prompts.prompt_templates import (
     get_extraction_prompt, get_prompt_version,
     CONTEXT_RELAY_TEMPLATE, PRE_ANALYSIS_PROMPT,
     SEGMENT_SUMMARY_PROMPT, CROSS_SEGMENT_CHECK_PROMPT,
-    QC_CHECK_PROMPT
+    QC_CHECK_PROMPT, QC_CHECK_SINGLE_PROMPT  # v2.2.3 F058
 )
 from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
 from scripts.policy_validator import PolicyValidator
@@ -66,6 +91,23 @@ class Extractor:
     # 元数据合法值
     VALID_READINESS = set(CONTENT_READINESS.keys())
     VALID_AUTHORITY = set(SOURCE_AUTHORITY.keys())
+
+    # v2.2.3 F058: 类级质检flag映射（三级降级共用；从原 _quality_check 内部提升）
+    QC_FLAG_MAP = {
+        "缺上下文": "independence", "独立性不足": "independence",
+        "信息空泛": "density", "信息密度低": "density",
+        "颗粒度过粗": "granularity_coarse", "过粗": "granularity_coarse",
+        "颗粒度过细": "granularity_fine", "过细": "granularity_fine",
+        "标签不符": "tag_mismatch", "标签不匹配": "tag_mismatch",
+        "疑似重复": "duplicate_suspect", "重复": "duplicate_suspect",
+        "启示无依据": "insight_no_basis", "举一反三无依据": "insight_no_basis",
+        "提炼与原文重复": "low_value_add", "提炼无增值": "low_value_add",
+    }
+
+    # v2.2.3 F057: 截断补救降级最大次数 + 最小段长阈值
+    TRUNCATION_MAX_ATTEMPTS = 3
+    TRUNCATION_MIN_SEG_LEN = 500
+    TRUNCATION_MIN_TAIL_LEN = 200
 
     def __init__(self, progress_callback=None):
         p = PROJECT_ROOT / "config" / "settings.json"
@@ -202,7 +244,19 @@ class Extractor:
         if cur: segs.append(cur)
         return segs
 
+    # ================================================================
+    # v2.2.3 F057: 单段提取（返回值契约变更）
+    # ================================================================
     def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
+        """调用R1/V3提取单段内容，返回统一dict契约。
+        返回: {
+            "kps": [...],          # 已成功解析的知识点列表（可能为空）
+            "truncated": bool,     # 是否被截断
+            "last_excerpt": str,   # 最后一条kp的original_excerpt（供F057定位切分点）
+            "raw_parsed": bool,    # parsed是否为有效对象（False表示JSON完全损坏）
+            "cost": float          # 本次调用费用
+        }
+        """
         up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
         if relay_prefix:
             up = relay_prefix + "\n\n" + up
@@ -211,48 +265,248 @@ class Extractor:
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
         parsed = ai.get("parsed_json")
         was_truncated = ai.get("was_truncated", False)
-        cost_info = f"(花费约{ai.get('estimated_cost', 0):.4f}元)"
+        cost = ai.get("estimated_cost", 0)
+        cost_info = f"(花费约{cost:.4f}元)"
 
-        if was_truncated and parsed is None:
-            print(f"     ! 输出被截断且无法抢救 {cost_info}")
-            return "TRUNCATED"
+        # 解析失败（JSON完全损坏）
+        if parsed is None:
+            err = ai.get("json_parse_error", "未知错误")
+            if was_truncated:
+                # 输出截断且无法解析任何对象 → 交给调用方决定（补救或放弃）
+                print(f"     ! 输出被截断且无完整知识点可解析 {cost_info}")
+            else:
+                print(f"     ! JSON解析失败: {err} {cost_info}")
+            return {"kps": [], "truncated": was_truncated, "last_excerpt": "",
+                    "raw_parsed": False, "cost": cost}
 
-        if parsed and isinstance(parsed, dict):
-            kps = parsed.get("knowledge_points", [])
+        # 解析成功
+        kps = []
+        if isinstance(parsed, dict):
+            kps = parsed.get("knowledge_points", []) or []
             notes = parsed.get("extraction_notes", "")
             if notes: print(f"     AI说明: {notes[:80]}")
-            if was_truncated:
-                # v2.1.0-d: 截断提示增强，明确说明影响
-                print(f"     [注意] R1输出被截断(达到模型输出上限),尝试抢救...")
-                print(f"     [截断修复] 从不完整输出中抢救出{len(kps)}个完整知识点")
-                print(f"     本段提取{len(kps)}个知识点(部分截断已修复) {cost_info}")
-            else:
-                print(f"     本段提取{len(kps)}个知识点 {cost_info}")
-            return kps
-        if parsed and isinstance(parsed, list):
-            print(f"     本段提取{len(parsed)}个知识点 {cost_info}")
-            return parsed
-        err = ai.get("json_parse_error", "未知错误")
-        print(f"     ! JSON解析失败: {err} {cost_info}")
-        return []
+        elif isinstance(parsed, list):
+            kps = parsed
 
-    def _extract_with_auto_split(self, content, filename, prompt, ctype, current_max_len=None, relay_prefix=""):
-        if current_max_len is None: current_max_len = self.segment_max_len
-        result = self._extract_single(content, filename, prompt, ctype, relay_prefix=relay_prefix)
-        if result == "TRUNCATED":
-            new_max = current_max_len // 2
-            if new_max < 500:
-                print(f"     ! 内容过短仍被截断,跳过该段"); return []
-            print(f"     自动拆分为更小段(每段{new_max}字)重新提取...")
-            sub_segs = self._split(content, max_len=new_max)
-            all_kps = []
-            for j, sub_seg in enumerate(sub_segs, 1):
-                print(f"       子段{j}/{len(sub_segs)} ({len(sub_seg)}字)...")
-                sub_kps = self._extract_with_auto_split(sub_seg, f"{filename}(子段{j})", prompt, ctype, new_max, relay_prefix=relay_prefix)
-                all_kps.extend(sub_kps)
-            return all_kps
-        if isinstance(result, list): return result
-        return []
+        # 定位 last_excerpt（供F057补救用）
+        last_excerpt = ""
+        if kps:
+            try:
+                last_excerpt = kps[-1].get("original_excerpt", "") or ""
+            except Exception:
+                last_excerpt = ""
+
+        if was_truncated:
+            print(f"     [注意] R1输出被截断,已解析{len(kps)}条完整知识点 {cost_info}")
+        else:
+            print(f"     本段提取{len(kps)}个知识点 {cost_info}")
+
+        return {"kps": kps, "truncated": was_truncated,
+                "last_excerpt": last_excerpt, "raw_parsed": True, "cost": cost}
+
+    def _extract_with_auto_split(self, content, filename, prompt, ctype,
+                                 current_max_len=None, relay_prefix="", file_id=None):
+        """单段提取的外层调度：成功直接返回；截断则启动 F057 补救。
+        v2.2.3: 移除"段长减半整段重提"逻辑，改为"定位分界线+取尾段重提"。
+        """
+        if current_max_len is None:
+            current_max_len = self.segment_max_len
+
+        result = self._extract_single(content, filename, prompt, ctype, relay_prefix)
+        kps = result["kps"]
+
+        # 未截断：直接返回
+        if not result["truncated"]:
+            return kps
+
+        # 截断：启动 F057 补救
+        next_max = current_max_len // 2
+        recovered = self._recover_from_truncation(
+            original_content=content,
+            partial_kps=kps,
+            prompt=prompt,
+            ctype=ctype,
+            next_max_len=next_max,
+            file_id=file_id,
+            base_relay_prefix=relay_prefix,
+            attempt=1,
+            filename=filename,
+            last_excerpt=result["last_excerpt"]
+        )
+
+        # 合并并按 (title, excerpt前100) 去重
+        merged = self._dedupe_kps_by_excerpt(kps + recovered)
+        if len(merged) < len(kps) + len(recovered):
+            dup_n = len(kps) + len(recovered) - len(merged)
+            print(f"     [补救合并] 去重{dup_n}条疑似重复知识点，最终{len(merged)}条")
+        return merged
+
+    # ================================================================
+    # v2.2.3 F057: 截断补救核心
+    # ================================================================
+    def _locate_cut_boundary(self, content, last_excerpt):
+        """在原段中定位 last_excerpt 的末尾位置，返回切分点字符下标；定位失败返回 None。
+        三级定位：完整匹配 → 首30字模糊 → 尾30字反向。
+        """
+        if not last_excerpt or not content:
+            return None
+        excerpt = last_excerpt.strip()
+        if not excerpt:
+            return None
+
+        # L1: 完整匹配
+        pos = content.find(excerpt)
+        if pos >= 0:
+            return pos + len(excerpt)
+
+        # L2: 首30字模糊（AI偶尔会对excerpt做微小改写）
+        if len(excerpt) >= 30:
+            head = excerpt[:30]
+            pos = content.find(head)
+            if pos >= 0:
+                return pos + min(len(excerpt), 300)
+
+        # L3: 尾30字反向
+        if len(excerpt) >= 30:
+            tail = excerpt[-30:]
+            pos = content.rfind(tail)
+            if pos >= 0:
+                return pos + len(tail)
+
+        return None
+
+    def _dedupe_kps_by_excerpt(self, kps):
+        """按 (title, original_excerpt[:100]) 去重，保顺序。"""
+        seen = set()
+        out = []
+        for kp in kps:
+            if not isinstance(kp, dict):
+                continue
+            title = (kp.get("title", "") or "").strip()
+            excerpt = (kp.get("original_excerpt", "") or "").strip()[:100]
+            key = (title, excerpt)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(kp)
+        return out
+
+    def _recover_from_truncation(self, original_content, partial_kps, prompt, ctype,
+                                 next_max_len, file_id, base_relay_prefix,
+                                 attempt, filename, last_excerpt):
+        """F057 截断补救核心：定位→取尾段→重提；支持嵌套降级，最多3次。"""
+        # 降级到头
+        if attempt > self.TRUNCATION_MAX_ATTEMPTS or next_max_len < self.TRUNCATION_MIN_SEG_LEN:
+            self._safe_log_event(
+                "truncation_recovery", "extractor", "warning",
+                file_id=file_id,
+                payload={
+                    "reason": "max_attempts_reached",
+                    "total_attempts": attempt - 1,
+                    "final_max_len": next_max_len,
+                    "final_partial_count": len(partial_kps),
+                    "filename": filename
+                })
+            print(f"     [F057 补救终止] 已降级{attempt-1}次仍截断,保留已提取{len(partial_kps)}条")
+            return []
+
+        # 定位切分点
+        cut_pos = self._locate_cut_boundary(original_content, last_excerpt)
+        if cut_pos is None:
+            self._safe_log_event(
+                "truncation_recovery", "extractor", "warning",
+                file_id=file_id,
+                payload={
+                    "reason": "locate_boundary_failed",
+                    "attempt": attempt,
+                    "partial_kps_count": len(partial_kps),
+                    "last_excerpt_preview": (last_excerpt or "")[:80],
+                    "filename": filename
+                })
+            print(f"     [F057 补救放弃] 无法定位切分点,保留已提取{len(partial_kps)}条")
+            return []
+
+        tail_content = original_content[cut_pos:].strip()
+        if len(tail_content) < self.TRUNCATION_MIN_TAIL_LEN:
+            print(f"     [F057 补救跳过] 尾段过短({len(tail_content)}字),放弃补救")
+            return []
+
+        # 到这里确定启动补救 → 计数 +1
+        if file_id:
+            try:
+                self.db.increment_truncation_count(file_id)
+            except Exception:
+                pass
+        self._safe_log_event(
+            "truncation_recovery", "extractor", "info",
+            file_id=file_id,
+            payload={
+                "attempt": attempt,
+                "next_max_len": next_max_len,
+                "tail_len": len(tail_content),
+                "cut_pos": cut_pos,
+                "partial_kps_count": len(partial_kps),
+                "filename": filename
+            })
+        print(f"     [F057 补救 第{attempt}次] 从{cut_pos}字后取尾段({len(tail_content)}字),新段长{next_max_len}...")
+
+        # 构造补救 relay：在原 relay 基础上附加已提取标题
+        titles_preview = "\n".join(
+            f"  {i+1}. {(k.get('title','') or '')[:60]}"
+            for i, k in enumerate(partial_kps[:20])
+        ) or "  (无)"
+        recovery_relay = (base_relay_prefix or "") + (
+            "\n\n=== 截断补救上下文 ===\n"
+            f"本段因R1输出截断已启动补救,前序已提取 {len(partial_kps)} 条知识点:\n"
+            f"{titles_preview}\n"
+            "请从以下内容继续提取,不要重复已提取过的知识点。\n"
+        )
+
+        # 按 next_max_len 拆尾段（可能分成 1-N 个子段）
+        sub_segs = self._paragraph_segment(tail_content, max_len=next_max_len)
+        all_recovered = []
+        for j, sub in enumerate(sub_segs, 1):
+            label = f"{filename}(补救{attempt}-{j}/{len(sub_segs)})"
+            sub_result = self._extract_single(sub, label, prompt, ctype, recovery_relay)
+            all_recovered.extend(sub_result["kps"])
+
+            # 子段再次截断 → 递归深度降级
+            if sub_result["truncated"] and sub_result["last_excerpt"]:
+                deeper = self._recover_from_truncation(
+                    original_content=sub,
+                    partial_kps=sub_result["kps"],
+                    prompt=prompt,
+                    ctype=ctype,
+                    next_max_len=next_max_len // 2,
+                    file_id=file_id,
+                    base_relay_prefix=recovery_relay,
+                    attempt=attempt + 1,
+                    filename=label,
+                    last_excerpt=sub_result["last_excerpt"]
+                )
+                all_recovered.extend(deeper)
+            elif sub_result["truncated"] and not sub_result["last_excerpt"]:
+                # 截断但连一条完整kp都没解析出来：无锚点可定位，放弃深降
+                self._safe_log_event(
+                    "truncation_recovery", "extractor", "warning",
+                    file_id=file_id,
+                    payload={
+                        "reason": "no_anchor_in_recovered_sub",
+                        "attempt": attempt + 1,
+                        "filename": label
+                    })
+
+        return all_recovered
+
+    def _safe_log_event(self, event_type, module, severity, file_id=None, kp_id=None, payload=None):
+        """包一层 try/except,防止日志失败污染主流程"""
+        try:
+            self.db.log_operation_event(
+                event_type, module, severity,
+                file_id=file_id, kp_id=kp_id, payload=payload or {}
+            )
+        except Exception as e:
+            print(f"     [事件日志失败] {event_type}: {e}")
 
     def _move_to_completed(self, fp, fn):
         try:
@@ -724,164 +978,484 @@ class Extractor:
         return round(cost, 2)
 
     # ================================================================
-    # v2.1.0-c 第3批新增：V3质检（5维度评分）
+    # v2.2.3 F058: V3质检 —— 三级降级链
+    # L0 批量15/批 → L1 小批3/批最多2轮 → L2 逐条 → L3 规则兜底
+    # 每条kp必有qa_score + qa_source；守门员机制保证不遗漏
     # ================================================================
-    def _quality_check(self, filename, content_summary, kps, kps_info):
-        """V3质检：对同一文件的所有知识点进行6维度评分（v2.1.1: 含举一反三可靠性）。
-        kps: 原始AI提取的知识点列表（含完整内容）
-        kps_info: 写入DB后的info列表（含kp_id和practical_insights）
-        返回成功质检的数量。
-        v2.1.2 bugfix: 分批质检(每批15条),防止知识点过多导致V3输出截断。"""
-        if not kps or not kps_info:
-            return 0
-
-        # 构建全部知识点的QC数据
-        all_kp_for_qc = []
+    def _build_qc_items(self, kps, kps_info):
+        """构造质检用的 item 列表（L0/L1/L2 共用数据结构）。
+        每个 item 的 'index' 字段保留全局索引，供回写 kp_id 时映射。
+        """
+        items = []
         for i, kp in enumerate(kps):
             qc_item = {
-                "index": i,
+                "index": i,  # 全局索引
                 "title": kp.get("title", "未命名"),
                 "original_excerpt": (kp.get("original_excerpt") or "")[:200],
                 "suggested_category_tags": kp.get("suggested_category_tags", []),
                 "suggested_keywords": kp.get("suggested_keywords", [])[:5]
             }
-            # v2.1.1 F038: 传递practical_insights供V3评估可靠性
+            # v2.1.1 F038: 传递 practical_insights 供V3评估可靠性
             if i < len(kps_info):
                 insights = kps_info[i].get("practical_insights", [])
                 if insights:
                     qc_item["practical_insights"] = insights
-            all_kp_for_qc.append(qc_item)
+            items.append(qc_item)
+        return items
 
-        # 分批质检，每批最多15条，防止V3输出过长被截断
-        QC_BATCH_SIZE = 15
-        all_results = []
-        total_cost = 0
-        prompt = QC_CHECK_PROMPT
+    def _qc_batch_call(self, batch_items, filename, file_summary):
+        """批量质检V3调用（L0 和 L1 共用）。
+        batch_items: 包含 'index' 字段的 item 列表
+        返回: {"success": bool, "results": [...], "cost": float, "error": str}
+        results 中的 kp_index 是批内局部序号（0-based），由调用方映射到全局index
+        """
+        try:
+            # V3看到的 JSON 去掉 'index' 字段（避免误导模型以全局序号作答）
+            local_items = [{k: v for k, v in it.items() if k != "index"} for it in batch_items]
+            knowledge_points_json = json.dumps(local_items, ensure_ascii=False, indent=2)
+            up = QC_CHECK_PROMPT["user_prompt_template"].format(
+                filename=filename,
+                file_summary=file_summary or "(无摘要)",
+                kp_count=len(local_items),
+                knowledge_points_json=knowledge_points_json
+            )
+            ai = self.client.chat_with_json(
+                QC_CHECK_PROMPT["system_prompt"], up, temperature=0.2,
+                call_type="qc_check", model_override="deepseek-chat")
+            parsed = ai.get("parsed_json")
+            cost = ai.get("estimated_cost", 0) or 0
 
-        batches = [all_kp_for_qc[i:i + QC_BATCH_SIZE]
-                   for i in range(0, len(all_kp_for_qc), QC_BATCH_SIZE)]
-        batch_count = len(batches)
+            if not parsed or not isinstance(parsed, dict):
+                return {"success": False, "results": [], "cost": cost,
+                        "error": "parsed_not_dict"}
+            results = parsed.get("qa_results", [])
+            if not results or not isinstance(results, list):
+                return {"success": False, "results": [], "cost": cost,
+                        "error": "no_qa_results"}
+            return {"success": True, "results": results, "cost": cost, "error": ""}
+        except CostLimitExceeded:
+            raise
+        except Exception as e:
+            return {"success": False, "results": [], "cost": 0,
+                    "error": f"{type(e).__name__}:{e}"}
 
-        if batch_count > 1:
-            print(f"     知识点较多({len(kps)}条),分{batch_count}批质检...")
+    def _qc_single_call(self, kp_item, filename):
+        """逐条质检V3调用（L2，用 QC_CHECK_SINGLE_PROMPT）。
+        kp_item: 单个 item（含 'index' 字段，用于日志）
+        返回: {"success": bool, "result": {...}, "cost": float, "error": str}
+        """
+        try:
+            local_item = {k: v for k, v in kp_item.items() if k != "index"}
+            knowledge_point_json = json.dumps(local_item, ensure_ascii=False, indent=2)
+            up = QC_CHECK_SINGLE_PROMPT["user_prompt_template"].format(
+                filename=filename,
+                knowledge_point_json=knowledge_point_json
+            )
+            ai = self.client.chat_with_json(
+                QC_CHECK_SINGLE_PROMPT["system_prompt"], up, temperature=0.2,
+                call_type="qc_check_single", model_override="deepseek-chat")
+            parsed = ai.get("parsed_json")
+            cost = ai.get("estimated_cost", 0) or 0
+
+            if not parsed or not isinstance(parsed, dict):
+                return {"success": False, "result": None, "cost": cost,
+                        "error": "parsed_not_dict"}
+            if "qa_score" not in parsed:
+                return {"success": False, "result": None, "cost": cost,
+                        "error": "missing_qa_score"}
+            return {"success": True, "result": parsed, "cost": cost, "error": ""}
+        except CostLimitExceeded:
+            raise
+        except Exception as e:
+            return {"success": False, "result": None, "cost": 0,
+                    "error": f"{type(e).__name__}:{e}"}
+
+    def _excerpt_in_source(self, excerpt, content):
+        """检查 excerpt 是否在 source_content 中出现（规则兜底用）。
+        三级匹配：完整 in → 首30字 in → 尾30字 in。
+        """
+        if not excerpt or not content:
+            return False
+        ex = excerpt.strip()
+        if not ex:
+            return False
+        if ex in content:
+            return True
+        if len(ex) >= 30:
+            if ex[:30] in content:
+                return True
+            if ex[-30:] in content:
+                return True
+        return False
+
+    def _qc_rule_fallback(self, kp_raw, source_content):
+        """L3 本地规则兜底：长度/必填字段/excerpt存在性 3项检查。
+        全通过 → qa_score=3（待人工复核）
+        任一不通过 → qa_score=1
+        """
+        excerpt = (kp_raw.get("original_excerpt", "") or "")
+        title = (kp_raw.get("title", "") or "")
+        flags = []
+        passed = True
+
+        # Check 1: excerpt 长度 30-800 字
+        el = len(excerpt.strip())
+        if el < 30:
+            flags.append("excerpt_too_short")
+            passed = False
+        elif el > 800:
+            flags.append("excerpt_too_long")
+            passed = False
+
+        # Check 2: 必填字段（title / excerpt / 任意AI提取字段）
+        if not title.strip():
+            flags.append("missing_title")
+            passed = False
+        if not excerpt.strip():
+            flags.append("missing_excerpt")
+            passed = False
+        if not kp_raw or not isinstance(kp_raw, dict):
+            flags.append("missing_ai_content")
+            passed = False
+
+        # Check 3: excerpt 存在性（仅当有 source_content 时才检查）
+        if source_content and excerpt.strip():
+            if not self._excerpt_in_source(excerpt, source_content):
+                flags.append("excerpt_hallucination")
+                passed = False
+
+        if passed:
+            return {
+                "qa_score": 3,
+                "qa_flags": ["v3_qc_failed_manual_review"],
+                "insight_reliability": None,
+                "improvement_suggestion": ""  # 不入库
+            }
+        flags.append("rule_fallback_fail")
+        return {
+            "qa_score": 1,
+            "qa_flags": flags,
+            "insight_reliability": None,
+            "improvement_suggestion": ""
+        }
+
+    def _write_qc_result(self, kp_id, qc_fields, qa_source):
+        """F058 质检结果统一写入出口。
+        任何一级（L0/L1/L2/L3）的结果都必须走这里，保证 qa_score + qa_source 一致性。
+        """
+        # 评分校验
+        try:
+            score = int(qc_fields.get("qa_score", 0) or 0)
+        except (TypeError, ValueError):
+            score = 0
+        if score < 1 or score > 5:
+            # 异常评分兜底为3（中性）
+            score = 3
+
+        # flags 标准化
+        raw_flags = qc_fields.get("qa_flags", [])
+        if not isinstance(raw_flags, list):
+            raw_flags = []
+        normalized_flags = []
+        for f in raw_flags:
+            if not isinstance(f, str):
+                continue
+            mapped = self.QC_FLAG_MAP.get(f)
+            if mapped:
+                normalized_flags.append(mapped)
+            else:
+                # 已是英文码 or 规则兜底产出的标记 → 原样保留
+                normalized_flags.append(f)
+
+        # insight_reliability 校验
+        insight_rel = qc_fields.get("insight_reliability", None)
+        valid_rel = ("reliable", "uncertain", "unreliable", "no_insights")
+        if insight_rel not in valid_rel:
+            insight_rel = None
+
+        update_kw = {
+            "qa_score": score,
+            "qa_flags": json.dumps(normalized_flags, ensure_ascii=False),
+            "qa_source": qa_source
+        }
+        if insight_rel:
+            update_kw["insight_reliability"] = insight_rel
 
         try:
-            for batch_idx, batch in enumerate(batches):
-                knowledge_points_json = json.dumps(batch, ensure_ascii=False, indent=2)
-                up = prompt["user_prompt_template"].format(
-                    filename=filename,
-                    file_summary=content_summary or "(无摘要)",
-                    kp_count=len(batch),
-                    knowledge_points_json=knowledge_points_json
-                )
-
-                ai = self.client.chat_with_json(
-                    prompt["system_prompt"], up, temperature=0.2,
-                    call_type="qc_check", model_override="deepseek-chat")
-                parsed = ai.get("parsed_json")
-                cost = ai.get("estimated_cost", 0)
-                total_cost += cost
-
-                if not parsed or not isinstance(parsed, dict):
-                    print(f"     第{batch_idx+1}批质检返回格式异常(花费{cost:.4f}元)")
-                    continue
-
-                results = parsed.get("qa_results", [])
-                if not results:
-                    print(f"     第{batch_idx+1}批质检无结果(花费{cost:.4f}元)")
-                    continue
-
-                # 修正kp_index: batch内V3返回的是批内序号,需还原为全局index
-                for qr in results:
-                    batch_local_idx = qr.get("kp_index", -1)
-                    if 0 <= batch_local_idx < len(batch):
-                        qr["kp_index"] = batch[batch_local_idx]["index"]
-
-                all_results.extend(results)
-
-                if batch_count > 1:
-                    print(f"     第{batch_idx+1}/{batch_count}批完成: {len(results)}条(花费{cost:.4f}元)")
-
-            if not all_results:
-                print(f"     质检无结果(总花费{total_cost:.4f}元)")
-                return 0
-
-            print(f"     质检完成: {len(all_results)}条评分(总花费{total_cost:.4f}元)")
-
-            # 统计分数分布
-            scores = []
-            checked = 0
-            for qr in results:
-                # QC_CHECK_PROMPT返回kp_index（0开始）
-                idx = qr.get("kp_index", -1)
-                score = qr.get("qa_score", 0)
-                flags = qr.get("qa_flags", [])
-                if not isinstance(flags, list):
-                    flags = []
-
-                # 标准化flags为英文标记，方便前端翻译
-                normalized_flags = []
-                FLAG_MAP = {
-                    "缺上下文": "independence", "独立性不足": "independence",
-                    "信息空泛": "density", "信息密度低": "density",
-                    "颗粒度过粗": "granularity_coarse", "过粗": "granularity_coarse",
-                    "颗粒度过细": "granularity_fine", "过细": "granularity_fine",
-                    "标签不符": "tag_mismatch", "标签不匹配": "tag_mismatch",
-                    "疑似重复": "duplicate_suspect", "重复": "duplicate_suspect",
-                    "启示无依据": "insight_no_basis", "举一反三无依据": "insight_no_basis",
-                }
-                for f in flags:
-                    if isinstance(f, str):
-                        mapped = FLAG_MAP.get(f)
-                        if mapped:
-                            normalized_flags.append(mapped)
-                        elif f in FLAG_MAP.values():
-                            normalized_flags.append(f)
-                        else:
-                            # 保留原始中文标记
-                            normalized_flags.append(f)
-
-                # v2.1.1 F038: 解析insight_reliability
-                insight_rel = qr.get("insight_reliability", None)
-                valid_rel = ("reliable", "uncertain", "unreliable", "no_insights")
-                if insight_rel not in valid_rel:
-                    insight_rel = None
-
-                scores.append(score)
-                # 找到对应的kp_id
-                if 0 <= idx < len(kps_info):
-                    kp_id = kps_info[idx].get("kp_id")
-                    if kp_id:
-                        try:
-                            update_kw = {
-                                "qa_score": score,
-                                "qa_flags": json.dumps(normalized_flags, ensure_ascii=False)
-                            }
-                            if insight_rel:
-                                update_kw["insight_reliability"] = insight_rel
-                            self.db.update_knowledge_point(kp_id, **update_kw)
-                            checked += 1
-                        except Exception as e:
-                            print(f"     ! 质检分数写入失败(ID={kp_id}): {e}")
-
-            # 打印分数分布
-            if scores:
-                avg = sum(scores) / len(scores)
-                low = sum(1 for s in scores if s <= 2)
-                mid = sum(1 for s in scores if s == 3)
-                high = sum(1 for s in scores if s >= 4)
-                print(f"     质检评分: 平均{avg:.1f}分 (优{high} / 中{mid} / 差{low})")
-                if low > 0:
-                    print(f"     [注意] {low}条知识点评分较低,建议审核时重点关注")
-
-            return checked
-
-        except CostLimitExceeded:
-            print(f"     费用已达上限,跳过质检")
-            return 0
+            self.db.update_knowledge_point(kp_id, **update_kw)
+            return True
         except Exception as e:
-            print(f"     质检失败: {e}")
+            print(f"     ! 质检结果写入失败(ID={kp_id}): {e}")
+            return False
+
+    def _quality_check(self, filename, content_summary, kps, kps_info, source_content=""):
+        """V3 质检三级降级链（v2.2.3 F058）。
+        kps: 原始AI提取的知识点列表（含完整内容）
+        kps_info: 写入DB后的info列表（含kp_id和practical_insights）
+        source_content: 原文（规则兜底做excerpt存在性检查用）
+        返回成功写入 qa_score 的知识点数（守门员后应 == len(kps_info)）
+        """
+        if not kps or not kps_info:
             return 0
+
+        # 构造质检数据
+        all_qc_items = self._build_qc_items(kps, kps_info)
+        total_cost = 0.0
+        processed_kp_ids = set()
+
+        # ===== L0: 批量 15/批 =====
+        L0_BATCH_SIZE = 15
+        l0_batches = [all_qc_items[i:i + L0_BATCH_SIZE]
+                      for i in range(0, len(all_qc_items), L0_BATCH_SIZE)]
+        l0_failed_items = []  # L0 失败需降级的 items
+
+        if len(l0_batches) > 1:
+            print(f"     知识点较多({len(kps)}条),分{len(l0_batches)}批质检...")
+
+        try:
+            for batch_idx, batch in enumerate(l0_batches):
+                r = self._qc_batch_call(batch, filename, content_summary)
+                total_cost += r.get("cost", 0)
+
+                if r["success"]:
+                    written = self._apply_batch_results(
+                        r["results"], batch, kps_info, processed_kp_ids, "batch")
+                    if len(l0_batches) > 1:
+                        print(f"     L0 第{batch_idx+1}/{len(l0_batches)}批 通过: {written}条(花费{r['cost']:.4f}元)")
+                else:
+                    err = r.get("error", "unknown")
+                    print(f"     L0 第{batch_idx+1}/{len(l0_batches)}批 失败: {err}")
+                    l0_failed_items.extend(batch)
+                    self._safe_log_event(
+                        "qc_downgrade", "qc", "warning",
+                        payload={
+                            "level": "L0_to_L1",
+                            "reason": err,
+                            "batch_idx": batch_idx,
+                            "kp_count": len(batch),
+                            "filename": filename
+                        })
+        except CostLimitExceeded:
+            print(f"     费用已达上限,剩余知识点走规则兜底")
+            # 费用超限 → 剩余未处理的全部走L3
+            self._fallback_remaining(all_qc_items, kps, kps_info,
+                                     processed_kp_ids, source_content,
+                                     reason="cost_limit_exceeded")
+            self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
+            return len(processed_kp_ids)
+
+        # ===== L1: 小批 3/批 最多 2 轮 =====
+        if l0_failed_items:
+            print(f"     [F058 L1] {len(l0_failed_items)}条进入小批降级(3/批,最多2轮)...")
+            L1_BATCH_SIZE = 3
+            L1_MAX_ROUNDS = 2
+            remaining = list(l0_failed_items)
+
+            try:
+                for round_num in range(1, L1_MAX_ROUNDS + 1):
+                    if not remaining:
+                        break
+                    small_batches = [remaining[i:i + L1_BATCH_SIZE]
+                                     for i in range(0, len(remaining), L1_BATCH_SIZE)]
+                    next_failed = []
+                    round_written = 0
+                    for sb_idx, sb in enumerate(small_batches):
+                        r = self._qc_batch_call(sb, filename, content_summary)
+                        total_cost += r.get("cost", 0)
+                        if r["success"]:
+                            round_written += self._apply_batch_results(
+                                r["results"], sb, kps_info, processed_kp_ids, "small_batch")
+                        else:
+                            next_failed.extend(sb)
+                    if round_written > 0 or len(next_failed) < len(remaining):
+                        print(f"     L1 第{round_num}轮: 通过{len(remaining)-len(next_failed)}条, 剩余{len(next_failed)}条")
+                    remaining = next_failed
+
+                if remaining:
+                    self._safe_log_event(
+                        "qc_downgrade", "qc", "warning",
+                        payload={
+                            "level": "L1_to_L2",
+                            "kp_count": len(remaining),
+                            "filename": filename
+                        })
+                l1_failed_items = remaining
+            except CostLimitExceeded:
+                print(f"     费用已达上限,剩余知识点走规则兜底")
+                self._fallback_remaining(all_qc_items, kps, kps_info,
+                                         processed_kp_ids, source_content,
+                                         reason="cost_limit_exceeded_in_L1")
+                self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
+                return len(processed_kp_ids)
+        else:
+            l1_failed_items = []
+
+        # ===== L2: 逐条 QC_CHECK_SINGLE_PROMPT =====
+        l2_failed = []  # [(item, kp_id, err)]
+        if l1_failed_items:
+            print(f"     [F058 L2] {len(l1_failed_items)}条进入逐条降级(1/次)...")
+            l2_success = 0
+            try:
+                for item in l1_failed_items:
+                    global_idx = item.get("index", -1)
+                    if not (0 <= global_idx < len(kps_info)):
+                        continue
+                    kp_id = kps_info[global_idx].get("kp_id")
+                    if not kp_id or kp_id in processed_kp_ids:
+                        continue
+
+                    r = self._qc_single_call(item, filename)
+                    total_cost += r.get("cost", 0)
+                    if r["success"]:
+                        if self._write_qc_result(kp_id, r["result"], "single"):
+                            processed_kp_ids.add(kp_id)
+                            l2_success += 1
+                    else:
+                        l2_failed.append((item, kp_id, r.get("error", "unknown")))
+                print(f"     L2 逐条: 通过{l2_success}条, 剩余{len(l2_failed)}条进入规则兜底")
+            except CostLimitExceeded:
+                print(f"     费用已达上限,剩余知识点走规则兜底")
+                # 把 L2 未处理完的也丢给 L3
+                for item in l1_failed_items:
+                    gi = item.get("index", -1)
+                    if 0 <= gi < len(kps_info):
+                        kid = kps_info[gi].get("kp_id")
+                        if kid and kid not in processed_kp_ids:
+                            if not any(t[1] == kid for t in l2_failed):
+                                l2_failed.append((item, kid, "cost_limit_exceeded"))
+
+        # ===== L3: 规则兜底 =====
+        if l2_failed:
+            print(f"     [F058 L3] {len(l2_failed)}条进入规则兜底...")
+            for item, kp_id, err in l2_failed:
+                if kp_id in processed_kp_ids:
+                    continue
+                global_idx = item.get("index", -1)
+                kp_raw = kps[global_idx] if 0 <= global_idx < len(kps) else {}
+                fallback = self._qc_rule_fallback(kp_raw, source_content)
+                if self._write_qc_result(kp_id, fallback, "rule_fallback"):
+                    processed_kp_ids.add(kp_id)
+                self._safe_log_event(
+                    "rule_fallback", "qc", "error",
+                    kp_id=kp_id,
+                    payload={
+                        "reason": "single_qc_failed",
+                        "err_msg": err,
+                        "rule_fallback_score": fallback.get("qa_score"),
+                        "filename": filename
+                    })
+
+        # ===== 守门员：遍历 kps_info 扫漏网 =====
+        for idx, info in enumerate(kps_info):
+            kp_id = info.get("kp_id")
+            if not kp_id or kp_id in processed_kp_ids:
+                continue
+            kp_raw = kps[idx] if 0 <= idx < len(kps) else {}
+            fallback = self._qc_rule_fallback(kp_raw, source_content)
+            if self._write_qc_result(kp_id, fallback, "rule_fallback"):
+                processed_kp_ids.add(kp_id)
+            self._safe_log_event(
+                "rule_fallback", "qc", "warning",
+                kp_id=kp_id,
+                payload={"reason": "goalkeeper_sweep", "filename": filename})
+            print(f"     [F058 守门员] kp_id={kp_id} 未被三级处理,强制规则兜底")
+
+        # 汇总输出
+        self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
+        return len(processed_kp_ids)
+
+    def _apply_batch_results(self, v3_results, batch, kps_info, processed_kp_ids, qa_source):
+        """将 V3 批量返回的 qa_results 写入DB。
+        v3_results 中的 kp_index 是批内局部序号（0-based），通过 batch[local_idx]['index'] 映射到全局。
+        返回成功写入的条数。
+        """
+        written = 0
+        for qr in v3_results:
+            if not isinstance(qr, dict):
+                continue
+            local_idx = qr.get("kp_index", -1)
+            try:
+                local_idx = int(local_idx)
+            except (TypeError, ValueError):
+                local_idx = -1
+            if not (0 <= local_idx < len(batch)):
+                continue
+            global_idx = batch[local_idx].get("index", -1)
+            if not (0 <= global_idx < len(kps_info)):
+                continue
+            kp_id = kps_info[global_idx].get("kp_id")
+            if not kp_id or kp_id in processed_kp_ids:
+                continue
+            if self._write_qc_result(kp_id, qr, qa_source):
+                processed_kp_ids.add(kp_id)
+                written += 1
+        return written
+
+    def _fallback_remaining(self, all_qc_items, kps, kps_info,
+                            processed_kp_ids, source_content, reason):
+        """费用超限等场景：把未处理的全部走 L3 规则兜底。"""
+        for item in all_qc_items:
+            global_idx = item.get("index", -1)
+            if not (0 <= global_idx < len(kps_info)):
+                continue
+            kp_id = kps_info[global_idx].get("kp_id")
+            if not kp_id or kp_id in processed_kp_ids:
+                continue
+            kp_raw = kps[global_idx] if 0 <= global_idx < len(kps) else {}
+            fallback = self._qc_rule_fallback(kp_raw, source_content)
+            if self._write_qc_result(kp_id, fallback, "rule_fallback"):
+                processed_kp_ids.add(kp_id)
+            self._safe_log_event(
+                "rule_fallback", "qc", "error",
+                kp_id=kp_id,
+                payload={"reason": reason})
+
+    def _print_qc_summary(self, kps_info, processed_kp_ids, total_cost):
+        """打印质检汇总：分数分布 + 来源分布"""
+        if not processed_kp_ids:
+            print(f"     质检完成(总花费{total_cost:.4f}元),但无成功评分记录")
+            return
+        try:
+            conn = self.db.get_connection(); c = conn.cursor()
+            kp_ids = list(processed_kp_ids)
+            placeholder = ",".join("?" * len(kp_ids))
+            c.execute(
+                f"SELECT qa_score, qa_source FROM knowledge_points WHERE id IN ({placeholder})",
+                kp_ids
+            )
+            rows = c.fetchall()
+            conn.close()
+        except Exception as e:
+            print(f"     质检汇总查询失败: {e}")
+            return
+
+        scores = []
+        sources = {}
+        for r in rows:
+            s, src = r[0], (r[1] or "unknown")
+            if s is not None:
+                try:
+                    scores.append(float(s))
+                except (TypeError, ValueError):
+                    pass
+            sources[src] = sources.get(src, 0) + 1
+
+        print(f"     质检完成: {len(scores)}条评分 (总花费{total_cost:.4f}元)")
+        if scores:
+            avg = sum(scores) / len(scores)
+            low = sum(1 for s in scores if s <= 2)
+            mid = sum(1 for s in scores if s == 3)
+            high = sum(1 for s in scores if s >= 4)
+            print(f"     分数分布: 平均{avg:.1f}分 (优{high} / 中{mid} / 差{low})")
+        if sources:
+            src_parts = [f"{k}:{v}" for k, v in sources.items()]
+            print(f"     质检来源: {' / '.join(src_parts)}")
+            rf_count = sources.get("rule_fallback", 0)
+            if rf_count > 0:
+                print(f"     [注意] {rf_count}条走规则兜底(L3),前端将黄色高亮,建议人工优先复核")
+        low_count = sum(1 for s in scores if s <= 2)
+        if low_count > 0:
+            print(f"     [注意] {low_count}条知识点评分较低,建议审核时重点关注")
 
     # ================================================================
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
@@ -1118,7 +1692,7 @@ class Extractor:
                                 result["error"] = "用户暂缓(费用)"; return result
                             else: print(f"     请输入 Y 或 N")
 
-            # === Step 4: R1逐段提取(带上下文接力) ===
+            # === Step 4: R1逐段提取(带上下文接力+F057截断补救) ===
             print(f"     [Step 4] AI提取中,请耐心等待...")
             self._report_progress(current_step="Step 4/8 AI提取")
             kps = []
@@ -1129,7 +1703,9 @@ class Extractor:
                 relay_prefix = self._build_context_relay(i, len(segs), file_structure, kps, source_nature=source_nature)
                 seg_kps = self._extract_with_auto_split(
                     seg, f"{fn}(第{i}/{len(segs)}段)" if len(segs) > 1 else fn,
-                    prompt, ctype, relay_prefix=relay_prefix)
+                    prompt, ctype,
+                    relay_prefix=relay_prefix,
+                    file_id=fid)  # v2.2.3 F057: 传入 file_id 供补救时记日志
                 kps.extend(seg_kps)
 
             if not kps:
@@ -1206,15 +1782,17 @@ class Extractor:
             self._move_to_completed(fp, fn)
             self._clean_pending(original_fn)
 
-            # === Step 6: V3质检（5维度评分） ===
+            # === Step 6: V3质检（三级降级链 v2.2.3 F058） ===
             qc_count = 0
             if cnt > 0:
-                print(f"\n     [Step 6] V3质检({cnt}条知识点)...")
+                print(f"\n     [Step 6] V3质检三级降级({cnt}条知识点)...")
                 self._report_progress(current_step="Step 6/8 V3质检")
                 content_summary = ""
                 if pre_result and isinstance(pre_result, dict):
                     content_summary = pre_result.get("content_overview", "")
-                qc_count = self._quality_check(fn, content_summary, kps, kps_info)
+                # v2.2.3: 传入 source_content 供规则兜底做 excerpt 存在性检查
+                qc_count = self._quality_check(fn, content_summary, kps, kps_info,
+                                               source_content=content)
 
             # === Step 7: 政策依赖校验（V3扫描+KB匹配） ===
             pv_count = 0
@@ -1242,7 +1820,7 @@ class Extractor:
                     print(f"     重复检测出错: {e}")
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
-            msg = f"{model_tag}提取{cnt}个知识点(v2.1.1)"
+            msg = f"{model_tag}提取{cnt}个知识点(v2.2.3)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
             if pv_count > 0:
@@ -1269,7 +1847,7 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.1.1")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.2.3")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
@@ -1288,7 +1866,7 @@ class Extractor:
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
         print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
         print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
-        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检+政策校验+举一反三+重复检测")
+        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检三级降级+政策校验+举一反三+重复检测+F057截断补救")
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
@@ -1344,6 +1922,10 @@ class Extractor:
         except ImportError: pass
         try:
             from scripts.migrate_v211_dup import migrate as m4; m4()
+        except ImportError: pass
+        # v2.2.3 新增：schema 迁移
+        try:
+            from scripts.migrate_v223 import migrate as m5; m5()
         except ImportError: pass
 
         files = self.get_processing_files()
@@ -1422,6 +2004,16 @@ def main():
             try:
                 from migrate_v211_dup import migrate as migrate_dup
                 migrate_dup()
+            except ImportError:
+                pass
+        # v2.2.3 F057+F058: schema迁移
+        try:
+            from scripts.migrate_v223 import migrate as migrate_v223
+            migrate_v223()
+        except ImportError:
+            try:
+                from migrate_v223 import migrate as migrate_v223
+                migrate_v223()
             except ImportError:
                 pass
         Extractor().run()
