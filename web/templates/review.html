@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.2.2</title>
+<title>乡村振兴知识库 v2.2.3</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -215,6 +215,31 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .qa-none{background:var(--bg);color:var(--text-muted)}
 .qa-flags{display:inline-flex;flex-wrap:wrap;gap:3px;margin-left:6px}
 .qa-flag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;background:var(--danger-bg);color:var(--danger);border:1px solid #FFCBCB}
+
+/* === v2.2.3 F058: qa_source 质检来源标签 === */
+.qa-src-badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5;margin-left:4px}
+.qa-src-batch{background:var(--success-bg);color:#059669}
+.qa-src-small_batch{background:var(--info-bg);color:var(--info)}
+.qa-src-single{background:#F3EAFA;color:#AF52DE}
+.qa-src-rule_fallback{background:#FFF4E6;color:#C97A2C;border:1px solid #FDDCAB}
+
+/* === v2.2.3 F058: 规则兜底条目整卡黄色高亮 === */
+.kp-card.qa-rule-fallback{background:#FFFBEF;border-left:3px solid var(--warning)}
+.kp-card.qa-rule-fallback:hover{background:#FFF8E1}
+
+/* === v2.2.3: 事件日志表格 === */
+.events-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+.events-table th{background:var(--bg);padding:8px 10px;text-align:left;font-weight:600;color:var(--text-secondary);font-size:11px;border-bottom:1px solid var(--border)}
+.events-table td{padding:8px 10px;border-bottom:1px solid var(--border-light);vertical-align:top}
+.events-table tr:hover{background:var(--bg)}
+.ev-sev{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600}
+.ev-sev-info{background:var(--info-bg);color:var(--info)}
+.ev-sev-warning{background:var(--warning-bg);color:var(--warning)}
+.ev-sev-error{background:var(--danger-bg);color:var(--danger)}
+.ev-type-label{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;background:var(--bg);color:var(--text-secondary);border:1px solid var(--border-light)}
+.ev-payload{font-family:"SF Mono",Consolas,monospace;font-size:11px;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.events-filter-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.events-filter-bar select{padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;background:var(--card)}
 
 /* === Freshness Badges === */
 .fr-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;line-height:1.5}
@@ -478,7 +503,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.2.2</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.2.3</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -540,6 +565,14 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <button class="filter-item" onclick="filterByQaScore('2',this)">2分</button>
       <button class="filter-item" onclick="filterByQaScore('1',this)">1分</button>
       <button class="filter-item" onclick="filterByQaScore('unscored',this)">未质检</button>
+    </div>
+    <div class="filter-section" id="qaSourceFilterSection">
+      <div class="filter-label">质检来源</div>
+      <button class="filter-item active" onclick="filterByQaSource(null,this)">全部</button>
+      <button class="filter-item" onclick="filterByQaSource('batch',this)">批量(正常)</button>
+      <button class="filter-item" onclick="filterByQaSource('small_batch',this)">小批(L1降级)</button>
+      <button class="filter-item" onclick="filterByQaSource('single',this)">逐条(L2降级)</button>
+      <button class="filter-item" onclick="filterByQaSource('rule_fallback',this)">规则兜底(低置信)</button>
     </div>
     <div class="filter-section" id="freshnessFilterSection">
       <div class="filter-label">保鲜状态</div>
@@ -639,7 +672,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <div class="tool-card" id="tc-qaBackfill" onclick="runTool('qaBackfill')">
         <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">Q</div>
         <div class="tool-name">质检补跑</div>
-        <div class="tool-desc">补跑未质检知识点</div>
+        <div class="tool-desc">未质检/异常条目(三级降级链)</div>
       </div>
       <div class="tool-card" id="tc-analytics" onclick="runTool('analytics')">
         <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">A</div>
@@ -805,6 +838,34 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <div class="modal-footer"><button class="btn" onclick="closeModal('statsModal')">关闭</button></div>
 </div></div>
 
+<div class="modal-overlay" id="eventsModal"><div class="modal" style="width:880px">
+  <div class="modal-header">事件日志 <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px">operation_events</span></div>
+  <div class="modal-body">
+    <div class="events-filter-bar">
+      <label style="font-size:12px;color:var(--text-muted)">事件类型:</label>
+      <select id="eventsTypeFilter" onchange="loadEvents()">
+        <option value="">全部</option>
+        <option value="truncation_recovery">截断补救</option>
+        <option value="qc_downgrade">质检降级</option>
+        <option value="rule_fallback">规则兜底</option>
+        <option value="backup_trigger">备份触发</option>
+        <option value="backup_failed">备份失败</option>
+      </select>
+      <label style="font-size:12px;color:var(--text-muted)">严重度:</label>
+      <select id="eventsSevFilter" onchange="loadEvents()">
+        <option value="">全部</option>
+        <option value="info">info</option>
+        <option value="warning">warning</option>
+        <option value="error">error</option>
+      </select>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted)" id="eventsCount"></span>
+      <button class="btn btn-sm" onclick="loadEvents()">刷新</button>
+    </div>
+    <div id="eventsBody"><div class="loading">加载中...</div></div>
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('eventsModal')">关闭</button></div>
+</div></div>
+
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -820,7 +881,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <script>
 /* === State === */
-var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null,currentSourceType=null,currentQaScore=null;
+var API="",currentPage=1,currentStatus=null,currentType=null,currentCategory=null,currentLevel1=null,currentSearch="",currentReadiness=null,currentQaSort=false,currentFreshness=null,currentPolicyFilter=null,currentSourceType=null,currentQaScore=null,currentQaSource=null;
 var selectedIds={},allCategories=[],allSystemTags=[],catStatsData=[];
 var lastLoadTotal=0,batchAllMode=false;
 var tagDefs=null,tagNameToGroup={};
@@ -833,7 +894,8 @@ var TN={policy:"政策文件","case":"项目案例",experience:"操盘经验",to
 var SN={pending:"待审核",confirmed:"已确认",ignored:"已忽略"};
 var RN={draft:"草稿级",quotable:"可引用级",premium:"精品级"};
 var AN={official:"官方文件",authoritative:"行业权威",firsthand:"项目实证",informal:"业内交流"};
-var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复","insight_no_basis":"启示无依据"};
+var QF={"independence":"独立性不足","density":"信息密度低","granularity_coarse":"颗粒度过粗","granularity_fine":"颗粒度过细","tag_mismatch":"标签不符","duplicate_suspect":"疑似重复","insight_no_basis":"启示无依据","格式异常":"格式异常","无源内容":"无源内容","excerpt过短":"excerpt过短","excerpt过长":"excerpt过长","excerpt未在原文":"excerpt未在原文","字段缺失":"字段缺失"};
+var QSN={"batch":"批量","small_batch":"小批","single":"逐条","rule_fallback":"规则兜底"};
 var FRN={fresh:"新鲜",expiring:"即将到期",expired:"已过期",outdated:"已过时",unknown:"未设置"};
 var PVN={"0":"未校验","1":"已验证","2":"待验证","3":"已豁免","4":"无需校验"};
 var IRN={"reliable":"可靠","uncertain":"存疑","unreliable":"不可靠","no_insights":"无启示"};
@@ -841,6 +903,7 @@ var CONF_CN={"high":"依据充分","medium":"合理推断","low":"待验证"};
 var ETN={strategy:"策略判断",method:"操盘方法",pitfall:"踩坑记录",insight:"反常识洞察",communication:"沟通汇报"};
 var ATN={"agree":"实战验证","disagree":"不同意","supplement":"补充","correction":"纠错","experience":"经验补充"};
 var STN={"extracted":"文件提取","experience_note":"经验速记","manual":"手动录入"};
+var EVTYPE={"truncation_recovery":"截断补救","qc_downgrade":"质检降级","rule_fallback":"规则兜底","backup_trigger":"备份触发","backup_failed":"备份失败"};
 var FIELD_NAMES={title:"标题",final_category_id:"所属分类",final_tags:"标签",final_category_tags:"分类标签",final_attribute_tags:"属性标签",final_keywords:"关键词",reviewer_notes:"审核备注",original_excerpt:"原文摘录",ai_extracted_content:"AI提取内容",content_readiness:"就绪度",source_authority:"权威度",freshness_interval_days:"保鲜周期"};
 
 /* === API helpers === */
@@ -930,23 +993,26 @@ function buildCategoryDropdown(){var sel=document.getElementById("editCategory")
 document.addEventListener("change",function(e){if(e.target&&e.target.id==="editCategory"&&e.target.value==="__ADD__"){e.target.value="";openAddCatModal()}});
 
 /* === Filters === */
-function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
+function filterByStatus(s,btn){currentStatus=s;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentQaSource=null;currentPage=1;document.getElementById("searchInput").value="";resetFilters();setActive(btn);selectedIds={};document.getElementById("selectAll").checked=false;renderBatchButtons();loadKnowledgePoints()}
 function filterByType(t,btn){currentType=t;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByReadiness(r,btn){currentReadiness=r;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByFreshness(f,btn){currentFreshness=f;currentPage=1;if(f){currentStatus="confirmed"}setActive(btn);loadKnowledgePoints()}
 function filterByPolicy(f,btn){currentPolicyFilter=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterBySourceType(f,btn){currentSourceType=f;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function filterByQaScore(q,btn){currentQaScore=q;currentPage=1;setActive(btn);loadKnowledgePoints()}
+function filterByQaSource(q,btn){currentQaSource=q;currentPage=1;setActive(btn);loadKnowledgePoints()}
 function dashJump(filterType,value){
   switchTab("review");
   currentPage=1;currentSearch="";currentCategory=null;currentLevel1=null;
   currentStatus=null;currentType=null;currentReadiness=null;currentQaScore=null;
   currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;
+  currentQaSource=null;
   document.getElementById("searchInput").value="";
   if(filterType==="status")currentStatus=value;
   else if(filterType==="type")currentType=value;
   else if(filterType==="readiness"){currentStatus="confirmed";currentReadiness=value}
   else if(filterType==="qa_score")currentQaScore=value;
+  else if(filterType==="qa_source")currentQaSource=value;
   else if(filterType==="freshness"){currentStatus="confirmed";currentFreshness=value}
   else if(filterType==="policy")currentPolicyFilter=value;
   else if(filterType==="dup_pending"){toggleDupPanel();return}
@@ -966,14 +1032,14 @@ function dashJump(filterType,value){
 function filterByCat(catId,l1Code,btn){currentCategory=catId;currentLevel1=l1Code;currentPage=1;currentStatus=null;var stSection=document.querySelectorAll(".filter-section")[0];var stBtns=stSection.querySelectorAll(".filter-item");for(var si=0;si<stBtns.length;si++)stBtns[si].classList.remove("active");stBtns[0].classList.add("active");renderBatchButtons();var allBtns=document.getElementById("categoryFilters").querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<allBtns.length;i++)allBtns[i].classList.remove("active");if(btn)btn.classList.add("active");loadKnowledgePoints()}
 function setActive(btn){if(!btn)return;var bs=btn.closest(".filter-section").querySelectorAll(".filter-item");for(var i=0;i<bs.length;i++)bs[i].classList.remove("active");btn.classList.add("active")}
 function resetFilters(){var sections=document.querySelectorAll(".filter-section");for(var s=0;s<sections.length;s++){var items=sections[s].querySelectorAll(".filter-item,.tree-parent,.tree-child");for(var i=0;i<items.length;i++)items[i].classList.remove("active");var first=sections[s].querySelector(".filter-item");if(first)first.classList.add("active")}}
-function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
+function clearAllFilters(){currentStatus=null;currentType=null;currentCategory=null;currentLevel1=null;currentSearch="";currentReadiness=null;currentQaSort=false;currentFreshness=null;currentPolicyFilter=null;currentSourceType=null;currentQaScore=null;currentQaSource=null;currentPage=1;document.getElementById("searchInput").value="";document.getElementById("btnQaSort").classList.remove("btn-sort-active");resetFilters();loadKnowledgePoints()}
 function doSearch(){currentSearch=document.getElementById("searchInput").value.trim();currentPage=1;loadKnowledgePoints()}
 function toggleQaSort(){currentQaSort=!currentQaSort;currentPage=1;var btn=document.getElementById("btnQaSort");if(currentQaSort){btn.classList.add("btn-sort-active");btn.textContent="质检排序(低分优先)"}else{btn.classList.remove("btn-sort-active");btn.textContent="质检排序"}loadKnowledgePoints()}
 
 /* === Load Knowledge Points === */
-function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaScore)u+="&qa_score="+currentQaScore;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){lastLoadTotal=d.total||0;hideBatchAllBanner();if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;initExcerptToggles();renderPagination(d.total,d.page,d.per_page);updateBatch()})}
+function loadKnowledgePoints(){var list=document.getElementById("knowledgeList");list.innerHTML='<div class="loading">正在加载...</div>';var u="/api/knowledge-points?page="+currentPage+"&per_page=20";if(currentStatus)u+="&status="+currentStatus;if(currentType)u+="&type="+currentType;if(currentCategory)u+="&category="+currentCategory;else if(currentLevel1)u+="&level1="+currentLevel1;if(currentSearch)u+="&search="+encodeURIComponent(currentSearch);if(currentReadiness)u+="&readiness="+currentReadiness;if(currentFreshness)u+="&freshness="+currentFreshness;if(currentPolicyFilter)u+="&policy="+currentPolicyFilter;if(currentSourceType)u+="&source_type="+currentSourceType;if(currentQaScore)u+="&qa_score="+currentQaScore;if(currentQaSource)u+="&qa_source="+currentQaSource;if(currentQaSort)u+="&sort_by_qa=1";showActiveFilters();apiGet(u).then(function(d){lastLoadTotal=d.total||0;hideBatchAllBanner();if(d.error){list.innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(d.error)+'</p></div>';return}var items=d.items||[];if(!items.length){var msg=currentStatus||currentType||currentCategory||currentLevel1||currentSearch||currentReadiness||currentFreshness||currentPolicyFilter||currentQaSource?"当前筛选条件下无结果":"暂无知识点";list.innerHTML='<div class="empty-state"><h3>'+msg+'</h3><p>'+(msg.indexOf("筛选")>=0?'<a href="#" onclick="clearAllFilters();return false" style="color:var(--primary)">清除筛选</a>':'请先运行 处理新文件.bat')+'</p></div>';document.getElementById("pagination").innerHTML="";return}var h="",lastFid=null,seq=0,fc={};for(var i=0;i<items.length;i++){var fid=items[i].source_file_id;fc[fid]=(fc[fid]||0)+1}for(var i=0;i<items.length;i++){var kp=items[i];if(kp.source_file_id!==lastFid){var fn=kp.renamed_filename||kp.original_filename||"未知文件";h+='<div class="file-header"><span>'+esc(fn)+'</span><span class="fc">'+fc[kp.source_file_id]+'个知识点</span></div>';lastFid=kp.source_file_id;seq=0}seq++;h+=renderCard(kp,seq)}list.innerHTML=h;initExcerptToggles();renderPagination(d.total,d.page,d.per_page);updateBatch()})}
 
-function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentQaScore)p.push("质检:"+(currentQaScore==="unscored"?"未质检":currentQaScore+"分"));if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
+function showActiveFilters(){var info=document.getElementById("activeFilterInfo");var p=[];if(currentStatus)p.push(SN[currentStatus]||currentStatus);if(currentType)p.push(TN[currentType]||currentType);if(currentCategory||currentLevel1)p.push("分类筛选中");if(currentSearch)p.push(currentSearch);if(currentReadiness)p.push(RN[currentReadiness]||currentReadiness);if(currentQaSort)p.push("按质检分数排序");if(currentQaScore)p.push("质检:"+(currentQaScore==="unscored"?"未质检":currentQaScore+"分"));if(currentQaSource)p.push("来源:"+(QSN[currentQaSource]||currentQaSource));if(currentFreshness)p.push("保鲜:"+({needs_check:"待检查",expired:"已过期",expiring:"即将到期",outdated:"已过时"}[currentFreshness]||currentFreshness));if(currentPolicyFilter)p.push("政策:"+({pending_validation:"待验证",validated:"已验证",exempt:"已豁免",unvalidated:"未校验",no_policy:"不涉及"}[currentPolicyFilter]||currentPolicyFilter));if(currentSourceType)p.push("来源:"+(STN[currentSourceType]||currentSourceType));if(p.length){var h='<div class="active-filters">当前筛选: ';for(var i=0;i<p.length;i++)h+='<span class="af-tag">'+esc(p[i])+'</span>';h+='<span class="af-clear" onclick="clearAllFilters()">清除</span></div>';info.innerHTML=h}else info.innerHTML=""}
 
 /* === Render Card === */
 function renderCard(kp,seq){
@@ -989,6 +1055,8 @@ if(typeof qaFlags==="string"){try{qaFlags=JSON.parse(qaFlags)}catch(e){qaFlags=[
 if(!Array.isArray(qaFlags))qaFlags=[];
 var qaH="";
 if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
+var qaSrc=kp.qa_source||"";
+if(qaSrc&&QSN[qaSrc]){qaH+='<span class="qa-src-badge qa-src-'+qaSrc+'" title="质检来源: '+esc(QSN[qaSrc])+'">'+esc(QSN[qaSrc])+'</span>'}
 var frSt=getFreshnessStatus(kp);
 var frH='<span class="fr-badge fr-'+frSt+'">'+esc(FRN[frSt]||frSt)+'</span>';
 if(kp.freshness_note&&(frSt==="fresh"||frSt==="expiring")){frH+='<span class="fr-note">'+esc(kp.freshness_note)+'</span>'}
@@ -1034,7 +1102,7 @@ var ah="";
 if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
-return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
+return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+(qaSrc==="rule_fallback"?" qa-rule-fallback":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
 +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
 +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
 +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
@@ -1429,6 +1497,29 @@ function renderDashboard(d){
   h+=dRow("","","经验速记入库",d.manual_kps||0);
   h+='</div>';
 
+  /* Card 11: Truncation Recovery (v2.2.3 F057) */
+  var tr=d.truncation||{};
+  var trAff=tr.affected_files||0;
+  var trTot=tr.total_truncations||0;
+  var trRec=tr.total_recovery_runs||0;
+  h+='<div class="dash-card"><div class="dash-card-head">截断补救 <span style="font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-left:6px">v2.2.3 F057</span></div>';
+  h+='<div class="dash-big" style="color:'+(trAff>0?"#C97A2C":"var(--text)")+'">'+trAff+'</div>';
+  h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:10px">个文件触发过截断补救</div>';
+  h+=dRow("","","累计截断次数",trTot);
+  h+=dRow("","","累计补救次数",trRec);
+  var qcR=d.qc_rerun||{};
+  var qcCand=qcR.total_candidates||qcR.total||0;
+  if(qcCand>0){
+    h+='<hr class="dash-divider">';
+    h+='<div class="dash-row"><span class="dl" style="color:var(--warning);font-weight:600">待质检补跑</span><span class="dv" style="color:var(--warning);font-weight:700">'+qcCand+'</span></div>';
+  }
+  h+='<hr class="dash-divider">';
+  h+='<div style="display:flex;gap:6px;margin-top:6px">';
+  h+='<button class="btn btn-sm" style="flex:1" onclick="openEventsModal(\'truncation_recovery\')">截断事件</button>';
+  h+='<button class="btn btn-sm" style="flex:1" onclick="openEventsModal(\'\')">全部事件</button>';
+  h+='</div>';
+  h+='</div>';
+
   h+='</div>';
   document.getElementById("dashContent").innerHTML=h;
 }
@@ -1445,6 +1536,72 @@ function dBar(color,label,val,total,jumpAction){
   var pct=total>0?Math.round(val/total*100):0;
   var cls=jumpAction?'class="dash-row clickable" onclick="'+jumpAction+'"':'class="dash-row"';
   return '<div '+cls+'><span class="dl">'+esc(label)+'</span><div class="dash-bar-bg"><div class="dash-bar-fill" style="width:'+pct+'%;background:'+color+'"></div></div><span class="dv">'+val+'</span></div>';
+}
+
+/* === v2.2.3: Events Log (operation_events) === */
+function openEventsModal(presetType){
+  document.getElementById("eventsBody").innerHTML='<div class="loading">加载中...</div>';
+  document.getElementById("eventsCount").textContent="";
+  /* 支持预设筛选（来自仪表盘按钮） */
+  if(typeof presetType!=="undefined"){
+    var sel=document.getElementById("eventsTypeFilter");
+    if(sel)sel.value=presetType||"";
+    var sev=document.getElementById("eventsSevFilter");
+    if(sev)sev.value="";
+  }
+  document.getElementById("eventsModal").classList.add("open");
+  loadEvents();
+}
+function loadEvents(){
+  var tf=document.getElementById("eventsTypeFilter");
+  var sf=document.getElementById("eventsSevFilter");
+  var qs="?limit=500";
+  if(tf&&tf.value)qs+="&event_type="+encodeURIComponent(tf.value);
+  if(sf&&sf.value)qs+="&severity="+encodeURIComponent(sf.value);
+  document.getElementById("eventsBody").innerHTML='<div class="loading">加载中...</div>';
+  apiGet("/api/events"+qs).then(function(list){
+    if(!Array.isArray(list)){
+      document.getElementById("eventsBody").innerHTML='<p style="color:var(--danger)">加载失败</p>';
+      document.getElementById("eventsCount").textContent="";
+      return;
+    }
+    document.getElementById("eventsCount").textContent="共 "+list.length+" 条";
+    if(!list.length){
+      document.getElementById("eventsBody").innerHTML='<div class="empty-state" style="padding:30px"><h3>暂无事件记录</h3><p>当前筛选条件下没有匹配的事件</p></div>';
+      return;
+    }
+    var h='<table class="events-table"><thead><tr>';
+    h+='<th style="width:140px">时间</th>';
+    h+='<th style="width:110px">类型</th>';
+    h+='<th style="width:70px">严重度</th>';
+    h+='<th style="width:80px">模块</th>';
+    h+='<th style="width:60px">文件ID</th>';
+    h+='<th>详情</th>';
+    h+='</tr></thead><tbody>';
+    for(var i=0;i<list.length;i++){
+      var e=list[i];
+      var et=e.event_time||e.created_at||"";
+      var tp=e.event_type||"";
+      var sv=e.severity||"info";
+      var md=e.module||"";
+      var fid=e.related_file_id;
+      if(fid===null||fid===undefined)fid="";
+      var pl=e.payload||{};
+      var plStr="";
+      try{plStr=JSON.stringify(pl)}catch(er){plStr=""}
+      if(plStr.length>200)plStr=plStr.substring(0,200)+"...";
+      h+='<tr>';
+      h+='<td style="font-size:11px;color:var(--text-muted);white-space:nowrap">'+esc(et)+'</td>';
+      h+='<td><span class="ev-type-label">'+esc(EVTYPE[tp]||tp)+'</span></td>';
+      h+='<td><span class="ev-sev ev-sev-'+sv+'">'+esc(sv)+'</span></td>';
+      h+='<td style="font-size:11px">'+esc(md)+'</td>';
+      h+='<td style="font-size:11px">'+esc(String(fid))+'</td>';
+      h+='<td class="ev-payload" title="'+esc(plStr)+'">'+esc(plStr||"-")+'</td>';
+      h+='</tr>';
+    }
+    h+='</tbody></table>';
+    document.getElementById("eventsBody").innerHTML=h;
+  });
 }
 
 /* === Toolbox === */
@@ -1552,17 +1709,45 @@ function runTool(name){
     });
   }
   else if(name==="qaBackfill"){
-    showConfirm("质检补跑","将对所有未质检的知识点补跑V3质检评估。确认?",function(ok){
-      if(!ok){done();return}
-      showToolResult("质检补跑",'<div class="loading">正在补跑质检，请耐心等待...</div>');
-      apiPost("/api/tools/qa-backfill").then(function(r){done();
-        if(r.error){showToolResult("质检补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
-        var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">'+esc(r.message||"完成")+'</p>';
-        h+=dRow("","","已质检",r.checked||0);
-        h+=dRow("","","失败",r.errors||0);
-        h+=dRow("","","待处理总数",r.total||0);
-        showToolResult("质检补跑结果",h);
-        loadDashboard();
+    /* v2.2.3 F061: 先查候选数量摘要，弹窗确认后调用新降级链接口 */
+    apiGet("/api/tools/qc_rerun/summary").then(function(s){
+      if(s.error){
+        showToolResult("质检补跑","<p style='color:var(--danger)'>获取摘要失败: "+esc(s.error)+"</p>");
+        done();return;
+      }
+      var total=s.total_candidates||s.total||0;
+      var nullCnt=s.null_score||s.null_count||0;
+      var badFmt=s.format_error||s.bad_format||0;
+      if(total===0){
+        showToolResult("质检补跑","<p style='color:var(--success);font-weight:600'>所有知识点均已正常质检，无需补跑</p>");
+        done();return;
+      }
+      var msg="发现待补跑条目 "+total+" 条";
+      if(nullCnt||badFmt){msg+=" (未质检:"+nullCnt+" / 格式异常:"+badFmt+")"}
+      msg+="，将走三级降级链(批量15→小批3→逐条→规则兜底)补跑。预计费用几毛到一元。确认?";
+      showConfirm("质检补跑(降级链)",msg,function(ok){
+        if(!ok){done();return}
+        showToolResult("质检补跑",'<div class="loading">正在走三级降级链补跑，大文件可能需要几分钟，请耐心等待...</div>');
+        apiPost("/api/tools/qc_rerun").then(function(r){done();
+          if(r.error){showToolResult("质检补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
+          var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">已补跑 '+(r.processed||0)+' 条 ('+(r.file_count||0)+' 个文件)</p>';
+          h+=dRow("","","候选总数",r.total||0);
+          h+=dRow("","","已处理",r.processed||0);
+          if(r.orphan_count)h+=dRow("","","孤儿条目(经验速记)",r.orphan_count);
+          var errs=r.errors||[];
+          if(errs.length){
+            h+='<div style="margin-top:10px;font-weight:600;font-size:13px;color:var(--warning)">跳过 '+errs.length+' 个分组:</div>';
+            for(var i=0;i<Math.min(errs.length,10);i++){h+='<div class="tr-item" style="color:var(--text-muted);font-size:11px">'+esc(errs[i])+'</div>'}
+            if(errs.length>10)h+='<div style="color:var(--text-muted);font-size:11px">...还有 '+(errs.length-10)+' 项</div>';
+          }
+          var sa=r.summary_after||{};
+          if(sa.total_candidates!==undefined){
+            h+='<hr class="dash-divider">';
+            h+=dRow("","","剩余待补跑",sa.total_candidates||0);
+          }
+          showToolResult("质检补跑结果",h);
+          loadDashboard();loadKnowledgePoints();
+        });
       });
     });
   }

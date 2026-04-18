@@ -1,7 +1,12 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.2.2 F051-F054 - 质量管控增强
+版本：v2.2.3 - 界面层 hotfix
+    F060 关键操作强制备份（3 触发点接入：版本重提取 / 重复合并单条与批量 / 全库重扫）
+    F061 历史质检补跑 API（/api/tools/qc_rerun 走 F058 降级链）
+    新增 /api/events 事件日志查询、/api/tools/truncation_summary 截断摘要
+    dashboard 聚合截断摘要供仪表盘"截断补救"卡使用
+    旧 /api/tools/qa-backfill 保留为向下兼容转发（内部调新降级链）
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -11,6 +16,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from scripts.db_manager import DatabaseManager
+# v2.2.3 F060: 关键操作备份钩子 + 备份失败异常
+from scripts.backup_manager import operation_hook, BackupFailedError
 
 app = Flask(__name__)
 CORS(app)
@@ -106,6 +113,8 @@ def get_kps():
         policy_filter = request.args.get("policy", None)
         source_type_filter = request.args.get("source_type", None)
         qa_score_filter = request.args.get("qa_score", None)
+        # v2.2.3: qa_source 筛选（batch/small_batch/single/rule_fallback）
+        qa_source_filter = request.args.get("qa_source", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -116,6 +125,7 @@ def get_kps():
             policy_filter=policy_filter,
             source_type_filter=source_type_filter,
             qa_score_filter=qa_score_filter,
+            qa_source_filter=qa_source_filter,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -225,6 +235,7 @@ def get_kp_ids():
             policy_filter=request.args.get("policy",None),
             source_type_filter=request.args.get("source_type",None),
             qa_score_filter=request.args.get("qa_score",None),
+            qa_source_filter=request.args.get("qa_source",None),
             page=1, per_page=99999)
         ids = [item["id"] for item in (r.get("items") or [])]
         return jsonify({"ids":ids, "total":len(ids)})
@@ -559,7 +570,9 @@ def duplicate_summary():
 
 @app.route("/api/duplicate-groups/<int:gid>/resolve", methods=["POST"])
 def resolve_duplicate(gid):
-    """处理重复组：保留指定知识点，删除其余（支持keep_ids多选）"""
+    """处理重复组：保留指定知识点，删除其余（支持keep_ids多选）
+    v2.2.3 F060: 实际删除前强制备份，备份失败终止操作
+    """
     try:
         group = db.get_duplicate_group(gid)
         if not group: return jsonify({"error":"not found"}),404
@@ -582,12 +595,18 @@ def resolve_duplicate(gid):
         for kid in keep_ids:
             if kid not in member_ids:
                 return jsonify({"error":"keep_id #%d 不在组成员中" % kid}),400
-        # 删除未勾选的知识点
+        # v2.2.3 F060: 仅当有实际删除时才备份
+        will_delete = [mid for mid in member_ids if mid not in keep_ids]
+        if will_delete:
+            try:
+                operation_hook("dup_merge")
+            except BackupFailedError as be:
+                return jsonify({"error": "备份失败，合并终止: " + str(be)}), 500
+        # 执行删除
         deleted = []
-        for mid in member_ids:
-            if mid not in keep_ids:
-                db.delete_knowledge_point(mid)
-                deleted.append(mid)
+        for mid in will_delete:
+            db.delete_knowledge_point(mid)
+            deleted.append(mid)
         if deleted:
             action_desc = "保留#%s，删除#%s" % (",".join(str(x) for x in keep_ids), ",".join(str(x) for x in deleted))
         else:
@@ -600,13 +619,21 @@ def resolve_duplicate(gid):
 
 @app.route("/api/duplicate-groups/batch-resolve", methods=["POST"])
 def batch_resolve_duplicates():
-    """批量处理重复组：支持按AI建议处理或全部标记非重复"""
+    """批量处理重复组：支持按AI建议处理或全部标记非重复
+    v2.2.3 F060: ai_suggest 分支会批量删除，启动前强制备份
+    """
     try:
         d = request.get_json() or {}
         group_ids = d.get("group_ids", [])
         action = d.get("action", "ai_suggest")  # ai_suggest=按AI建议保留, dismiss=全部标记非重复
         if not group_ids:
             return jsonify({"error":"请选择至少一个重复组"}),400
+        # v2.2.3 F060: ai_suggest 涉及实际删除，批量开始前备份一次；dismiss 不删除不需要
+        if action == "ai_suggest":
+            try:
+                operation_hook("dup_merge_batch")
+            except BackupFailedError as be:
+                return jsonify({"error": "备份失败，批量合并终止: " + str(be)}), 500
         resolved = 0
         dismissed = 0
         errors = []
@@ -894,6 +921,17 @@ def dashboard():
         qa_dist["unscored"] = c.fetchone()[0]
         data["qa_distribution"] = qa_dist
 
+        # v2.2.3: qa_source 分布（batch/small_batch/single/rule_fallback）
+        try:
+            c.execute("""SELECT qa_source, COUNT(*) FROM knowledge_points
+                         WHERE qa_source IS NOT NULL GROUP BY qa_source""")
+            qa_src_map = {}
+            for row in c.fetchall():
+                qa_src_map[row[0] or "batch"] = row[1]
+            data["qa_source_distribution"] = qa_src_map
+        except:
+            data["qa_source_distribution"] = {}
+
         # 保鲜摘要
         try:
             data["freshness"] = db.get_freshness_summary()
@@ -914,6 +952,18 @@ def dashboard():
             data["duplicates"] = db.get_duplicate_summary()
         except:
             data["duplicates"] = {"pending": 0}
+
+        # v2.2.3 F057: 截断补救摘要（供仪表盘"截断补救"卡）
+        try:
+            data["truncation"] = db.get_truncation_summary()
+        except:
+            data["truncation"] = {"affected_files": 0, "total_truncations": 0, "total_recovery_runs": 0}
+
+        # v2.2.3 F061: 质检补跑候选摘要（供工具箱"质检补跑"按钮角标）
+        try:
+            data["qc_rerun"] = db.get_qc_rerun_summary()
+        except:
+            data["qc_rerun"] = {"total_candidates": 0}
 
         # 文件管线
         pipeline = {}
@@ -1065,8 +1115,15 @@ def tool_duplicate_scan():
 
 @app.route("/api/tools/duplicate-reset-rescan", methods=["POST"])
 def tool_duplicate_reset_rescan():
-    """v2.2.2: 清理所有pending假阳性后用V3重新全库扫描"""
+    """v2.2.2: 清理所有pending假阳性后用V3重新全库扫描
+    v2.2.3 F060: 全库重扫前强制备份
+    """
     try:
+        # v2.2.3 F060: 全库重扫前强制备份
+        try:
+            operation_hook("full_rescan")
+        except BackupFailedError as be:
+            return jsonify({"error": "备份失败，重扫终止: " + str(be)}), 500
         from scripts.duplicate_checker import DuplicateChecker
         from scripts.deepseek_client import DeepSeekClient
         try:
@@ -1083,74 +1140,258 @@ def tool_duplicate_reset_rescan():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/tools/qa-backfill", methods=["POST"])
-def tool_qa_backfill():
-    """v2.2.2 F054: 质检补跑 - 对未质检知识点补跑V3质检"""
+# ================================================================
+# v2.2.3 F061: 历史质检补跑（走 F058 三级降级链）
+# ================================================================
+def _load_source_content(sf):
+    """F061 辅助：加载源文件内容（优先读.md缓存，再尝试文本原文件）
+    用于给 _quality_check 的规则兜底做 excerpt 存在性检查（反幻觉）
+    """
+    if not sf:
+        return ""
+    base = PROJECT_ROOT
     try:
-        from scripts.deepseek_client import DeepSeekClient
-        from scripts.prompts.prompt_templates import QC_CHECK_PROMPT
-        client = DeepSeekClient()
-        conn = db.get_connection(); c = conn.cursor()
-        c.execute("""SELECT id, title, content_type, ai_extracted_content,
-                     original_excerpt, practical_insights
-                     FROM knowledge_points
-                     WHERE qa_score IS NULL AND review_status IN ('pending','confirmed')""")
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        if not rows:
-            return jsonify({"success": True, "checked": 0, "message": "所有知识点已质检，无需补跑"})
-        checked = 0; errors = 0
-        for kp in rows:
+        cfg_p = PROJECT_ROOT / "config" / "settings.json"
+        if cfg_p.exists():
+            with open(cfg_p, "r", encoding="utf-8") as f:
+                base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
+    except:
+        pass
+    fn = sf.get("renamed_filename") or sf.get("original_filename") or ""
+    if not fn:
+        return ""
+    stem = Path(fn).stem
+    md_name = stem + ".md"
+    # 优先 .md 缓存（可能在 processing / completed / failed 任一目录）
+    for d in ["processing", "completed", "failed"]:
+        p = base / "data" / d / md_name
+        if p.exists():
             try:
-                ai_content = kp.get("ai_extracted_content", "{}")
-                if isinstance(ai_content, str):
-                    try: ai_content = json.loads(ai_content)
-                    except: ai_content = {}
-                insights = kp.get("practical_insights", "[]")
-                if isinstance(insights, str):
-                    try: insights = json.loads(insights)
-                    except: insights = []
-                user_content = (
-                    f"知识点ID: {kp['id']}\n"
-                    f"标题: {kp['title']}\n"
-                    f"类型: {kp['content_type']}\n"
-                    f"原文摘录: {(kp.get('original_excerpt') or '')[:500]}\n"
-                    f"AI提取内容: {json.dumps(ai_content, ensure_ascii=False)[:1500]}\n"
-                    f"实操启示: {json.dumps(insights, ensure_ascii=False)[:500]}"
-                )
-                result = client.chat_with_json(
-                    system_prompt=QC_CHECK_PROMPT["system"],
-                    user_prompt=user_content,
-                    temperature=0.1, max_tokens=1024,
-                    call_type="qc_backfill",
-                    model_override="deepseek-chat"
-                )
-                parsed = result.get("parsed_json", {})
-                if parsed and isinstance(parsed, dict):
-                    qa_score = parsed.get("overall_score")
-                    qa_flags = parsed.get("flags", [])
-                    ir = parsed.get("insight_reliability")
-                    update_data = {}
-                    if qa_score is not None:
-                        update_data["qa_score"] = qa_score
-                    if qa_flags:
-                        update_data["qa_flags"] = qa_flags
-                    if ir:
-                        update_data["insight_reliability"] = ir
-                    if update_data:
-                        db.update_knowledge_point(kp["id"], **update_data)
-                        checked += 1
-                else:
-                    errors += 1
-            except Exception as ex:
-                print(f"  QC backfill error for #{kp['id']}: {ex}")
-                errors += 1
-        return jsonify({"success": True, "checked": checked, "errors": errors,
-                        "total": len(rows), "message": f"已质检{checked}条，失败{errors}条"})
+                return p.read_text(encoding="utf-8")
+            except:
+                continue
+    # 再尝试文本原文件
+    for d in ["processing", "completed", "failed"]:
+        p = base / "data" / d / fn
+        if p.exists() and p.suffix.lower() in (".txt", ".md"):
+            try:
+                return p.read_text(encoding="utf-8")
+            except:
+                continue
+    return ""
+
+def _qc_rerun_core():
+    """F061 核心：用 Extractor._quality_check 三级降级链补跑
+    候选来自 db.get_qc_rerun_candidates()（qa_score IS NULL 或 qa_flags 含"格式异常"）
+    按源文件分组逐个处理（_quality_check 需要 source_content 做规则兜底反幻觉）
+    """
+    try:
+        candidates = db.get_qc_rerun_candidates()
+    except Exception as e:
+        traceback.print_exc()
+        return {"success": False, "error": "获取候选失败: " + str(e)}
+    if not candidates:
+        return {"success": True, "total": 0, "processed": 0,
+                "file_count": 0, "errors": [], "message": "无待补跑知识点"}
+    # 按源文件分组
+    by_file = {}
+    orphans = []
+    for kp in candidates:
+        fid = kp.get("source_file_id")
+        if fid is None:
+            orphans.append(kp)
+        else:
+            by_file.setdefault(fid, []).append(kp)
+    # 实例化 Extractor
+    try:
+        from scripts.extractor import Extractor
+        ext = Extractor()
+    except Exception as ex:
+        traceback.print_exc()
+        return {"success": False, "error": "Extractor 初始化失败: " + str(ex)}
+    total_processed = 0
+    errors = []
+    processed_file_count = 0
+
+    def _build_kps_and_info(kps_rows):
+        """把 DB 行还原为 Extractor._quality_check 期望的格式"""
+        kps_list = []
+        kps_info = []
+        for k in kps_rows:
+            aic = k.get("ai_extracted_content") or "{}"
+            if isinstance(aic, str):
+                try: aic = json.loads(aic)
+                except: aic = {}
+            if not isinstance(aic, dict):
+                aic = {}
+            kp_data = dict(aic)
+            kp_data["title"] = k.get("title", "") or ""
+            kp_data["original_excerpt"] = k.get("original_excerpt", "") or ""
+            pi = k.get("practical_insights") or "[]"
+            if isinstance(pi, str):
+                try: pi = json.loads(pi)
+                except: pi = []
+            if not isinstance(pi, list):
+                pi = []
+            kp_data["practical_insights"] = pi
+            kps_list.append(kp_data)
+            kps_info.append({"kp_id": k["id"], "title": k.get("title", "") or ""})
+        return kps_list, kps_info
+
+    for fid, kps in by_file.items():
+        try:
+            sf = db.get_source_file(fid)
+            content = _load_source_content(sf) if sf else ""
+            # 即便 content 为空也继续——规则兜底的 excerpt 存在性检查会自适应
+            kps_list, kps_info = _build_kps_and_info(kps)
+            ext._quality_check(kps_list, kps_info, source_content=content)
+            total_processed += len(kps)
+            processed_file_count += 1
+        except Exception as ex:
+            traceback.print_exc()
+            errors.append("文件#%d: %s" % (fid, str(ex)))
+
+    # 孤儿（source_file_id 为空，通常是经验速记）单独处理
+    if orphans:
+        try:
+            kps_list, kps_info = _build_kps_and_info(orphans)
+            ext._quality_check(kps_list, kps_info, source_content="")
+            total_processed += len(orphans)
+        except Exception as ex:
+            traceback.print_exc()
+            errors.append("孤儿条目(无源文件): %s" % str(ex))
+
+    summary_after = {}
+    try:
+        summary_after = db.get_qc_rerun_summary()
+    except:
+        pass
+    return {
+        "success": True,
+        "total": len(candidates),
+        "processed": total_processed,
+        "file_count": processed_file_count,
+        "orphan_count": len(orphans),
+        "errors": errors,
+        "summary_after": summary_after
+    }
+
+@app.route("/api/tools/qc_rerun/summary", methods=["GET"])
+def qc_rerun_summary_api():
+    """F061 摘要：返回待补跑的知识点数量（供前端按钮角标）"""
+    try:
+        s = db.get_qc_rerun_summary()
+        return jsonify(s)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e), "total_candidates": 0}), 500
+
+@app.route("/api/tools/qc_rerun", methods=["POST"])
+def qc_rerun_api():
+    """F061 执行：走 F058 三级降级链补跑质检"""
+    try:
+        result = _qc_rerun_core()
+        if not result.get("success"):
+            return jsonify(result), 500
+        return jsonify(result)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+# ================================================================
+# 旧 /api/tools/qa-backfill 接口（v2.2.2 F054）
+# v2.2.3 起：向下兼容转发到新的三级降级链，字段映射保持原响应格式
+# ================================================================
+@app.route("/api/tools/qa-backfill", methods=["POST"])
+def tool_qa_backfill():
+    """v2.2.3 F061: 向下兼容转发到 _qc_rerun_core()
+    旧接口语义：批量V3质检未质检条目
+    新能力：三级降级链(批量15→小批3→逐条→规则兜底)，覆盖未质检+格式异常+低分
+    响应字段映射：processed→checked, errors数组长度→errors, 保持原前端兼容
+    """
+    try:
+        r = _qc_rerun_core()
+        if not r.get("success"):
+            return jsonify({"error": r.get("error", "补跑失败")}), 500
+        errs = r.get("errors", []) or []
+        err_count = len(errs) if isinstance(errs, list) else 0
+        processed = r.get("processed", 0)
+        total = r.get("total", 0)
+        return jsonify({
+            "success": True,
+            "checked": processed,
+            "errors": err_count,
+            "total": total,
+            "message": "已补跑 %d 条(三级降级链)，跳过 %d 个文件/分组" % (processed, err_count),
+            "summary_after": r.get("summary_after", {})
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ================================================================
+# v2.2.3 新增：事件日志查询
+# ================================================================
+@app.route("/api/events", methods=["GET"])
+def api_events():
+    """查询 operation_events 结构化事件日志
+    参数：event_type / severity / module / file_id / limit（默认500）
+    """
+    try:
+        event_type = request.args.get("event_type") or None
+        severity = request.args.get("severity") or None
+        module = request.args.get("module") or None
+        file_id = request.args.get("file_id", None, type=int)
+        limit = request.args.get("limit", 500, type=int)
+        events = db.get_operation_events(
+            event_type=event_type,
+            severity=severity,
+            module=module,
+            file_id=file_id,
+            limit=limit
+        )
+        result = []
+        for e in (events or []):
+            # 支持 sqlite Row 和 dict 两种返回
+            if hasattr(e, "keys") and not isinstance(e, dict):
+                item = {k: e[k] for k in e.keys()}
+            else:
+                item = dict(e)
+            pj = item.get("payload_json")
+            if isinstance(pj, str):
+                try: item["payload"] = json.loads(pj)
+                except: item["payload"] = {}
+            elif isinstance(pj, dict):
+                item["payload"] = pj
+            else:
+                item["payload"] = {}
+            result.append(item)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify([])
+
+# ================================================================
+# v2.2.3 F057 辅助：截断摘要
+# ================================================================
+@app.route("/api/tools/truncation_summary", methods=["GET"])
+def truncation_summary_api():
+    """F057 截断摘要：供仪表盘"截断补救"卡使用"""
+    try:
+        s = db.get_truncation_summary()
+        return jsonify(s)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "affected_files": 0,
+            "total_truncations": 0,
+            "total_recovery_runs": 0
+        }), 500
+
+# ================================================================
+# 工具箱其余端点（续）
+# ================================================================
 @app.route("/api/tools/policy-revalidate", methods=["POST"])
 def tool_policy_revalidate():
     """对未校验知识点补跑政策校验"""
@@ -1379,7 +1620,9 @@ def reextract_scan():
 
 @app.route("/api/tasks/reextract", methods=["POST"])
 def task_reextract():
-    """执行版本重提取(备份→删除旧知识点→重置源文件状态→启动提取)"""
+    """执行版本重提取(备份→删除旧知识点→重置源文件状态→启动提取)
+    v2.2.3 F060: 备份改用 operation_hook，失败立即终止任务
+    """
     with _task_lock:
         if _task["running"]:
             return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
@@ -1402,14 +1645,17 @@ def task_reextract():
 
     def _run():
         try:
-            # Step 1: 自动备份
+            # Step 1: v2.2.3 F060 强制自动备份（失败直接终止任务）
             _task_update_progress({"current_step": "自动备份", "message": "正在备份数据库..."})
             try:
-                from scripts.backup_manager import BackupManager
-                bm = BackupManager()
-                bm.create_backup("reextract_auto")
-            except Exception as e:
-                print(f"  [WARN] 自动备份失败: {e}")
+                operation_hook("reextract")
+            except BackupFailedError as be:
+                with _task_lock:
+                    _task["error"] = "备份失败，任务终止: " + str(be)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(be)
+                    _task["running"] = False
+                return
 
             # Step 2: 删除旧知识点 + 重置源文件状态
             _task_update_progress({"current_step": "删除旧知识点", "message": "正在清理旧数据...",
@@ -1449,8 +1695,10 @@ def task_reextract():
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"success": True, "message": "重提取任务已启动", "file_count": len(file_ids)})
-    import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 
+# ================================================================
+# 启动
+# ================================================================
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 
@@ -1459,8 +1707,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.2.0")
+    print(f"  乡村振兴知识库 - 管理后台 v2.2.3")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
+    print(f"  v2.2.3 hotfix: F057截断补救 + F058质检降级 + F060备份 + F061补跑")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")
