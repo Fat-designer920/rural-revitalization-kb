@@ -4,6 +4,62 @@
 > 格式：[版本号] - 日期 - 标题 / 修复 / 新增 / 变更 / 数据库变更 / 回滚方案
 
 ---
+## v2.3.0-part1 (2026-04-20)
+ 
+**定位**：工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 顺手修。
+ 
+### F049 仪表盘工具箱优化 ✨
+- **合并三种重复检测为单一入口**：工具箱的"全库重复检测"和"清理并重扫"两张卡合并为一张"智能重复检测"，点击弹出三选一对话框：
+  - 最近 7 天（约 2-3 毛）
+  - 全库扫描（约 3-5 毛）
+  - 彻底重扫（约 5-8 毛，强制备份 + 清 pending + V3 全库重扫）
+- **仪表盘新增 3 张标签分布卡**：
+  - Card 12 业务领域分布（A 组 13 个标签）
+  - Card 13 知识形态分布（C 组 9 个标签）
+  - Card 14 客户视角分布（D 组 5 个标签）
+  - 每张卡默认显示 Top5 dBar + 底部"展开全部 N 个"按钮
+  - 所有标签支持点击穿透跳转到审核列表（新增 `layer1_tag` 筛选参数）
+- **新增后端接口**：`POST /api/tools/duplicate_unified`，请求体 `{mode:"recent"/"full"/"reset_rescan", days?:7}`
+- **侧边栏新增一级标签筛选条件区**：`#layer1TagFilterSection`，默认隐藏，仅当通过穿透跳转设置 `currentLayer1Tag` 后显示当前标签 + 清除按钮
+- **新增 db_manager 方法**：`get_tag_distribution(group)` 按组统计 A/C/D 三层标签的使用频次
+### F059 批量重跑 + AI 去重联动 ✨
+- **提取管理新增第 4 张卡"批量重跑"**（图标 "4"）
+- **候选列表 UI**：文件名 + 知识点计数 + 含注解警告（橙色）+ 截断计数
+- **执行流程**：
+  - Step 1：`operation_hook("batch_rerun")` 强制备份，失败直接终止
+  - Step 2：逐文件 `delete_extracted_kps_by_source_file`（只删 pending，保留 confirmed/ignored 审核成果）
+  - Step 3：逐文件走 `extract_from_file` 完整提取链（F057 截断补救 / F058 质检降级 / Step 8 去重联动）
+  - Step 4：全部完成后统一跑 `scan_incremental` 跨文件 AI 去重
+- **新增后端接口**：
+  - `GET /api/tools/batch-rerun-scan` 扫描候选文件列表
+  - `POST /api/tasks/batch_rerun` 启动批量重跑任务（task type="batch_rerun"）
+- **含注解文件不禁用**：注解的保留依赖 db 层 `delete_extracted_kps_by_source_file` 合约（只删 pending knowledge_points，不触 annotations 表）
+- **进度条复用既有任务框架**：`checkRunningTask` 的 titles 字典新增 "batch_rerun":"批量重跑进行中"
+### 🐛 Bug 修复
+- **Step 8 增量重复检测从未触发**：`extract_from_file` Step 8 原代码用 `info["id"]`，但 `kps_info` 实际存的是 `"kp_id"`，导致 `new_ids` 一直为空。v2.3.0-part1 改为 `info["kp_id"]`，每次提取后增量重复检测恢复正常触发。该 bug 自 v2.2.0 起潜伏至今。
+### 📦 向下兼容
+- `/api/tools/duplicate-scan` 和 `/api/tools/duplicate-reset-rescan` 两个旧接口保留不变，供浏览器缓存的旧 review.html 继续调用
+### 🎨 前端改动汇总（review.html）
+- Header 版本号 v2.2.3 → v2.3.0-part1
+- 工具箱卡片数 10 → 9（合并两张为一张）
+- 提取管理卡片数 3 → 4（新增批量重跑）
+- 仪表盘卡片数 11 → 14（新增 A/C/D 标签分布三张）
+- 新增 `currentLayer1Tag` 全局状态串联 dashJump / loadKnowledgePoints / showActiveFilters / clearAllFilters
+- 新增函数：`updateLayer1TagFilterSection` / `clearLayer1TagFilter` / `renderTagCard` / `toggleTagCardMore` / `doDupUnified` / `_runDupUnified` / `showBatchRerunPanel` / `brToggleAll` / `doBatchRerun`
+- 新增模态框：`#dupModeDlg`（三选一对话框）、`#batchRerunPanel`（批量重跑面板）
+### v2.2.3 既有元素原样保留
+- Card 11 截断补救 / 事件日志按钮 / 规则兜底黄色高亮 / qa_source 筛选器 / qaBackfill 降级链 — 一字不改
+---
+ 
+## v2.2.3 (2026-04 hotfix)
+ 
+- F057 截断自动补救（excerpt 定位切分点 + 尾段重提，3 次降级至 500 字）
+- F058 质检三级降级链（批量 15 → 小批 3×2 → 逐条 → 规则兜底）+ QC_CHECK_SINGLE_PROMPT
+- F060 关键操作强制备份（`operation_hook` 钩子 + `BackupFailedError` + 每类保留 5 个 / 总量 2GB）
+- F061 历史质检补跑（`/api/tools/qc_rerun` + 降级链）
+- 新建 `operation_events` 结构化事件日志表
+- v2.1.2 分批质检内层循环 bug 顺手修
+- `_extract_single` 返回值契约统一为 dict
 
 ## [v2.2.3] - 2026-04-18 — 紧急 Hotfix（三对话分批交付，全部完成）
 
