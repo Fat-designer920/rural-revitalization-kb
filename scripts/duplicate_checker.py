@@ -1,14 +1,20 @@
 """
 duplicate_checker.py - 重复知识点检测模块
 路径：scripts/duplicate_checker.py
-版本：v2.2.2 F051
+版本：v2.3.0-part1 - 新增 scan_recent 方法（对话1/2 交付）
+
+v2.3.0-part1 变更：
+  - 新增 scan_recent(days=7) 方法：扫最近 N 天 created_at 的知识点 → 转调 scan_incremental
+    用途：工具箱"智能重复检测"三选一之"最近一周"模式
+    实现：只查 created_at 在窗口内的 id 列表，让复用的 scan_incremental 走本地粗筛+V3精判
 
 功能：
   - 本地粗筛：标题相似度(SequenceMatcher) + 关键词重叠(Jaccard)
   - V3精判：判断关系类型(重复/版本更替/互补/冲突/无关)
   - v2.2.2: 无client不建组(防假阳性), 互补类型不建组, 阈值收紧
   - v2.2.2: reset_and_rescan清理重扫功能
-  - 支持全库扫描和增量扫描(提取后自动)
+  - v2.3.0-part1: scan_recent 支持"最近一周"场景
+  - 支持全库扫描、增量扫描(提取后自动)、最近窗口扫描
   - 结果存入duplicate_groups表供审核界面处理
 """
 import os, sys, json, re
@@ -99,6 +105,37 @@ class DuplicateChecker:
         if created > 0:
             print(f"     发现{created}组疑似重复，请在审核界面处理")
         return created
+
+    def scan_recent(self, days=7):
+        """
+        v2.3.0-part1: 最近 N 天窗口扫描
+        扫 knowledge_points.created_at 在最近 days 天内的 kp，作为"新知识点"
+        与全库对比（内部转调 scan_incremental 复用 V3 精判流程）。
+        参数：
+          days=7 表示最近一周（默认），可传 1/7/30 等
+        返回值：创建的疑似重复组数量
+        """
+        if days is None or days <= 0:
+            print(f"  [重复检测] days 参数无效: {days}")
+            return 0
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("""SELECT id FROM knowledge_points
+                     WHERE review_status IN ('pending','confirmed')
+                       AND (is_outdated IS NULL OR is_outdated=0)
+                       AND created_at >= datetime('now','localtime',?)
+                     ORDER BY id""",
+                  (f'-{int(days)} days',))
+        recent_ids = [r[0] for r in c.fetchall()]
+        conn.close()
+
+        print(f"\n  [重复检测] 最近 {days} 天窗口：查到 {len(recent_ids)} 条新知识点")
+        if not recent_ids:
+            return 0
+
+        # 复用 scan_incremental 的全流程（本地粗筛+V3精判+写 duplicate_groups）
+        return self.scan_incremental(recent_ids)
 
     def reset_and_rescan(self):
         """v2.2.2: 清理所有pending假阳性后重新全库扫描(含V3精判)"""

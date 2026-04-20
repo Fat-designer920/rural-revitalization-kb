@@ -1,7 +1,16 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.2.3 - F057/F058/F061 地基层
+版本：v2.3.0-part1 - 工具箱优化 + 批量重跑地基（对话1/2 交付）
+
+v2.3.0-part1 新增（工具箱+批量重跑）：
+  - get_all_knowledge_points 签名补齐 qa_source_filter（v2.2.3 遗留bug：api层已在传，db层签名却没有）
+    和 layer1_tag（A组业务领域/C组知识形态/D组客户视角 穿透跳转用）
+  - 新方法 get_tag_distribution(group_code)：按标签组聚合已确认知识点数量（仪表盘卡片数据源）
+  - 新方法 delete_extracted_kps_by_source_file(file_id)：仅删 review_status='pending' 的知识点
+    （批量重跑 F059 用，保留已 confirmed 的审核成果；级联风格与 delete_kps_by_source_file 对齐）
+  - 新方法 get_batch_rerun_candidate_files()：扫 source_files 表 + LEFT JOIN kp 聚合，
+    返回 [{id, filename, kp_total, kp_pending, kp_confirmed, kp_ignored, has_annotations}] 供前端批量勾选
 
 v2.2.3 新增（hotfix）：
   - source_files 表: truncation_count / recovery_runs / last_recovery_at
@@ -447,6 +456,7 @@ class DatabaseManager:
                                  search_query=None, content_readiness=None,
                                  freshness_filter=None, policy_filter=None,
                                  source_type_filter=None, qa_score_filter=None,
+                                 qa_source_filter=None, layer1_tag=None,
                                  page=1, per_page=20):
         conn = self.get_connection(); c = conn.cursor()
         where, params = ["1=1"], []
@@ -531,6 +541,16 @@ class DatabaseManager:
                     params.append(qs)
                 except ValueError:
                     pass
+        # v2.3.0-part1: 质检来源筛选（v2.2.3 遗留bug补齐，api_server.py 已在传此参数）
+        if qa_source_filter:
+            where.append("kp.qa_source=?"); params.append(qa_source_filter)
+        # v2.3.0-part1 F049: 一层标签穿透跳转（A组/C组/D组仪表盘卡片点击用）
+        # 匹配 suggested_category_tags 或 final_category_tags 中的 tag_code
+        # 用 '%"CODE"%' 格式避免子串误匹配（例如 "指标交易" 不会误匹配 "指标交易与定价"）
+        if layer1_tag:
+            pattern = f'%"{layer1_tag}"%'
+            where.append("(kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?)")
+            params.extend([pattern, pattern])
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
@@ -644,6 +664,113 @@ class DatabaseManager:
             self.log_operation("reextract_delete", "knowledge_points", source_file_id,
                                {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
         return len(kp_ids)
+
+    # ================================================================
+    # v2.3.0-part1 F059: 批量重跑仅删 pending，保留 confirmed 审核成果
+    # ================================================================
+    def delete_extracted_kps_by_source_file(self, source_file_id):
+        """
+        仅删除指定源文件下 review_status='pending' 的知识点及其关联数据。
+        已 confirmed 或 ignored 的条目（包括带注解/经验速记关联）保留，
+        与 delete_kps_by_source_file 保持同样的级联风格（annotations/edit_history/
+        knowledge_relations/knowledge_usage_log 逐一清理）。
+        返回实际删除数量。
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT id FROM knowledge_points
+                     WHERE source_file_id=? AND review_status='pending'""", (source_file_id,))
+        kp_ids = [r[0] for r in c.fetchall()]
+        for kp_id in kp_ids:
+            c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
+            c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
+            c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+        if kp_ids:
+            qmarks = ",".join("?" * len(kp_ids))
+            c.execute(f"DELETE FROM knowledge_points WHERE id IN ({qmarks})", kp_ids)
+        conn.commit(); conn.close()
+        if kp_ids:
+            self.log_operation("batch_rerun_delete_pending", "knowledge_points", source_file_id,
+                               {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
+        return len(kp_ids)
+
+    # ================================================================
+    # v2.3.0-part1 F049: 标签分布统计（仪表盘A/C/D组卡片数据源）
+    # ================================================================
+    def get_tag_distribution(self, group_code):
+        """
+        按标签组 group_code (如 'A','C','D') 聚合 review_status='confirmed' 知识点数量。
+        统计口径：
+          - 只统计已确认知识点（pending/ignored 不计入）
+          - 同时扫描 final_category_tags 和 suggested_category_tags（final 优先，为空时回退 suggested）
+          - 用 LIKE '%"CODE"%' 避免子串误匹配
+        返回 [{tag_code, tag_name, count}] 按 count 降序。
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        # 1. 从 tag_definitions 取该组的所有一层标签
+        c.execute("""SELECT tag_code, tag_name FROM tag_definitions
+                     WHERE layer='layer1' AND group_code=? AND is_active=1
+                     ORDER BY sort_order""", (group_code,))
+        tags = [(r["tag_code"], r["tag_name"]) for r in c.fetchall()]
+        result = []
+        for tag_code, tag_name in tags:
+            pattern = f'%"{tag_code}"%'
+            c.execute("""SELECT COUNT(*) AS cnt FROM knowledge_points
+                         WHERE review_status='confirmed'
+                           AND (
+                             (final_category_tags LIKE ? AND final_category_tags IS NOT NULL
+                                AND final_category_tags != '' AND final_category_tags != '[]')
+                             OR (
+                               (final_category_tags IS NULL OR final_category_tags=''
+                                OR final_category_tags='[]')
+                               AND suggested_category_tags LIKE ?
+                             )
+                           )""", (pattern, pattern))
+            cnt = c.fetchone()["cnt"]
+            result.append({"tag_code": tag_code, "tag_name": tag_name, "count": cnt})
+        conn.close()
+        # 按 count 降序返回（便于前端直接渲染排序后的卡片）
+        result.sort(key=lambda x: x["count"], reverse=True)
+        return result
+
+    # ================================================================
+    # v2.3.0-part1 F059: 批量重跑候选文件扫描
+    # ================================================================
+    def get_batch_rerun_candidate_files(self):
+        """
+        扫 source_files 表，左连接 knowledge_points/annotations 聚合：
+          - kp_total / kp_pending / kp_confirmed / kp_ignored
+          - has_annotations（用于前端警示：含注解则全量重跑会清空）
+        只返回 process_status='completed' 的文件（已完成提取的才有重跑意义）。
+        返回列表按 created_at 倒序。
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT sf.id, sf.original_filename, sf.renamed_filename, sf.file_path,
+                   sf.process_status, sf.process_message, sf.created_at,
+                   sf.truncation_count, sf.recovery_runs, sf.last_recovery_at,
+                   COUNT(kp.id) AS kp_total,
+                   SUM(CASE WHEN kp.review_status='pending' THEN 1 ELSE 0 END) AS kp_pending,
+                   SUM(CASE WHEN kp.review_status='confirmed' THEN 1 ELSE 0 END) AS kp_confirmed,
+                   SUM(CASE WHEN kp.review_status='ignored' THEN 1 ELSE 0 END) AS kp_ignored
+              FROM source_files sf
+              LEFT JOIN knowledge_points kp ON kp.source_file_id = sf.id
+             WHERE sf.process_status='completed'
+             GROUP BY sf.id
+             ORDER BY sf.created_at DESC
+        """)
+        rows = [dict(r) for r in c.fetchall()]
+        # 再查每个文件下是否有 annotations（警示用）
+        for row in rows:
+            c.execute("""SELECT COUNT(*) AS cnt FROM annotations a
+                         JOIN knowledge_points kp ON a.knowledge_point_id=kp.id
+                         WHERE kp.source_file_id=?""", (row["id"],))
+            row["has_annotations"] = (c.fetchone()["cnt"] or 0) > 0
+            # 规范化数值字段（SUM 结果可能是 None）
+            for k in ("kp_total", "kp_pending", "kp_confirmed", "kp_ignored"):
+                row[k] = int(row.get(k) or 0)
+        conn.close()
+        return rows
 
     # ================================================================
     # 编辑历史

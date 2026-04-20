@@ -1,7 +1,23 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.2.3 - 界面层 hotfix
+版本：v2.3.0-part1 - 工具箱优化 + 批量重跑（对话1/2 交付）
+
+v2.3.0-part1 变更：
+    F049 仪表盘工具箱优化（后端）：
+      - /api/knowledge-points 和 /api/knowledge-points/ids 新增 layer1_tag 参数（穿透跳转用）
+      - /api/dashboard 新增 data["tag_distribution"] = {"A":[...], "C":[...], "D":[...]}
+      - 新增 POST /api/tools/duplicate_unified：合并"增量重复/最近一周/全量扫描/清理重扫"为一个接口
+        旧路由 /api/tools/duplicate-scan 和 /api/tools/duplicate-reset-rescan 保留不动（向下兼容）
+    F059 批量重跑与AI去重联动（后端）：
+      - 新增 GET /api/tools/batch-rerun-scan：返回候选文件列表（kp 计数 + 是否含注解）
+      - 新增 POST /api/tasks/batch_rerun：批量重跑任务（复用 task_reextract 大框架）
+        差异：type="batch_rerun" / operation_hook("batch_rerun") /
+             用 delete_extracted_kps_by_source_file 而非 delete_kps_by_source_file
+    顺手修（仅 db 层）：get_all_knowledge_points 补齐 qa_source_filter 签名
+        （本文件 v2.2.3 已在传此参数，但 db 层签名当时漏改，导致该筛选始终无效）
+
+v2.2.3 - 界面层 hotfix
     F060 关键操作强制备份（3 触发点接入：版本重提取 / 重复合并单条与批量 / 全库重扫）
     F061 历史质检补跑 API（/api/tools/qc_rerun 走 F058 降级链）
     新增 /api/events 事件日志查询、/api/tools/truncation_summary 截断摘要
@@ -115,6 +131,8 @@ def get_kps():
         qa_score_filter = request.args.get("qa_score", None)
         # v2.2.3: qa_source 筛选（batch/small_batch/single/rule_fallback）
         qa_source_filter = request.args.get("qa_source", None)
+        # v2.3.0-part1 F049: 一层标签穿透（A/C/D组卡片跳转用）
+        layer1_tag = request.args.get("layer1_tag", None)
         r = db.get_all_knowledge_points(
             review_status=request.args.get("status"), content_type=request.args.get("type"),
             category_id=request.args.get("category",None,type=int),
@@ -126,6 +144,7 @@ def get_kps():
             source_type_filter=source_type_filter,
             qa_score_filter=qa_score_filter,
             qa_source_filter=qa_source_filter,
+            layer1_tag=layer1_tag,
             page=request.args.get("page",1,type=int), per_page=request.args.get("per_page",20,type=int))
         items = r["items"]
         if sort_by_qa:
@@ -236,6 +255,7 @@ def get_kp_ids():
             source_type_filter=request.args.get("source_type",None),
             qa_score_filter=request.args.get("qa_score",None),
             qa_source_filter=request.args.get("qa_source",None),
+            layer1_tag=request.args.get("layer1_tag",None),
             page=1, per_page=99999)
         ids = [item["id"] for item in (r.get("items") or [])]
         return jsonify({"ids":ids, "total":len(ids)})
@@ -965,6 +985,17 @@ def dashboard():
         except:
             data["qc_rerun"] = {"total_candidates": 0}
 
+        # v2.3.0-part1 F049: 标签分布（A/C/D 组，供仪表盘卡片+穿透跳转）
+        try:
+            data["tag_distribution"] = {
+                "A": db.get_tag_distribution("A"),
+                "C": db.get_tag_distribution("C"),
+                "D": db.get_tag_distribution("D"),
+            }
+        except Exception as _td_e:
+            print(f"[dashboard] tag_distribution 计算失败: {_td_e}")
+            data["tag_distribution"] = {"A": [], "C": [], "D": []}
+
         # 文件管线
         pipeline = {}
         base = PROJECT_ROOT
@@ -1136,6 +1167,72 @@ def tool_duplicate_reset_rescan():
         summary = db.get_duplicate_summary()
         return jsonify({"success": True, "dismissed": dismissed,
                         "new_groups": new_groups, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ================================================================
+# v2.3.0-part1 F049: 智能重复检测统一接口（三选一）
+# ================================================================
+@app.route("/api/tools/duplicate_unified", methods=["POST"])
+def tool_duplicate_unified():
+    """F049: 工具箱"智能重复检测"合并接口，前端弹窗三选一调用同一后端。
+
+    入参 JSON:
+      {"mode": "recent|full|reset_rescan", "days": 7}
+        - recent        : 只扫最近 days 天内创建的 pending 知识点（默认 days=7，不备份）
+        - full          : 全库扫描（不备份，保留历史 pending 组）
+        - reset_rescan  : 强制备份(operation_hook("full_rescan")) → 清理全部 pending 组 → 全库重扫
+
+    返回:
+      {"success": True, "mode": "...", "new_groups": N, "summary": {...}, "dismissed": M(仅reset_rescan)}
+
+    向下兼容说明:
+      旧路由 /api/tools/duplicate-scan 和 /api/tools/duplicate-reset-rescan 保留不变，
+      供浏览器缓存的旧 review.html 继续调用。新 review.html 应改用本接口。
+    """
+    try:
+        d = request.get_json() or {}
+        mode = (d.get("mode") or "").strip()
+        if mode not in ("recent", "full", "reset_rescan"):
+            return jsonify({"error": "mode 必须为 recent / full / reset_rescan"}), 400
+
+        # reset_rescan 模式强制备份（F060）
+        if mode == "reset_rescan":
+            try:
+                operation_hook("full_rescan")
+            except BackupFailedError as be:
+                return jsonify({"error": "备份失败，重扫终止: " + str(be)}), 500
+
+        from scripts.duplicate_checker import DuplicateChecker
+        from scripts.deepseek_client import DeepSeekClient
+        try:
+            client = DeepSeekClient()
+        except Exception as ce:
+            return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
+        checker = DuplicateChecker(db=db, client=client)
+
+        dismissed = None
+        if mode == "recent":
+            try:
+                days = int(d.get("days", 7))
+            except (TypeError, ValueError):
+                days = 7
+            if days <= 0:
+                days = 7
+            new_groups = checker.scan_recent(days=days)
+        elif mode == "full":
+            new_groups = checker.scan_full()
+        else:  # reset_rescan
+            dismissed = db.dismiss_all_pending_duplicates()
+            new_groups = checker.scan_full()
+
+        summary = db.get_duplicate_summary()
+        resp = {"success": True, "mode": mode,
+                "new_groups": new_groups, "summary": summary}
+        if dismissed is not None:
+            resp["dismissed"] = dismissed
+        return jsonify(resp)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -1697,6 +1794,232 @@ def task_reextract():
     return jsonify({"success": True, "message": "重提取任务已启动", "file_count": len(file_ids)})
 
 # ================================================================
+# v2.3.0-part1 F059: 批量重跑候选扫描 + 批量重跑任务 + AI 去重联动
+# ================================================================
+@app.route("/api/tools/batch-rerun-scan", methods=["GET"])
+def batch_rerun_scan():
+    """F059: 批量重跑候选文件扫描。
+
+    直接透传 db.get_batch_rerun_candidate_files() 结果，供前端提取管理 Tab 勾选。
+    返回每个文件的 kp 总数/状态分布/是否含注解/截断计数等，让老唐肉眼判断要不要重跑。
+    """
+    try:
+        rows = db.get_batch_rerun_candidate_files()
+        return jsonify({"success": True, "files": rows, "total": len(rows)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tasks/batch_rerun", methods=["POST"])
+def task_batch_rerun():
+    """F059: 批量重跑任务（长任务，threading 后台 + 前端 2 秒轮询 /api/tasks/progress）。
+
+    入参 JSON:
+      {"file_ids": [1,2,3], "model": "1"}
+        - file_ids 必填，至少 1 个源文件 id
+        - model   : 可选，默认 "1"（主 API Key）
+
+    关键流程:
+      Step 1 operation_hook("batch_rerun") 强制备份，失败直接终止（BackupFailedError → 500）
+      Step 2 保护性跑 5 个 migrate（与 run_headless 一致），初始化 Extractor + set_model
+      Step 3 逐文件循环:
+              a. db.delete_extracted_kps_by_source_file(fid)  # 仅删 pending，保留已审核
+              b. db.update_source_file(fid, process_status="processing", ...)
+              c. ext.extract_from_file(sf)  # 走正常提取链（F057 截断补救 / F058 质检降级 / Step 8）
+              d. 累积 all_kps_info 与成功/跳过/失败计数，实时回调进度
+              e. 费用上限则提前 break（与 run_headless 一致）
+      Step 4 _check_category_suggestions(all_kps_info)  # 与 run_headless 行为对齐
+      Step 5 跨文件 AI 去重联动: checker.scan_incremental(new_kp_ids)
+              （scan_incremental 本身会与已 confirmed 的知识点比对；按"全部完成后统一跑一次"
+                节省 R1 开销，并避免逐文件跑时上一步的 pending 还没入库就被作为比对基线）
+      Step 6 汇总写入 _task["result"]
+
+    返回（同步）:
+      {"success": True, "message": "批量重跑已启动", "file_count": N}
+    """
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "batch_rerun"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {"total_files": 0, "current_file": 0, "current_filename": "",
+                             "current_step": "准备批量重跑", "total_extracted": 0, "message": ""}
+        _task["result"] = None
+        _task["error"] = None
+
+    d = request.get_json() or {}
+    file_ids = d.get("file_ids") or []
+    model_key = d.get("model", "1")
+
+    if not isinstance(file_ids, list) or len(file_ids) == 0:
+        with _task_lock:
+            _task["running"] = False
+        return jsonify({"error": "file_ids 不能为空"}), 400
+
+    def _run():
+        try:
+            # ---- Step 1: F060 强制备份 ----
+            _task_update_progress({"current_step": "自动备份",
+                                   "message": "正在备份数据库..."})
+            try:
+                operation_hook("batch_rerun")
+            except BackupFailedError as be:
+                with _task_lock:
+                    _task["error"] = "备份失败，任务终止: " + str(be)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(be)
+                    _task["running"] = False
+                return
+
+            # ---- Step 2: 保护性迁移 + 初始化 Extractor ----
+            _task_update_progress({"current_step": "初始化提取引擎",
+                                   "message": "加载 Extractor...",
+                                   "total_files": len(file_ids)})
+            for mig_mod in ("migrate_v210c", "migrate_v210d_f028", "migrate_v211",
+                            "migrate_v211_dup", "migrate_v223"):
+                try:
+                    mod = __import__("scripts." + mig_mod, fromlist=["migrate"])
+                    mod.migrate()
+                except ImportError:
+                    pass
+                except Exception as me:
+                    print(f"  [WARN] 迁移 {mig_mod} 失败: {me}")
+
+            from scripts.extractor import Extractor
+            ext = Extractor(progress_callback=_task_update_progress)
+            try:
+                ext.set_model(model_key)
+            except Exception as mke:
+                print(f"  [WARN] set_model 失败，使用默认: {mke}")
+
+            # ---- Step 3: 逐文件清理 pending + 重提取 ----
+            all_kps_info = []
+            total_deleted = 0
+            ok, fail, skip = 0, 0, 0
+            total_kps = 0
+            per_file_results = []
+
+            for idx, fid in enumerate(file_ids, 1):
+                sf = db.get_source_file(fid)
+                if not sf:
+                    fail += 1
+                    per_file_results.append({"file_id": fid, "status": "missing",
+                                              "error": "source_file 不存在"})
+                    print(f"  [WARN] 文件 id={fid} 不存在，跳过")
+                    continue
+                fn = sf.get("renamed_filename") or sf.get("original_filename") or str(fid)
+
+                _task_update_progress({"current_file": idx, "current_filename": fn,
+                                       "current_step": "清理旧知识点 (%d/%d)" % (idx, len(file_ids)),
+                                       "message": "清理 pending: " + fn,
+                                       "total_extracted": total_kps})
+
+                # 仅删 pending，保留 confirmed/ignored 的审核成果（db 层方法保证）
+                try:
+                    deleted = db.delete_extracted_kps_by_source_file(fid)
+                except Exception as de:
+                    print(f"  [WARN] 清理 pending 失败 fid={fid}: {de}")
+                    deleted = 0
+                total_deleted += deleted
+
+                # 重置源文件状态，让 extract_from_file 走正常 processing → completed 流程
+                try:
+                    db.update_source_file(fid, process_status="processing",
+                                          process_message="待重提取(F059批量)")
+                except Exception as ue:
+                    print(f"  [WARN] 重置源文件状态失败 fid={fid}: {ue}")
+
+                _task_update_progress({"current_file": idx, "current_filename": fn,
+                                       "current_step": "重提取 (%d/%d)" % (idx, len(file_ids)),
+                                       "message": "重提取: " + fn})
+
+                try:
+                    # sf 字典直接作为 rec 传入（字段结构兼容 extract_from_file）
+                    r = ext.extract_from_file(sf)
+                except Exception as ee:
+                    traceback.print_exc()
+                    r = {"success": False, "knowledge_count": 0,
+                         "error": str(ee), "kps_info": []}
+
+                status = "ok"
+                if r.get("success"):
+                    ok += 1
+                    total_kps += r.get("knowledge_count", 0)
+                    all_kps_info.extend(r.get("kps_info", []))
+                elif "重复" in r.get("error", "") or "跳过" in r.get("error", ""):
+                    skip += 1
+                    status = "skip"
+                else:
+                    fail += 1
+                    status = "fail"
+                per_file_results.append({"file_id": fid, "filename": fn, "status": status,
+                                         "knowledge_count": r.get("knowledge_count", 0),
+                                         "error": r.get("error", "") if not r.get("success") else ""})
+
+                if not r.get("success") and "费用上限" in r.get("error", ""):
+                    _task_update_progress({"message": "费用达到上限，提前终止批量重跑"})
+                    break
+
+            # ---- Step 4: 分类建议（与 run_headless 行为对齐） ----
+            if all_kps_info:
+                try:
+                    ext._check_category_suggestions(all_kps_info)
+                except Exception as ce:
+                    print(f"  [WARN] 分类建议检查失败: {ce}")
+
+            # ---- Step 5: 跨文件 AI 去重联动 ----
+            new_kp_ids = [info["kp_id"] for info in all_kps_info if info.get("kp_id")]
+            dup_result = {"new_groups": 0, "scanned_kps": 0, "skipped": True}
+            if new_kp_ids:
+                _task_update_progress({"current_step": "跨文件去重",
+                                       "message": "对新增 %d 条知识点做 AI 去重联动..."
+                                                  % len(new_kp_ids)})
+                try:
+                    from scripts.duplicate_checker import DuplicateChecker
+                    from scripts.deepseek_client import DeepSeekClient
+                    dup_client = DeepSeekClient()
+                    dup_checker = DuplicateChecker(db=db, client=dup_client)
+                    new_groups = dup_checker.scan_incremental(new_kp_ids)
+                    dup_result = {"new_groups": new_groups,
+                                  "scanned_kps": len(new_kp_ids),
+                                  "skipped": False}
+                except Exception as de:
+                    traceback.print_exc()
+                    dup_result = {"new_groups": 0, "scanned_kps": len(new_kp_ids),
+                                  "skipped": True, "error": str(de)}
+
+            # ---- Step 6: 汇总 ----
+            result = {
+                "success": True,
+                "file_count": len(file_ids),
+                "ok": ok, "fail": fail, "skip": skip,
+                "total_kps": total_kps,
+                "deleted_old": total_deleted,
+                "per_file": per_file_results,
+                "duplicate_scan": dup_result,
+                "message": "批量重跑完成: %d成功/%d跳过/%d失败，共%d条新知识点"
+                           % (ok, skip, fail, total_kps)
+            }
+            with _task_lock:
+                _task["result"] = result
+                _task["progress"]["current_step"] = "完成"
+                _task["progress"]["message"] = result["message"]
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "批量重跑已启动",
+                    "file_count": len(file_ids)})
+
+# ================================================================
 # 启动
 # ================================================================
 def _open(port):
@@ -1707,9 +2030,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.2.3")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part1")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.2.3 hotfix: F057截断补救 + F058质检降级 + F060备份 + F061补跑")
+    print(f"  v2.3.0-part1: 工具箱优化 + 批量重跑 + AI去重联动")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

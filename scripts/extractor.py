@@ -1,7 +1,18 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.2.3 - F057截断自动补救 + F058质检三级降级链
+版本：v2.3.0-part1 - Step 8 字段口径修正（顺手修）
+
+变更说明（v2.3.0-part1 对话1/2 交付）：
+  顺手修 Step 8 增量重复检测字段口径 bug：
+    - 原代码：new_ids = [info["id"] for info in kps_info if info.get("id")]
+    - 改为：  new_ids = [info["kp_id"] for info in kps_info if info.get("kp_id")]
+    - 根因：kps_info 字典存的字段名是 kp_id（见 Step 5 的 kps_info.append(...)），
+           但 Step 8 却用 "id" 取值，导致 new_ids 从 v2.1.1 F039 上线起**从未非空**，
+           增量重复检测每次提取后实际上一次都没真正触发过。
+    - 影响：v2.1.1 起所有提取完成后的"增量重复检测"分支都是空走（dup_count 恒=0），
+           不影响知识点入库，不影响后续全库/工具箱重复检测，属静默失效。
+    - v2.3.0 Part1 顺手修，F059 批量重跑与本修复配合后，重复检测闭环才真正成立。
 
 变更说明（v2.2.3 F057+F058 hotfix）：
   F057 截断自动补救：
@@ -1811,7 +1822,8 @@ class Extractor:
             if cnt > 0 and kps:
                 self._report_progress(current_step="Step 8/8 重复检测")
                 try:
-                    new_ids = [info["id"] for info in kps_info if info.get("id")]
+                    # v2.3.0-part1 顺手修：kps_info 里字段名是 kp_id，不是 id
+                    new_ids = [info["kp_id"] for info in kps_info if info.get("kp_id")]
                     if new_ids:
                         dup_count = self.duplicate_checker.scan_incremental(new_ids)
                 except CostLimitExceeded:
