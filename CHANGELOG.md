@@ -4,6 +4,27 @@
 > 格式：[版本号] - 日期 - 标题 / 修复 / 新增 / 变更 / 数据库变更 / 回滚方案
 
 ---
+## [v2.3.0-part1.1] - 2026-04-20 - hotfix
+
+### Fixed
+- **修复 `scripts/backup_manager.py` 模块级 `operation_hook` 函数缺失导致后台启动 ImportError**
+  - 现象：启动后台.bat 报错 `ImportError: cannot import name 'operation_hook' from 'scripts.backup_manager'`（api_server.py 第 36 行）
+  - 根因：v2.2.3 初版 `backup_manager.py` 只在 `BackupManager` 类里定义了 `def operation_hook(self, op_name)` 类方法，未提供模块级包装函数；但 `api_server.py` 按工程手册设计用 `from scripts.backup_manager import operation_hook` 这种模块级导入方式，导致 Python 无法在模块 top-level 找到该名字
+  - 此前未爆原因：后台从 v2.2.3 交付起可能一直未完整重启，v2.3.0-part1 全部完成后首次重启才触发
+  - 修复：在 `backup_manager.py` 底部新增 5 行模块级便捷函数 `def operation_hook(op_name): return BackupManager().operation_hook(op_name)`
+  - 副作用：`api_server.py` 无需任何改动；类方法 `BackupManager.operation_hook()` 完全保留，向下兼容；现有所有调用路径（模块级函数 + 类方法）同等可用
+
+### Changed
+- `scripts/backup_manager.py` 文件头版本号 `v2.2.3` → `v2.3.0-part1.1`，补齐 v2.3.0-part1 batch_rerun op_name 支持说明与 v2.3.0-part1.1 hotfix 说明
+- `01_工程手册.md` 踩坑表新增 "backup_manager 模块级 operation_hook 缺失" 条目；代码约定新增 "对外 import 契约必须提供模块级包装" 条目
+- `00_项目全景.md` 当前版本号 → v2.3.0-part1.1；迭代路线追加 hotfix 行
+
+### 不变
+- `scripts/api_server.py` 不改
+- `web/templates/review.html` 不改
+- 其他所有文件不改
+- 数据库 schema 不改
+
 ## v2.3.0-part1 (2026-04-20)
  
 **定位**：工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 顺手修。

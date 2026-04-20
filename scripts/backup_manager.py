@@ -1,6 +1,6 @@
 """
 备份恢复管理器
-版本: v2.2.3
+版本: v2.3.0-part1.1
 功能: 数据库一键备份、恢复、清理 + 关键操作自动备份钩子（F060）
 
 v2.2.3 新增：
@@ -11,6 +11,18 @@ v2.2.3 新增：
   - cleanup_by_op_name() 按操作名分组保留最近N个
   - enforce_size_limit() 总量超限时按时间清理
   - 保留策略：每类操作保留5个 + backups目录总量超2GB时清理老备份
+
+v2.3.0-part1 增强：
+  - 正式纳入 batch_rerun op_name 支持（F059 批量重跑触发点）
+  - 调用方式：BackupManager().operation_hook("batch_rerun")
+  - OP_KEEP_PER_NAME=5 对 batch_rerun 同样生效
+
+v2.3.0-part1.1 修复（hotfix）：
+  - 补齐模块级 operation_hook() 便捷函数
+  - 此前 api_server.py 用 `from scripts.backup_manager import operation_hook`
+    导入，但模块内只定义了类方法 BackupManager.operation_hook()，缺模块级包装，
+    导致 ImportError: cannot import name 'operation_hook'
+  - 修复后 api_server.py 无需任何改动，类方法也完全保留，完全向下兼容
 """
 
 import os
@@ -385,6 +397,32 @@ class BackupManager:
         except Exception as e:
             # 日志失败不影响主流程，仅stdout提示
             print("[_log_backup_event 失败] {}".format(e))
+
+
+# ==================================================
+# 模块级便捷函数（v2.3.0-part1.1 新增）
+# ==================================================
+# 供 api_server.py 等调用方直接 import 使用：
+#   from scripts.backup_manager import operation_hook, BackupFailedError
+#   try:
+#       operation_hook("batch_rerun")
+#   except BackupFailedError as e:
+#       return jsonify({"status":"error","message":"备份失败，操作已终止"}), 500
+
+def operation_hook(op_name):
+    """
+    模块级便捷函数：等价于 BackupManager().operation_hook(op_name)
+
+    保留此包装是为了匹配工程手册原始设计意图
+    （backup_manager.operation_hook(op_name) 而非 BackupManager().operation_hook(...)）
+    以及 api_server.py 顶部的既有 import 语句。
+
+    参数: op_name - 操作标识，snake_case，如:
+          reextract / batch_rerun / dup_merge / health_adopt / full_rescan
+    返回: 成功返回备份文件路径
+    异常: 备份失败抛 BackupFailedError，调用方必须 try/except 终止破坏性操作
+    """
+    return BackupManager().operation_hook(op_name)
 
 
 # ==================================================
