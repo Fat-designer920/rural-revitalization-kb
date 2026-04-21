@@ -1,7 +1,18 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part1 - 工具箱优化 + 批量重跑地基（对话1/2 交付）
+版本：v2.3.0-part2 - F048 知识库体检 Agent 基础层（对话1/3 交付）
+
+v2.3.0-part2 新增（F048 体检 Agent 基础层）：
+  - 新表 health_reports：六维度体检报告（status/total_score/6 维分/full_report_json/API调用统计）
+  - 新表 polish_suggestions：低分打磨建议（tier/diagnosis/original/suggested/status）
+  - 12 个新方法（严格按 01 工程手册锁定契约）：
+      健康报告读写(5)：save/update/get_latest/get_list/get_detail_health_report
+      打磨建议读写(4)：save/get_by_report/apply/reject_polish_suggestion
+      扫描候选查询(3)：get_kp_for_health_scan/get_polish_candidates/get_island_candidates
+  - 【重要】apply_polish_suggestion 仅标 status=applied，不在此方法内调 update_knowledge_point
+      事务边界由 api_server 层保持三步清晰：备份 → 更新 kp → 标记 suggestion applied
+  - 字段别名映射（SQL AS）：kp.id → kp_id / review_status → status / source_authority → authority_level / access_level → monetize_tier
 
 v2.3.0-part1 新增（工具箱+批量重跑）：
   - get_all_knowledge_points 签名补齐 qa_source_filter（v2.2.3 遗留bug：api层已在传，db层签名却没有）
@@ -19,7 +30,7 @@ v2.2.3 新增（hotfix）：
   - 新方法 log_operation_event / get_qc_rerun_candidates
   - update_knowledge_point 白名单追加 qa_source
 
-数据库表（16张）：
+数据库表（18张，v2.3.0-part2 新增 health_reports / polish_suggestions）：
   categories - 知识库分类体系（5大类27+子类）
   source_files - 原始文件记录（v2.2.3新增3字段用于截断补救追溯）
   knowledge_points - 知识点（核心表，v2.2.3新增qa_source字段）
@@ -36,6 +47,8 @@ v2.2.3 新增（hotfix）：
   duplicate_groups - 重复检测结果（v2.1.1 F039新增）
   annotations - 专家注解（v2.2.0 F029新增）
   operation_events - 结构化事件日志（v2.2.3 F057/F058/F060新增）
+  health_reports - 体检报告（v2.3.0-part2 F048新增，建表由 migrate_v230_part2.py 完成）
+  polish_suggestions - 打磨建议（v2.3.0-part2 F048新增，建表由 migrate_v230_part2.py 完成）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -1366,6 +1379,509 @@ class DatabaseManager:
             "unscored": r[1] or 0,
             "format_err": r[2] or 0
         }
+
+    # ================================================================
+    # v2.3.0-part2 F048 知识库体检 Agent 基础层（对话1/3 交付）
+    # 两张表 health_reports / polish_suggestions 由 migrate_v230_part2.py 建
+    # 本模块只负责 CRUD，引擎逻辑在 health_checker.py（对话2）
+    # ================================================================
+
+    # ---- 常量：字段白名单（防止任意字段 UPDATE/INSERT） ----
+    _HEALTH_REPORT_INSERT_FIELDS = (
+        "created_at", "status", "total_score",
+        "dim1_health_score", "dim2_structure_score", "dim3_processing_score",
+        "dim4_relation_score", "dim5_polish_score", "dim6_monetize_score",
+        "full_report_json", "scanned_kp_count",
+        "v3_call_count", "r1_call_count", "cost_estimate", "error_message",
+    )
+    _HEALTH_REPORT_UPDATE_FIELDS = (
+        "status", "total_score",
+        "dim1_health_score", "dim2_structure_score", "dim3_processing_score",
+        "dim4_relation_score", "dim5_polish_score", "dim6_monetize_score",
+        "full_report_json", "scanned_kp_count",
+        "v3_call_count", "r1_call_count", "cost_estimate", "error_message",
+    )
+    _POLISH_SUGGESTION_INSERT_FIELDS = (
+        "report_id", "kp_id", "diagnosis", "suggestion_type", "tier",
+        "original_content", "suggested_content", "status",
+        "applied_at", "created_at",
+    )
+
+    # ==================================================
+    # 健康报告读写（5 个）
+    # ==================================================
+
+    def save_health_report(self, report_data):
+        """
+        F048: 插入 health_reports，返回 report_id
+        status='running' 时数字字段可为 None，完成后 update_health_report 覆写
+        只写白名单字段，防污染
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data = dict(report_data or {})
+        if "created_at" not in data or not data["created_at"]:
+            data["created_at"] = now
+        if "status" not in data or not data["status"]:
+            data["status"] = "running"
+
+        # JSON 字段如果是 dict/list 自动序列化
+        if "full_report_json" in data and not isinstance(data["full_report_json"], (str, type(None))):
+            data["full_report_json"] = json.dumps(data["full_report_json"], ensure_ascii=False)
+
+        fields = [f for f in self._HEALTH_REPORT_INSERT_FIELDS if f in data]
+        if not fields:
+            raise ValueError("save_health_report: 至少需要一个有效字段")
+        placeholders = ", ".join("?" for _ in fields)
+        sql = "INSERT INTO health_reports ({}) VALUES ({})".format(
+            ", ".join(fields), placeholders
+        )
+        values = [data[f] for f in fields]
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(sql, values)
+        report_id = c.lastrowid
+        conn.commit(); conn.close()
+        return report_id
+
+    def update_health_report(self, report_id, patch):
+        """
+        F048: 更新 health_reports 字段（白名单校验）
+        返回 True=成功有更新行 / False=无效字段或 report_id 不存在
+        """
+        if not patch:
+            return False
+        data = dict(patch)
+        # JSON 字段自动序列化
+        if "full_report_json" in data and not isinstance(data["full_report_json"], (str, type(None))):
+            data["full_report_json"] = json.dumps(data["full_report_json"], ensure_ascii=False)
+
+        fields = [f for f in self._HEALTH_REPORT_UPDATE_FIELDS if f in data]
+        if not fields:
+            return False
+        set_clause = ", ".join("{}=?".format(f) for f in fields)
+        sql = "UPDATE health_reports SET {} WHERE report_id=?".format(set_clause)
+        values = [data[f] for f in fields] + [report_id]
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(sql, values)
+        changed = c.rowcount > 0
+        conn.commit(); conn.close()
+        return changed
+
+    def get_latest_health_report(self):
+        """
+        F048: 取最新一份 status='completed' 的报告，供趋势对比
+        full_report_json 自动解析为 dict/list
+        返回 dict 或 None
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT * FROM health_reports
+            WHERE status='completed'
+            ORDER BY created_at DESC, report_id DESC
+            LIMIT 1
+        """)
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None
+        r = dict(row)
+        r["full_report_json"] = self._safe_json_parse(r.get("full_report_json"), default=None)
+        return r
+
+    def get_health_report_list(self, limit=20):
+        """
+        F048: 历史报告列表，created_at DESC
+        不解析 full_report_json（省带宽，详情用 get_health_report_detail）
+        """
+        try:
+            limit = max(1, min(int(limit), 200))
+        except (TypeError, ValueError):
+            limit = 20
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT report_id, created_at, status, total_score,
+                   dim1_health_score, dim2_structure_score, dim3_processing_score,
+                   dim4_relation_score, dim5_polish_score, dim6_monetize_score,
+                   scanned_kp_count, v3_call_count, r1_call_count, cost_estimate,
+                   error_message
+              FROM health_reports
+             ORDER BY created_at DESC, report_id DESC
+             LIMIT ?
+        """, (limit,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def get_health_report_detail(self, report_id):
+        """
+        F048: 单份报告完整数据（含 full_report_json 解析）
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM health_reports WHERE report_id=?", (report_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None
+        r = dict(row)
+        r["full_report_json"] = self._safe_json_parse(r.get("full_report_json"), default=None)
+        return r
+
+    # ==================================================
+    # 打磨建议读写（4 个）
+    # ==================================================
+
+    def save_polish_suggestion(self, suggestion_data):
+        """
+        F048: 插入 polish_suggestions，返回 suggestion_id
+        只写白名单字段，original_content / suggested_content 自动序列化
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data = dict(suggestion_data or {})
+        if "created_at" not in data or not data["created_at"]:
+            data["created_at"] = now
+        if "status" not in data or not data["status"]:
+            data["status"] = "pending"
+
+        # 两个 JSON 字段自动序列化
+        for f in ("original_content", "suggested_content"):
+            if f in data and not isinstance(data[f], (str, type(None))):
+                data[f] = json.dumps(data[f], ensure_ascii=False)
+
+        fields = [f for f in self._POLISH_SUGGESTION_INSERT_FIELDS if f in data]
+        if "report_id" not in fields or "kp_id" not in fields:
+            raise ValueError("save_polish_suggestion: report_id 和 kp_id 必填")
+        placeholders = ", ".join("?" for _ in fields)
+        sql = "INSERT INTO polish_suggestions ({}) VALUES ({})".format(
+            ", ".join(fields), placeholders
+        )
+        values = [data[f] for f in fields]
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(sql, values)
+        sid = c.lastrowid
+        conn.commit(); conn.close()
+        return sid
+
+    def get_polish_suggestions_by_report(self, report_id, status=None):
+        """
+        F048: 拉取某份报告的打磨建议，可按 status 过滤
+        original_content / suggested_content 自动解析为 dict/list
+        返回列表按 created_at ASC（先生成的先处理）
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        if status:
+            c.execute("""
+                SELECT * FROM polish_suggestions
+                WHERE report_id=? AND status=?
+                ORDER BY created_at ASC, suggestion_id ASC
+            """, (report_id, status))
+        else:
+            c.execute("""
+                SELECT * FROM polish_suggestions
+                WHERE report_id=?
+                ORDER BY created_at ASC, suggestion_id ASC
+            """, (report_id,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["original_content"] = self._safe_json_parse(r.get("original_content"), default=None)
+            r["suggested_content"] = self._safe_json_parse(r.get("suggested_content"), default=None)
+        return rows
+
+    def apply_polish_suggestion(self, suggestion_id):
+        """
+        F048: 仅标 status='applied' + applied_at（不动 knowledge_points）
+        【事务边界】kp 更新由 api_server 层在本方法前完成，
+        保持"备份 → 更新 kp → 标记 suggestion applied"三步清晰
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            UPDATE polish_suggestions
+               SET status='applied', applied_at=?
+             WHERE suggestion_id=?
+               AND status IN ('pending','manual_review_needed')
+        """, (now, suggestion_id))
+        changed = c.rowcount > 0
+        conn.commit(); conn.close()
+        return changed
+
+    def reject_polish_suggestion(self, suggestion_id, reason=""):
+        """
+        F048: 标 status='rejected'
+        reason 参数保留签名（schema 未设 reject_reason 字段），仅 print 日志
+        """
+        if reason:
+            try:
+                print("[reject_polish_suggestion] id={} reason={}".format(
+                    suggestion_id, reason))
+            except Exception:
+                pass
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            UPDATE polish_suggestions
+               SET status='rejected'
+             WHERE suggestion_id=?
+               AND status IN ('pending','manual_review_needed')
+        """, (suggestion_id,))
+        changed = c.rowcount > 0
+        conn.commit(); conn.close()
+        return changed
+
+    # ==================================================
+    # 扫描候选查询（3 个）
+    # ==================================================
+
+    def get_kp_for_health_scan(self, include_annotations=True):
+        """
+        F048 维度①②③⑤⑥ 数据源：全量拉取用于扫描的 kp
+        SQLite 本地单用户不加 LIMIT，全量加载到内存做分布统计
+
+        字段 AS 映射（对齐 01 工程手册契约）：
+          id → kp_id / review_status → status
+          source_authority → authority_level / access_level → monetize_tier
+          ai_extracted_content 保留原名（供健康检查读提炼内容）
+          三层标签字段原名保留（final_category_tags / final_attribute_tags / final_keywords）
+        annotations_count 通过 LEFT JOIN 聚合
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        if include_annotations:
+            sql = """
+                SELECT kp.id AS kp_id,
+                       kp.source_file_id,
+                       kp.title,
+                       kp.content_type,
+                       kp.final_category_id AS category_id,
+                       kp.suggested_category_id,
+                       kp.final_category_tags,
+                       kp.final_attribute_tags,
+                       kp.final_keywords,
+                       kp.suggested_category_tags,
+                       kp.suggested_attribute_tags,
+                       kp.suggested_keywords,
+                       kp.qa_score,
+                       kp.qa_source,
+                       kp.qa_flags,
+                       kp.original_excerpt,
+                       kp.ai_extracted_content,
+                       kp.practical_insights,
+                       kp.insight_reliability,
+                       kp.source_authority AS authority_level,
+                       kp.access_level    AS monetize_tier,
+                       kp.content_readiness,
+                       kp.review_status   AS status,
+                       kp.prompt_version,
+                       kp.created_at,
+                       kp.updated_at,
+                       (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id)
+                           AS annotations_count
+                  FROM knowledge_points kp
+                 ORDER BY kp.id ASC
+            """
+        else:
+            sql = """
+                SELECT kp.id AS kp_id,
+                       kp.source_file_id,
+                       kp.title,
+                       kp.content_type,
+                       kp.final_category_id AS category_id,
+                       kp.suggested_category_id,
+                       kp.final_category_tags,
+                       kp.final_attribute_tags,
+                       kp.final_keywords,
+                       kp.suggested_category_tags,
+                       kp.suggested_attribute_tags,
+                       kp.suggested_keywords,
+                       kp.qa_score,
+                       kp.qa_source,
+                       kp.qa_flags,
+                       kp.original_excerpt,
+                       kp.ai_extracted_content,
+                       kp.practical_insights,
+                       kp.insight_reliability,
+                       kp.source_authority AS authority_level,
+                       kp.access_level    AS monetize_tier,
+                       kp.content_readiness,
+                       kp.review_status   AS status,
+                       kp.prompt_version,
+                       kp.created_at,
+                       kp.updated_at
+                  FROM knowledge_points kp
+                 ORDER BY kp.id ASC
+            """
+        c.execute(sql)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        # 标签字段自动解析为 list/dict
+        for r in rows:
+            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
+            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
+            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
+            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
+            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
+            r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+        return rows
+
+    def get_polish_candidates(self):
+        """
+        F048 维度⑤低分打磨数据源：
+        WHERE (qa_score>0 AND qa_score<=2) OR qa_source='rule_fallback'
+          AND review_status NOT IN ('ignored','confirmed','merged')
+          AND NOT EXISTS (pending polish_suggestion on same kp)
+
+        关键：qa_score>0 过滤掉"未质检"的 kp（默认值 0.0）
+        未质检的应先走 F061 质检补跑，不应进入打磨候选池
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT kp.id AS kp_id,
+                   kp.source_file_id,
+                   kp.title,
+                   kp.content_type,
+                   kp.final_category_id AS category_id,
+                   kp.final_category_tags,
+                   kp.final_attribute_tags,
+                   kp.final_keywords,
+                   kp.suggested_category_tags,
+                   kp.suggested_attribute_tags,
+                   kp.suggested_keywords,
+                   kp.qa_score,
+                   kp.qa_source,
+                   kp.qa_flags,
+                   kp.original_excerpt,
+                   kp.ai_extracted_content,
+                   kp.practical_insights,
+                   kp.insight_reliability,
+                   kp.source_authority AS authority_level,
+                   kp.access_level    AS monetize_tier,
+                   kp.content_readiness,
+                   kp.review_status   AS status,
+                   kp.prompt_version,
+                   sf.original_filename,
+                   sf.renamed_filename
+              FROM knowledge_points kp
+              LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+             WHERE (
+                     (kp.qa_score > 0 AND kp.qa_score <= 2)
+                     OR kp.qa_source = 'rule_fallback'
+                   )
+               AND kp.review_status NOT IN ('ignored','confirmed','merged')
+               AND NOT EXISTS (
+                     SELECT 1 FROM polish_suggestions ps
+                      WHERE ps.kp_id = kp.id
+                        AND ps.status IN ('pending','manual_review_needed')
+                   )
+             ORDER BY kp.qa_score ASC, kp.id ASC
+        """)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
+            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
+            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
+            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
+            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
+            r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+        return rows
+
+    def get_island_candidates(self):
+        """
+        F048 维度④关联密度粗筛：
+        本地规则：
+          - 无 duplicate_groups 关联（未出现在任一 member_ids）
+          - 无 annotations
+          - 三层标签合并数量 < 3
+
+        返回列表后由 health_checker 调 V3 HEALTH_ISLAND_JUDGE_PROMPT 精判
+        避免把"本就稀缺但有价值的独家经验"（niche_topic）误判为孤岛
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT kp.id AS kp_id,
+                   kp.source_file_id,
+                   kp.title,
+                   kp.content_type,
+                   kp.final_category_id AS category_id,
+                   kp.final_category_tags,
+                   kp.final_attribute_tags,
+                   kp.final_keywords,
+                   kp.suggested_category_tags,
+                   kp.suggested_attribute_tags,
+                   kp.suggested_keywords,
+                   kp.qa_score,
+                   kp.original_excerpt,
+                   kp.ai_extracted_content,
+                   kp.practical_insights,
+                   kp.source_authority AS authority_level,
+                   kp.access_level    AS monetize_tier,
+                   kp.review_status   AS status,
+                   (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id)
+                       AS annotations_count
+              FROM knowledge_points kp
+             WHERE kp.review_status NOT IN ('ignored','merged')
+               AND NOT EXISTS (
+                     SELECT 1 FROM duplicate_groups dg
+                      WHERE dg.member_ids LIKE '%' || kp.id || '%'
+                   )
+             ORDER BY kp.id ASC
+        """)
+        raw_rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        # Python 侧过滤：annotation_count=0 + tags 总数 <3
+        result = []
+        for r in raw_rows:
+            if (r.get("annotations_count") or 0) > 0:
+                continue
+            # 合并三层标签计数：优先 final，空则 suggested
+            final_tags_list = self._safe_json_parse(r.get("final_category_tags"), default=[]) or []
+            final_attr = self._safe_json_parse(r.get("final_attribute_tags"), default={}) or {}
+            final_kw = self._safe_json_parse(r.get("final_keywords"), default=[]) or []
+            use_final = bool(final_tags_list) or bool(final_attr) or bool(final_kw)
+            if use_final:
+                tags_total = len(final_tags_list) + len(final_attr) + len(final_kw)
+            else:
+                sug_tags = self._safe_json_parse(r.get("suggested_category_tags"), default=[]) or []
+                sug_attr = self._safe_json_parse(r.get("suggested_attribute_tags"), default={}) or {}
+                sug_kw = self._safe_json_parse(r.get("suggested_keywords"), default=[]) or []
+                tags_total = len(sug_tags) + len(sug_attr) + len(sug_kw)
+            if tags_total >= 3:
+                continue
+            # 字段规范化（供 health_checker 直接喂给 V3）
+            r["final_category_tags"] = final_tags_list
+            r["final_attribute_tags"] = final_attr
+            r["final_keywords"] = final_kw
+            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
+            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
+            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["tags_total_count"] = tags_total
+            result.append(r)
+        return result
+
+    # ---- JSON 字段安全解析辅助（本模块私有） ----
+    @staticmethod
+    def _safe_json_parse(s, default=None):
+        """
+        把 DB 存的 JSON 字符串安全 parse 回 Python 对象
+        空/None/非法 JSON 一律返回 default
+        """
+        if s is None or s == "" or s == "null":
+            return default
+        if not isinstance(s, str):
+            return s  # 已经是 dict/list
+        try:
+            return json.loads(s)
+        except (ValueError, TypeError):
+            return default
 
     def increment_truncation_count(self, file_id):
         """F057: 触发截断补救时+1"""

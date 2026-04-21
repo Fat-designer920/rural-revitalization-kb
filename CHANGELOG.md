@@ -1,118 +1,209 @@
 # CHANGELOG
 
 > 乡村振兴知识库搭建助手 — 版本变更记录
-> 格式：[版本号] - 日期 - 标题 / 修复 / 新增 / 变更 / 数据库变更 / 回滚方案
+> 格式:版本号 — 日期 — 定位 / 新增 / 修复 / 变更 / 数据库变更
 
 ---
-## [v2.3.0-part1.1] - 2026-04-20 - hotfix
 
-### Fixed
-- **修复 `scripts/backup_manager.py` 模块级 `operation_hook` 函数缺失导致后台启动 ImportError**
-  - 现象：启动后台.bat 报错 `ImportError: cannot import name 'operation_hook' from 'scripts.backup_manager'`（api_server.py 第 36 行）
-  - 根因：v2.2.3 初版 `backup_manager.py` 只在 `BackupManager` 类里定义了 `def operation_hook(self, op_name)` 类方法，未提供模块级包装函数；但 `api_server.py` 按工程手册设计用 `from scripts.backup_manager import operation_hook` 这种模块级导入方式，导致 Python 无法在模块 top-level 找到该名字
-  - 此前未爆原因：后台从 v2.2.3 交付起可能一直未完整重启，v2.3.0-part1 全部完成后首次重启才触发
-  - 修复：在 `backup_manager.py` 底部新增 5 行模块级便捷函数 `def operation_hook(op_name): return BackupManager().operation_hook(op_name)`
-  - 副作用：`api_server.py` 无需任何改动；类方法 `BackupManager.operation_hook()` 完全保留，向下兼容；现有所有调用路径（模块级函数 + 类方法）同等可用
+## v2.3.0-part2-alpha1 — 2026-04-20
 
-### Changed
-- `scripts/backup_manager.py` 文件头版本号 `v2.2.3` → `v2.3.0-part1.1`，补齐 v2.3.0-part1 batch_rerun op_name 支持说明与 v2.3.0-part1.1 hotfix 说明
-- `01_工程手册.md` 踩坑表新增 "backup_manager 模块级 operation_hook 缺失" 条目；代码约定新增 "对外 import 契约必须提供模块级包装" 条目
-- `00_项目全景.md` 当前版本号 → v2.3.0-part1.1；迭代路线追加 hotfix 行
+F048 知识库体检 Agent 基础层交付(对话 1/3)。本版本只交付契约与 schema,不包含引擎与界面;完整功能需等对话 2/3 引擎层 health_checker.py 与对话 3/3 界面层 api_server/review.html 落地后才可触发。
+
+### 新增
+
+**prompt_templates.py**
+- PROMPT_VERSION 升级 `v2.2.3` → `v2.3.0-part2`
+- 新增 6 个 Prompt 契约,Prompt 总数 21 → 27:
+  - `HEALTH_DIAGNOSIS_PROMPT` (V3) — 低分知识点病根诊断,输出 root_cause_type / polish_direction / polish_difficulty / recommend_manual_review
+  - `HEALTH_POLISH_PROMPT` (R1) — 创造性打磨,保留 DATA_PRECISION_RULE / SELF_CHECK / EXCERPT_REQUIREMENT 硬约束
+  - `HEALTH_POLISH_VERIFY_PROMPT` (V3) — 打磨结果校验,判 verify_pass 与 re_score
+  - `HEALTH_POLISH_CONSERVATIVE_PROMPT` (V3) — L2 降级保守打磨,严格禁止新增数据/案例/推理衍生
+  - `HEALTH_ISLAND_JUDGE_PROMPT` (V3) — 孤岛精判,区分 true_island / niche_topic / duplicate_candidate / structural_isolated / none,避免将独家经验误判为孤岛
+  - `HEALTH_MONETIZE_REPORT_PROMPT` (V3) — 变现匹配度报告,对照 5 种变现场景评分
+
+**db_manager.py**
+- docstring 升级,表清单 16 → 18(health_reports + polish_suggestions 两张新表)
+- 新增 12 个方法,按三组分类:
+  - 健康报告读写(5):save_health_report / update_health_report / get_latest_health_report / get_health_report_list / get_health_report_detail
+  - 打磨建议读写(4):save_polish_suggestion / get_polish_suggestions_by_report / apply_polish_suggestion / reject_polish_suggestion
+  - 扫描候选查询(3):get_kp_for_health_scan / get_polish_candidates / get_island_candidates
+- 新增白名单常量 `_HEALTH_REPORT_INSERT_FIELDS` / `_HEALTH_REPORT_UPDATE_FIELDS` / `_POLISH_SUGGESTION_INSERT_FIELDS`,防止任意字段 UPDATE/INSERT
+- 新增静态方法 `_safe_json_parse`,处理 JSON 字段序列化/反序列化
+- 字段 AS 别名映射(对齐 health_checker 契约):id → kp_id / review_status → status / source_authority → authority_level / access_level → monetize_tier
+- JSON 字段自动序列化:save_health_report / save_polish_suggestion 支持直接传 dict,内部自动 `json.dumps`;get 类方法读取时自动 `json.loads`
+
+**migrate_v230_part2.py(新建)**
+- 幂等迁移脚本,对齐 migrate_v223.py 风格
+- 支持 `--dry-run` 预览 SQL / `--db-path` 自定义路径
+- 建两张表(health_reports / polish_suggestions)+ 3 个索引(idx_health_created / idx_polish_report / idx_polish_status)
+- 单事务 BEGIN/COMMIT,失败自动 rollback
+- 重跑安全:两表均已存在时直接跳过
+- 纯 schema 变更,不做数据迁移
+
+### 确认不改动
+
+**backup_manager.py** — 源码第 244-304 行 operation_hook 无 op_name 白名单,任意字符串可接受。对话 3/3 界面层实现"体检采纳"时调用 `operation_hook("health_adopt")` 直接可用,OP_KEEP_PER_NAME=5 自动生效。
+
+### 关键设计约定(后续对话严格遵守)
+
+- **事务边界铁律**:`apply_polish_suggestion` 仅更新 `polish_suggestions.status='applied'` + applied_at,不触 knowledge_points。api_server 层的 `/api/tools/health/polish/adopt` 路由负责三步清晰:备份 → 更新 kp → 标记 suggestion applied,风格对齐 v2.2.3 F061 `_qc_rerun_core`
+- **低分候选严格口径**:`(qa_score>0 AND qa_score<=2) OR qa_source='rule_fallback'`,`qa_score>0` 过滤掉"未质检"的 kp(默认值 0.0),避免污染打磨池
+- **重入机制**:`apply_polish_suggestion` / `reject_polish_suggestion` 后,对应 kp 可重新进入 `get_polish_candidates()`。NOT EXISTS 只排除 pending 和 manual_review_needed,允许老唐对打磨结果不满意时再次生成建议
+- **qa_source 默认值陷阱**:kp 表 `qa_source TEXT DEFAULT 'batch'`(非 NULL)。历史 kp 字段值即为 'batch'。`qa_source='rule_fallback'` 分支只命中真·走过 L3 兜底的 kp,不会误命中历史数据
+- **三层打磨降级链**:
+  - 主链 L1:V3 诊断 → R1 打磨 → V3 校验
+  - 降级条件:verify_pass=false / re_score<原分 / R1 截断 / 格式异常 → L2
+  - L2:V3 保守打磨(不创造,只微调)
+  - 降级条件:仍失败 → L3
+  - L3:规则兜底,`status='manual_review_needed'`,不生成 suggested_content
+
+### 实测验证
+
+串测脚本覆盖:
+- health_reports / polish_suggestions 两张表建表 + 3 索引
+- 12 个 DB 方法 CRUD 全路径
+- `get_polish_candidates` 四种排除场景:pending 挡住 / 未质检 qa_score=0 / 已 confirmed / 实际低分通过
+- apply / reject 后的重入机制(kp 能重新进入候选池)
+- migrate 脚本 4 路测试:dry-run / 真实执行 / 幂等重跑 / 缺 DB 报错
+
+### 待完成工作
+
+- 对话 2/3(引擎层):新建 scripts/health_checker.py,六维度扫描 + 三层打磨降级链
+- 对话 3/3(界面层):api_server 新增 6-8 路由 + review.html 工具箱第 10 张卡 + 逐条 Review UI + CHANGELOG 升级为正式版 `v2.3.0-part2`
+
+### 副作用提示
+
+PROMPT_VERSION 升级后,F044 版本重提取会将所有老 kp 识别为"待升级"状态。但本版本仅新增 6 个体检相关 Prompt(不用于提取),老 kp 无需实际重提取。老唐可忽略仪表盘"待升级"数字,或待后续版本统一处理。
+
+---
+
+## v2.3.0-part1.1 — 2026-04-18 (hotfix)
+
+修复 v2.3.0-part1 引入的 `ImportError: cannot import name 'operation_hook' from scripts.backup_manager` 启动阻塞问题。
+
+### 修复
+
+**backup_manager.py**
+- 在文件底部追加 5 行模块级便捷函数 `def operation_hook(op_name): return BackupManager().operation_hook(op_name)`
+- BackupManager 类方法完全保留向下兼容
+- api_server.py 第 36 行 `from scripts.backup_manager import operation_hook, BackupFailedError` 得以正常 import
+
+### 根因复盘
+
+v2.2.3 初版 backup_manager.py 只在 BackupManager 类里定义了 `def operation_hook(self, op_name)` 类方法,未提供模块级包装函数;但 api_server.py 按工程手册设计用 `from scripts.backup_manager import operation_hook` 这种模块级导入方式,导致 Python 无法在模块 top-level 找到该名字。此前未爆原因是后台从 v2.2.3 交付起一直未完整重启,v2.3.0-part1 全部完成后首次重启才触发。
+
+### 经验教训
+
+对外 import 契约必须在首次交付时就提供模块级包装。凡是其他文件会 `from X import y` 的 y,必须在 X 模块 top-level `def` 或 `class`,不能只定义类方法。
 
 ### 不变
-- `scripts/api_server.py` 不改
-- `web/templates/review.html` 不改
-- 其他所有文件不改
-- 数据库 schema 不改
 
-## v2.3.0-part1 (2026-04-20)
- 
-**定位**：工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 顺手修。
- 
-### F049 仪表盘工具箱优化 ✨
-- **合并三种重复检测为单一入口**：工具箱的"全库重复检测"和"清理并重扫"两张卡合并为一张"智能重复检测"，点击弹出三选一对话框：
-  - 最近 7 天（约 2-3 毛）
-  - 全库扫描（约 3-5 毛）
-  - 彻底重扫（约 5-8 毛，强制备份 + 清 pending + V3 全库重扫）
-- **仪表盘新增 3 张标签分布卡**：
-  - Card 12 业务领域分布（A 组 13 个标签）
-  - Card 13 知识形态分布（C 组 9 个标签）
-  - Card 14 客户视角分布（D 组 5 个标签）
-  - 每张卡默认显示 Top5 dBar + 底部"展开全部 N 个"按钮
-  - 所有标签支持点击穿透跳转到审核列表（新增 `layer1_tag` 筛选参数）
-- **新增后端接口**：`POST /api/tools/duplicate_unified`，请求体 `{mode:"recent"/"full"/"reset_rescan", days?:7}`
-- **侧边栏新增一级标签筛选条件区**：`#layer1TagFilterSection`，默认隐藏，仅当通过穿透跳转设置 `currentLayer1Tag` 后显示当前标签 + 清除按钮
-- **新增 db_manager 方法**：`get_tag_distribution(group)` 按组统计 A/C/D 三层标签的使用频次
-### F059 批量重跑 + AI 去重联动 ✨
-- **提取管理新增第 4 张卡"批量重跑"**（图标 "4"）
-- **候选列表 UI**：文件名 + 知识点计数 + 含注解警告（橙色）+ 截断计数
-- **执行流程**：
-  - Step 1：`operation_hook("batch_rerun")` 强制备份，失败直接终止
-  - Step 2：逐文件 `delete_extracted_kps_by_source_file`（只删 pending，保留 confirmed/ignored 审核成果）
-  - Step 3：逐文件走 `extract_from_file` 完整提取链（F057 截断补救 / F058 质检降级 / Step 8 去重联动）
-  - Step 4：全部完成后统一跑 `scan_incremental` 跨文件 AI 去重
-- **新增后端接口**：
-  - `GET /api/tools/batch-rerun-scan` 扫描候选文件列表
-  - `POST /api/tasks/batch_rerun` 启动批量重跑任务（task type="batch_rerun"）
-- **含注解文件不禁用**：注解的保留依赖 db 层 `delete_extracted_kps_by_source_file` 合约（只删 pending knowledge_points，不触 annotations 表）
-- **进度条复用既有任务框架**：`checkRunningTask` 的 titles 字典新增 "batch_rerun":"批量重跑进行中"
-### 🐛 Bug 修复
-- **Step 8 增量重复检测从未触发**：`extract_from_file` Step 8 原代码用 `info["id"]`，但 `kps_info` 实际存的是 `"kp_id"`，导致 `new_ids` 一直为空。v2.3.0-part1 改为 `info["kp_id"]`，每次提取后增量重复检测恢复正常触发。该 bug 自 v2.2.0 起潜伏至今。
-### 📦 向下兼容
-- `/api/tools/duplicate-scan` 和 `/api/tools/duplicate-reset-rescan` 两个旧接口保留不变，供浏览器缓存的旧 review.html 继续调用
-### 🎨 前端改动汇总（review.html）
-- Header 版本号 v2.2.3 → v2.3.0-part1
-- 工具箱卡片数 10 → 9（合并两张为一张）
-- 提取管理卡片数 3 → 4（新增批量重跑）
-- 仪表盘卡片数 11 → 14（新增 A/C/D 标签分布三张）
-- 新增 `currentLayer1Tag` 全局状态串联 dashJump / loadKnowledgePoints / showActiveFilters / clearAllFilters
-- 新增函数：`updateLayer1TagFilterSection` / `clearLayer1TagFilter` / `renderTagCard` / `toggleTagCardMore` / `doDupUnified` / `_runDupUnified` / `showBatchRerunPanel` / `brToggleAll` / `doBatchRerun`
-- 新增模态框：`#dupModeDlg`（三选一对话框）、`#batchRerunPanel`（批量重跑面板）
-### v2.2.3 既有元素原样保留
-- Card 11 截断补救 / 事件日志按钮 / 规则兜底黄色高亮 / qa_source 筛选器 / qaBackfill 降级链 — 一字不改
+api_server.py / review.html / 其他所有代码与数据库 schema 均不变。
+
 ---
- 
-## v2.2.3 (2026-04 hotfix)
- 
-- F057 截断自动补救（excerpt 定位切分点 + 尾段重提，3 次降级至 500 字）
-- F058 质检三级降级链（批量 15 → 小批 3×2 → 逐条 → 规则兜底）+ QC_CHECK_SINGLE_PROMPT
-- F060 关键操作强制备份（`operation_hook` 钩子 + `BackupFailedError` + 每类保留 5 个 / 总量 2GB）
-- F061 历史质检补跑（`/api/tools/qc_rerun` + 降级链）
-- 新建 `operation_events` 结构化事件日志表
-- v2.1.2 分批质检内层循环 bug 顺手修
-- `_extract_single` 返回值契约统一为 dict
 
-## [v2.2.3] - 2026-04-18 — 紧急 Hotfix（三对话分批交付，全部完成）
+## v2.3.0-part1 — 2026-04-16
 
-### 修复（Fixes）
-- **F057 R1 输出截断自动补救**：R1 输出 JSON 截断时不再丢失已提取内容；保留 deepseek_client 已解析的完整知识点，用最后一条 excerpt 定位切分点（三级定位：完整匹配→首30字→尾30字反向），重新提取尾段（最多 3 次降级至 500 字）；按 `(title, excerpt前100字)` 去重合并
-- **F058 质检三级降级链**：修复 V3 批量质检格式异常时条目直接跳过（qa_score 空置）的问题。新链路：`L0批量15→L1小批3×2轮→L2逐条（QC_CHECK_SINGLE_PROMPT）→L3本地规则兜底`；新增守门员机制确保每条 kp 都有 qa_score
-- **v2.1.2 分批质检内层循环 bug**：原代码 `for qr in results` 实际只遍历最后一批 results，多批质检时前面批次分数未写入 DB；v2.2.3 重写 `_quality_check` 走三级降级链时天然消除
-- **api_server 死代码清理**：删除 `task_reextract` 函数末尾 `return` 之后永远走不到的 `import time; time.sleep(1.5); webbrowser.open(...)`
+**定位**:仪表盘工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 增量重复检测 bug 修正。
 
-### 新增（Features）
-- **F060 关键操作强制备份**：5 个触发点（版本重提取/批量重跑/重复合并单条与批量/体检采纳/全库重扫）接入 `backup_manager.operation_hook(op_name)`。v2.2.3 已接入 4 处（reextract / dup_merge / dup_merge_batch / full_rescan），另 2 处（batch_rerun F059 / health_adopt F048）留给 v2.3.0 时在对应功能内接入
-- **F060 备份保留策略**：每类 `op_name` 保留最近 5 个 + 总量 2GB 上限（每类兜底保留 1 个）；备份文件名保留秒级 `backup_YYYYMMDD_HHMMSS_op_name.db`；备份失败抛 `BackupFailedError`，调用方精确捕获后终止操作
-- **F061 历史质检补跑**：`POST /api/tools/qc_rerun` 扫 `qa_score IS NULL` 或 `qa_flags 含"格式异常"` 的条目，走 F058 降级链重跑；`GET /api/tools/qc_rerun/summary` 返回候选数量供前端按钮角标显示；按文件分组逐组补跑，自动加载 .md 缓存作为 source_content 供规则兜底反幻觉
-- **事件日志查询**：`GET /api/events?event_type=&severity=&module=&file_id=&limit=500` 查询 `operation_events` 结构化事件日志
-- **截断摘要接口**：`GET /api/tools/truncation_summary` 返回受影响文件数 / 累计截断次数 / 累计补救次数
-- **qa_source 字段与筛选器**：`knowledge_points` 表新增 `qa_source` 字段（值域 `batch/small_batch/single/rule_fallback`）；审核界面侧边栏加"质检来源"筛选区（4 选项）；规则兜底条目整卡黄色高亮（`#FFFBEF` + 左侧橙色边框）+ "规则兜底" 小标签
-- **仪表盘"截断补救"卡（Card 11）**：显示受影响文件数 + 累计截断次数 + 累计补救次数 + 待质检补跑数量；底部双按钮"截断事件"（预设筛选）和"全部事件"打开事件日志模态框
-- **事件日志模态框**：880px 宽，6 列表格（时间/类型/严重度/模块/文件ID/详情），支持 event_type + severity 二次筛选
-- **工具箱"质检补跑"按钮升级**：点击先查 summary 显示候选数量（未质检 + 格式异常分开计数），确认后走降级链；结果页显示已处理/候选总数/孤儿条目（经验速记）/错误列表/剩余待补跑
-- **QC_CHECK_SINGLE_PROMPT（逐条质检）**：6 维度评分，输入单个知识点避免 V3 批量格式异常
+### 新增
 
-### 变更（Changes）
-- `extractor.py` `_extract_single` 返回值契约：由"列表 / 'TRUNCATED'字符串"改为统一 dict `{kps, truncated, last_excerpt, raw_parsed, cost}`，调用方须 `result['kps']` 取数
-- `extractor.py` `_extract_with_auto_split` 签名新增 `file_id` 参数（补救触发 `db.increment_truncation_count(file_id)` 和事件日志需要）
-- `extractor.py` `_quality_check` 签名新增 `source_content` 参数（规则兜底用 `_excerpt_in_source` 做幻觉检查）
-- `extractor.py` 新增类级常量 `QC_FLAG_MAP`（原内部局部变量提升，三级降级共用，F048 低分打磨也将复用）
-- 旧 `/api/tools/qa-backfill` 接口保留但内部转发到 `_qc_rerun_core()`（向下兼容），字段映射保持原响应格式（`processed→checked`，`errors数组长度→errors数字`）
-- 仪表盘 API 响应新增字段：`truncation` / `qc_rerun` / `qa_source_distribution`
-- 主页标题和 header 版本号：v2.2.2 → v2.2.3
+**F049 仪表盘工具箱优化**
+- 合并三种重复检测为单一入口:工具箱的"全库重复检测"和"清理并重扫"两张卡合并为一张"智能重复检测",点击弹出三选一对话框:
+  - 最近 7 天(约 2-3 毛)
+  - 全库扫描(约 3-5 毛)
+  - 彻底重扫(约 5-8 毛,强制备份 + 清 pending + V3 全库重扫)
+- 仪表盘新增 3 张标签分布卡:
+  - Card 12 业务领域分布(A 组 13 个标签)
+  - Card 13 知识形态分布(C 组 9 个标签)
+  - Card 14 客户视角分布(D 组 5 个标签)
+  - 每张卡默认显示 Top5 dBar + 底部"展开全部 N 个"按钮
+  - 所有标签支持点击穿透跳转到审核列表(新增 `layer1_tag` 筛选参数)
+- 新增后端接口 `POST /api/tools/duplicate_unified`,请求体 `{mode:"recent"/"full"/"reset_rescan", days?:7}`
+- 侧边栏新增一级标签筛选条件区 `#layer1TagFilterSection`,默认隐藏,通过穿透跳转设置 `currentLayer1Tag` 后显示当前标签 + 清除按钮
+- 新增 db_manager 方法 `get_tag_distribution(group)` 按组统计 A/C/D 三层标签的使用频次
 
-### 数据库变更（DB Schema）
-**必须先执行 `python scripts/migrate_v223.py` 再启动服务**（幂等迁移，纯 schema 变更，无数据迁移）：
+**F059 批量重跑 + AI 去重联动**
+- 提取管理新增第 4 张卡"批量重跑"
+- 候选列表 UI:文件名 + 知识点计数 + 含注解警告(橙色)+ 截断计数
+- 执行流程:
+  - Step 1:`operation_hook("batch_rerun")` 强制备份,失败直接终止
+  - Step 2:逐文件 `delete_extracted_kps_by_source_file`(只删 pending,保留 confirmed/ignored 审核成果)
+  - Step 3:逐文件走 `extract_from_file` 完整提取链(F057 截断补救 / F058 质检降级 / Step 8 去重联动)
+  - Step 4:全部完成后统一跑 `scan_incremental` 跨文件 AI 去重
+- 新增后端接口:
+  - `GET /api/tools/batch-rerun-scan` 扫描候选文件列表
+  - `POST /api/tasks/batch_rerun` 启动批量重跑任务(task type="batch_rerun")
+- 含注解文件不禁用:注解的保留依赖 db 层 `delete_extracted_kps_by_source_file` 合约(只删 pending knowledge_points,不触 annotations 表)
+- 进度条复用既有任务框架:`checkRunningTask` 的 titles 字典新增 `"batch_rerun":"批量重跑进行中"`
+
+**knowledge_points 查询增强**
+- `get_all_knowledge_points` 签名补齐 `qa_source_filter` 和 `layer1_tag` 参数(v2.2.3 遗留 bug)
+- layer1_tag 支持 A/C/D 三组 27+ 一级标签穿透筛选
+
+### 修复
+
+**Step 8 增量重复检测从未触发**
+- `extract_from_file` Step 8 原代码用 `info["id"]`,但 `kps_info` 实际存的是 `"kp_id"`,导致 `new_ids` 一直为空
+- v2.3.0-part1 改为 `info["kp_id"]`,每次提取后增量重复检测恢复正常触发
+- 该 bug 自 v2.2.0 起潜伏至今
+- F059 批量重跑同步对齐
+
+### 向下兼容
+
+`/api/tools/duplicate-scan` 和 `/api/tools/duplicate-reset-rescan` 两个旧接口保留不变,供浏览器缓存的旧 review.html 继续调用。
+
+### 前端改动汇总(review.html)
+
+- Header 版本号 v2.2.3 → v2.3.0-part1
+- 工具箱卡片数 10 → 9(合并两张为一张)
+- 提取管理卡片数 3 → 4(新增批量重跑)
+- 仪表盘卡片数 11 → 14(新增 A/C/D 标签分布三张)
+- 新增 `currentLayer1Tag` 全局状态串联 dashJump / loadKnowledgePoints / showActiveFilters / clearAllFilters
+- 新增函数:`updateLayer1TagFilterSection` / `clearLayer1TagFilter` / `renderTagCard` / `toggleTagCardMore` / `doDupUnified` / `_runDupUnified` / `showBatchRerunPanel` / `brToggleAll` / `doBatchRerun`
+- 新增模态框:`#dupModeDlg`(三选一对话框)、`#batchRerunPanel`(批量重跑面板)
+
+### v2.2.3 既有元素原样保留
+
+Card 11 截断补救 / 事件日志按钮 / 规则兜底黄色高亮 / qa_source 筛选器 / qaBackfill 降级链 — 一字不改。
+
+---
+
+## v2.2.3 — 2026-04-12
+
+**定位**:紧急 hotfix — 截断补救 + 质检三级降级 + 操作备份 + 质检补跑。三对话分批交付,全部完成。
+
+### 修复
+
+- **F057 R1 输出截断自动补救**:R1 输出 JSON 截断时不再丢失已提取内容;保留 deepseek_client 已解析的完整知识点,用最后一条 excerpt 定位切分点(三级定位:完整匹配→首 30 字→尾 30 字反向),重新提取尾段(最多 3 次降级至 500 字);按 `(title, excerpt前100字)` 去重合并
+- **F058 质检三级降级链**:修复 V3 批量质检格式异常时条目直接跳过(qa_score 空置)的问题。新链路:`L0 批量 15 → L1 小批 3×2 轮 → L2 逐条 (QC_CHECK_SINGLE_PROMPT) → L3 本地规则兜底`;新增守门员机制确保每条 kp 都有 qa_score
+- **v2.1.2 分批质检内层循环 bug**:原代码 `for qr in results` 实际只遍历最后一批 results,多批质检时前面批次分数未写入 DB;v2.2.3 重写 `_quality_check` 走三级降级链时天然消除
+- **api_server 死代码清理**:删除 `task_reextract` 函数末尾 `return` 之后永远走不到的 `import time; time.sleep(1.5); webbrowser.open(...)`
+
+### 新增
+
+- **F060 关键操作强制备份**:6 个触发点(版本重提取 / 批量重跑 / 重复合并单条与批量 / 体检采纳 / 全库重扫 / 恢复)接入 `backup_manager.operation_hook(op_name)`。v2.2.3 已接入 4 处(reextract / dup_merge / dup_merge_batch / full_rescan),另 2 处(batch_rerun F059 / health_adopt F048)留给 v2.3.0 时在对应功能内接入
+- **F060 备份保留策略**:每类 op_name 保留最近 5 个 + 总量 2GB 上限(每类兜底保留 1 个);备份文件名保留秒级 `backup_YYYYMMDD_HHMMSS_op_name.db`;备份失败抛 `BackupFailedError`,调用方精确捕获后终止操作
+- **F061 历史质检补跑**:`POST /api/tools/qc_rerun` 扫 `qa_score IS NULL` 或 `qa_flags 含"格式异常"` 的条目,走 F058 降级链重跑;`GET /api/tools/qc_rerun/summary` 返回候选数量供前端按钮角标显示;按文件分组逐组补跑,自动加载 .md 缓存作为 source_content 供规则兜底反幻觉
+- **事件日志查询**:`GET /api/events?event_type=&severity=&module=&file_id=&limit=500` 查询 `operation_events` 结构化事件日志
+- **截断摘要接口**:`GET /api/tools/truncation_summary` 返回受影响文件数 / 累计截断次数 / 累计补救次数
+- **qa_source 字段与筛选器**:`knowledge_points` 表新增 `qa_source` 字段(值域 `batch/small_batch/single/rule_fallback`);审核界面侧边栏加"质检来源"筛选区(4 选项);规则兜底条目整卡黄色高亮(`#FFFBEF` + 左侧橙色边框)+ "规则兜底" 小标签
+- **仪表盘"截断补救"卡(Card 11)**:显示受影响文件数 + 累计截断次数 + 累计补救次数 + 待质检补跑数量;底部双按钮"截断事件"(预设筛选)和"全部事件"打开事件日志模态框
+- **事件日志模态框**:880px 宽,6 列表格(时间 / 类型 / 严重度 / 模块 / 文件 ID / 详情),支持 event_type + severity 二次筛选
+- **工具箱"质检补跑"按钮升级**:点击先查 summary 显示候选数量(未质检 + 格式异常分开计数),确认后走降级链;结果页显示已处理 / 候选总数 / 孤儿条目(经验速记)/ 错误列表 / 剩余待补跑
+- **QC_CHECK_SINGLE_PROMPT(逐条质检)**:6 维度评分,输入单个知识点避免 V3 批量格式异常
+
+### 变更
+
+- `extractor.py` `_extract_single` 返回值契约:由"列表 / 'TRUNCATED'字符串"改为统一 dict `{kps, truncated, last_excerpt, raw_parsed, cost}`,调用方须 `result['kps']` 取数
+- `extractor.py` `_extract_with_auto_split` 签名新增 `file_id` 参数(补救触发 `db.increment_truncation_count(file_id)` 和事件日志需要)
+- `extractor.py` `_quality_check` 签名新增 `source_content` 参数(规则兜底用 `_excerpt_in_source` 做幻觉检查)
+- `extractor.py` 新增类级常量 `QC_FLAG_MAP`(原内部局部变量提升,三级降级共用,F048 低分打磨也将复用)
+- 旧 `/api/tools/qa-backfill` 接口保留但内部转发到 `_qc_rerun_core()`(向下兼容),字段映射保持原响应格式(`processed→checked`,`errors 数组长度 → errors 数字`)
+- 仪表盘 API 响应新增字段:`truncation` / `qc_rerun` / `qa_source_distribution`
+- 主页标题和 header 版本号:v2.2.2 → v2.2.3
+
+### 数据库变更
 
 ```sql
 -- source_files 表新增截断追踪字段
@@ -142,72 +233,44 @@ CREATE INDEX IF NOT EXISTS idx_events_type ON operation_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_file ON operation_events(related_file_id);
 ```
 
-### 文件变更清单
+### 关键决策记录
 
-| 对话批次 | 文件 | 改动类型 |
-|---------|------|---------|
-| 1/3 地基层 | `scripts/db_manager.py` | 新增 `qa_source` 字段 / `operation_events` 表 / `log_operation_event` / `get_qc_rerun_candidates` / `get_qc_rerun_summary` / `get_operation_events` / `increment_truncation_count` / `get_truncation_summary` |
-| 1/3 地基层 | `scripts/backup_manager.py` | 新增 `operation_hook(op_name)` / `BackupFailedError` / 保留策略（每类5个+总量2GB） |
-| 1/3 地基层 | `scripts/prompts/prompt_templates.py` | 新增 `QC_CHECK_SINGLE_PROMPT` |
-| 1/3 地基层 | `scripts/migrate_v223.py` | 新文件，幂等 schema 迁移 |
-| 2/3 引擎层 | `scripts/extractor.py` | F057 截断补救 + F058 质检三级降级链 + 顺手修 v2.1.2 分批质检残留 bug |
-| 3/3 界面层 | `scripts/api_server.py` | F060 备份触发点接入 4 处 / F061 补跑 API / 事件日志 API / 截断摘要 API / dashboard 新字段 / 旧 qa-backfill 转发 / 删除死代码 |
-| 3/3 界面层 | `web/templates/review.html` | 规则兜底黄色高亮 / qa_source 筛选器 / 质检补跑按钮改造 / 截断补救卡 / 事件日志模态框 |
-| 3/3 界面层 | `00_项目全景.md` / `01_工程手册.md` / `03_Prompt手册.md` / `README.md` / `CHANGELOG.md` | 项目文档全量更新 |
-
-### 部署顺序（必读）
-
-1. **先备份**：`启动后台.bat` 里点"一键备份"，或手动复制 `data/knowledge_base.db` 到安全位置
-2. **运行迁移**：`python scripts/migrate_v223.py`（幂等，多跑一次也没事）
-3. **替换代码**：按 GitHub 提交或本地文件替换 8 个文件
-4. **重启服务**：关闭 `启动后台.bat` 后重开
-5. **验证**：
-   - 仪表盘是否看到 Card 11"截断补救"
-   - 工具箱"质检补跑"点一下是否弹窗显示候选数量
-   - 审核页侧边栏是否看到"质检来源"筛选区
-
-### 回滚方案
-如 v2.2.3 运行出问题：
-1. 关闭 `启动后台.bat`
-2. 从第 1 步备份还原 `data/knowledge_base.db`
-3. 用 Git 回退 `scripts/` 和 `web/templates/` 到上个 tag（v2.2.2）
-4. 新开对话反馈错误
-
-### 决策记录（界面层 3 个）
-- **旧 `/api/tools/qa-backfill` 保留并转发**：hotfix 最小变更面原则；浏览器缓存的旧版 JS 不会 404；新降级链是旧批量质检的严格超集
-- **工具箱"质检补跑"卡改名不新增**：老唐视角只关心功能不关心实现路径；新增第二个按钮会造成"点哪个"的决策成本
-- **事件日志入口放仪表盘按钮不单独占工具箱卡位**：日志是场景溯源工具不是巡检工具，独立入口会变成死入口
+- **旧 `/api/tools/qa-backfill` 保留并转发**:hotfix 最小变更面原则;浏览器缓存的旧版 JS 不会 404;新降级链是旧批量质检的严格超集
+- **工具箱"质检补跑"卡改名不新增**:老唐视角只关心功能不关心实现路径;新增第二个按钮会造成"点哪个"的决策成本
+- **事件日志入口放仪表盘按钮不单独占工具箱卡位**:日志是场景溯源工具不是巡检工具,独立入口会变成死入口
 
 ---
 
-## [v2.2.2] - 2025 — 重复检测合并批量处理
+## 早期版本精简摘要
 
-F051-F054 质量管控增强：多选合并 / 批量解决 / 跨页全选 / 自动刷新按钮计数。
+### v2.2.2 — 2025 — 重复检测合并与批量处理
 
-## [v2.2.1] - 2025 — 重复组多选保留
+F051-F054 质量管控增强:多选合并 / 批量解决 / 跨页全选 / 自动刷新按钮计数。F039 重复检测 V3 精判补齐 client 参数,消除假阳性。
 
-重复组勾选框 + keep_ids 数组。
+### v2.2.1 — 2025 — 重复组多选保留
 
-## [v2.2.0] - 2025 — 专家注解 + 经验速记
+重复组勾选框 + keep_ids 数组,支持保留多条有价值的知识点。
 
-F029 注解 5 类型 + F045 经验速记 V3 结构化。
+### v2.2.0 — 2025 — 专家注解 + 经验速记
 
-## [v2.1.2] - 2025 — 长任务管理 + 版本重提取
+F029 专家注解 5 类型(纠错 / 补充 / 情境 / 反例 / 引用)。F045 经验速记 V3 结构化入库。预处理保存 .md 缓存,提取优先读缓存。
 
-F046 管理后台 + F047 长任务 threading + F044 版本重提取。
+### v2.1.2 — 2025 — 长任务管理 + 版本重提取
 
-## [v2.1.1] - 2025 — 政策依赖校验 + 重复检测
+F046 管理后台(Tab 双视图 / 审核与系统管理)。F047 长任务 threading + 2 秒轮询进度。F044 版本重提取(PROMPT_VERSION 追踪)。
 
-F028 政策校验 + F039 重复检测。
+### v2.1.1 — 2025 — 政策依赖校验 + 重复检测
 
-## [v2.1.0] - 2025 — 保鲜 + 标签体系
+F028 政策依赖校验。F039 重复检测(本地粗筛 + V3 精判)。
 
-F021-F027 三层标签 + F028 保鲜扫描。
+### v2.1.0 — 2025 — 保鲜 + 三层标签体系
 
-## [v2.0.0] - 2025 — 管理后台
+F021-F027 三层标签体系(A/B/C/D/E/F 六组 41 个一级标签 + 8 维度属性 + 关键词)。F028 保鲜扫描(checked_at + interval_days)。
 
-Tab 双视图 + CRUD + 编辑历史。
+### v2.0.0 — 2025 — 管理后台
 
-## [v1.x] - 2024 — 基础提取引擎
+Flask 本地 Web 管理后台。Tab 双视图 + 知识点 CRUD + 编辑历史追溯。
 
-R1 提取 + OCR + SQLite。
+### v1.x — 2024 — 基础提取引擎
+
+R1 提取 + 硅基流动 OCR + SQLite 底座。双 API 架构(DeepSeek 推理 + 硅基流动仅 OCR)。
