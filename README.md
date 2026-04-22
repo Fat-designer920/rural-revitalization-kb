@@ -4,7 +4,7 @@
 >
 > **知识工厂：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。**
 >
-> **当前版本：v2.3.0-part3-alpha1（F062 端到端健康测试 Agent 基础层，对话 1/3 已交付；对话 2 引擎层待开发）**
+> **当前版本：v2.3.0-part3-alpha2（F062 端到端健康测试 Agent 引擎层，对话 2/3 已交付；对话 3 界面层待开发）**
 
 ---
 
@@ -24,7 +24,72 @@
 
 ---
 
-## v2.3.0-part3-alpha1 本次交付内容（F062 基础层，对话 1/3）
+## v2.3.0-part3-alpha2 本次交付内容（F062 引擎层，对话 2/3）
+
+v2.3.0-part3 是 **F062 端到端健康测试 Agent** 的三对话拆分开发。本次交付对话 2 引擎层,消费对话 1 基础层契约,为对话 3 界面层铺垫:
+
+### 引擎层核心交付
+
+**`scripts/e2e_tester.py`（新建,~1250 行）**
+
+- F062 端到端健康测试 Agent 的**引擎核心**
+- 类 `E2ETester(db, client, progress_callback=None)` + 主入口 `run_full_scan(scan_depth='quick'|'deep')` + 模块级便捷函数 `run_e2e_scan(...)`
+- **六维度扫描**(全部走 `_safe_dim` 单维度异常隔离,借鉴 F048):
+  - 维度①路由自省:Flask `app.url_map` vs `api_endpoint_registry` 差集,新端点自动 register + 产 info issue
+  - 维度②启动就绪性:importlib 自检 5 核心引擎(extractor / duplicate_checker / preprocessor / experience_notes / health_checker)
+  - 维度③Prompt 调用一致性:消费对话 1 `scan_prompt_call_consistency` 结果
+  - 维度④字段契约:消费对话 1 `scan_field_contract` 结果 + **白名单二次过滤 35 条**
+  - 维度⑤事件语义:deep 档拉最近 7 天 warning/error 事件按 event_type 分桶抽样 30 条喂 V3 判断
+  - 维度⑥代码异味:消费对话 1 `scan_code_smells` 结果 + **白名单二次过滤 6 条**
+- **V3 调用适配器**:call_chat/chat/complete/call/generate 五方法 × messages/system_prompt 两签名(借鉴 F048)
+- **白名单常量**(用真实 static_analyzer 扫描产出精确填入):
+  - `DIM4_KNOWN_FALSE_POSITIVES` 35 个 unique signature(SQL 别名 9 / 其他表字段 8 / F062 新表字段 11 / JOIN-GROUP BY 结果 7)
+  - `DIM6_KNOWN_FALSE_POSITIVES` 6 个 unique signature(全是合理 silent_except 兜底)
+  - `WHITELIST_REASONS` 41 条人类可读说明,对话 3 前端"已知合理项"折叠展示
+- **progress_callback 9 stage 锁定**:init / dim1_route / dim2_readiness / dim3_prompt / dim4_field / dim5_event / dim6_smell / done / failed
+- **顶层 import 严格**:禁止 try/except 静默降级,缺失依赖直接 ImportError 崩
+
+### 对话 2 开发纪律兑现
+
+| 关卡项 | 状态 |
+|------|------|
+| 顶层 import `E2E_RESPONSE_JUDGE_PROMPT` + `PROMPT_VERSION` + `static_analyzer` | ✅ |
+| Prompt key 严格 `system_prompt`/`user_prompt_template` | ✅ |
+| 字段读法严格(零 `kp['id']` / `source_authority` / `access_level` 错误) | ✅ |
+| severity 严格三态(`warn` 自动转 `warning`) | ✅ |
+| issue 四态走 db.upsert_e2e_issue(CHECK 兜底) | ✅ |
+| 单维度异常隔离 `_safe_dim` 包装全部六维度 | ✅ |
+| 白名单二次过滤不反向改弱 static_analyzer | ✅ |
+| **不碰** api_server / review.html / setup / check_system / db_manager / prompt_templates / static_analyzer | ✅ |
+| static_analyzer 自扫 e2e_tester.py:dim3=0 / dim4=2 自身合理 / dim6=4 自身合理 | ✅ |
+
+### dry run 验证
+
+- **quick 档**(mock db + mock client):total_score = 87.5,6 维度全执行,dim5 标 skipped,白名单过滤 100% 命中
+- **deep 档**(真实 SQLite + 3 条 warning 事件 + mock V3):total_score = 87.84,V3 调用 3 次,成本 0.000882 元,dim5 采样判断完整
+
+### 老唐需要做的操作(对话 2 交付)
+
+⚠️ 本次为**引擎层交付**,对话 3 界面层还未落地,**请勿在本机跑端到端扫描**(缺 api_server 路由入口,无法从前端触发)。本次只需要:
+
+1. **不升级本地数据库**:对话 1 已落地的 3 张新表在对话 2 引擎层被 `upsert_e2e_issue` / `save_e2e_test_report` 消费,但触发点是对话 3 的 `/api/tools/e2e/start` 路由。本机 setup.py 升级时机仍在对话 3 交付后
+2. **替换 1 个代码文件 + 5 个项目文件到 GitHub**:
+   - `scripts/e2e_tester.py`(新建,~1250 行)
+   - `00_项目全景.md` / `01_工程手册.md` / `03_Prompt手册.md` / `CHANGELOG.md` / `README.md`(增量更新)
+3. **推送 GitHub 后更新 Claude Projects**(5 个项目文件全量)
+4. **等待对话 3 界面层交付后,一次性完成首次端到端测试联调**(届时升级数据库)
+
+### 验证环境自检(可选)
+
+若想提前验证引擎层代码无语法错:
+```
+python -c "from scripts.e2e_tester import E2ETester, run_e2e_scan, DIM4_KNOWN_FALSE_POSITIVES, DIM6_KNOWN_FALSE_POSITIVES; print('OK:', len(DIM4_KNOWN_FALSE_POSITIVES), '+', len(DIM6_KNOWN_FALSE_POSITIVES))"
+```
+预期输出:`OK: 35 + 6`
+
+---
+
+## v2.3.0-part3-alpha1 历史交付(F062 基础层,对话 1/3)
 
 v2.3.0-part3 是 **F062 端到端健康测试 Agent** 的三对话拆分开发。本次交付对话 1 基础层，为对话 2 引擎层和对话 3 界面层铺垫：
 
@@ -149,7 +214,7 @@ python -c "import scripts.static_analyzer as sa; print('OK:', sa.__doc__[:60])"
 | 2 知识审核与管理 | 审核 / 标签 / 保鲜 / 政策 / 质控（三级降级） / 管理后台 / 标签分布视图 | ✅ **v2.3.0-part1 完成** |
 | 3 经验录入 | 专家注解 + 经验速记 | ✅ v2.2.0 完成 |
 | 4 质量体检 | AI 全盘扫描 + 低分打磨 + 喂料建议 | ✅ **v2.3.0-part2 正式版 + v2.3.0-part2.2 hotfix** |
-| 5 端到端测试 | 路由自省 + 启动就绪性 + AST 静态 + V3 语义 + 四态跟踪 | 🚧 **v2.3.0 Part3 进行中（对话 1/3 基础层 ✅）** |
+| 5 端到端测试 | 路由自省 + 启动就绪性 + AST 静态 + V3 语义 + 四态跟踪 | 🚧 **v2.3.0 Part3 进行中（对话 1/2 ✅,对话 3 待开发）** |
 | 6 本地问答助手 | 顾问式答疑 + 朋友试用 | 🚧 v2.3.2 规划中 |
 | 7 内容生产引擎 | AI 辅助生成政策解读 / 指南 / 课件 | 未开发（v2.4.0+） |
 | 8 云端问答产品 | 高并发问答服务 | 未开发（v3.x） |
@@ -232,6 +297,7 @@ rural-revitalization-kb/
 │   ├── upgrade_manager.py  # 架构升级迁移
 │   ├── health_checker.py   # F048 知识库体检引擎（v2.3.0-part2.2，~1360 行）
 │   ├── static_analyzer.py  # F062 静态分析模块（v2.3.0-part3-alpha1 新建，645 行，维度③④⑥ AST 规则库）
+│   ├── e2e_tester.py       # F062 端到端测试引擎（v2.3.0-part3-alpha2 新建，~1250 行，六维度扫描 + V3 判断 + 白名单过滤）
 │   └── db_health_check.py  # 数据层只读体检脚本
 ├── web/templates/          # 前端页面
 │   └── review.html         # 管理后台
@@ -274,8 +340,8 @@ rural-revitalization-kb/
 | v2.3.0-part2 | F048 知识库体检 Agent | ✅ 已完成 |
 | v2.3.0-part2.1 | schema 整合 hotfix | ✅ 已完成 |
 | v2.3.0-part2.2 | F048 防护层 hotfix（四类系统性 bug） | ✅ 已完成 |
-| **v2.3.0-part3-alpha1** | **F062 基础层（对话 1/3）** | ✅ **本次交付** |
-| v2.3.0-part3-alpha2 | F062 引擎层（对话 2/3） | 待开发 |
+| v2.3.0-part3-alpha1 | F062 基础层（对话 1/3） | ✅ 已交付（2026-04-23） |
+| **v2.3.0-part3-alpha2** | **F062 引擎层（对话 2/3）** | ✅ **本次交付** |
 | v2.3.0-part3 | F062 界面层正式版（对话 3/3） | 待开发 |
 | v2.3.1 | 批量重算成熟度 + 关联体系 | 规划中 |
 | v2.3.2 | 本地问答助手 | 规划中 |
@@ -299,7 +365,7 @@ rural-revitalization-kb/
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化路径
 - `01_工程手册.md`：代码文件清单 / 技术踩坑 / 关键设计决策
 - `02_知识体系.md`：五大类分类 + 三层标签
-- `03_Prompt手册.md`：27 个 Prompt 模板清单（含 F048 6 个 + F062 1 个）
+- `03_Prompt手册.md`：26 个 Prompt 模板清单（含 F048 6 个 + F062 1 个,v2.3.0-part3-alpha2 仅消费对话 1 已落地的 E2E_RESPONSE_JUDGE_PROMPT,不新增 Prompt）
 
 ### GitHub 仓库
 
@@ -338,6 +404,12 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 ## 许可证与支持
 
 本项目为个人实战资产沉淀工具，当前阶段仅供老唐本人使用。未来商业化路径见 `00_项目全景.md`。
+
+## v2.3.0-part3-alpha2 致谢
+
+感谢老唐在对话 1 交付的基础上提供完整真实的 db_manager.py v2.3.0-part3-alpha1 源文件,让 Claude 本地跑一次 static_analyzer 就拿到 35+6 条精确 unique signature,白名单不再预估不再占位。这种"数据真相源头化"的协作模式,让对话 2 的交付从一开始就是可验证的,而不是"代码写完再跑集成测试看行不行"。
+
+对话 1 → 对话 2 的契约 100% 兑现:8 个 db 方法 + 1 个 Prompt 双 key 结构 + static_analyzer 四 key 返回结构,全部在引擎层顶层 import 消费,零修改基础层。这就是"基础层先立契约,引擎层只做消费"的工程化兑现。
 
 ## v2.3.0-part3-alpha1 致谢
 

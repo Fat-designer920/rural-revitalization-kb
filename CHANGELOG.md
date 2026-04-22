@@ -5,6 +5,152 @@
 
 ---
 
+## [v2.3.0-part3-alpha2] - 2026-04-23 (alpha)
+
+**定位**：F062 端到端健康测试 Agent 三对话拆分 — **对话 2/3 引擎层（代码实装 → 项目文件锚点关卡）**。
+
+本次交付为 F062 三对话拆分的第二阶段,严格遵守"引擎层只新建 e2e_tester.py,不动 api_server/review.html/setup/check_system/db_manager/prompt_templates/static_analyzer 任何一行"的纪律。对话 1 基础层的 8 个 db 方法 + 1 个 Prompt 双 key 结构 + static_analyzer 四 key 返回结构,本次全部在引擎层顶层 import 消费,契约 100% 兑现。
+
+### 设计决策(对话 2 Phase 2 已锁定)
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 白名单数据真相源 | 方案 1:贴 GitHub 链接(db_manager.py + static_analyzer.py) → Claude 本地还原跑 static_analyzer 取真实行号 | 一次跑出 55 条 dim4 + 6 条 dim6 原始 issue,按 signature 去重后 **35 + 6 = 41 个 unique signature**,精确到 `file:line:rule_id` 填入 DIM4/DIM6_KNOWN_FALSE_POSITIVES set,不预估不占位 |
+| quick 档 dim5 处置 | A:标 skipped 不算分,其他五维权重等比重分 | 语义最清晰("quick 不跑 V3")不产生"虚假分数";五维权重合仍 = 1.0,切换 quick/deep 档总分语义稳定 |
+| 白名单匹配粒度 | signature 精确匹配(`dim_code|file:line|rule_id` 三段式) | `file:line` 模糊匹配风险是未来新代码在老行号上引入真问题也被误过滤;signature 精确匹配与 upsert_e2e_issue 的去重口径天然对齐 |
+| 过滤后 issue 保留策略 | `detail.filtered_out` 列表保留被过滤项 + _filter_reason 说明 | 对话 3 前端可折叠展示"已知合理项 N 条",不丢任何审计痕迹 |
+
+### Added
+
+**scripts/e2e_tester.py(新建,~1250 行)**
+
+- F062 端到端测试 Agent **引擎层核心文件**
+- 类 `E2ETester(db, client, progress_callback=None)` + 主入口 `run_full_scan(scan_depth='quick'|'deep')` + 模块级便捷函数 `run_e2e_scan(...)`
+- **六维度扫描方法**(全部走 `_safe_dim` 单维度异常隔离,借鉴 F048 health_checker):
+  - `_dim1_route_introspect` — Flask `app.url_map.iter_rules()` 对比 `db.get_endpoint_registry()` 差集;新端点自动 `register_endpoint` + 产 info 级 issue;局部 import `from scripts.api_server import app` 防启动副作用
+  - `_dim2_readiness` — importlib 自检 5 核心引擎(extractor / duplicate_checker / preprocessor / experience_notes / health_checker);任一挂掉 dim2=50(与 F048 `_health_readiness_check` 同口径)
+  - `_dim3_prompt_call` — 消费 `static_analyzer.scan_prompt_call_consistency`;无预置白名单(Prompt key 错误必须暴露)
+  - `_dim4_field_contract` — 消费 `scan_field_contract` + **白名单二次过滤**(35 个 unique signature);未过滤 issue 打 `error×10+warning×3` 扣分
+  - `_dim5_event_v3_deep` — deep 档拉最近 7 天 warning/error 事件(RECENT_EVENTS_LOOKBACK_DAYS=7);按 event_type 分桶抽样上限 30 条(DEEP_EVENT_MAX_SAMPLES=30,优先 severity=error);喂 `E2E_RESPONSE_JUDGE_PROMPT` V3 判断;quick 档直接标 `skipped=true, score=null`
+  - `_dim6_code_smell` — 消费 `scan_code_smells` + **白名单二次过滤**(6 个 unique signature)
+- **V3 调用适配器**(借鉴 F048):
+  - `_do_call` 五方法顺序尝试:`call_chat` → `chat` → `complete` → `call` → `generate`
+  - 每个方法两签名降级:`messages=[{system},{user}]` 优先 → TypeError 则退化 `system_prompt=/user_prompt=/temperature=` 两参数签名
+  - `_unpack_response` 兼容 dict / OpenAI 对象 / 字符串三种返回格式
+  - `_accumulate_cost_v3` 按 prompt_tokens × 0.0014/1k + completion_tokens × 0.0028/1k 累加
+- **白名单常量**(对话 2 用真实扫描数据精确填入):
+  - `DIM4_KNOWN_FALSE_POSITIVES` — 35 个 unique signature,全部来自 db_manager.py v2.3.0-part3-alpha1
+  - `DIM6_KNOWN_FALSE_POSITIVES` — 6 个 unique signature,全部 smell_silent_except 模式
+  - `WHITELIST_REASONS` — 41 条 `file:line → 人类可读说明` 映射,供对话 3 前端"已知合理项"折叠展示
+  - 分类说明:SQL 聚合别名(cnt/tc) 9 条 / 其他表字段 8 条 / F062 新表字段 11 条 / JOIN-GROUP BY 结果 7 条 / silent_except 合理兜底 6 条
+- **progress_callback 9 stage 锁定**(`VALID_STAGES` 白名单兜底):
+  - init / dim1_route / dim2_readiness / dim3_prompt / dim4_field / dim5_event / dim6_smell / done / failed
+  - 越界 stage 降级为 `init`(防对话 3 前端 UI stage 穿透)
+- **六维度得分公式**:
+  - dim1:`new==0 ? 100 : max(60, 100-new×5)`(新端点封底 60)
+  - dim2:`fail_count==0 ? 100 : 50`
+  - dim3/4/5(deep)/6:`max(0, 100-error×10-warning×3)`
+  - dim5(quick):`null / skipped=true`
+  - 总分权重:deep 档六维和=1.0(dim1 0.12/dim2 0.20/dim3 0.16/dim4 0.12/dim5 0.24/dim6 0.16);quick 档五维和=1.0(dim1 0.15/dim2 0.25/dim3 0.20/dim4 0.15/dim6 0.25)
+- **operation_events 埋点表**(16 个事件类型):
+  - e2e_scan_start / e2e_scan_done / e2e_scan_failed(整体)
+  - e2e_dim_failed / e2e_static_scan_failed / e2e_schema_snapshot_failed(静态扫描类)
+  - e2e_flask_introspect_failed / e2e_registry_read_failed / e2e_register_endpoint_failed / e2e_new_endpoint_found(dim1 路由类)
+  - e2e_readiness_fail(dim2 readiness)
+  - e2e_event_query_failed / e2e_ai_call_failed(dim5 V3 判断)
+  - e2e_issue_upsert_failed / e2e_issue_upserted / e2e_report_save_failed(落库类)
+- **顶层 import 严格**(对话 A 立规则):
+  - `from scripts.prompts.prompt_templates import E2E_RESPONSE_JUDGE_PROMPT, PROMPT_VERSION`
+  - `from scripts import static_analyzer`
+  - 禁止 try/except 静默降级,缺失依赖直接 ImportError 崩
+
+### Validated(对话 2 beta 关卡兑现)
+
+- **自扫开发纪律**:static_analyzer 自扫 e2e_tester.py 结果:dim3 = 0 条 / dim4 = 2 条(自身 dict 合理误报)/ dim6 = 4 条(非关键路径合理 silent_except,对话 3 实跑后自纳入白名单)
+- **四类 bug 模式审查通过**:grep 验证
+  - 纪律 1 禁止 PROMPT=None:0 处
+  - 纪律 2 禁止 if not PROMPT:0 处
+  - 纪律 3 字段读法严格:未出现 `kp['id']` / `source_authority` / `access_level`:0 处
+  - 纪律 4 Prompt key 严格:未出现 `['system']` / `['user']`:0 处
+- **quick 档 dry run**(mock db + mock client):
+  - total_score = 87.5
+  - 6 维度全执行,dim5 标 skipped,dim6 最末执行
+  - 进度回调 7 次(init → dim1_route → dim2_readiness → dim3_prompt → dim4_field → dim6_smell → done)
+  - 白名单过滤 100% 命中(dim4 raw 55 → filtered 55 kept 0;dim6 raw 6 → filtered 6 kept 0)
+  - 事件日志 9 条,issue upsert 5 条,report 落库 1 条
+- **deep 档 dry run**(真实 SQLite + 3 条 warning 事件 + mock V3 client):
+  - total_score = 87.84
+  - V3 调用 3 次,成本累加 0.000882 元
+  - dim5 采样 3 条 warn 事件判断,全部标 warn → 扣 9 分(91 分)
+  - issue signature 带 endpoint+event_id 防冲突:`5_event|/api/tools/qa-backfill|ev3|v3_warn`
+
+### Changed
+
+**项目文件锚点更新:**
+
+- `00_项目全景.md` — 版本号 alpha1 → alpha2;模块 5 端到端测试 状态"对话 1/2 ✅";迭代路线追加 v2.3.0-part3-alpha2 条目;F062 对话 2 交付物详细说明
+- `01_工程手册.md` — 代码清单高频区新增 `e2e_tester.py` 行;规划中文件划掉 e2e_tester.py;尾部新增 "v2.3.0-part3-alpha2 e2e_tester.py 结构速查" 长章节(含模块主结构 / 9 stage 表 / 六维度得分公式 / 白名单速查 / 16 事件埋点 / beta 关卡兑现 / dry run 验证 / 7 条新踩坑);beta 阶段 3 条对齐目标全打 ✅;F062 与 F048 对齐表追加 `单维度异常隔离` / `V3 调用适配器` 两行
+- `03_Prompt手册.md` — 头部版本说明追加对话 2 已消费状态;F062 条目调用位置改为 `e2e_tester._judge_single_event()`(对话 2/3 v2.3.0-part3-alpha2 ✅)
+- `README.md` — 版本号更新 alpha1 → alpha2
+- `CHANGELOG.md` — 本条目(本文件)
+
+### Not Changed(对话 3 边界严守)
+
+- `scripts/api_server.py` — 0 行改动(对话 3 新增 F062 路由 6-8 个)
+- `web/templates/review.html` — 0 行改动(对话 3 新增工具箱第 11 卡 tc-e2e + 档位弹窗 + 报告弹窗 + issue 四态 UI)
+- `scripts/setup.py` — 0 行改动(对话 3 核心文件校验清单追加 e2e_tester.py)
+- `scripts/check_system.py` — 0 行改动(对话 3 检查项追加 F062 就绪度 + 扩表清单)
+- `scripts/db_manager.py` — 0 行改动(对话 1 已落地 8 方法全部够用)
+- `scripts/prompts/prompt_templates.py` — 0 行改动(对话 1 Prompt 顶层 import 消费即可)
+- `scripts/static_analyzer.py` — 0 行改动(对话 1 对外接口 4 key 返回被引擎层消费)
+- `scripts/db_health_check.py` — 0 行改动(对话 3 统一扩 F062 代码层契约检查)
+
+### 已知待对话 3 落地项
+
+1. **api_server 新增 F062 路由 6-8 个**:
+   - `POST /api/tools/e2e/start` 档位参数 `{scan_depth: "quick"|"deep"}`,走 `_task_lock` 单例 + `_e2e_readiness_check()` 前置自检(复用 F048 模板)
+   - `GET /api/tools/e2e/latest` 瘦身(不含 full_report_json,供"最近一次"软提醒徽章)
+   - `GET /api/tools/e2e/history?limit=20` 历史列表
+   - `GET /api/tools/e2e/report/<rid>` 完整报告(含 full_report_json)
+   - `GET /api/tools/e2e/issues?status=pending` issue 四态列表
+   - `POST /api/tools/e2e/issues/<iid>/status` 四态切换
+2. **review.html 工具箱第 11 张卡 `tc-e2e`**:
+   - 档位弹窗(quick 秒级 / deep 约 10 秒 + 0.15 元)
+   - 软提醒徽章:距上次扫描 <7 天无提示 / 7-14 天淡黄 / >14 天红
+   - 报告弹窗:六维度卡片 + 新端点清单 + issue 四态切换 UI
+   - ES5 严格 + 无 emoji + progress stage 9 种识别
+3. **白名单行号漂移检查**:对话 3 实跑后若 db_manager.py 行号有变化(schema 微调),同步更新 `DIM4_KNOWN_FALSE_POSITIVES` / `DIM6_KNOWN_FALSE_POSITIVES` set
+4. **e2e_tester 自扫剩余 6 条候选白名单**:对话 3 实跑发现 e2e_tester.py 自己扫出 dim4 2 条 + dim6 4 条自身合理误报,按"发现一个问题解决一类问题"原则一并纳入白名单
+
+### Migration
+
+**对话 2 无 schema 变更,无数据迁移。**
+
+对话 1 已落地的 3 张 F062 表(api_endpoint_registry / e2e_test_reports / e2e_issues)+ 3 条索引 + 8 个方法,全部在对话 2 被 e2e_tester 顶层 import 消费,零修改。
+
+### Upgrade Path
+
+1. 替换 `scripts/e2e_tester.py`(新建文件)
+2. 替换项目文件 00/01/03 + CHANGELOG + README(5 份,完整内容替换)
+3. 推送 GitHub
+4. 更新 Claude Projects 项目文件
+5. 本对话完成后新开对话进入对话 3/3 界面层
+
+### Verification
+
+- 启动后台.bat 应无任何 ImportError(e2e_tester 顶层 import 兼容对话 1 基础层)
+- cmd 窗口手工跑 `python -c "from scripts.e2e_tester import E2ETester, run_e2e_scan; print('OK')"` 应打印 OK
+- 对话 3 界面层联调前不强制做端到端跑,但可选本地冒烟:
+  ```python
+  from scripts.db_manager import DatabaseManager
+  from scripts.deepseek_client import DeepSeekClient
+  from scripts.e2e_tester import run_e2e_scan
+  r = run_e2e_scan(DatabaseManager(), DeepSeekClient(), scan_depth='quick')
+  print(r['success'], r['total_score'])
+  ```
+
+---
+
 ## [v2.3.0-part3-alpha1] - 2026-04-23 (alpha)
 
 **定位**：F062 端到端健康测试 Agent 三对话拆分 — **对话 1/3 基础层（契约 → 骨架关卡）**。
