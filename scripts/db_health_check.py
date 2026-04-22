@@ -9,7 +9,7 @@
   - 不调用任何 AI 接口,零网络、零成本
   - 字段缺失自动容错,单项失败不影响其他
   - 报告同步输出到 stdout + db_health_check_report.txt
-版本: v1.1 (v2.3.0-part2.2 对话 B 扩展 [11/11] F048 代码层契约一致性)
+版本: v1.2 (v2.3.0-part3 对话 3/3 扩展 [12/12] F062 代码层契约一致性)
 作者: 老唐 + Claude 首席工程师
 =============================================
 """
@@ -38,6 +38,8 @@ REPORT_PATH = os.path.join(PROJECT_DIR, 'db_health_check_report.txt')
 EXPECTED_TABLES = [
     'source_files', 'knowledge_points', 'annotations',
     'operation_events', 'health_reports', 'polish_suggestions',
+    # v2.3.0-part3 F062 三表（对话 3 决策 Q1 扩表清单）
+    'api_endpoint_registry', 'e2e_test_reports', 'e2e_issues',
 ]
 EXPECTED_F048_INDEXES = [
     'idx_health_created', 'idx_polish_report', 'idx_polish_status',
@@ -128,6 +130,7 @@ def main():
         check_9_source_files(conn)
         check_10_backups()
         check_11_f048_code_contract(conn)
+        check_12_f062_code_contract(conn)
     finally:
         conn.close()
 
@@ -972,6 +975,135 @@ def check_11_f048_code_contract(conn):
     except Exception as e:
         p('X 整项执行失败: ' + str(e))
         warn('F048 整项', '执行失败: ' + str(e))
+
+
+# =========================================================
+# [12/12] F062 端到端测试 代码层契约一致性（v2.3.0-part3 对话 3/3 新增）
+# =========================================================
+
+F062_DB_METHODS = [
+    'register_endpoint', 'get_endpoint_registry', 'update_endpoint_last_tested',
+    'save_e2e_test_report', 'get_latest_e2e_test_report',
+    'get_e2e_test_report_detail', 'get_e2e_test_report_list',
+    'upsert_e2e_issue', 'set_e2e_issue_status',
+]
+
+def check_12_f062_code_contract(conn):
+    header('[12/12] F062 端到端测试 代码层契约一致性(v2.3.0-part3)')
+    try:
+        # 修 sys.path
+        try:
+            pr = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
+            if pr not in sys.path:
+                sys.path.insert(0, pr)
+        except Exception:
+            pass
+
+        # ---- [12.1] E2E_RESPONSE_JUDGE_PROMPT 顶层 import + 类型 ----
+        sub('12.1 E2E_RESPONSE_JUDGE_PROMPT 顶层 import 测试')
+        try:
+            from scripts.prompts import prompt_templates as pt
+            p('  OK prompt_templates 模块可 import')
+        except Exception as e:
+            p('  X prompt_templates import 失败: ' + str(e))
+            warn('F062 Prompt', 'prompt_templates import 失败: ' + str(e))
+            return
+
+        e2e_p = getattr(pt, 'E2E_RESPONSE_JUDGE_PROMPT', None)
+        if e2e_p is None:
+            p('  X E2E_RESPONSE_JUDGE_PROMPT 未定义或为 None')
+            warn('F062 Prompt', 'E2E_RESPONSE_JUDGE_PROMPT 未定义')
+        elif not isinstance(e2e_p, dict):
+            p('  X E2E_RESPONSE_JUDGE_PROMPT 不是 dict (' + type(e2e_p).__name__ + ')')
+            warn('F062 Prompt', 'E2E_RESPONSE_JUDGE_PROMPT 类型错')
+        else:
+            p('  OK E2E_RESPONSE_JUDGE_PROMPT 已定义为 dict')
+            # [12.2] 双 key
+            sub('12.2 双 key (system_prompt / user_prompt_template) 非空')
+            sys_p = e2e_p.get('system_prompt')
+            usr_p = e2e_p.get('user_prompt_template')
+            if not sys_p or not isinstance(sys_p, str):
+                p('  X 缺 system_prompt 或为空')
+                warn('F062 Prompt key', 'E2E_RESPONSE_JUDGE_PROMPT 缺 system_prompt')
+            else:
+                p('  OK system_prompt 非空,长度 ' + str(len(sys_p)))
+            if not usr_p or not isinstance(usr_p, str):
+                p('  X 缺 user_prompt_template 或为空')
+                warn('F062 Prompt key', 'E2E_RESPONSE_JUDGE_PROMPT 缺 user_prompt_template')
+            else:
+                p('  OK user_prompt_template 非空,长度 ' + str(len(usr_p)))
+
+        # ---- [12.3] static_analyzer 顶层 import + 4 方法 ----
+        sub('12.3 static_analyzer 顶层 import + 4 方法齐全')
+        try:
+            from scripts import static_analyzer as sa
+            required_sa = ('scan_prompt_call_consistency', 'scan_field_contract',
+                           'scan_code_smells', 'run_static_scan')
+            miss_sa = [m for m in required_sa if not hasattr(sa, m)]
+            if miss_sa:
+                p('  X static_analyzer 缺方法: ' + ', '.join(miss_sa))
+                warn('F062 static_analyzer', '缺方法: ' + ','.join(miss_sa))
+            else:
+                p('  OK static_analyzer 4 方法齐全')
+        except Exception as e:
+            p('  X static_analyzer import 失败: ' + str(e))
+            warn('F062 static_analyzer', 'import 失败: ' + str(e))
+
+        # ---- [12.4] e2e_tester 顶层 import + 类 + 便捷函数 ----
+        sub('12.4 e2e_tester 顶层 import + E2ETester 类 + run_e2e_scan 便捷函数')
+        try:
+            from scripts import e2e_tester as et
+            if not hasattr(et, 'E2ETester'):
+                p('  X e2e_tester 缺 E2ETester 类')
+                warn('F062 e2e_tester', '缺 E2ETester 类')
+            else:
+                p('  OK E2ETester 类就绪')
+            if not hasattr(et, 'run_e2e_scan'):
+                p('  X e2e_tester 缺 run_e2e_scan 便捷函数')
+                warn('F062 e2e_tester', '缺 run_e2e_scan')
+            else:
+                p('  OK run_e2e_scan 便捷函数就绪')
+            # VALID_STAGES 白名单
+            vs = getattr(et, 'VALID_STAGES', None)
+            if vs:
+                p('  VALID_STAGES 共 ' + str(len(vs)) + ' 种: ' + str(sorted(list(vs))))
+            else:
+                p('  !! VALID_STAGES 常量未定义')
+        except Exception as e:
+            p('  X e2e_tester import 失败: ' + str(e))
+            warn('F062 e2e_tester', 'import 失败: ' + str(e))
+
+        # ---- [12.5] db_manager 9 个 F062 方法 ----
+        sub('12.5 db_manager 9 个 F062 方法齐全')
+        try:
+            from scripts.db_manager import DatabaseManager
+            miss_db = [m for m in F062_DB_METHODS if not hasattr(DatabaseManager, m)]
+            if miss_db:
+                p('  X db_manager 缺方法: ' + ', '.join(miss_db))
+                warn('F062 db_manager', '缺方法: ' + ','.join(miss_db))
+            else:
+                p('  OK DatabaseManager 9 F062 方法全部就绪')
+                for m in F062_DB_METHODS:
+                    p('    OK ' + m)
+        except Exception as e:
+            p('  X DatabaseManager 类 import 失败: ' + str(e))
+            warn('F062 db_manager', 'import 失败: ' + str(e))
+
+        # ---- [12.6] 3 张 F062 表存在 + 样本计数 ----
+        sub('12.6 F062 三张表存在 + 样本计数')
+        c = conn.cursor()
+        for t in ('api_endpoint_registry', 'e2e_test_reports', 'e2e_issues'):
+            try:
+                c.execute('SELECT COUNT(*) FROM ' + t)
+                cnt = c.fetchone()[0]
+                p('  OK ' + t + ' 存在 (' + str(cnt) + ' 行)')
+            except Exception as e:
+                p('  X ' + t + ' 缺失或查询失败: ' + str(e))
+                warn('F062 表', t + ' 缺失')
+
+    except Exception as e:
+        p('X 整项执行失败: ' + str(e))
+        warn('F062 整项', '执行失败: ' + str(e))
 
 
 # =========================================================

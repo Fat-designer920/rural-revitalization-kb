@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.0-part2</title>
+<title>乡村振兴知识库 v2.3.0-part3</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -585,13 +585,68 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .history-item .hi-date{min-width:140px;color:var(--text-secondary)}
 .history-item .hi-score{font-weight:700;color:var(--primary);min-width:48px;text-align:right}
 .history-item .hi-count{color:var(--text-muted);min-width:72px;text-align:right}
+
+/* === F062 端到端测试 (v2.3.0-part3) === */
+.e2e-badge{position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:#D9D9D9;box-shadow:0 0 0 2px #fff;pointer-events:none}
+.e2e-depth-option{display:block;width:100%;padding:14px 16px;margin-bottom:10px;border:1.5px solid var(--border);border-radius:10px;background:#fff;cursor:pointer;text-align:left;transition:var(--transition);font-family:inherit}
+.e2e-depth-option:hover{border-color:var(--primary);background:#F7FAFF}
+.e2e-depth-option .edo-head{font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px}
+.e2e-depth-option .edo-desc{font-size:12px;color:var(--text-muted);line-height:1.6}
+.e2e-dim-grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;margin:14px 0}
+.e2e-dim-card{background:#fff;border:1px solid var(--border-light);border-radius:10px;padding:14px 12px;position:relative;overflow:hidden}
+.e2e-dim-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--text-muted)}
+.e2e-dim-card.good::before{background:#52c41a}
+.e2e-dim-card.mid::before{background:#faad14}
+.e2e-dim-card.bad::before{background:#FF4D4F}
+.e2e-dim-card.skipped::before{background:#d9d9d9}
+.e2e-dim-card .edc-name{font-size:12px;color:var(--text-secondary);margin-bottom:4px}
+.e2e-dim-card .edc-score{font-size:28px;font-weight:700;color:var(--text);line-height:1.1}
+.e2e-dim-card .edc-weight{font-size:11px;color:var(--text-muted);margin-top:2px}
+.e2e-dim-card.skipped .edc-score{color:#d9d9d9;font-size:16px;font-weight:500}
+.e2e-newep-table{width:100%;font-size:12px;border-collapse:collapse;margin:8px 0}
+.e2e-newep-table th,.e2e-newep-table td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border-light)}
+.e2e-newep-table th{color:var(--text-muted);font-weight:600;background:var(--bg)}
+.e2e-status-pending{color:#FF4D4F}
+.e2e-status-intermittent{color:#faad14}
+.e2e-status-fixed{color:#52c41a}
+.e2e-status-ignored{color:#8c8c8c}
+.e2e-status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:6px}
+.e2e-status-badge.pending{background:#FFF1F0;color:#FF4D4F}
+.e2e-status-badge.intermittent{background:#FFFBE6;color:#faad14}
+.e2e-status-badge.fixed{background:#F6FFED;color:#52c41a}
+.e2e-status-badge.ignored{background:#F5F5F7;color:#8c8c8c}
+.e2e-sev-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:4px}
+.e2e-sev-badge.info{background:#E6F4FF;color:#1890FF}
+.e2e-sev-badge.warning{background:#FFF7E6;color:#faad14}
+.e2e-sev-badge.error{background:#FFF1F0;color:#FF4D4F}
+.e2e-dim-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500;margin-right:4px;background:#F0F5FA;color:#1F7AAC}
+.e2e-issue-layout{display:grid;grid-template-columns:160px 1fr;gap:16px;height:540px}
+.e2e-issue-tabs{border-right:1px solid var(--border-light);padding-right:12px}
+.e2e-issue-tab{display:block;width:100%;padding:10px 12px;margin-bottom:4px;border:none;border-radius:8px;background:transparent;cursor:pointer;text-align:left;font-size:13px;transition:var(--transition);font-family:inherit;color:var(--text)}
+.e2e-issue-tab:hover{background:var(--bg)}
+.e2e-issue-tab.active{background:#E6F3FB;color:#1F7AAC;font-weight:600}
+.e2e-issue-tab .eit-count{float:right;font-size:11px;color:var(--text-muted);font-weight:400}
+.e2e-issue-tab.active .eit-count{color:#1F7AAC}
+.e2e-issue-content{overflow-y:auto;padding-right:4px}
+.e2e-issue-section{margin-bottom:16px}
+.e2e-issue-section-title{font-size:12px;color:var(--text-muted);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border-light)}
+.e2e-issue-row{padding:10px 12px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:6px;background:#fff;font-size:12px}
+.e2e-issue-row .eir-head{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:4px}
+.e2e-issue-row .eir-sig{font-family:Menlo,Consolas,monospace;color:var(--text-secondary);font-size:11px;margin-top:4px;word-break:break-all}
+.e2e-issue-row .eir-meta{font-size:11px;color:var(--text-muted);margin-top:4px}
+.e2e-issue-row .eir-actions{margin-top:8px;display:flex;gap:4px;flex-wrap:wrap}
+.e2e-issue-row .eir-actions button{padding:3px 10px;font-size:11px}
+.e2e-issue-row .eir-actions button.current{opacity:0.4;pointer-events:none}
+.e2e-whitelist-details{margin-top:12px;padding:8px 12px;background:var(--bg);border-radius:8px}
+.e2e-whitelist-details summary{cursor:pointer;font-size:12px;color:var(--text-muted);font-weight:600}
+.e2e-whitelist-details .ewd-item{padding:6px 0;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-secondary);font-family:Menlo,Consolas,monospace}
 </style>
 </head>
 <body>
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part2</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part3</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -776,6 +831,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-icon" style="background:#F3EAFA;color:#7A38A6">H</div>
         <div class="tool-name">知识库体检</div>
         <div class="tool-desc">六维报告 + 低分打磨 Review</div>
+      </div>
+      <div class="tool-card" id="tc-e2e" onclick="runTool('e2e')" style="position:relative">
+        <div class="tool-icon" style="background:#E6F3FB;color:#1F7AAC">E</div>
+        <div class="tool-name">端到端测试</div>
+        <div class="tool-desc">六维扫描 + issue 四态跟踪</div>
+        <span class="e2e-badge" id="e2eBadge" style="display:none"></span>
       </div>
     </div>
     <div class="tool-result" id="toolResult">
@@ -1054,6 +1115,47 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <div class="modal-footer"><button class="btn" onclick="closeModal('healthReviewDlg')">关闭 Review</button></div>
 </div></div>
 
+<!-- F062 端到端测试 档位弹窗 (v2.3.0-part3) -->
+<div class="modal-overlay" id="e2eStartDlg"><div class="modal" style="width:480px">
+  <div class="modal-header">端到端测试 - 选择扫描深度</div>
+  <div class="modal-body">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">选择扫描深度,两档各有侧重:</p>
+    <button class="e2e-depth-option" onclick="doE2eStart('quick')">
+      <div class="edo-head">quick 档 - 静态秒级扫描</div>
+      <div class="edo-desc">仅跑 AST 静态分析(维度 1/2/3/4/6),秒级完成,零 AI 成本。<br>日常高频扫,适合每次推代码后快速验证。</div>
+    </button>
+    <button class="e2e-depth-option" onclick="doE2eStart('deep')">
+      <div class="edo-head">deep 档 - 深度语义扫描</div>
+      <div class="edo-desc">含 quick 档 + 维度 5 V3 语义判断最近 7 天 warning/error 事件。<br>分钟级完成,约 0.1-0.2 元。适合版本发布前的深度审计。</div>
+    </button>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="openE2eHistory()">历史报告</button>
+    <button class="btn" onclick="closeModal('e2eStartDlg')">取消</button>
+  </div>
+</div></div>
+
+<!-- F062 端到端测试 报告详情弹窗 -->
+<div class="modal-overlay" id="e2eReportDlg"><div class="modal" style="width:780px">
+  <div class="modal-header">端到端测试报告 <span id="e2eReportSubtitle" style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px"></span></div>
+  <div class="modal-body" id="e2eReportBody">
+    <div class="loading">正在加载报告...</div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-primary" onclick="openE2eIssues('all')">查看 issue 列表</button>
+    <button class="btn" onclick="closeModal('e2eReportDlg')">关闭</button>
+  </div>
+</div></div>
+
+<!-- F062 issue 四态列表弹窗(左右分栏) -->
+<div class="modal-overlay" id="e2eIssueDlg"><div class="modal" style="width:820px">
+  <div class="modal-header">Issue 四态列表 <span id="e2eIssueSubtitle" style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px"></span></div>
+  <div class="modal-body" id="e2eIssueBody">
+    <div class="loading">正在加载 issue 列表...</div>
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('e2eIssueDlg')">关闭</button></div>
+</div></div>
+
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -1132,12 +1234,12 @@ function switchTab(tab){
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
-  if(tab==="admin"){loadDashboard();checkRunningTask()}
+  if(tab==="admin"){loadDashboard();checkRunningTask();_renderE2eBadge()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
     if(r.running){
-      var titles={"preprocess":"预处理进行中","extract":"知识提取进行中","reextract":"版本重提取进行中","batch_rerun":"批量重跑进行中","health":"知识库体检进行中"};
+      var titles={"preprocess":"预处理进行中","extract":"知识提取进行中","reextract":"版本重提取进行中","batch_rerun":"批量重跑进行中","health":"知识库体检进行中","e2e":"端到端测试进行中"};
       showTaskProgress(titles[r.type]||"任务进行中");
       startPolling();
     }
@@ -1148,6 +1250,7 @@ function checkRunningTask(){
 function init(){
   apiGet("/api/tag-definitions").then(function(d){tagDefs=d;buildTagMap();loadStatistics();loadCategories();loadSuggestionCount();loadFreshnessSummary();loadDuplicateSummary();renderBatchButtons();filterByStatus("pending",document.querySelectorAll(".filter-section .filter-item")[1])});
   apiGet("/api/annotation-tags").then(function(t){if(Array.isArray(t))annotationTags=t});
+  _renderE2eBadge();
 }
 
 function loadStatistics(){apiGet("/api/statistics").then(function(s){document.getElementById("statPending").textContent=s.total_pending||0;document.getElementById("statConfirmed").textContent=s.total_confirmed||0;document.getElementById("statCost").textContent=(s.today_api_cost||0).toFixed(2);var k=s.knowledge_points||{};document.getElementById("filterPending").textContent=k.pending||0;document.getElementById("filterConfirmed").textContent=k.confirmed||0;document.getElementById("filterIgnored").textContent=k.ignored||0;var sgc=s.pending_suggestions||0;document.getElementById("sgCount").textContent=sgc;document.getElementById("suggestionBar").style.display=sgc>0?"block":"none"})}
@@ -2012,6 +2115,28 @@ function runTool(name){
       }
     });
   }
+  else if(name==="e2e"){
+    /* v2.3.0-part3 F062: 先探最新扫描摘要,有则展示"最近一次"四按钮,无则直接档位弹窗 */
+    apiGet("/api/tools/e2e/latest").then(function(r){done();
+      if(r&&r.report){
+        var rpt=r.report;
+        var msg='最近一次: '+esc(rpt.created_at||"")+
+          ' / '+esc((rpt.scan_depth||"").toUpperCase())+' 档 / 总分 '+
+          (rpt.total_score!==undefined&&rpt.total_score!==null?rpt.total_score:"--");
+        msg+=' / pass '+(rpt.passed_count||0)+' / fail '+(rpt.failed_count||0)+' / warn '+(rpt.warning_count||0);
+        var html='<p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">'+msg+'</p>';
+        html+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        html+='<button class="btn btn-primary btn-sm" onclick="openE2eReport('+rpt.report_id+')">查看报告</button>';
+        html+='<button class="btn btn-sm" onclick="openE2eIssues(\'all\')">查看 issue</button>';
+        html+='<button class="btn btn-sm" onclick="document.getElementById(\'e2eStartDlg\').classList.add(\'open\');closeToolResult()">开始新扫描</button>';
+        html+='<button class="btn btn-sm" onclick="openE2eHistory()">历史报告</button>';
+        html+='</div>';
+        showToolResult("端到端测试",html);
+      }else{
+        document.getElementById("e2eStartDlg").classList.add("open");
+      }
+    });
+  }
   else{done()}
 }
 
@@ -2063,8 +2188,8 @@ function showTaskProgress(title){
   document.getElementById("taskCount").textContent="";
   document.getElementById("taskMsg").textContent="";
   p.scrollIntoView({behavior:"smooth"});
-  // 禁用提取管理按钮 + 体检按钮
-  var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health"];
+  // 禁用提取管理按钮 + 体检按钮 + 端到端测试按钮
+  var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health","tc-e2e"];
   for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.add("running")}
 }
 
@@ -2104,9 +2229,15 @@ function startPolling(){
               if(ok){openHealthReport(res.report_id)}
             });
           }
+          /* v2.3.0-part3 F062: 端到端测试完成弹 confirm 跳报告 */
+          if(r.type==="e2e" && res && res.success && res.report_id){
+            showConfirm("端到端测试完成","扫描完成，总分 "+(res.total_score!==undefined&&res.total_score!==null?res.total_score:"--")+"，是否立即查看报告?",function(ok){
+              if(ok){openE2eReport(res.report_id)}
+            });
+          }
         }
         // 恢复按钮
-        var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health"];
+        var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health","tc-e2e"];
         for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.remove("running")}
         // 刷新仪表盘
         loadDashboard();
@@ -2683,6 +2814,332 @@ function healthDropCurrent(){
         renderHealthReview(_healthReviewList);
       }
     });
+  });
+}
+
+/* ======================================================= */
+/* === F062 端到端测试 JS 函数(v2.3.0-part3 对话 3/3) === */
+/* ======================================================= */
+
+var _e2eReportId=null;
+var _e2eCurrentIssueFilter="all";
+
+/* 工具箱卡片软提醒徽章 */
+function _renderE2eBadge(){
+  var b=document.getElementById("e2eBadge");
+  if(!b)return;
+  apiGet("/api/tools/e2e/latest").then(function(r){
+    if(!r||!r.report){
+      b.style.display="inline-block";b.style.background="#D9D9D9";
+      b.title="尚未运行过端到端测试";
+      return;
+    }
+    var ca=r.report.created_at||"";
+    if(!ca){b.style.display="none";return}
+    var d=(new Date()-new Date(ca.replace(" ","T")))/86400000;
+    if(isNaN(d)){b.style.display="none";return}
+    if(d<=7){b.style.display="none";return}
+    if(d<=14){
+      b.style.display="inline-block";b.style.background="#FFE58F";
+      b.title="距上次扫描 "+Math.floor(d)+" 天";
+    }else{
+      b.style.display="inline-block";b.style.background="#FF4D4F";
+      b.title="距上次扫描 "+Math.floor(d)+" 天,建议重扫";
+    }
+  });
+}
+
+/* 启动扫描 */
+function doE2eStart(scanDepth){
+  closeModal("e2eStartDlg");
+  closeToolResult();
+  apiPost("/api/tools/e2e/start",{scan_depth:scanDepth}).then(function(r){
+    if(r.error||r.success===false){
+      var extra="";
+      if(r.details&&r.details.length){extra=" 详情: "+r.details.slice(0,2).join("; ")}
+      showToast((r.error||"启动失败")+extra,"error");
+      return;
+    }
+    var depthLabel=scanDepth==="deep"?"深度档":"快速档";
+    showTaskProgress("端到端测试("+depthLabel+")");
+    startPolling();
+  });
+}
+
+/* 历史报告列表 */
+function openE2eHistory(){
+  closeModal("e2eStartDlg");
+  apiGet("/api/tools/e2e/history?limit=50").then(function(r){
+    if(r.error){showToolResult("端到端测试历史","<p style='color:var(--danger)'>"+esc(r.error)+"</p>");return}
+    var items=r.items||[];
+    if(!items.length){showToolResult("端到端测试历史","<p>暂无历史报告</p>");return}
+    var h='<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">共 '+items.length+' 份历史报告</div>';
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      var depth=(it.scan_depth||"").toUpperCase();
+      h+='<div class="history-item" onclick="openE2eReport('+it.report_id+');closeToolResult()">';
+      h+='<span class="hi-date">'+esc(it.created_at||"")+'</span>';
+      h+='<span style="min-width:48px;color:var(--primary);font-weight:600">'+esc(depth)+'</span>';
+      h+='<span class="hi-count">pass '+(it.passed_count||0)+'</span>';
+      h+='<span class="hi-count" style="color:#FF4D4F">fail '+(it.failed_count||0)+'</span>';
+      h+='<span class="hi-count" style="color:#faad14">warn '+(it.warning_count||0)+'</span>';
+      h+='<span class="hi-count">V3x'+(it.v3_call_count||0)+'</span>';
+      h+='</div>';
+    }
+    showToolResult("端到端测试历史",h);
+  });
+}
+
+/* 打开报告 */
+function openE2eReport(reportId){
+  _e2eReportId=reportId;
+  closeModal("e2eStartDlg");
+  closeModal("e2eIssueDlg");
+  document.getElementById("e2eReportBody").innerHTML='<div class="loading">正在加载报告...</div>';
+  document.getElementById("e2eReportDlg").classList.add("open");
+  apiGet("/api/tools/e2e/report/"+reportId).then(function(r){
+    if(r.error){
+      document.getElementById("e2eReportBody").innerHTML='<p style="color:var(--danger)">加载失败: '+esc(r.error)+'</p>';
+      return;
+    }
+    renderE2eReport(r.report||{});
+  });
+}
+
+/* 渲染报告弹窗 */
+function renderE2eReport(r){
+  var fr=r.full_report_json||{};
+  if(typeof fr==="string"){try{fr=JSON.parse(fr)}catch(e){fr={}}}
+  var dims=fr.dims||{};
+  var summary=fr.summary||{};
+  var totalScore=fr.total_score;
+  var scanDepth=(r.scan_depth||fr.scan_depth||"").toUpperCase();
+  var newEps=r.new_endpoints_json||fr.new_endpoints||[];
+  if(!Array.isArray(newEps))newEps=[];
+
+  document.getElementById("e2eReportSubtitle").textContent="#"+(r.report_id||"--")+" / "+(r.created_at||"")+" / "+scanDepth+" 档";
+
+  var h='<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:8px">';
+  h+='<div style="font-size:48px;font-weight:700;color:var(--primary);line-height:1">'+
+    (totalScore!==undefined&&totalScore!==null?totalScore:"--")+'</div>';
+  h+='<div style="font-size:13px;color:var(--text-secondary)">总分 / '+scanDepth+' 档</div>';
+  h+='</div>';
+
+  h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">';
+  h+='passed '+(r.passed_count||summary.passed_count||0)+
+    '  warning '+(r.warning_count||summary.warning_count||0)+
+    '  failed '+(r.failed_count||summary.failed_count||0);
+  h+='  V3 调用 '+(r.v3_call_count||0)+' 次';
+  h+='  成本 '+((r.cost_estimate||0).toFixed(6))+' 元';
+  if(fr.duration_seconds!==undefined){h+='  耗时 '+fr.duration_seconds+'s'}
+  h+='</div>';
+
+  h+='<div class="e2e-dim-grid">';
+  h+=renderE2eDimCard("维度 1 路由自省",dims.dim1);
+  h+=renderE2eDimCard("维度 2 启动就绪性",dims.dim2);
+  h+=renderE2eDimCard("维度 3 Prompt 一致性",dims.dim3);
+  h+=renderE2eDimCard("维度 4 字段契约",dims.dim4);
+  h+=renderE2eDimCard("维度 5 事件语义",dims.dim5);
+  h+=renderE2eDimCard("维度 6 代码异味",dims.dim6);
+  h+='</div>';
+
+  if(newEps.length>0){
+    h+='<div style="margin-top:12px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">新发现端点 ('+newEps.length+')</div>';
+    h+='<table class="e2e-newep-table"><tr><th>Endpoint</th><th>Methods</th></tr>';
+    for(var i=0;i<newEps.length;i++){
+      var ep=newEps[i]||{};
+      h+='<tr><td>'+esc(ep.rule||ep.endpoint||"")+'</td><td>'+esc(ep.methods||"")+'</td></tr>';
+    }
+    h+='</table></div>';
+  }else{
+    h+='<div style="margin-top:12px;font-size:12px;color:var(--text-muted)">无新发现端点</div>';
+  }
+
+  var filteredDim4=(dims.dim4||{}).filtered_out||[];
+  var filteredDim6=(dims.dim6||{}).filtered_out||[];
+  if(filteredDim4.length+filteredDim6.length>0){
+    h+='<details class="e2e-whitelist-details">';
+    h+='<summary>已知合理项 '+(filteredDim4.length+filteredDim6.length)+' 条(白名单过滤)</summary>';
+    var renderFiltered=function(arr,dimLabel){
+      var s='';
+      for(var j=0;j<arr.length;j++){
+        var it=arr[j]||{};
+        s+='<div class="ewd-item">['+dimLabel+'] '+esc(it.signature||"")+
+          (it._filter_reason?' -- '+esc(it._filter_reason):'')+'</div>';
+      }
+      return s;
+    };
+    h+=renderFiltered(filteredDim4,"dim4");
+    h+=renderFiltered(filteredDim6,"dim6");
+    h+='</details>';
+  }
+
+  document.getElementById("e2eReportBody").innerHTML=h;
+}
+
+/* 渲染单个维度卡 */
+function renderE2eDimCard(name,dim){
+  dim=dim||{};
+  var skipped=dim.skipped===true;
+  var score=dim.score;
+  var cls="e2e-dim-card ";
+  if(skipped){cls+="skipped"}
+  else if(score===null||score===undefined){cls+=""}
+  else if(score>=80){cls+="good"}
+  else if(score>=60){cls+="mid"}
+  else{cls+="bad"}
+  var h='<div class="'+cls+'">';
+  h+='<div class="edc-name">'+esc(name)+'</div>';
+  if(skipped){
+    h+='<div class="edc-score">已跳过</div>';
+    h+='<div class="edc-weight">'+esc(dim.reason||"quick 档")+'</div>';
+  }else{
+    h+='<div class="edc-score">'+(score===null||score===undefined?"--":score)+'</div>';
+    var issueCount=(dim.issues||[]).length;
+    h+='<div class="edc-weight">issue '+issueCount+' 个</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+/* 打开 issue 四态列表(左右分栏) */
+function openE2eIssues(filterStatus){
+  _e2eCurrentIssueFilter=filterStatus||"all";
+  closeModal("e2eReportDlg");
+  document.getElementById("e2eIssueBody").innerHTML='<div class="loading">正在加载 issue 列表...</div>';
+  document.getElementById("e2eIssueDlg").classList.add("open");
+  _loadE2eIssues();
+}
+
+/* 加载并渲染 issue 列表(四态分组左右分栏) */
+function _loadE2eIssues(){
+  var url="/api/tools/e2e/issues";
+  if(_e2eCurrentIssueFilter&&_e2eCurrentIssueFilter!=="all"){
+    url+="?status="+_e2eCurrentIssueFilter;
+  }
+  apiGet(url).then(function(r){
+    if(r.error){
+      document.getElementById("e2eIssueBody").innerHTML='<p style="color:var(--danger)">'+esc(r.error)+'</p>';
+      return;
+    }
+    var byStatus=r.by_status||{pending:[],intermittent:[],fixed:[],ignored:[]};
+    var items=r.items||[];
+    document.getElementById("e2eIssueSubtitle").textContent="共 "+items.length+" 条";
+
+    var allCount=items.length;
+    var countP=(byStatus.pending||[]).length;
+    var countI=(byStatus.intermittent||[]).length;
+    var countF=(byStatus.fixed||[]).length;
+    var countG=(byStatus.ignored||[]).length;
+
+    var h='<div class="e2e-issue-layout">';
+    h+='<div class="e2e-issue-tabs">';
+    h+=_renderIssueTab("all","全部",allCount);
+    h+=_renderIssueTab("pending","待修(pending)",countP);
+    h+=_renderIssueTab("intermittent","偶发(intermittent)",countI);
+    h+=_renderIssueTab("fixed","已修(fixed)",countF);
+    h+=_renderIssueTab("ignored","忽略(ignored)",countG);
+    h+='</div>';
+
+    h+='<div class="e2e-issue-content">';
+    if(items.length===0){
+      h+='<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px">当前筛选无 issue</div>';
+    }else if(_e2eCurrentIssueFilter==="all"){
+      var groups=[
+        {key:"pending",label:"待修 (pending)",list:byStatus.pending||[]},
+        {key:"intermittent",label:"偶发 (intermittent)",list:byStatus.intermittent||[]},
+        {key:"fixed",label:"已修 (fixed)",list:byStatus.fixed||[]},
+        {key:"ignored",label:"忽略 (ignored)",list:byStatus.ignored||[]}
+      ];
+      for(var g=0;g<groups.length;g++){
+        var gp=groups[g];
+        if(!gp.list.length)continue;
+        h+='<div class="e2e-issue-section">';
+        h+='<div class="e2e-issue-section-title">'+esc(gp.label)+' - '+gp.list.length+' 条</div>';
+        for(var k=0;k<gp.list.length;k++){
+          h+=_renderIssueRow(gp.list[k]);
+        }
+        h+='</div>';
+      }
+    }else{
+      for(var i=0;i<items.length;i++){
+        h+=_renderIssueRow(items[i]);
+      }
+    }
+    h+='</div></div>';
+    document.getElementById("e2eIssueBody").innerHTML=h;
+  });
+}
+
+function _renderIssueTab(key,label,count){
+  var active=_e2eCurrentIssueFilter===key?"active":"";
+  return '<button class="e2e-issue-tab '+active+
+    '" onclick="openE2eIssues(\''+key+'\')">'+esc(label)+
+    '<span class="eit-count">'+count+'</span></button>';
+}
+
+function _renderIssueRow(it){
+  if(!it)return "";
+  var sev=(it.severity||"warning").toLowerCase();
+  var status=(it.status||"pending").toLowerCase();
+  var dim=it.dim_code||"";
+  var ep=it.endpoint||"-";
+  var sig=it.signature||"";
+  var cnt=it.occurrence_count||1;
+  var fs=it.first_seen_at||"";
+  var ls=it.last_seen_at||"";
+  var payload=it.payload||{};
+  var ruleId=(payload.rule_id)||_extractRuleFromSig(sig);
+  var detail=payload.detail||payload;
+
+  var h='<div class="e2e-issue-row">';
+  h+='<div class="eir-head">';
+  h+='<span class="e2e-status-badge '+status+'">'+status+'</span>';
+  h+='<span class="e2e-sev-badge '+sev+'">'+sev+'</span>';
+  h+='<span class="e2e-dim-badge">'+esc(dim)+'</span>';
+  if(ruleId){h+='<span class="e2e-dim-badge" style="background:#FFF7E6;color:#C97A2C">'+esc(ruleId)+'</span>'}
+  if(ep&&ep!=="-"){h+='<span style="font-family:Menlo,Consolas,monospace;font-size:11px;color:var(--text-secondary)">'+esc(ep)+'</span>'}
+  h+='</div>';
+
+  if(detail&&typeof detail==="object"){
+    var msg=detail.msg||detail.message||"";
+    var file=detail.file||"";
+    var line=detail.line||"";
+    if(msg){h+='<div style="font-size:12px;color:var(--text);margin-top:2px">'+esc(msg)+'</div>'}
+    if(file){h+='<div class="eir-meta">'+esc(file)+(line?":"+line:"")+'</div>'}
+  }
+  h+='<div class="eir-sig">'+esc(sig)+'</div>';
+  h+='<div class="eir-meta">发生 '+cnt+' 次 - 首次 '+esc(fs)+' - 最近 '+esc(ls);
+  if(it.resolved_at){h+=' - 关闭 '+esc(it.resolved_at)}
+  h+='</div>';
+
+  h+='<div class="eir-actions">';
+  var states=[{k:"pending",label:"待修"},{k:"intermittent",label:"偶发"},{k:"fixed",label:"已修"},{k:"ignored",label:"忽略"}];
+  for(var s=0;s<states.length;s++){
+    var st=states[s];
+    var cls=status===st.k?"btn btn-sm current":"btn btn-sm";
+    h+='<button class="'+cls+'" onclick="doE2eIssueSetStatus('+it.issue_id+',\''+st.k+'\')">'+st.label+'</button>';
+  }
+  h+='</div>';
+  h+='</div>';
+  return h;
+}
+
+function _extractRuleFromSig(sig){
+  if(!sig)return "";
+  var parts=(""+sig).split("|");
+  if(parts.length>=3)return parts[2];
+  return "";
+}
+
+function doE2eIssueSetStatus(iid,newStatus){
+  apiPost("/api/tools/e2e/issues/"+iid+"/status",{status:newStatus}).then(function(r){
+    if(r.error||r.success===false){
+      showToast("切换失败: "+(r.error||"未知错误"),"error");
+      return;
+    }
+    showToast("已切换为 "+newStatus,"success");
+    _loadE2eIssues();
   });
 }
 

@@ -1,7 +1,26 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part2.2 - F048 启动就绪性自检 hotfix（对话 B / 三对话拆分的防护层）
+版本：v2.3.0-part3 - F062 端到端健康测试 Agent 界面层（对话 3/3 正式版）
+
+v2.3.0-part3 变更（F062 界面层）：
+    新增 7 个 F062 端到端测试路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
+      GET  /api/tools/e2e/latest                      —— 工具箱第 11 卡显示"最近一次"+ 软提醒徽章
+      POST /api/tools/e2e/start                       —— 启动端到端测试（后台线程，_task type="e2e"）
+      GET  /api/tools/e2e/history                     —— 历史报告列表（走 db.get_e2e_test_report_list）
+      GET  /api/tools/e2e/report/<rid>                —— 单份报告详情（含 full_report_json 自动 parse）
+      GET  /api/tools/e2e/issues                      —— issue 四态列表（含 by_status 分组 + 筛选 status/dim_code）
+      POST /api/tools/e2e/issues/<iid>/status         —— 四态切换（走 db.set_e2e_issue_status）
+    新增 2 个辅助函数（模块级，路由前声明）：
+      _e2e_readiness_check()      —— 启动就绪性 4 项自检（对齐 F048 模板，对话 B 立的 _task_lock 前置规则）
+      _e2e_progress_adapter()     —— E2ETester 进度回调 → _task["progress"] 映射（9 stage，对齐对话 2 VALID_STAGES）
+    关键契约（与 v2.3.0-part3-alpha2 对话 2 e2e_tester 引擎层对齐）：
+      - _task["type"] = "e2e"（前后端口径锁定，review.html checkRunningTask titles["e2e"]）
+      - scan_depth 白名单 quick/deep，非白名单值兜底 quick（不 400）
+      - /latest 接口 total_score 从 full_report_json 解出（不回改 db，遵守对话 3 纪律）
+      - /issues 按 status 分组排序（pending > intermittent > fixed > ignored + last_seen_at DESC）
+      - /issues/<iid>/status 支持无限四态切换（给老唐逃生口）
+      - progress_adapter total_files=9 固定（对齐 e2e_tester VALID_STAGES 9 种）
 
 v2.3.0-part2.2 变更（F048 防护层）：
     新增 1 个模块级辅助函数（api_server 顶部 import 段后）：
@@ -2805,6 +2824,408 @@ def health_suggestion_reject(sid):
 
 
 # ================================================================
+# v2.3.0-part3 新增：F062 端到端健康测试 Agent 界面层（对话 3/3）
+# ================================================================
+#
+# 设计原则（严格对齐对话 2 e2e_tester 引擎层契约 + F048 对话 B 规则）：
+#   - _task["type"] = "e2e"（前后端锁定，review.html checkRunningTask 必须用 "e2e"）
+#   - _e2e_readiness_check() 在 with _task_lock 之前执行（对话 B 立规则）
+#   - progress_adapter 9 stage 完全对齐 e2e_tester.VALID_STAGES
+#   - /latest total_score 从 full_report_json 解出（遵守对话 3 不回改 db 纪律）
+# ================================================================
+
+# ---- 进度 stage 映射表（与 e2e_tester.VALID_STAGES 严格对齐 9 种）----
+_E2E_STAGE_MAP = {
+    "init":           (1, "初始化端到端测试"),
+    "dim1_route":     (2, "维度 1/6: 路由自省"),
+    "dim2_readiness": (3, "维度 2/6: 启动就绪性"),
+    "dim3_prompt":    (4, "维度 3/6: Prompt 调用一致性"),
+    "dim4_field":     (5, "维度 4/6: 字段契约"),
+    "dim5_event":     (6, "维度 5/6: V3 事件语义"),
+    "dim6_smell":     (7, "维度 6/6: 代码异味"),
+    "done":           (9, "扫描完成"),
+    "failed":         (9, "扫描失败"),
+}
+
+
+def _e2e_progress_adapter(payload):
+    """F062 进度回调适配器：e2e_tester {stage, current, total, message}
+    -> _task["progress"] {current_file, current_step, message}。
+    total_files = 9（固定，对齐 VALID_STAGES 9 种）。
+    """
+    payload = payload or {}
+    stage = payload.get("stage") or ""
+    msg = payload.get("message") or ""
+    step_idx, step_label = _E2E_STAGE_MAP.get(stage, (0, stage or ""))
+    _task_update_progress({
+        "current_file": step_idx,
+        "current_step": step_label,
+        "message": msg,
+    })
+
+
+def _e2e_readiness_check():
+    """F062 端到端测试启动前置自检（对齐 F048 _health_readiness_check 对话 B 模板）。
+    返回 (ok: bool, errors: list[str])。
+
+    自检 4 项：
+      [1] E2E_RESPONSE_JUDGE_PROMPT 顶层可 import
+      [2] Prompt 非 None 且为 dict，含非空 system_prompt / user_prompt_template
+      [3] static_analyzer + e2e_tester 顶层可 import，关键方法/类存在
+      [4] db 有 9 个 F062 方法（对话 1 落地 8 + 对话 3 补齐 get_e2e_test_report_list）
+
+    总耗时 <50ms（无 SQL 调用）。自检失败时调用方必须在 with _task_lock 之前返回。
+    """
+    errors = []
+
+    # ---- [1][2] Prompt 契约 ----
+    try:
+        from scripts.prompts import prompt_templates as pt
+    except Exception as e:
+        errors.append("[1] prompt_templates 模块 import 失败: " + str(e))
+        return False, errors
+
+    p = getattr(pt, "E2E_RESPONSE_JUDGE_PROMPT", None)
+    if p is None:
+        errors.append("[1] E2E_RESPONSE_JUDGE_PROMPT 未定义或为 None（对话 A 缺陷 1/2）")
+    elif not isinstance(p, dict):
+        errors.append("[2] E2E_RESPONSE_JUDGE_PROMPT 不是 dict（实际类型: " +
+                      type(p).__name__ + "）")
+    else:
+        sys_p = p.get("system_prompt")
+        usr_p = p.get("user_prompt_template")
+        if not sys_p or not isinstance(sys_p, str):
+            errors.append("[2] E2E_RESPONSE_JUDGE_PROMPT 缺 system_prompt 或为空（对话 A 缺陷 4：key 错配）")
+        if not usr_p or not isinstance(usr_p, str):
+            errors.append("[2] E2E_RESPONSE_JUDGE_PROMPT 缺 user_prompt_template 或为空（对话 A 缺陷 4：key 错配）")
+
+    # ---- [3] static_analyzer + e2e_tester 顶层 import ----
+    try:
+        from scripts import static_analyzer as sa
+        for m in ("scan_prompt_call_consistency", "scan_field_contract",
+                  "scan_code_smells", "run_static_scan"):
+            if not hasattr(sa, m):
+                errors.append("[3] static_analyzer 缺方法: " + m)
+    except Exception as e:
+        errors.append("[3] static_analyzer import 失败: " + str(e))
+
+    try:
+        from scripts import e2e_tester as et
+        if not hasattr(et, "E2ETester"):
+            errors.append("[3] e2e_tester 缺 E2ETester 类")
+        if not hasattr(et, "run_e2e_scan"):
+            errors.append("[3] e2e_tester 缺 run_e2e_scan 便捷函数")
+    except Exception as e:
+        errors.append("[3] e2e_tester import 失败: " + str(e))
+
+    # ---- [4] db 有 9 个 F062 方法 ----
+    required_db_methods = [
+        "register_endpoint", "get_endpoint_registry", "update_endpoint_last_tested",
+        "save_e2e_test_report", "get_latest_e2e_test_report",
+        "get_e2e_test_report_detail", "get_e2e_test_report_list",
+        "upsert_e2e_issue", "set_e2e_issue_status",
+    ]
+    for m in required_db_methods:
+        if not hasattr(db, m):
+            errors.append("[4] db 缺 F062 方法: " + m)
+
+    return len(errors) == 0, errors
+
+
+# ================================================================
+# F062 路由 1：最近一次扫描概要（工具箱卡片 + 软提醒徽章用）
+# ================================================================
+@app.route("/api/tools/e2e/latest", methods=["GET"])
+def e2e_latest():
+    """最新一份 E2E 报告的瘦身摘要。
+    total_score 从 full_report_json 解出（走 detail 方法获取）。
+    """
+    try:
+        latest = db.get_latest_e2e_test_report()
+        if not latest:
+            return jsonify({"success": True, "report": None})
+        # 取 total_score 需要解 full_report_json
+        rid = latest.get("report_id")
+        total_score = None
+        if rid:
+            try:
+                full = db.get_e2e_test_report_detail(rid)
+                if full:
+                    fr = full.get("full_report_json") or {}
+                    if isinstance(fr, dict):
+                        total_score = fr.get("total_score")
+            except Exception:
+                pass
+        summary = {
+            "report_id": latest.get("report_id"),
+            "created_at": latest.get("created_at"),
+            "trigger_type": latest.get("trigger_type"),
+            "scan_depth": latest.get("scan_depth"),
+            "total_endpoints": latest.get("total_endpoints"),
+            "passed_count": latest.get("passed_count"),
+            "failed_count": latest.get("failed_count"),
+            "warning_count": latest.get("warning_count"),
+            "v3_call_count": latest.get("v3_call_count"),
+            "cost_estimate": latest.get("cost_estimate"),
+            "total_score": total_score,
+            "new_endpoints_count": len(latest.get("new_endpoints_json") or []),
+        }
+        return jsonify({"success": True, "report": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F062 路由 2：启动端到端测试（后台线程）
+# ================================================================
+@app.route("/api/tools/e2e/start", methods=["POST"])
+def e2e_start():
+    """启动 F062 端到端健康扫描。
+    入参 JSON: {"scan_depth": "quick"|"deep"}
+    """
+    # ---- 启动就绪性自检（必须在 _task_lock 之前）----
+    ok, errors = _e2e_readiness_check()
+    if not ok:
+        try:
+            db.log_operation_event(
+                event_type="e2e_readiness_check_failed",
+                module="api_server",
+                severity="error",
+                payload={"errors": errors},
+            )
+        except Exception:
+            pass
+        return jsonify({
+            "success": False,
+            "error": "F062 端到端测试环境未就绪",
+            "details": errors,
+            "message": "请检查 Prompt 落地、依赖 import、db 方法契约。"
+                       "排查步骤：命令行运行 python scripts/db_health_check.py",
+        }), 400
+
+    # ---- 占用 _task 单例 ----
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "e2e"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {
+            "total_files": 9, "current_file": 0, "current_filename": "",
+            "current_step": "准备启动端到端测试",
+            "total_extracted": 0, "message": ""
+        }
+        _task["result"] = None
+        _task["error"] = None
+
+    d = request.get_json() or {}
+    scan_depth = d.get("scan_depth", "quick")
+    if scan_depth not in ("quick", "deep"):
+        scan_depth = "quick"
+
+    def _run():
+        try:
+            from scripts.e2e_tester import run_e2e_scan
+            from scripts.deepseek_client import DeepSeekClient
+            try:
+                client = DeepSeekClient()
+            except Exception as ce:
+                with _task_lock:
+                    _task["error"] = "DeepSeek 客户端初始化失败: " + str(ce)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(ce)
+                return
+
+            _task_update_progress({
+                "current_step": "初始化端到端测试引擎",
+                "message": "加载 E2ETester..."
+            })
+
+            result = run_e2e_scan(
+                db=db, client=client,
+                progress_callback=_e2e_progress_adapter,
+                scan_depth=scan_depth,
+            )
+
+            with _task_lock:
+                if result and result.get("success"):
+                    _task["result"] = {
+                        "success": True,
+                        "report_id": result.get("report_id"),
+                        "total_score": result.get("total_score"),
+                        "scan_depth": result.get("scan_depth"),
+                        "message": "端到端测试完成，总分 " +
+                                   str(result.get("total_score") or "--"),
+                    }
+                    _task["progress"]["current_step"] = "完成"
+                    _task["progress"]["current_file"] = 9
+                    _task["progress"]["message"] = "扫描完成"
+                else:
+                    err = (result or {}).get("error") or "未知错误"
+                    _task["error"] = "扫描失败: " + str(err)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(err)
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "端到端测试已启动",
+                    "scan_depth": scan_depth})
+
+
+# ================================================================
+# F062 路由 3：历史报告列表
+# ================================================================
+@app.route("/api/tools/e2e/history", methods=["GET"])
+def e2e_history():
+    """历史 E2E 报告列表。query: ?limit=20"""
+    try:
+        limit = request.args.get("limit", 20)
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 20
+        rows = db.get_e2e_test_report_list(limit=limit)
+        return jsonify({"success": True, "items": rows, "count": len(rows)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F062 路由 4：单份报告详情（含 full_report_json 自动 parse）
+# ================================================================
+@app.route("/api/tools/e2e/report/<int:rid>", methods=["GET"])
+def e2e_report_detail(rid):
+    try:
+        r = db.get_e2e_test_report_detail(rid)
+        if not r:
+            return jsonify({"error": "report not found: " + str(rid)}), 404
+        return jsonify({"success": True, "report": r})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F062 路由 5：issue 四态列表（含分组 + 筛选）
+# ================================================================
+@app.route("/api/tools/e2e/issues", methods=["GET"])
+def e2e_issues_list():
+    """issue 四态列表。
+    query:
+      ?status=pending|fixed|intermittent|ignored|all
+      ?dim_code=1_route_introspect|...
+      ?limit=500
+    """
+    try:
+        status = request.args.get("status") or None
+        dim_code = request.args.get("dim_code") or None
+        try:
+            limit = int(request.args.get("limit", 500))
+            if limit < 1 or limit > 2000:
+                limit = 500
+        except (TypeError, ValueError):
+            limit = 500
+
+        if status and status not in ("pending", "fixed", "intermittent", "ignored", "all"):
+            return jsonify({"error": "invalid status: " + status}), 400
+        if status == "all":
+            status = None
+
+        where = []
+        params = []
+        if status:
+            where.append("status=?")
+            params.append(status)
+        if dim_code:
+            where.append("dim_code=?")
+            params.append(dim_code)
+        wsql = (" WHERE " + " AND ".join(where)) if where else ""
+
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT issue_id, report_id, dim_code, endpoint, severity,
+                            signature, status, first_seen_at, last_seen_at,
+                            occurrence_count, resolved_at, payload_json
+                     FROM e2e_issues""" + wsql + """
+                     ORDER BY CASE status
+                         WHEN 'pending' THEN 1
+                         WHEN 'intermittent' THEN 2
+                         WHEN 'fixed' THEN 3
+                         WHEN 'ignored' THEN 4
+                         ELSE 9
+                     END, last_seen_at DESC
+                     LIMIT ?""",
+                  params + [limit])
+        rows = c.fetchall()
+        cols = [d[0] for d in c.description]
+        items = []
+        for r in rows:
+            row = dict(zip(cols, r))
+            try:
+                raw = row.pop("payload_json") or "{}"
+                row["payload"] = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except Exception:
+                row["payload"] = {}
+            items.append(row)
+        conn.close()
+
+        by_status = {"pending": [], "intermittent": [], "fixed": [], "ignored": []}
+        for it in items:
+            s = it.get("status") or "pending"
+            if s in by_status:
+                by_status[s].append(it)
+
+        return jsonify({"success": True, "items": items,
+                        "by_status": by_status, "count": len(items)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F062 路由 6：issue 四态切换（无限双向，给老唐逃生口）
+# ================================================================
+@app.route("/api/tools/e2e/issues/<int:iid>/status", methods=["POST"])
+def e2e_issue_set_status(iid):
+    """四态切换。入参 JSON: {"status": "pending|fixed|intermittent|ignored"}
+    允许无限四态切换，不限方向。
+    """
+    try:
+        d = request.get_json() or {}
+        new_status = (d.get("status") or "").strip()
+        if new_status not in ("pending", "fixed", "intermittent", "ignored"):
+            return jsonify({"error": "invalid status: " + new_status}), 400
+
+        ok = db.set_e2e_issue_status(iid, new_status)
+        if not ok:
+            return jsonify({"error": "issue not found: " + str(iid)}), 404
+
+        try:
+            db.log_operation_event(
+                event_type="e2e_issue_status_changed",
+                module="e2e_tester",
+                severity="info",
+                payload={"issue_id": iid, "new_status": new_status},
+            )
+        except Exception:
+            pass
+
+        return jsonify({"success": True, "issue_id": iid, "new_status": new_status})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
 # 启动
 # ================================================================
 def _open(port):
@@ -2815,9 +3236,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part2.2")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part2.2: F048 防护层 hotfix（字段契约 + 启动就绪性自检）")
+    print(f"  v2.3.0-part3: F062 端到端健康测试 Agent 界面层（对话 3/3 全闭环）")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

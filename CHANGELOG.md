@@ -5,6 +5,140 @@
 
 ---
 
+## [v2.3.0-part3] - 2026-04-24
+
+**定位**：F062 端到端健康测试 Agent 三对话拆分 — **对话 3/3 界面层正式版（全闭环）**。
+
+本次交付为 F062 三对话拆分的**收官阶段**。对话 1 基础层（prompt + db + static_analyzer）+ 对话 2 引擎层（e2e_tester）+ 对话 3 界面层（api_server + review.html + 收尾三件套）全部落地,与 F048 同级的运维抓手正式上线。
+
+### Added（新增）
+
+**scripts/api_server.py（+422 行,2834 → 3256 行）**
+
+- F062 界面后端核心：7 个 F062 路由（追加在 main() 之前,既有代码零改动）
+  - `GET /api/tools/e2e/latest` — 最近一次扫描概要 + 软提醒徽章（total_score 从 full_report_json 解出,不回改 db）
+  - `POST /api/tools/e2e/start` — 启动扫描（scan_depth: quick|deep,白名单兜底 quick 不 400）,走 `_task_lock` 单例 + 后台线程,`_task["type"]="e2e"`（口径锁定）
+  - `GET /api/tools/e2e/history?limit=20` — 历史报告列表（走 `db.get_e2e_test_report_list`）
+  - `GET /api/tools/e2e/report/<rid>` — 单份完整报告（含 full_report_json 自动 parse）
+  - `GET /api/tools/e2e/issues?status=...&dim_code=...` — issue 四态列表（含 by_status 分组 + 维度筛选）,排序 status 优先级 + last_seen_at DESC
+  - `POST /api/tools/e2e/issues/<iid>/status` — 四态切换（无限双向,决策 Q5,给老唐逃生口）
+- 2 个模块级辅助函数：
+  - `_e2e_readiness_check()` — F062 启动前置 4 项自检（对齐 F048 对话 B 模板,在 `_task_lock` 之前执行）
+  - `_e2e_progress_adapter()` — E2ETester 进度回调 → `_task["progress"]` 映射,9 stage 完全对齐 e2e_tester.VALID_STAGES,`total_files=9` 固定
+
+**web/templates/review.html（+458 行,2692 → 3150 行）**
+
+- F062 界面前端：工具箱第 11 张卡 `tc-e2e`（青蓝 E 图标 #E6F3FB/#1F7AAC,决策 Q1）,含软提醒徽章（绝对定位圆点,无历史灰 / ≤7天无 / 7-14天淡黄 / >14天红）
+- 3 个新模态框：
+  - `#e2eStartDlg`（480px）：档位二选一（quick 秒级/零成本 + deep 分钟级/0.1-0.2 元）+ 历史报告按钮
+  - `#e2eReportDlg`（780px）：报告详情,总分大字 + 六维度 2×3 卡（按分数阈值染色）+ 新端点清单 + 已知合理项折叠 + 查看 issue 按钮
+  - `#e2eIssueDlg`（820px,左右分栏决策 Q6）：左侧 160px 五 tab,右侧 issue 行（四态按钮组 + status/severity/dim_code/rule_id 徽章 + signature + 发生次数）,"全部"模式按 status 分组展示（决策 Q3）
+- 新增 9 个 F062 JS 函数（严格 ES5,Node --check 通过）：`_renderE2eBadge` / `doE2eStart` / `openE2eHistory` / `openE2eReport` / `renderE2eReport` / `renderE2eDimCard` / `openE2eIssues` / `_loadE2eIssues` / `_renderIssueTab` / `_renderIssueRow` / `_extractRuleFromSig` / `doE2eIssueSetStatus`
+- 新增 2 个状态变量：`_e2eReportId / _e2eCurrentIssueFilter`
+- `checkRunningTask titles` 追加 `"e2e":"端到端测试进行中"`（与 api_server `_task["type"]="e2e"` 对齐）
+- `showTaskProgress` + `startPolling` btns 数组追加 `"tc-e2e"`（禁用/恢复对齐）
+- `startPolling` 完成分支新增 `if (r.type === "e2e" && res && res.success)` 弹 confirm 跳 `openE2eReport`
+- `init()` + `switchTab("admin")` 追加 `_renderE2eBadge()` 调用（每次进入 Tab2 刷新徽章）
+- CSS 新增约 70 行（徽章/档位/维度/徽章/左右分栏布局/已知合理项折叠）
+
+**scripts/db_manager.py（+26 行,决策 Q7 破例补齐）**
+
+- 新增 `get_e2e_test_report_list(limit=20)` 方法（对称 F048 `get_health_report_list`）
+- 对话 1 漏项：F062 报告读写组原 3 方法,补齐后 4 方法（save + get_latest + get_detail + get_list）
+- 8 方法 → 9 方法。理由：这是既有缺陷的对称补齐,不是新增功能。后续严守"对话 3 不改 db"原则
+
+**scripts/setup.py**
+
+- 核心文件校验清单追加 2 项：`scripts/static_analyzer.py`（对话 1 漏项）+ `scripts/e2e_tester.py`（对话 2 交付）
+- 版本号 v2.3.0-part2.2 → v2.3.0-part3
+
+**scripts/check_system.py（v2.5.1 → v2.5.2）**
+
+- 命令行版 [4] 数据库基础 expected 清单扩到 12 张（原 9 + F062 三张,决策 Q2：老库没升级该早暴露）
+- JSON 版 [4] 同扩
+- 命令行版新增 [19] F062 端到端测试就绪度（4 小项：Prompt 双 key / static_analyzer 4 方法 / e2e_tester 类与便捷函数 / 9 db 方法）
+- JSON 版新增 "F062 就绪度" 项,汇总时纳入 ok_count 统计
+- main() 标题 v2.5.1 → v2.5.2
+
+**scripts/db_health_check.py（v1.1 → v1.2）**
+
+- `EXPECTED_TABLES` 追加 F062 三表 `api_endpoint_registry / e2e_test_reports / e2e_issues`
+- 新增 [12/12] F062 代码层契约一致性（6 小项）：
+  - 12.1 E2E_RESPONSE_JUDGE_PROMPT 顶层 import + 类型
+  - 12.2 双 key（system_prompt / user_prompt_template）非空
+  - 12.3 static_analyzer 顶层 import + 4 方法齐全
+  - 12.4 e2e_tester 顶层 import + E2ETester 类 + run_e2e_scan 便捷函数 + VALID_STAGES 白名单
+  - 12.5 db_manager 9 个 F062 方法齐全
+  - 12.6 F062 三张表存在 + 样本计数
+- main 流程追加 `check_12_f062_code_contract(conn)` 调用
+
+### Design Locked（本次设计决策）
+
+| 编号 | 决策 | 选择 |
+|------|------|------|
+| Q1 | tc-e2e 卡配色 | 青蓝 T 配色 #E6F3FB/#1F7AAC,图标字母 E |
+| Q2 | check_system [4] expected 表清单 | 扩到 12 张含 F062 三表 |
+| Q3 | #e2eIssueDlg 默认筛选 | 默认全部四态按 status 分组展示 |
+| Q4 | /latest total_score 取法 | 方案 A：不改 db,内部解 full_report_json 拿 total_score |
+| Q5 | issue 四态切换规则 | 无限四态切换（任意方向） |
+| Q6 | #e2eIssueDlg UI 布局 | 左侧标签列 + 右侧内容区（左右分栏） |
+| Q7 | e2e_test_reports 列表查询 | 例外允许回改 db_manager 补 get_e2e_test_report_list（8→9,对称 F048） |
+
+### Fixed（修复）
+
+- 无 bug 修复项。本次为对话 3 对话对话 3/3 正常交付,非 hotfix。
+
+### Changed（变更）
+
+- 项目文件全部更新：00 项目全景 / 01 工程手册 / 03 Prompt 手册 / README / CHANGELOG（本条目）
+- 02 知识体系：本次不动
+- F048 体检工具箱卡继续保留（Tab2 工具箱从 10 张 → 11 张）
+
+### Migration（数据迁移）
+
+**无 schema 变更**。对话 1 已落地的 3 张 F062 表（api_endpoint_registry / e2e_test_reports / e2e_issues）+ 3 条索引 + 8 方法在对话 3 被 api_server 界面层路由 + review.html 前端消费,零 schema 改动。
+
+对话 3 的 `db_manager.py` 补齐 `get_e2e_test_report_list` 是新增方法,不碰表结构,老数据零影响。
+
+### Upgrade Path（升级路径）
+
+老唐操作 4 步：
+
+1. **备份数据库**：启动后台 → 一键备份（或手动复制 `data/database/knowledge_base.db`）
+2. **替换 6 个代码文件**：
+   - `scripts/db_manager.py`
+   - `scripts/api_server.py`
+   - `scripts/setup.py`
+   - `scripts/check_system.py`
+   - `scripts/db_health_check.py`
+   - `web/templates/review.html`
+3. **推送 GitHub**（Summary: `v2.3.0-part3: F062 界面层正式版 全闭环`）
+4. **重启服务**：关闭 `启动后台.bat` 后重开,浏览器强制刷新（Ctrl+F5）
+
+### Verification（验证清单）
+
+- [ ] 启动后台 → 命令行无 ImportError
+- [ ] 浏览器访问管理后台 → 工具箱末尾出现第 11 张青蓝"端到端测试" E 卡
+- [ ] 首次点击 E 卡 → 弹档位弹窗（quick/deep 二选一）
+- [ ] 选 quick 档 → Toast"端到端测试已启动" + 进度条区显示"端到端测试(快速档)" + tc-preprocess/extract/reextract/batchRerun/health/e2e 六按钮全禁用
+- [ ] 刷新页面进度条不丢,taskTitle 显示"端到端测试进行中"
+- [ ] 扫描完成弹 confirm"扫描完成,总分 XX,是否立即查看报告?"
+- [ ] 报告详情：总分大字 + 六维度 2×3 卡（分数染色）+ 新端点清单（若有）+ 已知合理项折叠（若有）+ V3 调用次数/成本/耗时行
+- [ ] 点"查看 issue 列表" → #e2eIssueDlg 左右分栏,左侧 5 tab（全部/pending/intermittent/fixed/ignored 带计数）,默认"全部"模式按 status 分组
+- [ ] 点 issue 行上的四态按钮 → Toast"已切换为 X" + 列表刷新
+- [ ] 关闭弹窗,第二次点 E 卡 → 显示"最近一次"三按钮（查看报告/查看 issue/开始新扫描/历史报告）
+- [ ] 徽章：首次扫描后无徽章,手工改 e2e_test_reports 的 created_at 到 >7 天前,刷新页面出现黄徽章；>14 天红徽章
+
+### Not Changed（本次对话不改）
+
+- `scripts/e2e_tester.py` — 对话 2 已就绪,前端间接通过 api_server 调
+- `scripts/static_analyzer.py` — 对话 1 已就绪,前端不直接消费
+- `scripts/prompts/prompt_templates.py` — 对话 1 已就绪,前端不碰 Prompt
+- `scripts/health_checker.py` — F048 保留不动
+- `scripts/backup_manager.py` — F062 不触发 operation_hook
+
+---
+
 ## [v2.3.0-part3-alpha2] - 2026-04-23 (alpha)
 
 **定位**：F062 端到端健康测试 Agent 三对话拆分 — **对话 2/3 引擎层（代码实装 → 项目文件锚点关卡）**。

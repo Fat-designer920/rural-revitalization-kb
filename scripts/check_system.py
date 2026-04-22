@@ -4,6 +4,13 @@ check_system.py - 系统状态检查
 版本：v2.5.1（v2.3.0-part2.2 对话 B 防护层扩展）
 
 v2.5.1 变更（v2.3.0-part2.2 对话 B）：
+v2.3.0-part3 变更（F062 对话 3/3 界面层收尾）：
+  - 命令行版 [4] 数据库基础 expected 清单扩到 12 张（+api_endpoint_registry +e2e_test_reports +e2e_issues）
+  - JSON 版 [4] 同扩（决策 Q1：F062 是核心业务,老库没升级该早暴露）
+  - 命令行版新增 [19] F062 端到端测试就绪度（4 小项:Prompt + static_analyzer + e2e_tester + 9 db 方法）
+  - JSON 版新增 "F062 就绪度" 项，汇总时纳入 ok_count 统计
+
+v2.3.0-part2.2 变更（F048 对话 B/C 防护层收尾）：
   - 命令行版新增第 17 项 check_f048_readiness()：F048 体检功能就绪度
       [17.1] 6 个 F048 Prompt 顶层可 import
       [17.2] 6 个 Prompt dict 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4）
@@ -117,6 +124,10 @@ def check_db_basic():
         expected_v2 = [
             "tag_definitions", "knowledge_relations",
             "knowledge_usage_log", "tag_statistics",
+            # v2.3.0-part2 F048 两表
+            "health_reports", "polish_suggestions",
+            # v2.3.0-part3 F062 三表(对话 3 决策 Q1:扩到 12 张)
+            "api_endpoint_registry", "e2e_test_reports", "e2e_issues",
         ]
         all_ok = True
         for t in expected_core:
@@ -894,10 +905,11 @@ def run_checks_json():
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [r[0] for r in cur.fetchall()]
-            # v2.3.0-part2.2 扩清单：原 7 张核心表 + F048 两张新表
+            # v2.3.0-part3 扩清单：原 7 张核心表 + F048 两表 + F062 三表（对话 3 决策 Q1）
             expected = ["categories", "source_files", "knowledge_points",
                         "operation_logs", "api_call_logs", "edit_history", "architecture_suggestions",
-                        "health_reports", "polish_suggestions"]
+                        "health_reports", "polish_suggestions",
+                        "api_endpoint_registry", "e2e_test_reports", "e2e_issues"]
             missing_t = [t for t in expected if t not in tables]
             size_mb = os.path.getsize(dp) / (1024 * 1024)
             db_detail = "%d张表, %.2fMB" % (len(tables), size_mb)
@@ -1143,8 +1155,87 @@ def run_checks_json():
     results.append({"name": "F048 就绪度", "ok": f048_ok,
                     "detail": " | ".join(f048_detail_parts)})
 
+    # v2.3.0-part3 新增 [19] F062 端到端测试就绪度
+    f062_ok = True
+    f062_detail_parts = []
+    # [19.1] E2E_RESPONSE_JUDGE_PROMPT import + 双 key
+    try:
+        from scripts.prompts import prompt_templates as pt_e2e
+        p = getattr(pt_e2e, "E2E_RESPONSE_JUDGE_PROMPT", None)
+        if p is None or not isinstance(p, dict):
+            f062_ok = False
+            f062_detail_parts.append("E2E_RESPONSE_JUDGE_PROMPT 缺失或类型错")
+        elif not p.get("system_prompt") or not p.get("user_prompt_template"):
+            f062_ok = False
+            f062_detail_parts.append("Prompt 双 key 不全")
+        else:
+            f062_detail_parts.append("Prompt OK")
+    except Exception as e:
+        f062_ok = False
+        f062_detail_parts.append("Prompt import 失败: " + str(e))
+    # [19.2] static_analyzer + e2e_tester import
+    try:
+        from scripts import static_analyzer as sa
+        for m in ("scan_prompt_call_consistency", "scan_field_contract",
+                  "scan_code_smells", "run_static_scan"):
+            if not hasattr(sa, m):
+                f062_ok = False
+                f062_detail_parts.append("static_analyzer 缺 " + m)
+                break
+        else:
+            f062_detail_parts.append("static_analyzer OK")
+    except Exception as e:
+        f062_ok = False
+        f062_detail_parts.append("static_analyzer import 失败: " + str(e))
+    try:
+        from scripts import e2e_tester as et
+        if not hasattr(et, "E2ETester") or not hasattr(et, "run_e2e_scan"):
+            f062_ok = False
+            f062_detail_parts.append("e2e_tester 缺类或便捷函数")
+        else:
+            f062_detail_parts.append("e2e_tester OK")
+    except Exception as e:
+        f062_ok = False
+        f062_detail_parts.append("e2e_tester import 失败: " + str(e))
+    # [19.3] 三表 + 9 db 方法
+    if db_exists:
+        try:
+            conn = sqlite3.connect(dp)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('api_endpoint_registry','e2e_test_reports','e2e_issues')")
+            got = {r[0] for r in cur.fetchall()}
+            miss = [t for t in ("api_endpoint_registry", "e2e_test_reports", "e2e_issues") if t not in got]
+            if miss:
+                f062_ok = False
+                f062_detail_parts.append("F062 表缺失: " + ",".join(miss))
+            else:
+                f062_detail_parts.append("三表OK")
+            conn.close()
+        except Exception as e:
+            f062_detail_parts.append("表检查异常: " + str(e))
+    # 9 个 db 方法
+    try:
+        from scripts.db_manager import DatabaseManager
+        required_methods = [
+            "register_endpoint", "get_endpoint_registry", "update_endpoint_last_tested",
+            "save_e2e_test_report", "get_latest_e2e_test_report",
+            "get_e2e_test_report_detail", "get_e2e_test_report_list",
+            "upsert_e2e_issue", "set_e2e_issue_status",
+        ]
+        miss_m = [m for m in required_methods if not hasattr(DatabaseManager, m)]
+        if miss_m:
+            f062_ok = False
+            f062_detail_parts.append("db 方法缺: " + ",".join(miss_m[:3]))
+        else:
+            f062_detail_parts.append("9 db方法OK")
+    except Exception as e:
+        f062_ok = False
+        f062_detail_parts.append("DB 类检查失败: " + str(e))
+    results.append({"name": "F062 就绪度", "ok": f062_ok,
+                    "detail": " | ".join(f062_detail_parts)})
+
     return {
-        "version": "v2.5.1",
+        "version": "v2.5.2",
         "system_version": get_version(),
         "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "results": results,
@@ -1156,9 +1247,96 @@ def run_checks_json():
 # ================================================================
 # 主流程
 # ================================================================
+def check_f062_readiness():
+    """v2.3.0-part3 新增：F062 端到端测试就绪度 4 小项
+       [19.1] E2E_RESPONSE_JUDGE_PROMPT 双 key
+       [19.2] static_analyzer + e2e_tester 可 import
+       [19.3] 三张 F062 表存在
+       [19.4] 9 个 db F062 方法齐全
+    """
+    print(f"\n[19] F062 端到端测试就绪度(v2.3.0-part3)")
+    ok_all = True
+    # [19.1] Prompt
+    try:
+        from scripts.prompts import prompt_templates as pt_e2e
+        p = getattr(pt_e2e, "E2E_RESPONSE_JUDGE_PROMPT", None)
+        if p is None or not isinstance(p, dict):
+            print(f"    FAIL [19.1] E2E_RESPONSE_JUDGE_PROMPT 未定义或类型错")
+            ok_all = False
+        elif not p.get("system_prompt") or not p.get("user_prompt_template"):
+            print(f"    FAIL [19.1] E2E_RESPONSE_JUDGE_PROMPT 缺 system_prompt 或 user_prompt_template")
+            ok_all = False
+        else:
+            print(f"    OK [19.1] E2E_RESPONSE_JUDGE_PROMPT 双 key 就绪")
+    except Exception as e:
+        print(f"    FAIL [19.1] Prompt import 异常: {e}")
+        ok_all = False
+    # [19.2] static_analyzer + e2e_tester
+    try:
+        from scripts import static_analyzer as sa
+        miss = [m for m in ("scan_prompt_call_consistency", "scan_field_contract",
+                            "scan_code_smells", "run_static_scan") if not hasattr(sa, m)]
+        if miss:
+            print(f"    FAIL [19.2a] static_analyzer 缺方法: {','.join(miss)}")
+            ok_all = False
+        else:
+            print(f"    OK [19.2a] static_analyzer 4 方法齐全")
+    except Exception as e:
+        print(f"    FAIL [19.2a] static_analyzer import 异常: {e}")
+        ok_all = False
+    try:
+        from scripts import e2e_tester as et
+        if not hasattr(et, "E2ETester") or not hasattr(et, "run_e2e_scan"):
+            print(f"    FAIL [19.2b] e2e_tester 缺 E2ETester 或 run_e2e_scan")
+            ok_all = False
+        else:
+            print(f"    OK [19.2b] e2e_tester 类与便捷函数齐全")
+    except Exception as e:
+        print(f"    FAIL [19.2b] e2e_tester import 异常: {e}")
+        ok_all = False
+    # [19.3] 三张 F062 表
+    config = _load_config()
+    dp = _get_db_path(config) if config else None
+    if dp and os.path.exists(dp):
+        try:
+            conn = sqlite3.connect(dp)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('api_endpoint_registry','e2e_test_reports','e2e_issues')")
+            got = {r[0] for r in cur.fetchall()}
+            miss = [t for t in ("api_endpoint_registry", "e2e_test_reports", "e2e_issues") if t not in got]
+            if miss:
+                print(f"    FAIL [19.3] F062 表缺失: {','.join(miss)}")
+                ok_all = False
+            else:
+                print(f"    OK [19.3] F062 三表齐全")
+            conn.close()
+        except Exception as e:
+            print(f"    FAIL [19.3] 表检查异常: {e}")
+            ok_all = False
+    # [19.4] 9 个 db 方法
+    try:
+        from scripts.db_manager import DatabaseManager
+        required = [
+            "register_endpoint", "get_endpoint_registry", "update_endpoint_last_tested",
+            "save_e2e_test_report", "get_latest_e2e_test_report",
+            "get_e2e_test_report_detail", "get_e2e_test_report_list",
+            "upsert_e2e_issue", "set_e2e_issue_status",
+        ]
+        miss = [m for m in required if not hasattr(DatabaseManager, m)]
+        if miss:
+            print(f"    FAIL [19.4] db 缺 F062 方法: {','.join(miss)}")
+            ok_all = False
+        else:
+            print(f"    OK [19.4] 9 db F062 方法齐全")
+    except Exception as e:
+        print(f"    FAIL [19.4] DatabaseManager 类检查失败: {e}")
+        ok_all = False
+    return ok_all
+
+
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.5.1")
+    print(f"  系统状态检查 v2.5.2")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -1190,6 +1368,7 @@ def main():
     results.append(("重复检测", check_duplicate_status()))
     results.append(("注解与速记", check_annotation_status()))
     results.append(("F048 就绪度", check_f048_readiness()))
+    results.append(("F062 就绪度", check_f062_readiness()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")

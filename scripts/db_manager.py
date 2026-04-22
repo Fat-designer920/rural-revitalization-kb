@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part3-alpha1 - F062 端到端健康测试 Agent 基础层（对话 1/3）
+版本：v2.3.0-part3 - F062 端到端健康测试 Agent 界面层（对话 3/3 对称补齐 get_e2e_test_report_list）
 
 v2.3.0-part3-alpha1 新增（F062 基础层 / 对话 1/3）：
   - 3 张新表（init_tables 内建，对齐 v2.3.0-part2.1 立规则"schema 单一来源"）：
@@ -2261,6 +2261,34 @@ class DatabaseManager:
         r["full_report_json"] = self._safe_json_parse(
             r.get("full_report_json"), default={})
         return r
+
+    def get_e2e_test_report_list(self, limit=20):
+        """F062 历史报告列表（对称 F048 get_health_report_list）。
+        created_at DESC 排序，不解析 full_report_json 省带宽（详情走 detail 方法）。
+        new_endpoints_json 自动 parse 成 list（列表行展示新端点数用）。
+
+        对话 3/3 v2.3.0-part3 补齐（对话 1 漏项）。
+        """
+        try:
+            limit = max(1, min(int(limit), 200))
+        except (TypeError, ValueError):
+            limit = 20
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT report_id, created_at, trigger_type, scan_depth,
+                   total_endpoints, passed_count, failed_count,
+                   warning_count, new_endpoints_json,
+                   v3_call_count, cost_estimate
+              FROM e2e_test_reports
+             ORDER BY created_at DESC, report_id DESC
+             LIMIT ?
+        """, (limit,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["new_endpoints_json"] = self._safe_json_parse(
+                r.get("new_endpoints_json"), default=[])
+        return rows
 
     # -------- E2E issue 四态跟踪（2 个） --------
 
