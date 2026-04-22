@@ -5,6 +5,70 @@
 
 ---
 
+## [v2.3.0-part2-alpha2] - 2026-04-21
+ 
+### Added
+ 
+- **scripts/health_checker.py（新增，~1350 行）—— F048 知识库体检 Agent 引擎层**
+  - 六维度扫描：①健康度 ②结构分布 ③加工深度 ④关联密度 ⑤低分打磨 ⑥变现匹配度
+  - 三层打磨降级链完整落地：
+    - L1 主链：HEALTH_DIAGNOSIS (V3) → HEALTH_POLISH (R1) → HEALTH_POLISH_VERIFY (V3)
+    - L2 降级：HEALTH_POLISH_CONSERVATIVE (V3)
+    - L3 兜底：规则标记 `status='manual_review_needed'`，`suggested_content=None`
+  - 降级触发条件严格对齐 03_Prompt 手册契约：
+    - 诊断阶段：`recommend_manual_review=true` 或 `polish_difficulty=impossible` → 直接 L3
+    - 诊断阶段：`polish_direction=drop` → 生成 drop 建议（tier=L1）不走 R1
+    - 主链校验：`verify_pass=false` / `re_score<原分` / `confidence=low` / R1 截断 → 降 L2
+    - L2 失败 → L3
+  - 单次打磨档位白名单：`POLISH_MAX_OPTIONS = [30, 50, 100, 200, None]`，默认 50
+  - 六维度权重：健康 0.25 / 结构 0.10 / 加工 0.20 / 关联 0.10 / 打磨 0.20 / 变现 0.15（总和 1.0）
+  - 进度回调复用 extractor 的 `progress_callback` 模式，stage 取值 9 种（init/dim1/dim2/dim3/dim4_island/dim5_polish/dim6_monetize/done/failed）
+  - 维度隔离：`_safe_dim()` 统一包装，任一维度异常不中断整体，失败返回 score=0
+  - 孤岛精判抽样外推：候选超 50 条时按比例外推估算全库孤岛率，避免逐条调 V3
+  - 成本估算：按 V3/R1 token 单价累计 `cost_estimate` 写入 `health_reports`
+  - AI 调用封装：`_do_call()` 多候选方法名适配（call_chat/chat/complete/call/generate），兼容 deepseek_client 不同签名
+  - 模块级便捷函数：`run_health_check(db, client, progress_callback, polish_max)` 供 api_server 简短调用
+### Design Locked (决策锁定)
+ 
+- **单次打磨默认 50 条**：瓶颈在老唐 Review 不在 AI 生成；50 条约 17 分钟生成 + 半天 Review，匹配"加工一批→体检一次→Review 一批"节奏
+- **打磨得分不奖励"成功数"**：`max(0, 100 - 低分占比×100)`，避免激励"多生产低分去打磨赚分数"反激励
+- **R1 打磨失败不做 F057 截断补救**：三层降级链本就是兜底，重提翻倍成本+超时风险
+- **采纳事务边界不下沉 db 层**：`db.apply_polish_suggestion` 只改 status；`update_knowledge_point` 由 api_server 层在 `operation_hook("health_adopt")` 之后调用，保持"备份→更新 kp→标记 applied"三步清晰可见
+### Logging (埋点新增)
+ 
+health_checker.py 接入 `operation_events` 表的事件类型（10 种）：
+ 
+| event_type | severity | 触发时机 |
+|-----------|---------|---------|
+| health_check_start | info | 开始体检 |
+| health_check_done | info | 完成 |
+| health_check_failed | error | 整体异常 |
+| health_check_param_invalid | warn | polish_max 非白名单值自动兜底 |
+| health_dim_failed | warn | 单维度异常隔离 |
+| health_ai_call_failed | warn | V3/R1 调用失败 |
+| health_polish_fallback | info | 单条打磨降级 L1→L2 |
+| health_polish_l3_manual | info | 单条进入 L3 |
+| health_polish_save_failed | error | suggestion 落盘失败 |
+| health_internal_call_failed | warn | 内部 DB 调用异常 |
+ 
+### Docs
+ 
+- `00_项目全景.md`：版本升到 v2.3.0-part2-alpha2，模块 4 状态更新为"基础层+引擎层已交付"，迭代路线新增 alpha2 条目，设计锁定新增"单次打磨档位"和"六维度权重"
+- `01_工程手册.md`：代码清单新增 `health_checker.py` 条目；新增 9 条技术踩坑（维度隔离约束、R1 不做补救、AI 客户端多候选、字段命名对齐、孤岛抽样外推、打磨不奖励成功数等）；新增"v2.3.0-part2-alpha2 关键设计决策"表（8 条）；新增"health_checker.py 结构速查"和"stage 取值"和"事件埋点"章节
+- `03_Prompt手册.md`：6 个体检 Prompt 的"调用位置"列从"对话2 待开发"更新为"✅ 已落地"；F048 降级链说明从"Prompt 契约已落地"升级为"引擎层调用接入 ✅ 已落地"
+### Not Changed (本次对话不改)
+ 
+- `scripts/db_manager.py` — 基础层 alpha1 已就绪，引擎层只读不写
+- `scripts/prompt_templates.py` — 基础层 alpha1 已就绪，引擎层只读
+- `scripts/backup_manager.py` — 对话 3 才会调 `operation_hook("health_adopt")`，本次不涉及
+- `scripts/api_server.py` — 对话 3 开发
+- `web/templates/review.html` — 对话 3 开发
+### Next (对话 3 预告)
+ 
+- `scripts/api_server.py`：新增 6-8 个路由（`POST /api/tools/health/run` / `GET /api/tools/health/reports` / `GET /api/tools/health/reports/:id` / `POST /api/tools/health/polish/adopt` / `POST /api/tools/health/polish/reject` 等）
+- `web/templates/review.html`：工具箱第 10 张卡"知识库体检"+ 档位弹窗（30/50/100/200/不限）+ 体检报告弹窗 + 逐条 Review UI
+- 项目文件 00/01/03 + README + CHANGELOG 收尾到 v2.3.0-part2（去掉 alpha 后缀）
+
 ## v2.3.0-part2-alpha1 — 2026-04-20
 
 F048 知识库体检 Agent 基础层交付(对话 1/3)。本版本只交付契约与 schema,不包含引擎与界面;完整功能需等对话 2/3 引擎层 health_checker.py 与对话 3/3 界面层 api_server/review.html 落地后才可触发。
