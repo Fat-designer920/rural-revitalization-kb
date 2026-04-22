@@ -1,7 +1,21 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part2.1 - 建表单一来源修复（schema 整合 + migrate 脚本退役）
+版本：v2.3.0-part2.2 - F048 字段契约兑现 hotfix（对话 B / 三对话拆分的防护层）
+
+v2.3.0-part2.2 修复（hotfix 对话 B）：
+  - F048 维度②结构分布=0 根因修复：三个扫描查询（get_kp_for_health_scan /
+    get_polish_candidates / get_island_candidates）追加 LEFT JOIN categories
+    并 AS 出两个业务分类字符串字段：
+      c.level1_name AS category     -- 5 大类名（政策库/案例库/经验库/工具库/数据库）
+      c.level2_name AS subcategory  -- 27 子类名（如 "1.1全域土地综合整治政策"）
+  - JOIN 条件：c.id = kp.final_category_id（kp 表真实外键列名是 final_category_id，
+    不是 category_id；对话 A 的 01 工程手册锚点口径已在对话 B 同步纠正）
+  - 历史库中 final_category_id IS NULL 的未分类 kp，LEFT JOIN 后 category/subcategory
+    返回 None，health_checker 的 set 操作天然忽略 None，不崩但会让维度②略低
+  - 字段契约兑现后，health_checker.py 的 _dim2_structure_score / _build_library_summary /
+    _build_nearby_summary / _kp_to_judge_payload / _kp_to_full_payload 全部天然恢复，
+    代码零改动（这是对话 A/B 三对话拆分的精妙点：修 db 层兑现契约 > 改 health_checker 硬编码）
 
 v2.3.0-part2.1 修复（hotfix）：
   - init_tables() 追加 health_reports / polish_suggestions 两张表建表 SQL
@@ -20,6 +34,7 @@ v2.3.0-part2 新增（F048 体检 Agent 基础层）：
   - 【重要】apply_polish_suggestion 仅标 status=applied，不在此方法内调 update_knowledge_point
       事务边界由 api_server 层保持三步清晰：备份 → 更新 kp → 标记 suggestion applied
   - 字段别名映射（SQL AS）：kp.id → kp_id / review_status → status / source_authority → authority_level / access_level → monetize_tier
+    + v2.3.0-part2.2 追加 c.level1_name → category / c.level2_name → subcategory
 
 v2.3.0-part1 新增（工具箱+批量重跑）：
   - get_all_knowledge_points 签名补齐 qa_source_filter（v2.2.3 遗留bug：api层已在传，db层签名却没有）
@@ -1688,6 +1703,9 @@ class DatabaseManager:
           source_authority → authority_level / access_level → monetize_tier
           ai_extracted_content 保留原名（供健康检查读提炼内容）
           三层标签字段原名保留（final_category_tags / final_attribute_tags / final_keywords）
+          v2.3.0-part2.2 追加：LEFT JOIN categories 后
+            c.level1_name → category   （5 大类名，NULL=未分类）
+            c.level2_name → subcategory（27 子类名，NULL=未分类）
         annotations_count 通过 LEFT JOIN 聚合
         """
         conn = self.get_connection(); c = conn.cursor()
@@ -1699,6 +1717,8 @@ class DatabaseManager:
                        kp.content_type,
                        kp.final_category_id AS category_id,
                        kp.suggested_category_id,
+                       c.level1_name AS category,
+                       c.level2_name AS subcategory,
                        kp.final_category_tags,
                        kp.final_attribute_tags,
                        kp.final_keywords,
@@ -1722,6 +1742,7 @@ class DatabaseManager:
                        (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id)
                            AS annotations_count
                   FROM knowledge_points kp
+                  LEFT JOIN categories c ON c.id = kp.final_category_id
                  ORDER BY kp.id ASC
             """
         else:
@@ -1732,6 +1753,8 @@ class DatabaseManager:
                        kp.content_type,
                        kp.final_category_id AS category_id,
                        kp.suggested_category_id,
+                       c.level1_name AS category,
+                       c.level2_name AS subcategory,
                        kp.final_category_tags,
                        kp.final_attribute_tags,
                        kp.final_keywords,
@@ -1753,6 +1776,7 @@ class DatabaseManager:
                        kp.created_at,
                        kp.updated_at
                   FROM knowledge_points kp
+                  LEFT JOIN categories c ON c.id = kp.final_category_id
                  ORDER BY kp.id ASC
             """
         c.execute(sql)
@@ -1780,6 +1804,10 @@ class DatabaseManager:
 
         关键：qa_score>0 过滤掉"未质检"的 kp（默认值 0.0）
         未质检的应先走 F061 质检补跑，不应进入打磨候选池
+
+        字段契约（v2.3.0-part2.2 新增）：
+          LEFT JOIN categories → c.level1_name AS category / c.level2_name AS subcategory
+          health_checker._kp_to_full_payload 读这两个字段做 V3 诊断上下文
         """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""
@@ -1788,6 +1816,8 @@ class DatabaseManager:
                    kp.title,
                    kp.content_type,
                    kp.final_category_id AS category_id,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
                    kp.final_category_tags,
                    kp.final_attribute_tags,
                    kp.final_keywords,
@@ -1810,6 +1840,7 @@ class DatabaseManager:
                    sf.renamed_filename
               FROM knowledge_points kp
               LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+              LEFT JOIN categories cat ON cat.id = kp.final_category_id
              WHERE (
                      (kp.qa_score > 0 AND kp.qa_score <= 2)
                      OR kp.qa_source = 'rule_fallback'
@@ -1846,6 +1877,10 @@ class DatabaseManager:
 
         返回列表后由 health_checker 调 V3 HEALTH_ISLAND_JUDGE_PROMPT 精判
         避免把"本就稀缺但有价值的独家经验"（niche_topic）误判为孤岛
+
+        字段契约（v2.3.0-part2.2 新增）：
+          LEFT JOIN categories → cat.level1_name AS category / cat.level2_name AS subcategory
+          health_checker._kp_to_judge_payload 读这两个字段做 V3 孤岛精判上下文
         """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""
@@ -1854,6 +1889,8 @@ class DatabaseManager:
                    kp.title,
                    kp.content_type,
                    kp.final_category_id AS category_id,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
                    kp.final_category_tags,
                    kp.final_attribute_tags,
                    kp.final_keywords,
@@ -1870,6 +1907,7 @@ class DatabaseManager:
                    (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id)
                        AS annotations_count
               FROM knowledge_points kp
+              LEFT JOIN categories cat ON cat.id = kp.final_category_id
              WHERE kp.review_status NOT IN ('ignored','merged')
                AND NOT EXISTS (
                      SELECT 1 FROM duplicate_groups dg

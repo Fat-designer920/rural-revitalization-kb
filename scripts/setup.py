@@ -1,7 +1,7 @@
 """
 setup.py - 系统初始化（完整建库）
 路径：scripts/setup.py
-版本：v2.3.0-part2.1
+版本：v2.3.0-part2.2
 
 功能：
   1. 创建目录结构（9个目录）
@@ -9,10 +9,17 @@ setup.py - 系统初始化（完整建库）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
   5. 创建桌面快捷方式
-  6. 验证核心文件完整性
+  6. 验证核心文件完整性（v2.3.0-part2.2 新增 health_checker.py / db_health_check.py）
 
 注意：本脚本替代了所有 migrate_*.py 迁移脚本。
       新用户首次安装直接获得最新完整表结构，无需逐版本迁移。
+
+v2.3.0-part2.2 变更（对话 B 防护层）：
+  - get_version() 兜底字符串 "2.3.0-part2.1" → "2.3.0-part2.2"
+  - 核心文件校验清单追加 2 项（老唐决策锁定）：
+      scripts/health_checker.py     (F048 六维度扫描引擎,对话 A 字段契约修复后)
+      scripts/db_health_check.py    (数据层只读体检脚本,v1.1 扩 F048 契约一致性)
+  - 数据库表数量保持 18 张（无 schema 变更）
 
 v2.3.0-part2.1 变更：
   - init_tables() 已吸收 v2.2.3 / v2.3.0-part2 所有 schema 变更
@@ -38,7 +45,7 @@ def get_config():
 
 def get_version():
     p = PROJECT_ROOT / "VERSION"
-    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.0-part2.1"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.0-part2.2"
 
 
 def main():
@@ -147,6 +154,8 @@ def main():
         "scripts/preprocessor.py",
         "scripts/extractor.py",
         "scripts/api_server.py",
+        "scripts/health_checker.py",     # v2.3.0-part2.2 新增（F048 六维度扫描引擎）
+        "scripts/db_health_check.py",    # v2.3.0-part2.2 新增（数据层只读体检脚本）
         "scripts/prompts/prompt_templates.py",
         "web/templates/review.html",
     ]

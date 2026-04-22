@@ -1,7 +1,24 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.2.3 - 来源属性感知+系统性文章合并规则
+版本：v2.3.0-part2.2 - F048 体检/打磨 6 Prompt 正式落地 + import 顶层化
+
+变更说明（v2.3.0-part2.2 对话A）：
+  - 新增 6 个 F048 体检/打磨 Prompt 正式版文本(之前 v2.3.0-part2 仅在 03 手册声明契约,代码未落地):
+    * HEALTH_DIAGNOSIS_PROMPT        (V3, 低分病根诊断)
+    * HEALTH_POLISH_PROMPT           (R1, 创造性打磨)
+    * HEALTH_POLISH_VERIFY_PROMPT    (V3, 打磨结果校验)
+    * HEALTH_POLISH_CONSERVATIVE_PROMPT (V3, L2 保守打磨)
+    * HEALTH_ISLAND_JUDGE_PROMPT     (V3, 孤岛精判)
+    * HEALTH_MONETIZE_REPORT_PROMPT  (V3, 变现匹配度报告)
+  - 每个 Prompt 按适配场景注入共享策略块:
+    * HEALTH_POLISH_PROMPT 注入 PRODUCT_CONTEXT / DATA_PRECISION_RULE / SICHUAN_SENSITIVITY / EXCERPT_REQUIREMENT
+    * HEALTH_POLISH_CONSERVATIVE_PROMPT 注入 DATA_PRECISION_RULE(严格禁止新增数据)
+    * HEALTH_MONETIZE_REPORT_PROMPT 注入 PRODUCT_CONTEXT(5 种变现场景与产品目标对齐)
+    * 诊断 / 校验 / 孤岛精判 三个内省型 Prompt 不注入策略块(职责是判断,不是生成)
+  - PROMPT_VERSION 从 v2.2.3 升到 v2.3.0-part2.2(跨越 v2.3.0-part2 版号占位)
+  - get_all_prompt_names() 追加 6 条 F048 Prompt 登记(总数 21 → 27)
+  - 与 health_checker.py v2.3.0-part2-alpha2 import 契约完全对齐
 
 变更说明（v2.2.3）：
   - 新增SOURCE_NATURE_INSTRUCTION共享策略块（来源属性→分类策略映射）
@@ -78,7 +95,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.2.3"
+PROMPT_VERSION = "v2.3.0-part2.2"
 
 
 def get_prompt_version():
@@ -1257,6 +1274,384 @@ EXPERIENCE_STRUCTURE_PROMPT = {
 }
 
 
+# ================================================================
+# v2.3.0-part2.2 F048: 知识库体检 / 打磨 Prompt(6 个)
+# 三层打磨降级链:
+#   L1 主链: HEALTH_DIAGNOSIS(V3) -> HEALTH_POLISH(R1) -> HEALTH_POLISH_VERIFY(V3)
+#   L2 降级: HEALTH_POLISH_CONSERVATIVE(V3)
+#   L3 兜底: 规则标记 manual_review_needed, suggested_content=NULL
+# 调用方: scripts/health_checker.py v2.3.0-part2-alpha2
+# ================================================================
+
+# ----------------------------------------------------------------
+# 1) HEALTH_DIAGNOSIS_PROMPT (V3, 低分知识点病根诊断)
+# 职责: 看一条低分 kp,指出病根、根因类型、建议方向、难度、是否建议人工介入
+# 降级触发(health_checker):
+#   - recommend_manual_review=true -> 直接走 L3
+#   - polish_difficulty=impossible -> 直接走 L3
+#   - polish_direction=drop       -> 生成"建议删除"建议(仍算 L1)
+# ----------------------------------------------------------------
+HEALTH_DIAGNOSIS_PROMPT = {
+    "system_prompt": """你是知识产品质量诊断专家。你的任务是对一条"低分或规则兜底"的知识点,快速判断它的病根,并给出是否值得打磨、以及打磨方向的判断。
+
+你要诊断的是知识库中已经被质检标记为低质量的条目(qa_score <= 2 或走了规则兜底)。老唐(产品决策者)将根据你的诊断,决定是让 AI 继续打磨(创造性重写 / 保守微调),还是建议他本人手工修订。
+
+诊断维度:
+1. **病根是什么**: 幻觉 / 过度抽象 / 数据缺失 / 启示空泛 / 结构缺陷 / 噪声碎片 / 其他
+2. **打磨方向**: 改写(improve) / 补充(enrich) / 拆分(split) / 合并(merge) / 建议删除(drop)
+3. **打磨难度**: easy(字句微调可救) / medium(需要一定重写) / hard(需大量重构) / impossible(内容本身不值得存)
+4. **是否建议直接人工介入**: 如果你判断"AI 打磨很可能产生幻觉或误伤",必须建议人工介入,不强求 AI 硬打
+
+请严格按JSON格式输出单个对象,不要输出任何其他文字、不要用数组包裹:
+{
+  "diagnosis": "病根描述(50-150字,指出核心问题,说人话,不要套话)",
+  "root_cause_type": "hallucination | over_abstract | missing_data | weak_insight | structural_flaw | noise | other",
+  "polish_direction": "improve | enrich | split | merge | drop",
+  "polish_difficulty": "easy | medium | hard | impossible",
+  "recommend_manual_review": true 或 false
+}
+
+判断标准:
+- diagnosis 必须具体指出"哪里不对",禁止"整体质量偏低""有待改进"这类空泛评语
+- root_cause_type 选最主要的一个病根,不要同时选多个
+- polish_direction=drop 的典型场景: 内容本身是噪声(页眉页脚/无意义目录)、与乡村振兴主题无关、完全重复已有知识点
+- polish_difficulty=impossible 通常与 polish_direction=drop / recommend_manual_review=true 同时出现
+- recommend_manual_review=true 的典型场景: 涉及具体政策条款但数据存疑、四川地域性信息需本地核实、专业性内容 AI 不便判断
+
+不要自己去改写知识点,本步只做诊断。打磨由后续步骤完成。""",
+
+    "user_prompt_template": """请对以下这条低分知识点做病根诊断。
+
+来源文件: {filename}
+
+知识点完整内容(含 qa_score / qa_flags / content / insights / tags):
+{knowledge_point_json}
+
+请按上述 JSON 格式输出单个诊断对象。"""
+}
+
+
+# ----------------------------------------------------------------
+# 2) HEALTH_POLISH_PROMPT (R1, 创造性打磨)
+# 职责: 按诊断结论对低分 kp 做创造性重写/补充/拆分/合并
+# 注入策略块: PRODUCT_CONTEXT / DATA_PRECISION_RULE / SICHUAN_SENSITIVITY / EXCERPT_REQUIREMENT
+# 输出: JSON 数组(split 可返回多条,其他返回单条,health_checker 统一规范化成数组处理)
+# R1 约束: 不设 max_tokens、不传 temperature、超时 300s、分段 <=3000 字
+# 截断/格式异常: health_checker 直接降级到 L2,不启用 F057 补救
+# ----------------------------------------------------------------
+HEALTH_POLISH_PROMPT = {
+    "system_prompt": """你是知识产品深度打磨专家。你的任务是:根据诊断专家给出的病根分析,对一条低质量知识点做创造性打磨,产出一条(或多条,仅 split 场景)可以进入产品库的高质量知识点。
+
+""" + PRODUCT_CONTEXT + """
+
+""" + DATA_PRECISION_RULE + """
+
+""" + SICHUAN_SENSITIVITY + """
+
+""" + EXCERPT_REQUIREMENT + """
+
+## 打磨方向约束(按诊断给出的 polish_direction 执行)
+
+- **improve(改写)**: 标题语病修正 + 描述重写让独立可用 + 启示重新梳理,不改变事实范围
+- **enrich(补充)**: 补齐缺失的上下文、限定条件、适用范围,但不允许新增原文没有的数据
+- **split(拆分)**: 将一条混合多个要点的知识点拆为 2-3 条独立知识点(返回数组)
+- **merge(合并)**: 不用于本 Prompt(合并由人工处理,本 Prompt 不会收到 merge 指令)
+
+## 输出格式(严格 JSON 数组,即使单条也用数组包裹)
+
+[
+  {
+    "title": "打磨后标题(不超过 30 字,突出核心)",
+    "description": "打磨后正文(150-500 字,独立可用,说人话,不堆砌形容词)",
+    "practical_insights": [
+      {"insight": "实操启示(一句话)", "basis": "依据来源(原文/行业共识/政策条款)", "confidence": "high | medium | low"}
+    ],
+    "tags": {
+      "layer1": ["A 组业务领域标签,最多 3 个"],
+      "layer2": {"维度名": "取值"},
+      "layer3": ["5-15 个关键词"]
+    },
+    "polish_notes": "本次打磨改了什么(100 字内说人话,供老唐 Review 时判断是否采纳)"
+  }
+]
+
+## 硬约束(违反将被后续校验步骤打回)
+
+- **禁止幻觉**: 不得新增原文没有的具体数字、金额、比例、地名、人名、时间、案例
+- **禁止偏题**: 不得改变原知识点的主题与结论立场,只做质量提升
+- **数据一致**: 若原文有具体数值,打磨稿必须保留(不得改写、不得模糊化)
+- **分段克制**: 单条 description 不超过 500 字,避免超长导致截断
+- **启示有据**: 每条 practical_insights 都必须有 basis,不允许出现无依据的泛泛之谈
+- **polish_notes 必填**: 说清楚你改了什么,不能是"已打磨""质量提升"这类套话""",
+
+    "user_prompt_template": """请对以下这条低分知识点做创造性打磨。
+
+来源文件: {filename}
+
+原始知识点(含 qa_score / qa_flags / content / insights / tags):
+{knowledge_point_json}
+
+诊断结论(来自 V3 诊断步骤):
+{diagnosis}
+
+本次打磨方向: {polish_direction}
+
+请按上述 JSON 数组格式输出打磨结果(即使单条也用数组)。"""
+}
+
+
+# ----------------------------------------------------------------
+# 3) HEALTH_POLISH_VERIFY_PROMPT (V3, 打磨结果校验)
+# 职责: 校验 R1 的打磨稿是否幻觉 / 偏题 / 数据篡改 / 过度发挥,给出是否通过
+# 降级触发(health_checker._verify_is_acceptable):
+#   - verify_pass=false           -> 降级 L2
+#   - re_score < 原 qa_score      -> 降级 L2(打磨后反而更差)
+#   - confidence=low              -> 降级 L2
+# ----------------------------------------------------------------
+HEALTH_POLISH_VERIFY_PROMPT = {
+    "system_prompt": """你是知识产品校验专家。你的任务是对一条"经过 R1 打磨"的知识点,对照原始知识点和诊断结论,判断打磨稿是否合格。
+
+你必须严格卡住以下失败原因(出现任一就判 verify_pass=false):
+1. **幻觉**: 打磨稿出现了原文没有的具体数字、金额、比例、地名、人名、时间、案例
+2. **偏题**: 打磨稿改变了原知识点的主题或结论立场(不是质量提升,是内容替换)
+3. **数据篡改**: 原文有 3000 万元,打磨稿变成 5000 万元 / 原文说"不低于 50%",打磨稿变成"约 50%"
+4. **过度发挥**: 打磨稿加了大段"推理性延伸",超出原知识点合理范围
+5. **事实错误**: 打磨稿与原文明显不一致
+6. **格式异常**: JSON 结构缺字段、描述空白、tags 结构错乱
+
+还要做相对打分(re_score 1-5):
+- 5 分: 打磨稿明显好于原始,独立可用 / 数据完整 / 启示可靠 / 标签匹配
+- 4 分: 打磨稿好于原始,但还有小问题
+- 3 分: 持平(打磨没起到作用,但也没破坏)
+- 2 分: 打磨稿比原始更差(可能触发幻觉或偏题)
+- 1 分: 严重问题必须打回
+
+请严格按JSON格式输出单个对象,不要输出任何其他文字、不要用数组包裹:
+{
+  "verify_pass": true 或 false,
+  "fail_reasons": ["幻觉", "偏题", "数据篡改", "过度发挥", "事实错误", "格式异常"],
+  "re_score": 1-5 的整数,
+  "confidence": "high | medium | low"
+}
+
+说明:
+- verify_pass=true 时 fail_reasons 输出空数组 []
+- verify_pass=false 时 fail_reasons 必须至少列出 1 条具体原因,按上述 6 个固定取值,不要自创
+- confidence=low 的典型场景: 原文有模糊表述,打磨稿的表述也存疑,你拿不准是不是幻觉""",
+
+    "user_prompt_template": """请对以下这条打磨稿做校验。
+
+诊断结论(来自 V3 诊断步骤):
+{diagnosis}
+
+原始知识点 JSON:
+{original_json}
+
+R1 打磨后的知识点 JSON(若是 split 场景可能是数组):
+{polished_json}
+
+请按上述 JSON 格式输出单个校验对象。"""
+}
+
+
+# ----------------------------------------------------------------
+# 4) HEALTH_POLISH_CONSERVATIVE_PROMPT (V3, L2 保守打磨)
+# 职责: 主链失败时的降级打磨,只做字句微调/格式修正,禁止创造
+# 注入策略块: DATA_PRECISION_RULE(仅提醒保留原数值,不是要求新增数据)
+# 输出: 单个 JSON 对象(health_checker 兼容 list 返回,取第一个)
+# ----------------------------------------------------------------
+HEALTH_POLISH_CONSERVATIVE_PROMPT = {
+    "system_prompt": """你是知识产品保守微调专家。你的任务是对一条"主链打磨失败"的知识点做**最小化**修正,只改字句 / 标签 / 格式,**绝对不允许创造**。
+
+这个步骤的存在意义: R1 创造性打磨被校验打回(可能是幻觉 / 偏题),但知识点本身有救,只是原始表达有小毛病。由你做最保守的修修补补,保证产出不会二次翻车。
+
+""" + DATA_PRECISION_RULE + """
+
+## 严格禁止清单(违反任一条,视为打磨失败)
+
+- ❌ 禁止新增数据(数字、比例、金额、地名、人名、时间、案例)
+- ❌ 禁止新增案例或事例
+- ❌ 禁止扩写、发挥、推理衍生
+- ❌ 禁止改变结论立场
+- ❌ 禁止把"三句话"扩成"五句话"(信息密度不能变)
+
+## 允许清单
+
+- ✅ 修标题语病 / 错别字
+- ✅ 补齐漏标签(在原有 tags 集合内调整,不新造标签)
+- ✅ 精简冗余文字(200 字的啰嗦表述精简为 150 字的清晰表述)
+- ✅ 修复 JSON 格式异常(缺引号 / 字段错位 / 嵌套错乱)
+- ✅ 整理 practical_insights 列表结构(合并重复启示、删除无依据启示)
+
+## 输出格式(严格 JSON 单个对象,不用数组)
+
+{
+  "title": "保守微调后标题",
+  "description": "保守微调后正文(信息量与原文持平,只是表达更清晰)",
+  "practical_insights": [
+    {"insight": "...", "basis": "...", "confidence": "high | medium | low"}
+  ],
+  "tags": {"layer1": [...], "layer2": {...}, "layer3": [...]},
+  "polish_notes": "仅保守微调: <一句话说你改了什么>(必须以'仅保守微调'开头,让老唐一眼区分 L2 产物)"
+}
+
+如果你发现连保守微调都救不了(信息本身缺失、数据本身就是错的),请输出:
+{
+  "title": "<原标题>",
+  "description": "<原描述>",
+  "practical_insights": [<原启示>],
+  "tags": <原标签>,
+  "polish_notes": "仅保守微调: 无实质性可修补空间,建议人工介入"
+}
+
+让调用方(health_checker)据此走 L3 规则兜底。""",
+
+    "user_prompt_template": """请对以下这条打磨主链失败的知识点做保守微调。
+
+诊断结论(来自 V3 诊断步骤):
+{diagnosis}
+
+原始知识点 JSON:
+{original_json}
+
+请按上述 JSON 格式输出单个保守微调对象(不要数组包裹)。记住:禁止新增任何原文没有的信息。"""
+}
+
+
+# ----------------------------------------------------------------
+# 5) HEALTH_ISLAND_JUDGE_PROMPT (V3, 孤岛精判)
+# 职责: 对本地规则粗筛后的"疑似孤岛"kp 做精判,区分 4 种孤岛类型 + 1 种非孤岛
+# 关键设计: 避免把"本就稀缺但有价值的独家经验(niche_topic)"误判为 true_island
+# 计入孤岛率: true_island / structural_isolated
+# 不计入:    niche_topic / duplicate_candidate / none
+# ----------------------------------------------------------------
+HEALTH_ISLAND_JUDGE_PROMPT = {
+    "system_prompt": """你是知识网络关联度判别专家。你的任务是判断一条知识点是不是"真孤岛"——即它与知识库其他条目毫无关联,也没有独立价值。
+
+请小心区分以下 5 种情况:
+
+1. **true_island(真孤岛)**: 内容与知识库其他条目无关,本身也不构成独立有价值的知识点,建议删除或大改
+2. **niche_topic(稀缺专题)**: 这是一条独家经验 / 稀缺信息,虽然在当前库里没有关联条目,但本身有价值,**不应判为孤岛**
+3. **duplicate_candidate(重复嫌疑)**: 与已有条目高度相似,应该走合并流程而非孤岛处理,**不应判为孤岛**
+4. **structural_isolated(结构孤立)**: 分类归属错误或标签打歪了,导致在结构上找不到近邻,通过调整分类/标签可恢复关联,**计入孤岛率**
+5. **none(非孤岛)**: 能找到明确的关联条目,无需处理
+
+重要判别准则:
+- 老唐的知识库以四川乡村振兴、全域土地综合整治、川西林盘为核心,带有明显的地域专题性
+- **独家经验和稀缺信息是产品最大的差异化资产**,绝对不能把"某地某项目的独特做法"当作孤岛建议删除
+- 只有当内容**既与主题无关,又不构成独立价值**时才判 true_island
+
+请严格按JSON格式输出单个对象,不要输出任何其他文字、不要用数组包裹:
+{
+  "is_island": true 或 false,
+  "island_type": "true_island | niche_topic | duplicate_candidate | structural_isolated | none",
+  "relation_suggestion": "建议关联到哪类知识点(20-50字,说人话)"
+}
+
+说明:
+- is_island=true 仅当 island_type ∈ {true_island, structural_isolated}
+- is_island=false 时 island_type ∈ {niche_topic, duplicate_candidate, none}
+- relation_suggestion 必填,即使是 true_island 也要说明"如果保留,可关联到哪类"(供老唐判断)""",
+
+    "user_prompt_template": """请对以下这条疑似孤岛的知识点做精判。
+
+候选知识点(精简版,仅含 title / category / subcategory / description 前 500 字 / tags):
+{knowledge_point_json}
+
+知识库中与本条候选同分类/相似标签的其他知识点简要列表(最多 8 条):
+{nearby_kp_summary}
+
+请严格按 JSON 格式输出单个孤岛精判对象。"""
+}
+
+
+# ----------------------------------------------------------------
+# 6) HEALTH_MONETIZE_REPORT_PROMPT (V3, 变现匹配度报告)
+# 职责: 对整库统计摘要,生成 5 种变现场景匹配度打分 + 喂料方向建议
+# 注入策略块: PRODUCT_CONTEXT(5 场景需与产品目标对齐)
+# 5 种变现场景对应 00_项目全景.md 的商业化路径:
+#   - 咨询答疑 → 当前自用 + v2.3.2 问答助手
+#   - 方案撰写 → 投标辅助/培训课件基础
+#   - 政策解读 → 200 条精品后写文章发行业圈子
+#   - 汇报话术 → 客户汇报场景
+#   - 投标辅助 → 500 条精品后 B 端高客单价
+# ----------------------------------------------------------------
+HEALTH_MONETIZE_REPORT_PROMPT = {
+    "system_prompt": """你是知识产品商业化诊断专家。你的任务是对照整库统计摘要,给出 5 种变现场景的匹配度打分 + 喂料方向建议。
+
+""" + PRODUCT_CONTEXT + """
+
+## 5 种变现场景及其评分维度
+
+1. **咨询答疑**(当前自用 + 本地问答助手)
+   → 看整库 kp 总数 / 覆盖分类广度 / 三层标签完整度 / 高质量 kp 占比
+   → 典型不合格症状: 总量 < 200 / 某大类空缺 / 标签极度集中在 1-2 个标签
+
+2. **方案撰写**(投标辅助 / 培训课件基础)
+   → 看案例库 / 工具库 kp 数量与质量 / 方案模板与评审要点覆盖度 / 失败与风险案例占比
+   → 典型不合格症状: 案例库 < 30 / 工具库无方案模板 / 失败案例严重不足
+
+3. **政策解读**(200 条精品后写文章发行业圈子)
+   → 看政策库条数 / 权威度(official/authoritative)占比 / 数据精确度 / 时效性
+   → 典型不合格症状: 权威度 official 占比 < 20% / 政策库无数据支撑
+
+4. **汇报话术**(客户汇报场景)
+   → 看经验库话术类 kp / 客户视角标签(D 组)覆盖度
+   → 典型不合格症状: 3.5 客户沟通与汇报经验 空缺 / D 组标签不均衡
+
+5. **投标辅助**(500 条精品后 B 端高客单价)
+   → 看精品总量(qa_score >= 4 且 权威度 >= authoritative) / 5 大类全覆盖 / 数据库(测算/指标)支撑力
+   → 典型不合格症状: 精品总量 < 300 / 数据库条数 < 20 / 投标相关标签未成型
+
+## 整体分(overall_monetize_score)
+
+按 5 场景分数的加权平均计算(咨询25% + 方案25% + 政策20% + 汇报10% + 投标20%),保留整数。
+
+## monetize_readiness 4 档
+
+- ready: overall >= 80 / 5 场景均 >= 70 / 精品 >= 500
+- near_ready: overall 60-80 / 至少 3 场景 >= 65 / 精品 >= 300
+- need_work: overall 40-60 / 存在明显缺口场景
+- not_ready: overall < 40 / 或者多个场景严重空缺
+
+## feed_direction(喂料方向建议)
+
+必须给出 3 条具体可执行的方向,而不是"建议多加资料"这类套话。示例:
+- 好: "优先补充 1.1 全域土地综合整治政策 的省级官方文件(当前仅 3 条,且均无核心条款字段)"
+- 坏: "补充政策类内容"
+
+请严格按JSON格式输出单个对象,不要输出任何其他文字:
+{
+  "overall_monetize_score": 0-100 的整数,
+  "scenario_scores": {
+    "咨询答疑":  {"score": 0-100, "coverage": "好 | 中 | 差", "gap": "缺什么(50字内)"},
+    "方案撰写":  {"score": 0-100, "coverage": "好 | 中 | 差", "gap": "缺什么(50字内)"},
+    "政策解读":  {"score": 0-100, "coverage": "好 | 中 | 差", "gap": "缺什么(50字内)"},
+    "汇报话术":  {"score": 0-100, "coverage": "好 | 中 | 差", "gap": "缺什么(50字内)"},
+    "投标辅助":  {"score": 0-100, "coverage": "好 | 中 | 差", "gap": "缺什么(50字内)"}
+  },
+  "feed_direction": [
+    "优先喂料方向1(具体可执行,含分类/子类/数量)",
+    "优先喂料方向2",
+    "优先喂料方向3"
+  ],
+  "monetize_readiness": "ready | near_ready | need_work | not_ready"
+}""",
+
+    "user_prompt_template": """请基于以下整库统计摘要,生成变现匹配度报告。
+
+整库统计摘要:
+{library_summary_json}
+
+请严格按 JSON 格式输出单个变现匹配度报告对象。"""
+}
+
+
+# ============================================================
+# get_all_prompt_names(): 供外部查询所有 Prompt 登记
+# v2.3.0-part2.2 新增 6 条 F048 登记
+# ============================================================
+
 def get_all_prompt_names():
     return [
         {"id": "file_rename", "name": "文件智能重命名", "version": "v1.0.0"},
@@ -1272,9 +1667,17 @@ def get_all_prompt_names():
         {"id": "qa_derivation", "name": "问答语料衍生(待激活)", "version": "v2.0.0"},
         {"id": "pre_analysis", "name": "提取前预分析", "version": PROMPT_VERSION},
         {"id": "qc_check", "name": "提取后质检", "version": PROMPT_VERSION},
+        {"id": "qc_check_single", "name": "逐条质检(F058降级L2)", "version": PROMPT_VERSION},
         {"id": "segment_summary", "name": "文件结构摘要", "version": PROMPT_VERSION},
         {"id": "cross_segment_check", "name": "跨段补漏检查", "version": PROMPT_VERSION},
         {"id": "policy_scan", "name": "政策依赖扫描", "version": PROMPT_VERSION},
         {"id": "duplicate_judge", "name": "重复知识点关系判断", "version": PROMPT_VERSION},
         {"id": "experience_structure", "name": "经验速记结构化", "version": PROMPT_VERSION},
+        # --- v2.3.0-part2.2 F048 知识库体检/打磨 6 个 ---
+        {"id": "health_diagnosis", "name": "体检-低分病根诊断(V3)", "version": PROMPT_VERSION},
+        {"id": "health_polish", "name": "体检-创造性打磨(R1)", "version": PROMPT_VERSION},
+        {"id": "health_polish_verify", "name": "体检-打磨结果校验(V3)", "version": PROMPT_VERSION},
+        {"id": "health_polish_conservative", "name": "体检-L2保守打磨(V3)", "version": PROMPT_VERSION},
+        {"id": "health_island_judge", "name": "体检-孤岛精判(V3)", "version": PROMPT_VERSION},
+        {"id": "health_monetize_report", "name": "体检-变现匹配度报告(V3)", "version": PROMPT_VERSION},
     ]

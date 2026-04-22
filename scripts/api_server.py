@@ -1,7 +1,23 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part2 - F048 知识库体检 Agent 界面层（对话3/3 交付）
+版本：v2.3.0-part2.2 - F048 启动就绪性自检 hotfix（对话 B / 三对话拆分的防护层）
+
+v2.3.0-part2.2 变更（F048 防护层）：
+    新增 1 个模块级辅助函数（api_server 顶部 import 段后）：
+      _health_readiness_check()  —— 启动就绪性 4 项自检，返回 (ok, errors)
+    /api/tools/health/start 路由在 with _task_lock 之前插入前置自检调用：
+      自检失败 → HTTP 400 带 details 故障清单，不占用 _task 单例
+      自检通过 → 进入原有后台线程逻辑
+    自检 4 项（对齐对话 A 发现的 4 类系统性 bug + 对话 B 字段契约）：
+      [1] 6 个 F048 Prompt 顶层可 import（对话 A 缺陷 1：Prompt 未落地）
+      [2] 6 个 F048 Prompt 非 None 且为 dict（对话 A 缺陷 2：import 静默降级）
+      [3] 每个 Prompt dict 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4：key 错配）
+      [4] db.get_kp_for_health_scan() 返回 dict 含 category / subcategory 两 key（对话 B 缺陷 3：字段契约）
+    设计纪律：
+      - 自检放 _task_lock 之前：失败不占用单例锁，避免"自检失败但抢了 _task"脏状态
+      - 自检耗时 <100ms（读第 1 条 kp）：用户感知 "点了秒回 400" 远优于 "2 秒后 500"
+      - 空库时 [4] 跳过（不算失败）：新部署首次体检无 kp 数据允许通过
 
 v2.3.0-part2 变更（F048 界面层）：
     新增 8 个体检路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
@@ -2207,6 +2223,85 @@ def _health_progress_adapter(payload):
 
 
 # ================================================================
+# v2.3.0-part2.2 新增：F048 启动就绪性自检（对话 B 防护层）
+# ================================================================
+def _health_readiness_check():
+    """F048 体检启动前置自检。返回 (ok: bool, errors: list[str])。
+
+    对齐对话 A 发现的 4 类系统性 bug + 对话 B 字段契约：
+      [1] 6 个 F048 Prompt 顶层可 import（对话 A 缺陷 1：Prompt 未落地）
+      [2] 6 个 Prompt 非 None 且为 dict（对话 A 缺陷 2：import 静默降级）
+      [3] 每 Prompt 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4：key 错配）
+      [4] db.get_kp_for_health_scan 返回 dict 含 category / subcategory（对话 B 缺陷 3：字段契约）
+
+    设计约束：
+      - 总耗时 <100ms（读第 1 条 kp）
+      - 空库时 [4] 跳过，不算失败（首次部署允许启动）
+      - 自检失败时调用方必须在 with _task_lock 之前返回，不占用 _task 单例
+    """
+    errors = []
+
+    # ---- [1]/[2] Prompt 顶层 import ----
+    required_prompts = [
+        "HEALTH_DIAGNOSIS_PROMPT",
+        "HEALTH_POLISH_PROMPT",
+        "HEALTH_POLISH_VERIFY_PROMPT",
+        "HEALTH_POLISH_CONSERVATIVE_PROMPT",
+        "HEALTH_ISLAND_JUDGE_PROMPT",
+        "HEALTH_MONETIZE_REPORT_PROMPT",
+    ]
+    try:
+        from scripts.prompts import prompt_templates as pt
+    except Exception as e:
+        errors.append("[1] prompt_templates 模块 import 失败: " + str(e))
+        return False, errors
+
+    prompt_objs = {}
+    for name in required_prompts:
+        obj = getattr(pt, name, None)
+        if obj is None:
+            errors.append("[1] Prompt " + name + " 未定义或为 None（对话 A 缺陷 1/2）")
+            continue
+        if not isinstance(obj, dict):
+            errors.append("[2] Prompt " + name + " 不是 dict（实际类型: " +
+                          type(obj).__name__ + "）")
+            continue
+        prompt_objs[name] = obj
+
+    # ---- [3] Prompt dict 含正确 key ----
+    for name, obj in prompt_objs.items():
+        sys_p = obj.get("system_prompt")
+        usr_p = obj.get("user_prompt_template")
+        if not sys_p or not isinstance(sys_p, str):
+            errors.append("[3] Prompt " + name +
+                          " 缺 system_prompt 或为空（对话 A 缺陷 4：key 错配）")
+        if not usr_p or not isinstance(usr_p, str):
+            errors.append("[3] Prompt " + name +
+                          " 缺 user_prompt_template 或为空（对话 A 缺陷 4：key 错配）")
+
+    # ---- [4] DB 字段契约（category / subcategory AS 映射）----
+    try:
+        sample = db.get_kp_for_health_scan(include_annotations=False)
+        if sample:
+            first = sample[0]
+            missing_keys = []
+            if "category" not in first:
+                missing_keys.append("category")
+            if "subcategory" not in first:
+                missing_keys.append("subcategory")
+            if missing_keys:
+                errors.append("[4] get_kp_for_health_scan 返回 dict 缺字段: " +
+                              ", ".join(missing_keys) +
+                              "（对话 B 缺陷 3：LEFT JOIN categories AS 映射未兑现）")
+        # 空库不算失败（首次部署允许启动）
+    except Exception as e:
+        errors.append("[4] get_kp_for_health_scan 调用失败: " + str(e))
+
+    ok = len(errors) == 0
+    return ok, errors
+
+
+# ================================================================
 # F048 路由 1：工具箱卡片用 —— 最近一次体检概要
 # ================================================================
 @app.route("/api/tools/health/latest", methods=["GET"])
@@ -2246,7 +2341,30 @@ def health_start():
 
     入参 JSON：
       {"polish_max": 50}  # 允许值: 30/50/100/200/None（不限）
+
+    v2.3.0-part2.2 新增：在 with _task_lock 之前做 4 项启动就绪性自检。
+      自检失败 → HTTP 400 带 details 清单，不占用 _task 单例。
+      自检通过 → 进入原有后台线程逻辑。
     """
+    # ---- v2.3.0-part2.2 启动就绪性自检（必须在 _task_lock 之前）----
+    ok, errors = _health_readiness_check()
+    if not ok:
+        try:
+            db.log_operation_event(
+                event_type="health_readiness_check_failed",
+                module="api_server",
+                severity="error",
+                payload={"errors": errors},
+            )
+        except Exception:
+            pass
+        return jsonify({
+            "success": False,
+            "error": "F048 体检环境未就绪",
+            "details": errors,
+            "message": "请检查 Prompt 落地、字段契约。排查步骤：命令行运行 python scripts/db_health_check.py",
+        }), 400
+
     with _task_lock:
         if _task["running"]:
             return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
@@ -2697,9 +2815,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part2")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part2.2")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part2: F048 知识库体检 Agent 界面层（对话3/3 完成）")
+    print(f"  v2.3.0-part2.2: F048 防护层 hotfix（字段契约 + 启动就绪性自检）")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

@@ -2,8 +2,19 @@
 """
 health_checker.py - 知识库体检 Agent 引擎层（F048）
 
-版本: v2.3.0-part2-alpha2
+版本: v2.3.0-part2.2
 所属: 乡村振兴知识管理系统
+
+变更说明(v2.3.0-part2.2 对话A):
+    - import 段顶层化: DatabaseManager / DeepSeekClient / 6 个 HEALTH_* Prompt
+      全部改为直接 import(不再 try/except 静默 fallback 到 None)
+      理由: 静默降级会把"真缺包"的启动错误伪装成"正常运行但功能裸奔",
+            之前关联/打磨维度都假满分 100 就是此类静默降级的受害者
+    - 字段读取契约收紧: k.get('category') / k.get('subcategory') 保持不变,
+      依赖 db_manager v2.3.0-part2.2 起在三个扫描查询追加 LEFT JOIN categories
+      并 AS 出 category / subcategory 字符串(落地在对话 B)
+    - 其他代码逻辑一律不动: 降级链 / 权重 / 维度方法签名 / 进度回调
+    - 体检 Prompt 正式落地到 prompt_templates.py v2.3.0-part2.2
 
 职责:
     六维度扫描知识库健康度,生成 health_report + polish_suggestions
@@ -38,34 +49,20 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 # ============================================================
-# 模块级可选导入 (失败时 HealthChecker 构造参数也可显式传入)
+# 模块级直接导入
+# v2.3.0-part2.2: 放弃原 try/except 静默 fallback 到 None 的做法,
+#                 任何 import 失败直接抛 ImportError 让问题暴露
 # ============================================================
-try:
-    from scripts.db_manager import DatabaseManager  # type: ignore
-except Exception:
-    DatabaseManager = None  # noqa: N816
-
-try:
-    from scripts.deepseek_client import DeepSeekClient  # type: ignore
-except Exception:
-    DeepSeekClient = None  # noqa: N816
-
-try:
-    from scripts.prompts.prompt_templates import (
-        HEALTH_DIAGNOSIS_PROMPT,
-        HEALTH_POLISH_PROMPT,
-        HEALTH_POLISH_VERIFY_PROMPT,
-        HEALTH_POLISH_CONSERVATIVE_PROMPT,
-        HEALTH_ISLAND_JUDGE_PROMPT,
-        HEALTH_MONETIZE_REPORT_PROMPT,
-    )
-except Exception as _e:  # 允许单测时不依赖 prompt_templates
-    HEALTH_DIAGNOSIS_PROMPT = None
-    HEALTH_POLISH_PROMPT = None
-    HEALTH_POLISH_VERIFY_PROMPT = None
-    HEALTH_POLISH_CONSERVATIVE_PROMPT = None
-    HEALTH_ISLAND_JUDGE_PROMPT = None
-    HEALTH_MONETIZE_REPORT_PROMPT = None
+from scripts.db_manager import DatabaseManager
+from scripts.deepseek_client import DeepSeekClient
+from scripts.prompts.prompt_templates import (
+    HEALTH_DIAGNOSIS_PROMPT,
+    HEALTH_POLISH_PROMPT,
+    HEALTH_POLISH_VERIFY_PROMPT,
+    HEALTH_POLISH_CONSERVATIVE_PROMPT,
+    HEALTH_ISLAND_JUDGE_PROMPT,
+    HEALTH_MONETIZE_REPORT_PROMPT,
+)
 
 
 # ============================================================
@@ -147,16 +144,15 @@ class HealthChecker:
             db: DatabaseManager 实例;None 时自动创建
             client: DeepSeekClient 实例;None 时自动创建(需在 headless 模式)
             progress_callback: 进度回调 fn(payload_dict);payload={stage,current,total,message}
+
+        v2.3.0-part2.2: DatabaseManager / DeepSeekClient 已改为顶层 import,
+            若包不可用解释器会在 import 时就崩,此处不再做 None 防御
         """
         if db is None:
-            if DatabaseManager is None:
-                raise RuntimeError('db_manager 未能导入,无法体检')
             db = DatabaseManager()
         self.db = db
 
         if client is None:
-            if DeepSeekClient is None:
-                raise RuntimeError('deepseek_client 未能导入,无法体检')
             client = DeepSeekClient()
         self.client = client
 
@@ -397,6 +393,11 @@ class HealthChecker:
             return {'score': 0, 'detail': {'note': '空库'}}
 
         # 大类命中
+        # v2.3.0-part2.2 契约依赖: kps 来自 db.get_kp_for_health_scan(),
+        # 依赖 db 层在该查询 LEFT JOIN categories AS category / subcategory 两个字符串字段
+        # (对话 B 落地)。在此之前若直接运行会因 category / subcategory 为 None
+        # 导致 l1_set / l2_set 为空,score=0——此即 v2.3.0-part2.1 截图 47.16 分
+        # "结构 0" 的根因,修复走对话 B 而不是本文件
         l1_set = set()
         l2_set = set()
         for k in kps:
@@ -588,7 +589,11 @@ class HealthChecker:
     def _build_nearby_summary(
         self, target_kp: Dict, all_kps: List[Dict], max_items: int = 8,
     ) -> str:
-        """组装相似分类/标签的简要摘要给 V3 判断"""
+        """组装相似分类/标签的简要摘要给 V3 判断
+
+        v2.3.0-part2.2 契约依赖: 依赖 db 层在 get_island_candidates 查询 LEFT JOIN
+        categories AS category / subcategory 两个字符串字段(对话 B 落地)
+        """
         target_cat = target_kp.get('category') or ''
         target_sub = target_kp.get('subcategory') or ''
         target_id = target_kp.get('kp_id')
@@ -613,11 +618,9 @@ class HealthChecker:
 
     def _judge_island(self, kp: Dict, nearby_summary: str) -> Optional[Dict]:
         """调 V3 HEALTH_ISLAND_JUDGE_PROMPT 判定是否孤岛"""
-        if not HEALTH_ISLAND_JUDGE_PROMPT:
-            return None
         try:
-            sys_p = HEALTH_ISLAND_JUDGE_PROMPT['system']
-            user_tpl = HEALTH_ISLAND_JUDGE_PROMPT['user']
+            sys_p = HEALTH_ISLAND_JUDGE_PROMPT['system_prompt']
+            user_tpl = HEALTH_ISLAND_JUDGE_PROMPT['user_prompt_template']
             kp_json = json.dumps(self._kp_to_judge_payload(kp), ensure_ascii=False)
             user_p = user_tpl.format(
                 knowledge_point_json=kp_json,
@@ -632,7 +635,10 @@ class HealthChecker:
             return None
 
     def _kp_to_judge_payload(self, kp: Dict) -> Dict:
-        """抽取用于孤岛判定的精简字段"""
+        """抽取用于孤岛判定的精简字段
+
+        v2.3.0-part2.2 契约依赖: category / subcategory 来自 db 层 AS 映射(对话 B 落地)
+        """
         return {
             'kp_id': kp.get('kp_id'),
             'title': kp.get('title'),
@@ -776,11 +782,9 @@ class HealthChecker:
     # 诊断 / 打磨 / 校验 / 保守打磨
     # ------------------------------------------------------------
     def _diagnose_polish_candidate(self, kp: Dict) -> Optional[Dict]:
-        if not HEALTH_DIAGNOSIS_PROMPT:
-            return None
         try:
-            sys_p = HEALTH_DIAGNOSIS_PROMPT['system']
-            user_tpl = HEALTH_DIAGNOSIS_PROMPT['user']
+            sys_p = HEALTH_DIAGNOSIS_PROMPT['system_prompt']
+            user_tpl = HEALTH_DIAGNOSIS_PROMPT['user_prompt_template']
             kp_json = json.dumps(self._kp_to_full_payload(kp), ensure_ascii=False)
             filename = kp.get('source_file_name') or kp.get('source_file') or 'unknown'
             user_p = user_tpl.format(
@@ -797,11 +801,9 @@ class HealthChecker:
 
     def _polish_with_r1(self, kp: Dict, diag: Dict) -> Optional[Any]:
         """R1 创造性打磨,返回 list(split 可能多条) 或 None"""
-        if not HEALTH_POLISH_PROMPT:
-            return None
         try:
-            sys_p = HEALTH_POLISH_PROMPT['system']
-            user_tpl = HEALTH_POLISH_PROMPT['user']
+            sys_p = HEALTH_POLISH_PROMPT['system_prompt']
+            user_tpl = HEALTH_POLISH_PROMPT['user_prompt_template']
             kp_payload = self._kp_to_full_payload(kp)
             # 控制输入长度
             kp_json = json.dumps(kp_payload, ensure_ascii=False)
@@ -853,11 +855,9 @@ class HealthChecker:
 
     def _verify_polish(self, diag: Dict, original_kp: Dict, polished: Any) -> Optional[Dict]:
         """V3 校验 R1 打磨结果"""
-        if not HEALTH_POLISH_VERIFY_PROMPT:
-            return None
         try:
-            sys_p = HEALTH_POLISH_VERIFY_PROMPT['system']
-            user_tpl = HEALTH_POLISH_VERIFY_PROMPT['user']
+            sys_p = HEALTH_POLISH_VERIFY_PROMPT['system_prompt']
+            user_tpl = HEALTH_POLISH_VERIFY_PROMPT['user_prompt_template']
             original_json = json.dumps(self._kp_to_full_payload(original_kp), ensure_ascii=False)
             polished_json = json.dumps(polished, ensure_ascii=False)
             diag_str = json.dumps({
@@ -895,11 +895,9 @@ class HealthChecker:
 
     def _polish_conservative(self, kp: Dict, diag: Dict) -> Optional[Dict]:
         """L2 V3 保守打磨"""
-        if not HEALTH_POLISH_CONSERVATIVE_PROMPT:
-            return None
         try:
-            sys_p = HEALTH_POLISH_CONSERVATIVE_PROMPT['system']
-            user_tpl = HEALTH_POLISH_CONSERVATIVE_PROMPT['user']
+            sys_p = HEALTH_POLISH_CONSERVATIVE_PROMPT['system_prompt']
+            user_tpl = HEALTH_POLISH_CONSERVATIVE_PROMPT['user_prompt_template']
             original_json = json.dumps(self._kp_to_full_payload(kp), ensure_ascii=False)
             diag_str = json.dumps({
                 'diagnosis': diag.get('diagnosis', ''),
@@ -993,11 +991,9 @@ class HealthChecker:
     # 维度 ⑥变现匹配度
     # ============================================================
     def _dim6_monetize_score(self, lib_summary: Dict) -> Dict[str, Any]:
-        if not HEALTH_MONETIZE_REPORT_PROMPT:
-            return {'score': 0, 'detail': {'note': 'Prompt 未就绪'}}
         try:
-            sys_p = HEALTH_MONETIZE_REPORT_PROMPT['system']
-            user_tpl = HEALTH_MONETIZE_REPORT_PROMPT['user']
+            sys_p = HEALTH_MONETIZE_REPORT_PROMPT['system_prompt']
+            user_tpl = HEALTH_MONETIZE_REPORT_PROMPT['user_prompt_template']
             summary_json = json.dumps(lib_summary, ensure_ascii=False)
             user_p = user_tpl.format(library_summary_json=summary_json)
             resp = self._call_v3(sys_p, user_p, timeout=self.V3_TIMEOUT)
@@ -1020,7 +1016,12 @@ class HealthChecker:
             return {'score': 0, 'detail': {'error': str(e)[:200]}}
 
     def _build_library_summary(self, kps: List[Dict], tag_dist: Dict[str, List]) -> Dict:
-        """构建整库统计摘要供变现报告使用"""
+        """构建整库统计摘要供变现报告使用
+
+        v2.3.0-part2.2 契约依赖: category / subcategory 来自 db 层 AS 映射(对话 B 落地)。
+        这是维度⑥变现匹配度的输入,category / subcategory 未兑现会导致变现报告的
+        5 大类分布全部归到"未分类",V3 判断结果会虚低
+        """
         total = len(kps)
         if total == 0:
             return {'total_kp': 0}
@@ -1187,7 +1188,13 @@ class HealthChecker:
     # 工具方法
     # ============================================================
     def _kp_to_full_payload(self, kp: Dict) -> Dict:
-        """抽取送入 AI 的 kp 完整字段快照"""
+        """抽取送入 AI 的 kp 完整字段快照
+
+        v2.3.0-part2.2 契约依赖: category / subcategory 来自 db 层 AS 映射(对话 B 落地)。
+        该 payload 送入维度⑤低分打磨的 HEALTH_DIAGNOSIS / HEALTH_POLISH /
+        HEALTH_POLISH_VERIFY / HEALTH_POLISH_CONSERVATIVE 四个 Prompt,
+        category / subcategory 未兑现会让 AI 以为该 kp 无分类,影响诊断精度
+        """
         return {
             'kp_id': kp.get('kp_id'),
             'title': kp.get('title'),

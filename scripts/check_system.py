@@ -1,8 +1,20 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.5（v2.2.0 F029+F045升级）
-升级内容：
+版本：v2.5.1（v2.3.0-part2.2 对话 B 防护层扩展）
+
+v2.5.1 变更（v2.3.0-part2.2 对话 B）：
+  - 命令行版新增第 17 项 check_f048_readiness()：F048 体检功能就绪度
+      [17.1] 6 个 F048 Prompt 顶层可 import
+      [17.2] 6 个 Prompt dict 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4）
+      [17.3] health_reports / polish_suggestions 两表存在
+      [17.4] 近 2 小时无 status='running' 僵尸任务
+  - JSON 版 run_checks_json() 顺手扩 2 处：
+      [4] 数据库基础的 expected 表清单追加 health_reports / polish_suggestions（老唐决策Q1）
+      末尾追加 [18] F048 就绪度（同命令行第 17 项 4 小项聚合）
+  - 主流程 results 追加 "F048 就绪度" 项，汇总时纳入 ok_count 统计
+
+v2.5 - v2.2.0 F029+F045升级：
   - 保留v2.4全部15项检查
   - 新增第16项: 专家注解与经验速记状态检查(F029+F045)
   - 数据库迁移检查新增annotations表+source_type字段
@@ -742,6 +754,93 @@ def check_annotation_status():
         return True
 
 # ================================================================
+# v2.5.1 新增：F048 体检功能就绪度检查（v2.3.0-part2.2 对话 B）
+# ================================================================
+def check_f048_readiness():
+    print(f"\n[17] F048 体检功能就绪度(v2.3.0-part2.2)")
+
+    # [17.1] 6 个 F048 Prompt 顶层可 import
+    required_prompts = [
+        "HEALTH_DIAGNOSIS_PROMPT", "HEALTH_POLISH_PROMPT",
+        "HEALTH_POLISH_VERIFY_PROMPT", "HEALTH_POLISH_CONSERVATIVE_PROMPT",
+        "HEALTH_ISLAND_JUDGE_PROMPT", "HEALTH_MONETIZE_REPORT_PROMPT",
+    ]
+    try:
+        from scripts.prompts import prompt_templates as pt
+    except Exception as e:
+        print(f"    FAIL prompt_templates 模块 import 失败: {e}")
+        return False
+    missing = []
+    non_dict = []
+    bad_key = []
+    for name in required_prompts:
+        obj = getattr(pt, name, None)
+        if obj is None:
+            missing.append(name)
+            continue
+        if not isinstance(obj, dict):
+            non_dict.append(name + "(" + type(obj).__name__ + ")")
+            continue
+        # [17.2] dict 含非空 system_prompt / user_prompt_template
+        if not obj.get("system_prompt"):
+            bad_key.append(name + ".system_prompt")
+        if not obj.get("user_prompt_template"):
+            bad_key.append(name + ".user_prompt_template")
+
+    if missing:
+        print(f"    FAIL [17.1] Prompt 未定义或为 None: {', '.join(missing)}")
+        print(f"         (对话 A 缺陷 1/2：Prompt 未落地 或 import 静默降级)")
+        return False
+    if non_dict:
+        print(f"    FAIL [17.2] Prompt 非 dict 类型: {', '.join(non_dict)}")
+        return False
+    if bad_key:
+        print(f"    FAIL [17.2] Prompt dict 缺非空 key: {', '.join(bad_key)}")
+        print(f"         (对话 A 缺陷 4：key 错配 ['system']→['system_prompt'])")
+        return False
+    print(f"    OK [17.1/17.2] 6 个 F048 Prompt 全部就绪（name+dict+key 三关通过）")
+
+    # [17.3] health_reports / polish_suggestions 两表存在
+    config = _load_config()
+    dp = _get_db_path(config)
+    if not os.path.exists(dp):
+        print(f"    跳过 [17.3] 数据库不存在")
+        return True
+    try:
+        conn = sqlite3.connect(dp)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('health_reports','polish_suggestions')")
+        f048_tables = {r[0] for r in cur.fetchall()}
+        missing_t = []
+        for t in ("health_reports", "polish_suggestions"):
+            if t not in f048_tables:
+                missing_t.append(t)
+        if missing_t:
+            print(f"    FAIL [17.3] F048 表缺失: {', '.join(missing_t)}")
+            print(f"         => 请重跑 setup.py 或检查 init_tables() 是否含两表")
+            conn.close()
+            return False
+        print(f"    OK [17.3] health_reports / polish_suggestions 两表存在")
+
+        # [17.4] 近 2 小时无僵尸任务
+        cur.execute("""
+            SELECT COUNT(*) FROM health_reports
+             WHERE status='running'
+               AND julianday('now') - julianday(created_at) > 0.0833
+        """)
+        zombie = cur.fetchone()[0]
+        conn.close()
+        if zombie > 0:
+            print(f"    WARN [17.4] {zombie} 条 running 超 2 小时（僵尸任务）")
+            print(f"         建议用 SQL 手动清理：UPDATE health_reports SET status='failed', error_message='僵尸任务清理' WHERE status='running' AND julianday('now')-julianday(created_at)>0.0833")
+        else:
+            print(f"    OK [17.4] 无僵尸任务（status=running 超 2 小时）")
+        return True
+    except Exception as e:
+        print(f"    WARN {e}")
+        return True
+
+# ================================================================
 # v2.1.2 新增：供API调用的JSON版检查（不print，返回结构化数据）
 # ================================================================
 def run_checks_json():
@@ -795,8 +894,10 @@ def run_checks_json():
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [r[0] for r in cur.fetchall()]
+            # v2.3.0-part2.2 扩清单：原 7 张核心表 + F048 两张新表
             expected = ["categories", "source_files", "knowledge_points",
-                        "operation_logs", "api_call_logs", "edit_history", "architecture_suggestions"]
+                        "operation_logs", "api_call_logs", "edit_history", "architecture_suggestions",
+                        "health_reports", "polish_suggestions"]
             missing_t = [t for t in expected if t not in tables]
             size_mb = os.path.getsize(dp) / (1024 * 1024)
             db_detail = "%d张表, %.2fMB" % (len(tables), size_mb)
@@ -991,8 +1092,59 @@ def run_checks_json():
     except Exception as e:
         results.append({"name": "数据库检查", "ok": False, "detail": str(e)})
 
+    # v2.5.1 新增 [18] F048 就绪度
+    f048_ok = True
+    f048_detail_parts = []
+    required_prompts = [
+        "HEALTH_DIAGNOSIS_PROMPT", "HEALTH_POLISH_PROMPT",
+        "HEALTH_POLISH_VERIFY_PROMPT", "HEALTH_POLISH_CONSERVATIVE_PROMPT",
+        "HEALTH_ISLAND_JUDGE_PROMPT", "HEALTH_MONETIZE_REPORT_PROMPT",
+    ]
+    try:
+        from scripts.prompts import prompt_templates as pt
+        prompt_bad = []
+        for name in required_prompts:
+            obj = getattr(pt, name, None)
+            if obj is None or not isinstance(obj, dict):
+                prompt_bad.append(name)
+                continue
+            if not obj.get("system_prompt") or not obj.get("user_prompt_template"):
+                prompt_bad.append(name + "(key)")
+        if prompt_bad:
+            f048_ok = False
+            f048_detail_parts.append("Prompt 异常: " + ",".join(prompt_bad))
+        else:
+            f048_detail_parts.append("6 Prompt就绪")
+    except Exception as e:
+        f048_ok = False
+        f048_detail_parts.append("prompt_templates import 失败: " + str(e))
+
+    # 两表 + 僵尸任务
+    if db_exists:
+        try:
+            conn = sqlite3.connect(dp)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('health_reports','polish_suggestions')")
+            got = {r[0] for r in cur.fetchall()}
+            miss = [t for t in ("health_reports", "polish_suggestions") if t not in got]
+            if miss:
+                f048_ok = False
+                f048_detail_parts.append("表缺失: " + ",".join(miss))
+            else:
+                cur.execute("SELECT COUNT(*) FROM health_reports WHERE status='running' AND julianday('now')-julianday(created_at)>0.0833")
+                zombie = cur.fetchone()[0]
+                if zombie > 0:
+                    f048_detail_parts.append("僵尸任务" + str(zombie) + "条")
+                else:
+                    f048_detail_parts.append("两表OK/无僵尸")
+            conn.close()
+        except Exception as e:
+            f048_detail_parts.append("两表检查失败: " + str(e))
+    results.append({"name": "F048 就绪度", "ok": f048_ok,
+                    "detail": " | ".join(f048_detail_parts)})
+
     return {
-        "version": "v2.5",
+        "version": "v2.5.1",
         "system_version": get_version(),
         "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "results": results,
@@ -1006,7 +1158,7 @@ def run_checks_json():
 # ================================================================
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.5")
+    print(f"  系统状态检查 v2.5.1")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
@@ -1037,6 +1189,7 @@ def main():
     results.append(("政策校验", check_policy_validation()))
     results.append(("重复检测", check_duplicate_status()))
     results.append(("注解与速记", check_annotation_status()))
+    results.append(("F048 就绪度", check_f048_readiness()))
 
     # 第三部分：API连通性（可选）
     print(f"\n{'─' * 40}")
