@@ -4,7 +4,7 @@
 >
 > **知识工厂：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。**
 >
-> **当前版本：v2.3.0-part1（全部完成，分 2 对话交付）**
+> **当前版本：v2.3.0-part2（全部完成，分 3 对话交付）**
 
 ---
 
@@ -24,45 +24,56 @@
 
 ---
 
-## v2.3.0-part1 本次交付内容
+## v2.3.0-part2 本次交付内容
 
-v2.3.0-part1 是工具箱与仪表盘的整体体验优化，同时为批量重跑打通 AI 去重联动。分 2 个对话交付，全部完成：
+v2.3.0-part2 是 **F048 知识库体检 Agent** 的完整落地,提供"六维度扫描 + 三层打磨降级链 + 逐条 Review UI"的质量抓手闭环。分 3 个对话交付,全部完成:
 
 | 对话 | 范围 | 状态 |
 |------|------|------|
-| 1/2 接口层 | db_manager / duplicate_checker / backup_manager / api_server | ✅ |
-| 2/2 界面层 + 收尾 | review.html / 全套项目文档 / CHANGELOG / README | ✅ |
+| 1/3 基础层 | prompt_templates (+6 Prompt) / migrate_v230_part2 (新建,建 2 表 3 索引) / db_manager (+12 方法) | ✅ alpha1(2026-04-20) |
+| 2/3 引擎层 | health_checker.py (新建,~1350 行,六维度扫描 + 三层打磨降级链) | ✅ alpha2(2026-04-21) |
+| 3/3 界面层 | api_server (+8 F048 路由 + 3 辅助函数) / review.html (工具箱第 10 卡 + 3 模态框 + 13 JS 函数) / 项目文件 00/01/03 + README + CHANGELOG 收尾 | ✅ 正式版(2026-04-22) |
 
-### 修复和新增能力概览
+### 新增能力概览
 
-- **F049 仪表盘与工具箱整体优化**
-  - "全库重复检测"+"清理并重扫"合并为单张"智能重复检测"卡，点击弹三选一对话框（最近 7 天 / 全库扫描 / 彻底重扫），对应统一接口 `/api/tools/duplicate_unified`；工具箱按钮从 10 张缩减为 9 张。
-  - 仪表盘新增 3 张标签分布卡：Card 12 业务领域（A 组）/ Card 13 知识形态（C 组）/ Card 14 客户视角（D 组），默认 Top5 + "展开全部"按钮，支持点击穿透到审核列表筛选。
-  - 审核侧边栏新增一级标签筛选区，与仪表盘标签卡联动（currentLayer1Tag 全局状态）。
-- **F059 批量重跑与 AI 去重联动**
-  - 提取管理新增第 4 张卡"批量重跑"，勾选文件 → 自动备份 → 逐文件版本重提取 → 完成后跨文件 AI 去重联动统一触发。
-  - 复用既有任务进度组件，进度条标题正确显示"批量重跑进行中"。
-  - 含注解文件仅加橙色警告标签，不禁用复选框（底层合约保证只删 pending knowledge_points，不触 annotations 表）。
-  - 默认仅清空 extracted pending 条目，保留 confirmed / ignored 的审核工作成果。
-- **Step 8 字段口径修正**
-  - `extract_from_file` 增量重复检测从未实际触发的老 bug（`info["id"]` → `info["kp_id"]`）顺手修复；范围可控，与 F059 同属批量提取链路，一起改测一起发。
+- **F048 知识库体检 Agent(完整版)**
+  - 工具箱新增第 10 张紫色"知识库体检"卡,点击弹档位选择对话框(30/50/100/200/不限),每档显示预计时间(约 10/17/35/70 分钟 / 按库容估)
+  - 六维度扫描:健康度 / 结构分布 / 加工深度 / 关联密度 / 低分打磨 / 变现匹配度(权重 25/10/20/10/20/15)
+  - 三层打磨降级链:L1 主链(V3 诊断 → R1 创造打磨 → V3 校验)→ L2 保守打磨(V3 微调不创造)→ L3 人工兜底(规则标记 status=manual_review_needed)
+  - 报告详情页:顶部总分 + 2×3 六维度卡 + 变现场景行(5 场景横排分数条) + "对比上次"文字 + "开始 Review"按钮
+  - 逐条 Review UI:左右对比(原文 vs 打磨稿) + 诊断折叠 + tier 三色徽章(L1 绿 / L2 黄 / L3 灰) + 按 suggestion_type 动态渲染按钮
+  - 采纳原子三步:operation_hook("health_adopt") 强制备份 → update_knowledge_point 字段智能映射 → apply_polish_suggestion 标记 applied,任一失败 500 附 step 标识
+  - split 场景只采纳第 1 条,带 split_note 提示老唐手动处理其余;drop 场景走独立路由调 ignore_knowledge_point;略过纯前端跳转(不发请求)
+  - 体检完成弹 confirm"总分 XX,是否立即查看报告?",确认后直接打开最新报告
 
-### 老唐需要做的操作（4 步）
+- **F060 备份触发点补齐**:operation_hook("health_adopt") 作为第 6 个触发点正式接入(至此 6 触发点全齐:reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt),每类 op_name 保留最近 5 个 + 2GB 总量上限
 
-v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
+### 老唐需要做的操作(5 步)
 
-1. **备份数据库**：`启动后台.bat` 点"一键备份"，或手动复制 `data/database/knowledge_base.db`。
-2. **替换代码文件**：按 `CHANGELOG.md` 的文件变更清单替换 6 个文件。
-3. **重启服务**：关闭 `启动后台.bat` 后重开。
-4. **验证**：
-   - 仪表盘末尾看得到 Card 12 / 13 / 14 三张标签分布卡。
-   - 工具箱看得到"智能重复检测"单张卡，点击弹出三选一对话框。
-   - 提取管理区看得到第 4 张"批量重跑"卡，点击可勾选候选文件。
-   - 审核页侧边栏隐藏着一级标签筛选区，从仪表盘标签卡点击任一条目后出现"一级标签:XXX"筛选状态。
+v2.3.0-part2 **无数据库 schema 变更**(alpha1 已完成迁移),不需要重跑 migrate。
+
+1. **备份数据库**:`启动后台.bat` 点"一键备份",或手动复制 `data/database/knowledge_base.db`。
+2. **替换 2 个代码文件**:`scripts/api_server.py` / `web/templates/review.html`。
+3. **重启服务**:关闭 `启动后台.bat` 后重开。
+4. **首次体检**:Tab 2 → 工具箱 → 知识库体检 → 选 **30 条档位**(首次试水约 10 分钟)。
+5. **Review 一轮**:报告弹窗查看六维度分数 → 点"开始 Review" → 逐条决策(采纳 / 驳回 / 略过 / 确认删除)。
+
+### 验证清单
+
+- 工具箱末尾看得到第 10 张紫色"知识库体检"卡。
+- 点击弹出档位对话框,5 个选项(30/50/100/200/不限)显示预计时间。
+- 体检运行中,"一键提取"按钮被禁用 + 进度条标题显示"知识库体检进行中"。
+- 完成后弹 confirm"体检完成,总分 XX,是否立即查看报告?",点确认打开报告详情。
+- 报告详情:2×3 六维度卡 + 变现场景 5 项分数条 + "开始 Review"按钮。
+- 逐条 Review 弹窗:左右对比,L1 绿边,L2 黄边,L3 灰边;diagnosis 默认折叠。
+- L3_manual 卡片只显示"驳回 + 略过"(无采纳按钮)。
+- split 场景采纳后 Toast"AI 建议拆为 N 条,已采纳第 1 条;其余请到 Tab 1 手动创建"。
+- drop 场景采纳后原 kp review_status 变 ignored(Tab 1"已忽略"筛选里找得到)。
+- 略过按钮:开 F12 Network 核验不发请求、不改 DB。
 
 ---
 
-## 历史版本功能累积（v2.2.3 已交付）
+## 历史版本功能累积（v2.2.3 / v2.3.0-part1 已交付）
 
 以下能力在 v2.2.3 hotfix 落地后持续生效，v2.3.0-part1 继续沿用：
 
@@ -95,7 +106,7 @@ v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
 | 1 知识提取引擎 | 文件 → 结构化知识点（含举一反三 + 截断补救 + 重复检测 + 批量重跑） | ✅ **v2.3.0-part1 完成** |
 | 2 知识审核与管理 | 审核 / 标签 / 保鲜 / 政策 / 质控（三级降级） / 管理后台 / 标签分布视图 | ✅ **v2.3.0-part1 完成** |
 | 3 经验录入 | 专家注解 + 经验速记 | ✅ v2.2.0 完成 |
-| 4 质量体检 | AI 全盘扫描 + 低分打磨 + 喂料建议 | 🚧 v2.3.0 Part2 规划中 |
+| 4 质量体检 | AI 全盘扫描 + 低分打磨 + 喂料建议 | ✅ **v2.3.0-part2 完成(三对话闭环:基础+引擎+界面)** |
 | 5 端到端测试 | 路由自省 + AI 判断 + 自动报告 | 🚧 v2.3.0 Part3 规划中 |
 | 6 本地问答助手 | 顾问式答疑 + 朋友试用 | 🚧 v2.3.2 规划中 |
 | 7 内容生产引擎 | AI 辅助生成政策解读 / 指南 / 课件 | 未开发（v2.4.0+） |
@@ -112,7 +123,7 @@ v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
 | 运行环境 | Windows + Python 3.8+（便携版，绿色免安装） |
 | AI 引擎 | DeepSeek API（R1 提取 + 低分打磨；V3 辅助判断 + 校验） |
 | OCR 引擎 | 硅基流动 API（Qwen2.5-VL-72B 视觉模型） |
-| 数据库 | SQLite（16 张表，v2.2.3 新增 operation_events；v2.3.0-part1 无新增表/字段） |
+| 数据库 | SQLite（18 张表，v2.2.3 新增 operation_events；v2.3.0-part2-alpha1 新增 health_reports / polish_suggestions 两张 F048 专用表） |
 | Web 界面 | Flask 本地管理后台（ES5 前端，无 emoji） |
 | PDF 渲染 | pymupdf |
 | 操作方式 | 管理后台为主，bat 入口辅助 |
@@ -157,9 +168,9 @@ v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
    - 随时记录碎片化经验，V3 自动结构化入库
 ```
 
-### 3. 维护工具（Tab 2 工具箱 9 张卡，v2.3.0-part1 从 10 张合并为 9 张）
+### 3. 维护工具（Tab 2 工具箱 10 张卡,v2.3.0-part2 新增第 10 张"知识库体检"）
 
-系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一：最近 7 天 / 全库扫描 / 彻底重扫）** / 政策补跑 / 质检补跑（三级降级链） / 审核统计 / API 费用详情。
+系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一：最近 7 天 / 全库扫描 / 彻底重扫）** / 政策补跑 / 质检补跑（三级降级链） / 审核统计 / API 费用详情 / **知识库体检（v2.3.0-part2 新增,档位弹窗 + 六维报告 + 逐条 Review）**。
 
 ---
 
@@ -179,7 +190,7 @@ v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
   - Card 1~10：状态分布 / 类型分布 / 就绪度 / 质检分数 / 保鲜 / 政策校验 / 重复检测 / 文件管线 / API 费用 / 专家注解
   - Card 11：截断补救（v2.2.3 新增）
   - **Card 12 / 13 / 14：业务领域 / 知识形态 / 客户视角 三组标签分布（v2.3.0-part1 新增，Top5 + 展开全部 + 穿透跳转）**
-- **工具箱 9 张卡（v2.3.0-part1 从 10 张合并为 9 张）**：系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一弹窗，合并原两个入口）** / 政策补跑 / 质检补跑 / 审核统计 / API 费用
+- **工具箱 10 张卡（v2.3.0-part2 新增第 10 张"知识库体检"）**：系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一弹窗，合并原两个入口）** / 政策补跑 / 质检补跑 / 审核统计 / API 费用 / **知识库体检(档位弹窗 + 六维报告 + 逐条 Review UI)**
 - **经验速记**：3 分钟快速录入 + V3 自动结构化
 - **提取管理 4 张卡（v2.3.0-part1 从 3 张扩至 4 张）**：预处理 / 一键提取 / 版本重提取 / **批量重跑（新增，支持文件勾选 + 含注解警告不禁用 + 自动备份 + 跨文件 AI 去重联动）**
 - **事件日志**：仪表盘"截断补救"卡的按钮打开
@@ -195,27 +206,29 @@ v2.3.0-part1 **无数据库 schema 变更**，不需要运行 migrate 脚本。
 ```
 rural-revitalization-kb/
 ├── scripts/                # Python 脚本
-│   ├── prompts/            # Prompt 模板（21 个，含 QC_CHECK_SINGLE_PROMPT）
-│   ├── api_server.py       # 管理后台 API（v2.3.0-part1）
+│   ├── prompts/            # Prompt 模板（27 个,v2.3.0-part2-alpha1 新增 6 个 F048 体检 Prompt:HEALTH_DIAGNOSIS / HEALTH_POLISH / HEALTH_POLISH_VERIFY / HEALTH_POLISH_CONSERVATIVE / HEALTH_ISLAND_JUDGE / HEALTH_MONETIZE_REPORT）
+│   ├── api_server.py       # 管理后台 API（v2.3.0-part2,新增 F048 8 路由 + 3 辅助函数）
 │   ├── extractor.py        # 知识提取引擎（含 F057/F058 + Step 8 修正）
 │   ├── deepseek_client.py  # API 封装（DeepSeek + 硅基流动）
 │   ├── preprocessor.py     # 文件预处理 + .md 缓存
-│   ├── db_manager.py       # 数据库管理（v2.3.0-part1 新增标签分布等方法）
+│   ├── db_manager.py       # 数据库管理（v2.3.0-part2-alpha1 新增 F048 12 方法 + 2 张新表 CRUD）
 │   ├── experience_notes.py # 经验速记模块
 │   ├── config_wizard.py    # 配置向导（双 API Key）
 │   ├── check_system.py     # 系统检查 v2.5
 │   ├── duplicate_checker.py# 重复检测（v2.3.0-part1 新增 scan_recent/scan_full/scan_incremental 三套入口）
 │   ├── policy_validator.py # 政策依赖校验
 │   ├── freshness_checker.py# 保鲜扫描
-│   ├── backup_manager.py   # 备份恢复 + operation_hook 钩子（v2.3.0-part1 新增 batch_rerun op_name）
+│   ├── backup_manager.py   # 备份恢复 + operation_hook 钩子（6 触发点:reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt,v2.3.0-part2 完成最后一处接入）
 │   ├── review_analytics.py # 审核统计
 │   ├── tag_config.py       # 标签体系配置
 │   ├── file_reader.py      # 多格式文件读取
 │   ├── setup.py            # 初始化
 │   ├── upgrade_manager.py  # 架构升级迁移
-│   └── migrate_v223.py     # v2.2.3 schema 迁移脚本（幂等，v2.3.0-part1 无需再跑）
+│   ├── health_checker.py   # F048 知识库体检引擎（v2.3.0-part2-alpha2 新增,~1350 行,六维度扫描 + 三层打磨降级链）
+│   ├── migrate_v223.py     # v2.2.3 schema 迁移脚本（幂等，v2.3.0-part1 无需再跑）
+│   └── migrate_v230_part2.py # v2.3.0-part2 schema 迁移脚本（v2.3.0-part2-alpha1 新建,幂等,建 health_reports + polish_suggestions 两表 + 3 索引；已跑过,v2.3.0-part2 正式版无需再跑）
 ├── web/templates/          # 前端页面
-│   └── review.html         # 管理后台（双 Tab，v2.3.0-part1 新增标签分布卡 + 批量重跑 UI）
+│   └── review.html         # 管理后台（双 Tab,v2.3.0-part2 新增工具箱第 10 卡 + 3 F048 模态框 + 13 JS 函数 + tier 三色）
 ├── data/                   # 数据目录
 │   ├── pending/            # 待处理文件
 │   ├── processing/         # 处理中（含 .md 缓存）
@@ -257,9 +270,9 @@ rural-revitalization-kb/
 | v1.0 ~ v2.2.2 | 基础 → 提取 → 管理 → 资产沉淀 → 质量管控 | 全部已完成 | ✅ 已完成 |
 | v2.2.3 hotfix | 紧急 bug 修复 + 护栏 | F057 截断补救 + F058 质检降级 + F060 操作备份 + F061 质检补跑 | ✅ 已完成 |
 | **v2.3.0-part1** | **工具箱整体优化** | **F049 仪表盘工具箱优化 + F059 批量重跑与 AI 去重联动 + Step 8 bug 修正** | ✅ **全部完成** |
-| v2.3.0 Part2 | 质量抓手 | F048 知识库体检 Agent（六维度 + 低分打磨） | 下一批次 |
+| **v2.3.0-part2** | **质量抓手** | **F048 知识库体检 Agent(六维度扫描 + 三层打磨降级链 + 逐条 Review UI)** | ✅ **本次完成** |
 | v2.3.0 Part3 | 端到端测试 | F062 端到端健康测试 Agent（方案 A） | 规划中 |
-| v2.3.1 | 关联体系 | F020 冲突检测 + F030 知识关联网络 | 规划中 |
+| v2.3.1 | 批量重算成熟度 + 关联体系 | 批量重算 content_readiness 按钮(与 F048 打磨解耦) + F020 冲突检测 + F030 知识关联网络 | 规划中 |
 | v2.3.2 | 本地问答助手 | F055 顾问式答疑 + F056 发布 JSON 标准 | 规划中 |
 | v2.4.0+ | 按需再议 | 内容生产 / 采集监控等 | 远期 |
 | v3.x | 产品化 | 云端问答 → 培训 → 投标 | 远期 |
@@ -281,7 +294,7 @@ rural-revitalization-kb/
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化路径
 - `01_工程手册.md`：代码文件清单 / 技术踩坑 / 关键设计决策
 - `02_知识体系.md`：五大类分类 + 三层标签
-- `03_Prompt手册.md`：21 个 Prompt 模板清单
+- `03_Prompt手册.md`：27 个 Prompt 模板清单(v2.3.0-part2 含 6 个 F048 体检 Prompt)
 
 ### GitHub 仓库
 
@@ -298,9 +311,13 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 - **OCR**：用硅基流动不用 DeepSeek。
 - **数据库**：所有删除必须手动级联 annotations。
 - **v2.2.3 铁律 1**：每条知识点必须有 qa_score + qa_source，禁止"跳过"灰色地带。
-- **v2.2.3 铁律 2**：5 个关键操作触发点必须先 `operation_hook(op_name)` 备份，失败立即终止（v2.3.0-part1 新接入 batch_rerun 为第 6 个触发点）。
+- **v2.2.3 铁律 2**:6 个关键操作触发点必须先 `operation_hook(op_name)` 备份,失败立即终止(reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt;v2.3.0-part1 接入 batch_rerun,v2.3.0-part2 接入 health_adopt,至此 6 触发点全齐)。
 - **v2.3.0-part1 约定 1**：`extract_from_file` 返回的 `kps_info` 统一用 `kp_id` 字段，跨模块引用务必对齐（Step 8 老 bug 的根因就是字段口径不一致）。
 - **v2.3.0-part1 约定 2**：批量重跑默认仅清空 extracted pending 条目，保留 confirmed / ignored；注解依赖 db 层 `delete_extracted_kps_by_source_file` 合约（只删 pending，不触 annotations）。
+- **v2.3.0-part2 约定 1**:`db.apply_polish_suggestion` 只改 status,不触 knowledge_points;采纳三步(operation_hook("health_adopt") → update_knowledge_point → apply_polish_suggestion)由 api_server 层显式串起,与 v2.2.3 F061 `_qc_rerun_core` 风格一致,任一失败 500 + step 标识,不做 rollback。
+- **v2.3.0-part2 约定 2**:低分候选严格口径 `(qa_score>0 AND qa_score<=2) OR qa_source='rule_fallback'`;qa_score>0 过滤未质检 kp(默认值 0.0),避免把"未质检"的 kp 误拉进打磨池。未质检应先走 F061 质检补跑补 qa_score。
+- **v2.3.0-part2 约定 3**:split 场景只采纳第 1 条不自动建新 kp(避免污染审核池,老唐手动到 Tab 1 创建其余);drop 走独立 `/api/tools/health/suggestions/<sid>/drop` 路由调 `ignore_knowledge_point`,不走 `/adopt` 路由;op_name 复用 `"health_adopt"` 不新增(backup 分桶按 op_name 不碎)。
+- **v2.3.0-part2 约定 4**:采纳后 `content_readiness` 保留原值不动(打磨是"修字句/补结构"不是"重评成熟度",避免 L2 保守打磨虚高成熟度统计);成熟度重算规划 v2.3.1 单开"批量重算成熟度"按钮解耦。
 
 ---
 
@@ -314,6 +331,6 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 
 本项目为个人实战资产沉淀工具，当前阶段仅供老唐本人使用。未来商业化路径见 `00_项目全景.md`。
 
-## v2.3.0-part1 致谢
+## v2.3.0-part2 致谢
 
-感谢老唐 20 年乡村振兴实战经验沉淀出的判断力。v2.2.3 补上了质量护栏，v2.3.0-part1 把工具箱和仪表盘的体验往前推了一步——批量重跑让历史污染数据可以一键重建，标签分布卡让知识资产的画像更直观。下一步 v2.3.0 Part2 知识库体检 Agent 将开始质量抓手建设，让精品知识从"审核出来"升级为"打磨出来"。
+感谢老唐 20 年乡村振兴实战经验沉淀出的判断力。v2.2.3 补上了质量护栏,v2.3.0-part1 把工具箱和仪表盘往前推了一步,v2.3.0-part2 则把最后一块短板补上了——F048 知识库体检 Agent 三对话闭环完成,质量抓手从"审核为主"升级为"审核 + 打磨双抓手"。从此精品知识不仅能"审核出来",也能"打磨出来"。下一步 v2.3.1 会把"批量重算成熟度"按钮补上,把打磨和成熟度评定彻底解耦。

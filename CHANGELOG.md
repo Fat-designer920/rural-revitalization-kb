@@ -5,6 +5,154 @@
 
 ---
 
+## [v2.3.0-part2-beta1] - 2026-04-22
+ 
+### F048 知识库体检 Agent - 界面层后端(对话3/3 前半部分)
+ 
+**新增路由(`scripts/api_server.py` +667 行,2049→2716)**
+ 
+- `GET  /api/tools/health/latest` — 工具箱卡片用:最新一份 completed 报告瘦身摘要(不含 full_report_json 省带宽)
+- `POST /api/tools/health/start` — 启动全库体检(后台线程,`_task` 单例互斥;polish_max 白名单 30/50/100/200/null)
+- `GET  /api/tools/health/history` — 历史报告列表(query limit 1-200,默认 20)
+- `GET  /api/tools/health/report/<rid>` — 单份完整报告(含 full_report_json 自动 parse)
+- `GET  /api/tools/health/suggestions/<rid>` — 该报告的 Review 清单(附加 `kp_current_title` + `kp_current_status`,kp 已删除时 status=deleted)
+- `POST /api/tools/health/suggestions/<sid>/adopt` — L1/L2 采纳(三步原子:备份→update_kp→apply;任一步失败 500 附 step 标识;split 只取 sc[0]+split_note;L3_manual 返 400;drop 类型返 400 提示改走 /drop)
+- `POST /api/tools/health/suggestions/<sid>/drop` — drop 独立路由(走 `ignore_knowledge_point(kp_id, reason="health_drop: "+diagnosis[:200])`)
+- `POST /api/tools/health/suggestions/<sid>/reject` — 驳回(仅改 status=rejected,允许后续重入候选池)
+ 
+**新增辅助函数(api_server 模块级内联实装)**
+ 
+- `_get_suggestion_by_id(sid)` — 按 sid 查单条 polish_suggestion(db_manager 不回改,本地 10 行 SQL 解决)
+- `_merge_ai_content(kp_row, sc)` — 固定 8 条映射路径(**不按 content_type 分流**):
+  1. `sc.title` → `kw.title` 直接覆盖
+  2. `sc.practical_insights` → `kw.practical_insights` 直接覆盖 list
+  3. `sc.tags.layer1` → `kw.final_category_tags`(list,仅非空覆盖)
+  4. `sc.tags.layer2` → `kw.final_attribute_tags`(dict,仅非空覆盖)
+  5. `sc.tags.layer3` → `kw.final_keywords`(list,仅非空覆盖)
+  6. `sc.description` → `ai_extracted_content.polished_description` **新键**(不覆盖原主字段)
+  7. `sc.polish_notes` → `ai_extracted_content.polish_notes` **新键**
+  8. `content_readiness` **不传**,保留数据库原值
+- `_health_progress_adapter(payload)` — HealthChecker 回调 `{stage, current, total, message}` 映射到 `_task["progress"]`,total_files=8 固定,打磨阶段(dim5_polish)把 current/total 拼进 message 显示"打磨中 X/Y"
+ 
+**事件埋点**
+ 
+- `health_suggestion_adopted` / `health_suggestion_dropped` / `health_suggestion_rejected` 三类结构化事件写入 `operation_events` 表(尽力而为,失败不影响主流程)
+ 
+### Fixed
+ 
+- 无本轮修复项
+ 
+### 注意
+ 
+- **前端 `review.html` 未改动本轮**,F048 工具箱第 10 张卡 + 3 模态框 + 13 JS 函数放下一轮交付,届时才是 v2.3.0-part2 正式版发布节点
+- 本轮体检功能在后端侧可通过 API 调用验证(curl / Postman),前端按钮暂无入口
+- `_task` 单例互斥意味着体检期间无法启动提取/批量重跑任务(反之亦然,409 保护)
+- 体检任务执行时长取决于打磨档位:30 条约 10 分钟 / 50 条约 17 分钟 / 100 条约 35 分钟 / 200 条约 70 分钟
+
+## [v2.3.0-part2] - 2026-04-22
+
+v2.3.0-part2 F048 知识库体检 Agent 界面层收尾(对话 3/3),三对话闭环完成。工具箱第 10 张"知识库体检"卡上线,档位弹窗 + 六维报告 + 逐条 Review + 采纳/驳回/略过/删除四态操作全部落地。
+
+### Added
+
+- **scripts/api_server.py(增量,约 +350 行)—— F048 界面层后端**
+  - 新增 3 个辅助函数:
+    - `_health_progress_adapter(payload)` 把引擎层 `{stage, current, total, message}` 映射到既有 `_task['progress']` 的 `{current_step, current_file, total_files, message}`,total_files=8 固定,映射表 init=1/dim1=2/dim2=3/dim3=4/dim4_island=5/dim5_polish=6/dim6_monetize=7/done=8/failed=8
+    - `_get_suggestion_by_id(sid)` 手写 SELECT 单条 polish_suggestion(db_manager 未暴露,按 alpha1 锁定决策不回改 db 层),两个 JSON 字段自动 parse
+    - `_merge_ai_content(kp, sugg)` 浅拷贝原 ai_extracted_content(保留所有字段),按 content_type 覆盖主字段 + 追加 polished_description / polish_notes
+  - 8 个新路由:
+    - `POST /api/tools/health/start` 启动体检,入参 `{polish_max}`(白名单 [30,50,100,200,null],非白名单自动兜底 50 + 记 warn 事件),与 _task 单例互斥(409),progress_callback 挂 `_health_progress_adapter`
+    - `GET /api/tools/health/latest` 仅返回 status='completed' 最新一份
+    - `GET /api/tools/health/reports?limit=20` 历史列表(不含 full_report_json 省带宽)
+    - `GET /api/tools/health/reports/<report_id>` 单份完整报告(含 full_report_json 自动解析)
+    - `GET /api/tools/health/reports/<report_id>/suggestions?status=` 建议列表,每条附加 kp_current_content_type
+    - `POST /api/tools/health/suggestions/<sid>/adopt` 原子三步:operation_hook("health_adopt") → update_knowledge_point → apply_polish_suggestion,任一失败 500 附 step 标识
+    - `POST /api/tools/health/suggestions/<sid>/reject` 入参 `{reason}`,调 reject_polish_suggestion
+    - `POST /api/tools/health/suggestions/<sid>/drop` 独立路由:operation_hook("health_adopt") → ignore_knowledge_point(kp_id, reason="health_drop: "+diagnosis[:200]) → apply_polish_suggestion
+  - split 场景采纳策略:suggested_content 是 list 且 len>1 时只取 sc[0] 做 merge,response 带 split_note 提示老唐其余条目到 Tab 1 手动处理,不自动建新 kp 避免污染
+  - L3_manual / manual_review 的 /adopt 路由直接返回 400,前端按钮矩阵也不显示采纳按钮,双重兜底
+  - `main()` 版本号字符串 v2.3.0-part1 → v2.3.0-part2,启动 banner 新增"知识库体检"字样
+
+- **web/templates/review.html(增量,约 +500 行)—— F048 界面层前端**
+  - 工具箱第 10 张卡 tc-health(紫色 H 图标,onclick="runTool('health')") 打开档位对话框
+  - 3 个新模态框:healthStartDlg(档位选择,5 档显示预计时间)/ healthReportDlg(2×3 六维度卡 + 变现场景行 + 开始 Review 按钮)/ healthReviewDlg(左右对比 + 诊断折叠 + tier 三色 + 按 suggestion_type 动态按钮)
+  - 13 个新 JS 函数:doHealthStart / openHealthHistory / loadHealthHistory / openHealthReport / renderHealthReport / renderDimCard / startHealthReview / renderHealthReview / healthReviewNext / healthReviewPrev / healthAdoptCurrent / healthRejectCurrent / healthDropCurrent
+  - 按钮渲染矩阵按 tier+suggestion_type 动态:L1 improve/merge → 采纳+驳回+略过 / L1 split → 采纳第1条+驳回+略过 / L1 drop → 确认删除+驳回+略过 / L2 improve → 采纳+驳回+略过 / L3 manual_review → 驳回+略过(无采纳)
+  - CSS 新增:tier 三色(L1 绿 #52c41a / L2 黄 #faad14 / L3 灰 #8c8c8c)/ 六维度 grid(2×3)/ review-compare 左右对比 / 变现场景行(5 项分数条)/ suggestion_type 徽章四色(drop 红 / split 蓝 / improve 紫 / manual 灰)
+  - diagnosis 文本用 `<details>诊断详情</details>` 默认折叠
+  - checkRunningTask titles 字典追加 `"health_check":"知识库体检进行中"`
+  - showTaskProgress 和 startPolling 的按钮禁用/恢复列表追加 `"tc-health"`
+  - startPolling 完成分支新增:r.type==="health_check" && r.result.success 时弹 confirm"体检完成,总分 XX,是否立即查看报告?",确认后调 openHealthReport
+  - Header 版本号 v2.3.0-part1 → v2.3.0-part2
+
+### Design Locked (决策锁定)
+
+- 字段映射方案 A(按 content_type 智能映射):保留原 ai_extracted_content 其他字段,可复现可回滚;拒绝方案 B 全量替换
+- split 采纳方案 A(只取第 1 条 + split_note):避免批量建新 kp 污染审核池,老唐手动判断符合 Review 节奏
+- 时间提示方案 A(档位弹窗显示预计时间):30→10min / 50→17min / 100→35min / 200→70min / ∞→按库容估算
+- 略过按钮纯前端跳转:不发请求、不改 DB、指针 +1,符合 Review 中途暂停直觉
+- drop 走独立 /drop 路由:语义与 adopt 完全不同,独立路由避免 _merge_ai_content 走空路径的特判;op_name 复用 "health_adopt" 避免 backup 分桶过碎
+- diagnosis 折叠原样展示:tier 三色已承载质量信号,不再解析 verify_score 等数字,避免正则解析噪声
+- content_readiness 采纳后不动:打磨是"修字句/补结构"非"重评成熟度",避免 L2 虚高;成熟度联动 v2.3.1 单开批量重算按钮解耦
+- _get_suggestion_by_id 手写在 api_server:不回改 db_manager,界面层局部用 10 行 SQL + JSON parse 更轻
+- 采纳三步不下沉 db 层:与 v2.2.3 F061 `_qc_rerun_core` 风格一致,api_server 层清晰可见"备份→更新 kp→标记 applied"三步,便于审计和 debug
+- L3_manual /adopt 返回 400 + 前端按钮不显示:双重兜底,L3 只能驳回或略过
+
+### Not Implemented (本版本不做)
+
+- 批量重算成熟度按钮:工具箱第 11 卡位口头约定,计划 v2.3.1 单独交付;本版本工具箱仍是 10 张卡
+- 历史体检趋势图:`GET /api/tools/health/latest` 可返回上一份 completed 报告供前端做趋势对比,但本版本前端仅在报告详情显示"对比上次:+X 分"文字,折线图等 v2.3.1 或更后
+- /adopt 三步失败回滚:SQLite 本地单库事务 API 未暴露,任一失败硬 500 + step 标识,不做 rollback(与 dup_merge / batch_rerun 保持一致硬失败风格)
+
+### Logging (埋点延续)
+
+- api_server F048 8 路由不新增 event_type;operation_hook("health_adopt") 自动写 backup_trigger / backup_failed(v2.2.3 既有机制)
+- health_checker.py 的 10 种事件在 alpha2 已全部接入,本版本复用不变
+
+### Docs
+
+- `00_项目全景.md`:当前状态版本升至 v2.3.0-part2;工具箱 9 个→10 个;"知识库体检(v2.3.0 Part2 界面层对话3 新增)"→"✅ 已落地";模块 4 状态 ✅;迭代路线表追加 v2.3.0-part2 正式行;3 对话拆分进度表对话3 ✅
+- `01_工程手册.md`:代码清单 api_server.py / review.html 版本升级 + 功能描述追加 F048 界面层变更;技术踩坑表追加 4 条 v2.3.0-part2 界面层踩坑(split / drop / _get_suggestion_by_id / content_readiness);新增 3 个整节(关键设计决策 v2.3.0-part2 / API 路由速查 F048 / review.html 前端改动速查 F048)
+- `03_Prompt手册.md`:顶部注释行 + F048 小节标题 + 调用位置表全部升级为"对话3 已落地";调用位置表由 2 列扩成 3 列(引擎层调用方 / 界面层触发路径),底下追加"对话3 新增 8 路由全部不调用 Prompt"说明
+- `README.md`:当前版本 v2.3.0-part1 → v2.3.0-part2;"本次交付内容"整节替换为 F048 三对话进度 + 能力全景 + 老唐操作 5 步 + 验证清单;模块 4 ✅;工具箱 9→10;目录结构追加 health_checker.py / migrate_v230_part2.py;迭代路线追加 part2 行;关键约束段追加 v2.3.0-part2 约定 1~4
+- `CHANGELOG.md`:本条目
+
+### Compat (向下兼容)
+
+- /api/tools/duplicate-scan / /api/tools/duplicate-reset-rescan / /api/tools/qa-backfill 等历史接口保留不变
+- 浏览器缓存的旧版 review.html 不会因 F048 新增路由受影响
+- 数据库 schema 无本次对话变更;alpha1 新增的 health_reports / polish_suggestions 两表合计 18 张
+
+### 老唐操作清单(5 步)
+
+1. 备份数据库:启动后台 → 一键备份(或手动复制 data/database/knowledge_base.db)
+2. 替换 2 个代码文件:scripts/api_server.py / web/templates/review.html
+3. 重启服务:关闭 启动后台.bat 后重开
+4. 首次体检:工具箱 → 知识库体检 → 选 30 条档位(首次试水约 10 分钟)
+5. Review 一轮:报告弹窗查看六维度 → 点"开始 Review" → 逐条决策(采纳 / 驳回 / 略过 / 确认删除)
+
+### 验证清单(回归测试要点)
+
+- 档位白名单 5 个选项全部可选,非白名单(如传 77)自动兜底 50 不报错 + 记 health_check_param_invalid warn 事件
+- _task 单例互斥:体检运行时点击"一键提取"返回 409
+- 采纳三步任一失败精确 500 + step 标识(故意断网或改 DB 权限验证)
+- split 场景采纳后 response 带 split_note 文字,前端 Toast 提示"AI 建议拆为 N 条,已采纳第 1 条;其余请到 Tab 1 手动创建"
+- drop 场景采纳后 kp 表 review_status 变 ignored(回 Tab 1 在"已忽略"筛选里找得到)
+- L3_manual 卡片只显示驳回 + 略过按钮,无采纳按钮;手动 curl /adopt 返回 400
+- 略过纯前端:指针 +1 不发请求、不改 DB(开 F12 Network 核验)
+- 进度 stage 9 种均能正确映射到 current_step,进度条不卡 0%
+- 体检完成弹 confirm"是否立即查看报告?",点确认直接打开最新报告
+
+### Not Changed (本次对话不改)
+
+- `scripts/db_manager.py` — alpha1 已就绪,界面层只读
+- `scripts/health_checker.py` — alpha2 已就绪,界面层只调 run_full_check 入口
+- `scripts/prompt_templates.py` — alpha1 已就绪,界面层不碰 Prompt
+- `scripts/backup_manager.py` — operation_hook("health_adopt") 直接复用,无需改动
+- `scripts/migrate_v230_part2.py` — alpha1 已跑过,schema 无变更
+
+---
+
 ## [v2.3.0-part2-alpha2] - 2026-04-21
  
 ### Added

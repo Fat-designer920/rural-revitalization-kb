@@ -1,7 +1,38 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part1 - 工具箱优化 + 批量重跑（对话1/2 交付）
+版本：v2.3.0-part2 - F048 知识库体检 Agent 界面层（对话3/3 交付）
+
+v2.3.0-part2 变更（F048 界面层）：
+    新增 8 个体检路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
+      GET  /api/tools/health/latest                    —— 工具箱卡片显示"最近一次"用
+      POST /api/tools/health/start                     —— 启动体检（后台线程，_task type="health"）
+      GET  /api/tools/health/history                   —— 历史报告列表
+      GET  /api/tools/health/report/<rid>              —— 单份报告详情
+      GET  /api/tools/health/suggestions/<rid>         —— 该报告的 Review 清单
+      POST /api/tools/health/suggestions/<sid>/adopt   —— L1/L2 采纳（三步原子：备份→update_kp→apply）
+      POST /api/tools/health/suggestions/<sid>/drop    —— drop 独立路由（走 ignore_knowledge_point）
+      POST /api/tools/health/suggestions/<sid>/reject  —— 驳回（仅标 rejected）
+    新增 3 个辅助函数（模块级，路由前声明）：
+      _get_suggestion_by_id(sid)          —— 按 sid 查单条 polish_suggestion，两个 JSON 字段手动解析
+      _merge_ai_content(kp_row, sc)       —— suggested_content 字段合并为 update_knowledge_point 参数
+      _health_progress_adapter(payload)   —— HealthChecker 进度回调 → _task["progress"] 映射
+    关键契约（与 v2.3.0-part2-alpha2 引擎层 + 对话3 需求锁定对齐）：
+      - _merge_ai_content：tags.layer1→final_category_tags / layer2→final_attribute_tags /
+        layer3→final_keywords（三者仅非空时覆盖）；description/polish_notes 存进
+        ai_extracted_content 新键（polished_description/polish_notes）不覆盖原主字段；
+        title 直接覆盖；practical_insights 直接覆盖（list）；content_readiness **不传**保留原值
+      - split 语义：isinstance(sc, list) and len(sc)>1 时只取 sc[0]，响应带 split_note 提示
+        "AI 建议拆分为 N 条，已采纳第 1 条，其余 N-1 条请到 Tab 1 手动创建"
+      - drop 独立路由：不走 _merge_ai_content，走 db.ignore_knowledge_point(kp_id,
+        reason="health_drop: " + diagnosis[:200])，三步与 adopt 对齐
+      - L3_manual 采纳返 400："L3 建议仅支持驳回或略过，请到 Tab 1 手工修订"
+      - 采纳/drop 三步任一失败返 500，附 step 标识（backup / update_kp / apply）
+      - _health_progress_adapter 映射表 total_files=8 固定，stage→current_file 序号为
+        init=1 / dim1=2 / dim2=3 / dim3=4 / dim4_island=5 / dim5_polish=6 /
+        dim6_monetize=7 / done=8 / failed=8
+      - 打磨阶段（dim5_polish）把 HealthChecker 回调里的 current/total 拼接进 message
+        显示"打磨中 X/Y"
 
 v2.3.0-part1 变更：
     F049 仪表盘工具箱优化（后端）：
@@ -2020,6 +2051,642 @@ def task_batch_rerun():
                     "file_count": len(file_ids)})
 
 # ================================================================
+# v2.3.0-part2 F048 知识库体检 Agent（界面层，对话3/3）
+# ----------------------------------------------------------------
+# 8 个路由 + 3 个辅助函数
+# 所有路由零改动既有代码，仅在文件末尾追加。
+# 辅助函数 3 个：_get_suggestion_by_id / _merge_ai_content / _health_progress_adapter
+# ================================================================
+
+# ------ 辅助函数 1：按 sid 查单条 polish_suggestion（db 层未提供该粒度方法） ------
+def _get_suggestion_by_id(sid):
+    """F048 对话3 辅助：按 suggestion_id 查单条打磨建议。
+
+    db_manager 只暴露 get_polish_suggestions_by_report 批量查；此处 api_server 内
+    手写 10 行 SQL 解决，不回改 db 层（按对话3 设计决策）。
+
+    Returns: dict 或 None；original_content / suggested_content 自动 json.loads
+    """
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM polish_suggestions WHERE suggestion_id=?", (int(sid),))
+        row = c.fetchone()
+        conn.close()
+    except Exception as e:
+        print(f"[_get_suggestion_by_id] sid={sid} 查询失败: {e}")
+        return None
+    if not row:
+        return None
+    r = dict(row)
+    for f in ("original_content", "suggested_content"):
+        v = r.get(f)
+        if isinstance(v, str) and v.strip():
+            try:
+                r[f] = json.loads(v)
+            except Exception:
+                # 不是合法 JSON 就保留原字符串
+                pass
+    return r
+
+
+# ------ 辅助函数 2：合并 AI 建议内容为 update_knowledge_point 参数 ------
+def _merge_ai_content(kp_row, sc):
+    """F048 对话3 辅助：把 suggested_content (dict) 合并为 update_knowledge_point 的 **kwargs。
+
+    映射路径（与 v2.3.0-part2 设计决策锁定一致）：
+      - sc["title"]                → kw["title"]（直接覆盖）
+      - sc["practical_insights"]   → kw["practical_insights"]（直接覆盖 list）
+      - sc["tags"]["layer1"]       → kw["final_category_tags"]（仅非空 list 时覆盖）
+      - sc["tags"]["layer2"]       → kw["final_attribute_tags"]（仅非空 dict 时覆盖）
+      - sc["tags"]["layer3"]       → kw["final_keywords"]（仅非空 list 时覆盖）
+      - sc["description"]          → 写进 ai_extracted_content["polished_description"] 新键，
+                                      不覆盖任何主字段（作为参考内容供人工查看）
+      - sc["polish_notes"]         → 写进 ai_extracted_content["polish_notes"] 新键
+      - content_readiness 不传     → 保留数据库原值（成熟度联动在 v2.3.1 单开批量按钮）
+
+    Args:
+        kp_row: dict，update_knowledge_point 前的 kp 原始行（主要用其 ai_extracted_content）
+        sc:     dict，polish_suggestions.suggested_content 解析后的 dict
+
+    Returns:
+        kw: dict，可直接 db.update_knowledge_point(kp_id, **kw) 调用
+    """
+    if not isinstance(sc, dict):
+        return {}
+    kw = {}
+
+    # 1) title（直接覆盖）
+    if "title" in sc and isinstance(sc["title"], str) and sc["title"].strip():
+        kw["title"] = sc["title"].strip()
+
+    # 2) practical_insights（直接覆盖 list）
+    if "practical_insights" in sc and isinstance(sc["practical_insights"], list):
+        kw["practical_insights"] = sc["practical_insights"]
+
+    # 3) 三层标签（仅非空时覆盖）
+    tags = sc.get("tags") or {}
+    if isinstance(tags, dict):
+        l1 = tags.get("layer1")
+        if isinstance(l1, list) and len(l1) > 0:
+            kw["final_category_tags"] = l1
+        l2 = tags.get("layer2")
+        if isinstance(l2, dict) and len(l2) > 0:
+            kw["final_attribute_tags"] = l2
+        l3 = tags.get("layer3")
+        if isinstance(l3, list) and len(l3) > 0:
+            kw["final_keywords"] = l3
+
+    # 4) description / polish_notes 写进 ai_extracted_content 子键（不覆盖主字段）
+    desc = sc.get("description")
+    notes = sc.get("polish_notes")
+    if (isinstance(desc, str) and desc.strip()) or (isinstance(notes, str) and notes.strip()):
+        orig_aec = kp_row.get("ai_extracted_content") if kp_row else None
+        if isinstance(orig_aec, str):
+            try:
+                orig_aec = json.loads(orig_aec)
+            except Exception:
+                orig_aec = {}
+        if not isinstance(orig_aec, dict):
+            orig_aec = {}
+        merged_aec = dict(orig_aec)
+        if isinstance(desc, str) and desc.strip():
+            merged_aec["polished_description"] = desc
+        if isinstance(notes, str) and notes.strip():
+            merged_aec["polish_notes"] = notes
+        kw["ai_extracted_content"] = merged_aec
+
+    return kw
+
+
+# ------ 辅助函数 3：HealthChecker 进度回调 → _task["progress"] 映射 ------
+_HEALTH_STAGE_MAP = {
+    "init":           (1, "初始化扫描"),
+    "dim1":           (2, "①健康度扫描"),
+    "dim2":           (3, "②结构分布扫描"),
+    "dim3":           (4, "③加工深度扫描"),
+    "dim4_island":    (5, "④关联密度(孤岛精判)"),
+    "dim5_polish":    (6, "⑤低分打磨(V3诊断→R1打磨→V3校验)"),
+    "dim6_monetize":  (7, "⑥变现匹配度"),
+    "done":           (8, "完成"),
+    "failed":         (8, "出错"),
+}
+
+def _health_progress_adapter(payload):
+    """F048 对话3 辅助：把 HealthChecker 的 {stage,current,total,message} 映射到
+    _task["progress"]（{total_files,current_file,current_step,message,...}）。
+
+    total_files 固定 8（六维度 + init + done 合算）。
+    dim5_polish 阶段把 current/total 拼进 message：'打磨中 X/Y'。
+    """
+    if not isinstance(payload, dict):
+        return
+    stage = payload.get("stage") or ""
+    msg = payload.get("message") or ""
+    cur = payload.get("current")
+    tot = payload.get("total")
+
+    step_idx, step_label = _HEALTH_STAGE_MAP.get(stage, (0, stage or ""))
+
+    # 打磨阶段把进度细节拼进 message
+    extra_msg = msg
+    if stage == "dim5_polish":
+        try:
+            ci = int(cur) if cur is not None else 0
+            ti = int(tot) if tot is not None else 0
+            if ti > 0:
+                detail = "打磨中 " + str(ci) + "/" + str(ti)
+                extra_msg = detail + (" | " + msg if msg else "")
+        except Exception:
+            pass
+
+    _task_update_progress({
+        "current_file": step_idx,
+        "current_step": step_label,
+        "message": extra_msg,
+    })
+
+
+# ================================================================
+# F048 路由 1：工具箱卡片用 —— 最近一次体检概要
+# ================================================================
+@app.route("/api/tools/health/latest", methods=["GET"])
+def health_latest():
+    """返回最新一份 completed 报告的概要（工具箱第 10 张卡展示用）。
+    无报告时 success=True，报告字段为 None。
+    """
+    try:
+        r = db.get_latest_health_report()
+        if not r:
+            return jsonify({"success": True, "report": None})
+        # 瘦身：仅回概要字段，不回 full_report_json
+        summary = {
+            "report_id": r.get("report_id"),
+            "created_at": r.get("created_at"),
+            "total_score": r.get("total_score"),
+            "dim1_health_score": r.get("dim1_health_score"),
+            "dim2_structure_score": r.get("dim2_structure_score"),
+            "dim3_processing_score": r.get("dim3_processing_score"),
+            "dim4_relation_score": r.get("dim4_relation_score"),
+            "dim5_polish_score": r.get("dim5_polish_score"),
+            "dim6_monetize_score": r.get("dim6_monetize_score"),
+            "scanned_kp_count": r.get("scanned_kp_count"),
+        }
+        return jsonify({"success": True, "report": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F048 路由 2：启动体检（后台线程）
+# ================================================================
+@app.route("/api/tools/health/start", methods=["POST"])
+def health_start():
+    """启动全库体检。
+
+    入参 JSON：
+      {"polish_max": 50}  # 允许值: 30/50/100/200/None（不限）
+    """
+    with _task_lock:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在执行: " + _task["type"]}), 409
+        _task["running"] = True
+        _task["type"] = "health"
+        _task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _task["progress"] = {
+            "total_files": 8, "current_file": 0, "current_filename": "",
+            "current_step": "准备启动体检", "total_extracted": 0, "message": ""
+        }
+        _task["result"] = None
+        _task["error"] = None
+
+    d = request.get_json() or {}
+    # polish_max 白名单在 HealthChecker 内部还会再校验一次，此处放宽
+    polish_max = d.get("polish_max", 50)
+    # 前端可能传字符串 "None" / "" 表示不限
+    if polish_max in ("None", "none", "", None):
+        polish_max = None
+    else:
+        try:
+            polish_max = int(polish_max)
+        except (TypeError, ValueError):
+            polish_max = 50
+
+    def _run():
+        try:
+            from scripts.health_checker import HealthChecker
+            from scripts.deepseek_client import DeepSeekClient
+            try:
+                client = DeepSeekClient()
+            except Exception as ce:
+                with _task_lock:
+                    _task["error"] = "DeepSeek 客户端初始化失败: " + str(ce)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(ce)
+                return
+
+            _task_update_progress({"current_step": "初始化体检引擎",
+                                   "message": "加载 HealthChecker..."})
+
+            hc = HealthChecker(
+                db=db, client=client,
+                progress_callback=_health_progress_adapter,
+            )
+            result = hc.run_full_check(polish_max=polish_max)
+
+            with _task_lock:
+                if result and result.get("success"):
+                    _task["result"] = {
+                        "success": True,
+                        "report_id": result.get("report_id"),
+                        "total_score": result.get("total_score"),
+                        "message": "体检完成，总分 " + str(result.get("total_score") or "--"),
+                    }
+                    _task["progress"]["current_step"] = "完成"
+                    _task["progress"]["current_file"] = 8
+                    _task["progress"]["message"] = "体检完成"
+                else:
+                    err = (result or {}).get("error") or "未知错误"
+                    _task["error"] = "体检失败: " + str(err)
+                    _task["progress"]["current_step"] = "出错"
+                    _task["progress"]["message"] = str(err)
+        except Exception as e:
+            traceback.print_exc()
+            with _task_lock:
+                _task["error"] = str(e)
+                _task["progress"]["current_step"] = "出错"
+                _task["progress"]["message"] = str(e)
+        finally:
+            with _task_lock:
+                _task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"success": True, "message": "知识库体检已启动",
+                    "polish_max": polish_max})
+
+
+# ================================================================
+# F048 路由 3：历史报告列表
+# ================================================================
+@app.route("/api/tools/health/history", methods=["GET"])
+def health_history():
+    """历史报告列表，默认最多 20 份。
+    query: ?limit=50
+    """
+    try:
+        limit = request.args.get("limit", 20)
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 20
+        rows = db.get_health_report_list(limit=limit)
+        return jsonify({"success": True, "items": rows, "count": len(rows)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F048 路由 4：单份报告详情（含 full_report_json）
+# ================================================================
+@app.route("/api/tools/health/report/<int:rid>", methods=["GET"])
+def health_report_detail(rid):
+    """单份报告详情，full_report_json 已在 db 层解析为 dict。"""
+    try:
+        r = db.get_health_report_detail(rid)
+        if not r:
+            return jsonify({"error": "report not found: " + str(rid)}), 404
+        return jsonify({"success": True, "report": r})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F048 路由 5：该报告的 Review 清单
+# ================================================================
+@app.route("/api/tools/health/suggestions/<int:rid>", methods=["GET"])
+def health_suggestions_list(rid):
+    """拉取某报告的打磨建议列表。
+    query:
+      ?status=pending|applied|rejected|manual_review_needed  （可选，不传返回全部）
+    """
+    try:
+        status = request.args.get("status") or None
+        items = db.get_polish_suggestions_by_report(rid, status=status)
+        # 附加 kp 当前标题，方便前端卡片展示（若 kp 已被物理删除则用 original_content.title 兜底）
+        conn = db.get_connection(); c = conn.cursor()
+        for it in items:
+            try:
+                c.execute("SELECT title, review_status FROM knowledge_points WHERE id=?",
+                          (it.get("kp_id"),))
+                row = c.fetchone()
+                if row:
+                    it["kp_current_title"] = row[0] or ""
+                    it["kp_current_status"] = row[1] or ""
+                else:
+                    oc = it.get("original_content") or {}
+                    it["kp_current_title"] = oc.get("title", "") if isinstance(oc, dict) else ""
+                    it["kp_current_status"] = "deleted"
+            except Exception:
+                it["kp_current_title"] = ""
+                it["kp_current_status"] = ""
+        conn.close()
+        return jsonify({"success": True, "items": items, "count": len(items)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F048 路由 6：采纳（L1/L2，三步原子）
+# ================================================================
+@app.route("/api/tools/health/suggestions/<int:sid>/adopt", methods=["POST"])
+def health_suggestion_adopt(sid):
+    """L1/L2 采纳。
+
+    三步原子（任一失败返 500 附 step 标识）：
+      Step 1 operation_hook("health_adopt") 备份
+      Step 2 db.update_knowledge_point(kp_id, **_merge_ai_content(kp_row, sc))
+      Step 3 db.apply_polish_suggestion(sid)
+
+    特殊规则：
+      - tier='L3_manual' → 返 400（L3 仅支持驳回/略过）
+      - suggestion_type='drop' → 返 400（drop 请走 /drop 路由）
+      - suggestion_type='split' 且 sc 是 list 且 len>1 → 仅取 sc[0]，响应带 split_note
+    """
+    sugg = _get_suggestion_by_id(sid)
+    if not sugg:
+        return jsonify({"error": "suggestion not found: " + str(sid)}), 404
+
+    status = sugg.get("status") or ""
+    if status not in ("pending", "manual_review_needed"):
+        return jsonify({"error": "当前建议状态不可采纳: " + status}), 409
+
+    tier = sugg.get("tier") or ""
+    stype = sugg.get("suggestion_type") or ""
+
+    # L3 兜底不支持采纳
+    if tier == "L3_manual":
+        return jsonify({
+            "error": "L3 建议仅支持驳回或略过，请到 Tab 1 手工修订对应知识点"
+        }), 400
+
+    # drop 走独立路由
+    if stype == "drop":
+        return jsonify({
+            "error": "drop 类型建议请调用 /api/tools/health/suggestions/<sid>/drop"
+        }), 400
+
+    sc = sugg.get("suggested_content")
+    if sc is None:
+        return jsonify({"error": "该建议 suggested_content 为空，无法采纳"}), 400
+
+    # split 语义：多条时只取第一条
+    split_note = None
+    if isinstance(sc, list):
+        if len(sc) == 0:
+            return jsonify({"error": "suggested_content 为空数组，无法采纳"}), 400
+        if len(sc) > 1:
+            split_note = ("AI 建议拆分为 " + str(len(sc)) +
+                          " 条，已采纳第 1 条；其余 " + str(len(sc) - 1) +
+                          " 条请到 Tab 1 手动创建")
+        sc = sc[0]
+
+    if not isinstance(sc, dict):
+        return jsonify({"error": "suggested_content 格式异常，非 dict"}), 400
+
+    kp_id = sugg.get("kp_id")
+    if not kp_id:
+        return jsonify({"error": "建议未关联 kp_id"}), 400
+
+    # 读 kp 当前行（用于合并 ai_extracted_content 子键，以及存在性校验）
+    try:
+        kp_row = db.get_knowledge_point(kp_id)
+    except Exception:
+        kp_row = None
+    if not kp_row:
+        return jsonify({"error": "知识点已不存在（可能被删除）: kp_id=" + str(kp_id)}), 404
+
+    # ---- Step 1: 备份 ----
+    try:
+        operation_hook("health_adopt")
+    except BackupFailedError as be:
+        return jsonify({
+            "error": "备份失败，采纳终止: " + str(be),
+            "step": "backup",
+        }), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "备份异常: " + str(e), "step": "backup"}), 500
+
+    # ---- Step 2: 合并并更新 kp ----
+    try:
+        kw = _merge_ai_content(kp_row, sc)
+        if not kw:
+            return jsonify({
+                "error": "合并后无可更新字段（AI 建议内容为空或全部跳过）",
+                "step": "update_kp",
+            }), 500
+        db.update_knowledge_point(kp_id, **kw)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "error": "更新知识点失败: " + str(e),
+            "step": "update_kp",
+        }), 500
+
+    # ---- Step 3: 标记 suggestion applied ----
+    try:
+        ok = db.apply_polish_suggestion(sid)
+        if not ok:
+            return jsonify({
+                "error": "标记建议 applied 失败（可能已被其他操作处理）",
+                "step": "apply",
+            }), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "标记建议失败: " + str(e), "step": "apply"}), 500
+
+    # ---- 事件日志（尽力而为，失败不影响主流程） ----
+    try:
+        db.log_operation_event(
+            event_type="health_suggestion_adopted",
+            module="health_checker",
+            severity="info",
+            payload={
+                "suggestion_id": sid, "kp_id": kp_id,
+                "tier": tier, "suggestion_type": stype,
+                "split_note": split_note,
+                "fields_updated": list(kw.keys()),
+            },
+        )
+    except Exception:
+        pass
+
+    resp = {
+        "success": True,
+        "suggestion_id": sid,
+        "kp_id": kp_id,
+        "tier": tier,
+        "suggestion_type": stype,
+        "fields_updated": list(kw.keys()),
+        "message": "采纳成功",
+    }
+    if split_note:
+        resp["split_note"] = split_note
+    return jsonify(resp)
+
+
+# ================================================================
+# F048 路由 7：drop 独立路由（走 ignore_knowledge_point）
+# ================================================================
+@app.route("/api/tools/health/suggestions/<int:sid>/drop", methods=["POST"])
+def health_suggestion_drop(sid):
+    """drop 类型建议专用路由。
+
+    三步：
+      Step 1 operation_hook("health_adopt")  —— 复用同一 op_name 避免 backup 分桶过碎
+      Step 2 db.ignore_knowledge_point(kp_id, reason="health_drop: " + diagnosis[:200])
+      Step 3 db.apply_polish_suggestion(sid)
+    """
+    sugg = _get_suggestion_by_id(sid)
+    if not sugg:
+        return jsonify({"error": "suggestion not found: " + str(sid)}), 404
+
+    status = sugg.get("status") or ""
+    if status not in ("pending", "manual_review_needed"):
+        return jsonify({"error": "当前建议状态不可处理: " + status}), 409
+
+    stype = sugg.get("suggestion_type") or ""
+    if stype != "drop":
+        return jsonify({
+            "error": "非 drop 类型建议请走 /adopt 路由（当前 suggestion_type=" + stype + ")"
+        }), 400
+
+    kp_id = sugg.get("kp_id")
+    if not kp_id:
+        return jsonify({"error": "建议未关联 kp_id"}), 400
+
+    try:
+        kp_row = db.get_knowledge_point(kp_id)
+    except Exception:
+        kp_row = None
+    if not kp_row:
+        return jsonify({"error": "知识点已不存在: kp_id=" + str(kp_id)}), 404
+
+    diagnosis = sugg.get("diagnosis") or ""
+    reason = "health_drop: " + (diagnosis[:200] if isinstance(diagnosis, str) else "")
+
+    # ---- Step 1: 备份 ----
+    try:
+        operation_hook("health_adopt")
+    except BackupFailedError as be:
+        return jsonify({
+            "error": "备份失败，操作终止: " + str(be),
+            "step": "backup",
+        }), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "备份异常: " + str(e), "step": "backup"}), 500
+
+    # ---- Step 2: ignore kp ----
+    try:
+        db.ignore_knowledge_point(kp_id, reason=reason)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "error": "标记 kp ignored 失败: " + str(e),
+            "step": "update_kp",
+        }), 500
+
+    # ---- Step 3: 标记 suggestion applied ----
+    try:
+        ok = db.apply_polish_suggestion(sid)
+        if not ok:
+            return jsonify({
+                "error": "标记建议 applied 失败（可能已被其他操作处理）",
+                "step": "apply",
+            }), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "标记建议失败: " + str(e), "step": "apply"}), 500
+
+    # ---- 事件日志 ----
+    try:
+        db.log_operation_event(
+            event_type="health_suggestion_dropped",
+            module="health_checker",
+            severity="info",
+            payload={
+                "suggestion_id": sid, "kp_id": kp_id,
+                "reason": reason,
+            },
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "success": True,
+        "suggestion_id": sid,
+        "kp_id": kp_id,
+        "action": "ignored",
+        "reason": reason,
+        "message": "已按 AI 建议忽略该知识点（可到 Tab 1 恢复）",
+    })
+
+
+# ================================================================
+# F048 路由 8：驳回（仅标 rejected）
+# ================================================================
+@app.route("/api/tools/health/suggestions/<int:sid>/reject", methods=["POST"])
+def health_suggestion_reject(sid):
+    """驳回建议。无备份、无 kp 变更，只改 polish_suggestion 行状态。
+    入参 JSON（可选）: {"reason": "..."}
+    """
+    sugg = _get_suggestion_by_id(sid)
+    if not sugg:
+        return jsonify({"error": "suggestion not found: " + str(sid)}), 404
+
+    status = sugg.get("status") or ""
+    if status not in ("pending", "manual_review_needed"):
+        return jsonify({"error": "当前建议状态不可驳回: " + status}), 409
+
+    d = request.get_json(silent=True) or {}
+    reason = d.get("reason") or ""
+
+    try:
+        ok = db.reject_polish_suggestion(sid, reason=reason)
+        if not ok:
+            return jsonify({"error": "驳回失败（可能已被处理）"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "驳回异常: " + str(e)}), 500
+
+    try:
+        db.log_operation_event(
+            event_type="health_suggestion_rejected",
+            module="health_checker",
+            severity="info",
+            payload={
+                "suggestion_id": sid,
+                "kp_id": sugg.get("kp_id"),
+                "tier": sugg.get("tier"),
+                "suggestion_type": sugg.get("suggestion_type"),
+                "reason": reason,
+            },
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "success": True,
+        "suggestion_id": sid,
+        "message": "已驳回",
+    })
+
+
+# ================================================================
 # 启动
 # ================================================================
 def _open(port):
@@ -2030,9 +2697,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part1")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part2")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part1: 工具箱优化 + 批量重跑 + AI去重联动")
+    print(f"  v2.3.0-part2: F048 知识库体检 Agent 界面层（对话3/3 完成）")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")
