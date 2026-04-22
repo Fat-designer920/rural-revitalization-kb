@@ -4,7 +4,7 @@
 >
 > **知识工厂：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。**
 >
-> **当前版本：v2.3.0-part2（全部完成，分 3 对话交付）**
+> **当前版本：v2.3.0-part2.1（建表单一来源修复 hotfix；v2.3.0-part2 F048 体检闭环 + schema 整合 migrate 脚本退役）**
 
 ---
 
@@ -123,7 +123,7 @@ v2.3.0-part2 **无数据库 schema 变更**(alpha1 已完成迁移),不需要重
 | 运行环境 | Windows + Python 3.8+（便携版，绿色免安装） |
 | AI 引擎 | DeepSeek API（R1 提取 + 低分打磨；V3 辅助判断 + 校验） |
 | OCR 引擎 | 硅基流动 API（Qwen2.5-VL-72B 视觉模型） |
-| 数据库 | SQLite（18 张表，v2.2.3 新增 operation_events；v2.3.0-part2-alpha1 新增 health_reports / polish_suggestions 两张 F048 专用表） |
+| 数据库 | SQLite（18 张表，v2.3.0-part2.1 起由 db_manager.init_tables() 一次建成；scripts/migrate_*.py 迁移脚本全部退役删除） |
 | Web 界面 | Flask 本地管理后台（ES5 前端，无 emoji） |
 | PDF 渲染 | pymupdf |
 | 操作方式 | 管理后台为主，bat 入口辅助 |
@@ -224,9 +224,7 @@ rural-revitalization-kb/
 │   ├── file_reader.py      # 多格式文件读取
 │   ├── setup.py            # 初始化
 │   ├── upgrade_manager.py  # 架构升级迁移
-│   ├── health_checker.py   # F048 知识库体检引擎（v2.3.0-part2-alpha2 新增,~1350 行,六维度扫描 + 三层打磨降级链）
-│   ├── migrate_v223.py     # v2.2.3 schema 迁移脚本（幂等，v2.3.0-part1 无需再跑）
-│   └── migrate_v230_part2.py # v2.3.0-part2 schema 迁移脚本（v2.3.0-part2-alpha1 新建,幂等,建 health_reports + polish_suggestions 两表 + 3 索引；已跑过,v2.3.0-part2 正式版无需再跑）
+│   └── health_checker.py   # F048 知识库体检引擎（v2.3.0-part2-alpha2 新增,~1350 行,六维度扫描 + 三层打磨降级链）
 ├── web/templates/          # 前端页面
 │   └── review.html         # 管理后台（双 Tab,v2.3.0-part2 新增工具箱第 10 卡 + 3 F048 模态框 + 13 JS 函数 + tier 三色）
 ├── data/                   # 数据目录
@@ -271,6 +269,7 @@ rural-revitalization-kb/
 | v2.2.3 hotfix | 紧急 bug 修复 + 护栏 | F057 截断补救 + F058 质检降级 + F060 操作备份 + F061 质检补跑 | ✅ 已完成 |
 | **v2.3.0-part1** | **工具箱整体优化** | **F049 仪表盘工具箱优化 + F059 批量重跑与 AI 去重联动 + Step 8 bug 修正** | ✅ **全部完成** |
 | **v2.3.0-part2** | **质量抓手** | **F048 知识库体检 Agent(六维度扫描 + 三层打磨降级链 + 逐条 Review UI)** | ✅ **本次完成** |
+| **v2.3.0-part2.1** | **schema 整合 hotfix** | **db_manager.init_tables() 吸收 health_reports / polish_suggestions 两表 + 3 索引；setup.py 版本号升至 v2.3.0-part2.1；删除 migrate_v223.py 和 migrate_v230_part2.py** | ✅ **已交付（2026-04-22）** |
 | v2.3.0 Part3 | 端到端测试 | F062 端到端健康测试 Agent（方案 A） | 规划中 |
 | v2.3.1 | 批量重算成熟度 + 关联体系 | 批量重算 content_readiness 按钮(与 F048 打磨解耦) + F020 冲突检测 + F030 知识关联网络 | 规划中 |
 | v2.3.2 | 本地问答助手 | F055 顾问式答疑 + F056 发布 JSON 标准 | 规划中 |

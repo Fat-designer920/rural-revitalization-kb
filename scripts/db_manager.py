@@ -1,7 +1,14 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part2 - F048 知识库体检 Agent 基础层（对话1/3 交付）
+版本：v2.3.0-part2.1 - 建表单一来源修复（schema 整合 + migrate 脚本退役）
+
+v2.3.0-part2.1 修复（hotfix）：
+  - init_tables() 追加 health_reports / polish_suggestions 两张表建表 SQL
+    + 3 个 F048 索引（idx_health_created / idx_polish_report / idx_polish_status）
+  - 修复新电脑首次部署缺两表导致体检功能炸的 bug
+  - 建表单一来源原则：init_tables 必须是唯一的建表真相，schema 变更先改这里
+  - 配套删除 scripts/migrate_v223.py、scripts/migrate_v230_part2.py（历史使命完成）
 
 v2.3.0-part2 新增（F048 体检 Agent 基础层）：
   - 新表 health_reports：六维度体检报告（status/total_score/6 维分/full_report_json/API调用统计）
@@ -47,8 +54,8 @@ v2.2.3 新增（hotfix）：
   duplicate_groups - 重复检测结果（v2.1.1 F039新增）
   annotations - 专家注解（v2.2.0 F029新增）
   operation_events - 结构化事件日志（v2.2.3 F057/F058/F060新增）
-  health_reports - 体检报告（v2.3.0-part2 F048新增，建表由 migrate_v230_part2.py 完成）
-  polish_suggestions - 打磨建议（v2.3.0-part2 F048新增，建表由 migrate_v230_part2.py 完成）
+  health_reports - 体检报告（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
+  polish_suggestions - 打磨建议（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -304,6 +311,40 @@ class DatabaseManager:
             FOREIGN KEY (related_file_id) REFERENCES source_files(id),
             FOREIGN KEY (related_kp_id) REFERENCES knowledge_points(id)
         )""")
+        # --- v2.3.0-part2 F048 知识库体检报告 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS health_reports (
+            report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            total_score REAL,
+            dim1_health_score REAL,
+            dim2_structure_score REAL,
+            dim3_processing_score REAL,
+            dim4_relation_score REAL,
+            dim5_polish_score REAL,
+            dim6_monetize_score REAL,
+            full_report_json TEXT,
+            scanned_kp_count INTEGER,
+            v3_call_count INTEGER,
+            r1_call_count INTEGER,
+            cost_estimate REAL,
+            error_message TEXT
+        )""")
+        # --- v2.3.0-part2 F048 低分打磨建议 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS polish_suggestions (
+            suggestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL,
+            kp_id INTEGER NOT NULL,
+            diagnosis TEXT,
+            suggestion_type TEXT,
+            tier TEXT,
+            original_content TEXT,
+            suggested_content TEXT,
+            status TEXT DEFAULT 'pending',
+            applied_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (report_id) REFERENCES health_reports(report_id)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -325,6 +366,10 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_events_time ON operation_events(event_time)",
             "CREATE INDEX IF NOT EXISTS idx_events_type ON operation_events(event_type)",
             "CREATE INDEX IF NOT EXISTS idx_events_file ON operation_events(related_file_id)",
+            # v2.3.0-part2 F048 体检报告/打磨建议索引
+            "CREATE INDEX IF NOT EXISTS idx_health_created ON health_reports(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_polish_report ON polish_suggestions(report_id)",
+            "CREATE INDEX IF NOT EXISTS idx_polish_status ON polish_suggestions(status)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -1382,7 +1427,7 @@ class DatabaseManager:
 
     # ================================================================
     # v2.3.0-part2 F048 知识库体检 Agent 基础层（对话1/3 交付）
-    # 两张表 health_reports / polish_suggestions 由 migrate_v230_part2.py 建
+    # 两张表 health_reports / polish_suggestions 由 init_tables() 建（v2.3.0-part2.1 起）
     # 本模块只负责 CRUD，引擎逻辑在 health_checker.py（对话2）
     # ================================================================
 

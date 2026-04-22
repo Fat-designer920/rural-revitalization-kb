@@ -1,18 +1,23 @@
 """
 setup.py - 系统初始化（完整建库）
 路径：scripts/setup.py
-版本：v2.2.0
+版本：v2.3.0-part2.1
 
 功能：
   1. 创建目录结构（9个目录）
-  2. 初始化数据库（15张表，全部字段，一次建成）
+  2. 初始化数据库（18张表，全部字段，一次建成）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
   5. 创建桌面快捷方式
   6. 验证核心文件完整性
 
-注意：本脚本替代了所有migrate_*.py迁移脚本。
+注意：本脚本替代了所有 migrate_*.py 迁移脚本。
       新用户首次安装直接获得最新完整表结构，无需逐版本迁移。
+
+v2.3.0-part2.1 变更：
+  - init_tables() 已吸收 v2.2.3 / v2.3.0-part2 所有 schema 变更
+  - scripts/migrate_v223.py 和 scripts/migrate_v230_part2.py 已退役（删除）
+  - 数据库表数量：15张 → 18张（新增 operation_events / health_reports / polish_suggestions）
 """
 import os, sys, json
 from pathlib import Path
@@ -33,7 +38,7 @@ def get_config():
 
 def get_version():
     p = PROJECT_ROOT / "VERSION"
-    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.2.0"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.0-part2.1"
 
 
 def main():
@@ -73,7 +78,7 @@ def main():
                          str(base / "data" / "database" / "knowledge_base.db"))
     db = DatabaseManager(db_path)
     db.init_tables()
-    print("    OK 15张表已创建（全部字段，无需迁移）")
+    print("    OK 18张表已创建（全部字段，无需迁移）")
 
     # ── [3/5] 写入默认分类 ──────────────────────────
     print("\n[3/5] 写入默认分类...")

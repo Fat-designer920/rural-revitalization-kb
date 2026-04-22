@@ -5,6 +5,76 @@
 
 ---
 
+## [v2.3.0-part2.1] - 2026-04-22 (hotfix)
+
+**定位**：建表单一来源修复 + migrate 脚本退役，彻底清理"新电脑首次部署"路径。
+
+### 根因
+
+v2.3.0-part2 开发期间，`health_reports` 和 `polish_suggestions` 两张 F048 专用表只在 `scripts/migrate_v230_part2.py` 里建表，没有同步回填到 `db_manager.init_tables()`。`setup.py` 的版本号也停留在 v2.2.0，打印文案"15张表已创建"和实际建出的 16 张不一致，完整 schema 需要 18 张。
+
+**后果**：新电脑跑首次安装.bat → setup.py → init_tables() → 只建 16 张表，缺 health_reports / polish_suggestions → 体检功能调用时直接炸。老唐本机因当时手动跑过 migrate_v230_part2.py 所以未暴露。
+
+### 修复
+
+**scripts/db_manager.py（v2.3.0-part2 → v2.3.0-part2.1）**
+
+- `init_tables()` 在 operation_events 建表之后、索引循环之前，追加两张 F048 表的 `CREATE TABLE IF NOT EXISTS`（SQL 严格复用 migrate_v230_part2.py 版本）
+- 索引循环追加 3 个 F048 索引：
+  - `idx_health_created ON health_reports(created_at DESC)`
+  - `idx_polish_report ON polish_suggestions(report_id)`
+  - `idx_polish_status ON polish_suggestions(status)`
+- 文件头注释里两处"建表由 migrate_v230_part2.py 完成"改为"v2.3.0-part2.1 起由 init_tables 直接建"
+- F048 区块起始注释"两张表由 migrate_v230_part2.py 建"改为"由 init_tables() 建"
+- 验证：用全新 sqlite 库跑 init_tables 后 `sqlite_master` 查出 18 张业务表 + 21 个索引，health_reports / polish_suggestions / 3 个 F048 索引全部在
+
+**scripts/setup.py（v2.2.0 → v2.3.0-part2.1）**
+
+- 顶部版本号 `v2.2.0` → `v2.3.0-part2.1`
+- `get_version()` 兜底返回值 `"2.2.0"` → `"2.3.0-part2.1"`
+- 打印文案 `"OK 15张表已创建"` → `"OK 18张表已创建"`
+- 头部文档注释新增 v2.3.0-part2.1 变更说明段（说明 init_tables 已吸收所有 migrate 逻辑）
+
+**删除**
+
+- `scripts/migrate_v223.py`（v2.2.3 schema 迁移脚本，历史使命完成；相关字段 truncation_count / recovery_runs / last_recovery_at / qa_source 已全部在 init_tables 的 source_files / knowledge_points 建表 SQL 内）
+- `scripts/migrate_v230_part2.py`（v2.3.0-part2 schema 迁移脚本，历史使命完成；两张表 + 3 索引已全部回填到 init_tables）
+
+### 不变
+
+- `首次安装.bat` 一字未改（它本来就调 setup.py → init_tables，升级 init_tables 后自动覆盖 18 张表）
+- 数据库已存在的老用户零风险：`CREATE TABLE IF NOT EXISTS` 对已存在表是 no-op，重跑 setup.py 不会破坏数据
+- 其他代码文件（api_server / health_checker / extractor 等）全部不动
+
+### 经验教训（写入工程手册"技术踩坑"）
+
+**schema 单一来源原则**：`init_tables()` 必须是唯一的建表真相。任何 schema 变更都要同步改 init_tables()，migrate 脚本只服务"已部署老库的一次性追赶"，一旦所有老库都升完就必须退役（代码删除 + setup.py 吸收）。绝对不能让 init_tables 长期落后于 migrate 脚本——否则新电脑首次部署必然缺表。
+
+### Docs
+
+- `00_项目全景.md`：当前状态版本升至 v2.3.0-part2.1；迭代路线表新增 v2.3.0-part2.1 行；待办需求新增"v2.3.0-part2.1 hotfix 已完成"小节
+- `01_工程手册.md`：db_manager.py 版本号升至 v2.3.0-part2.1；首次安装.bat 描述去掉"待改造"；技术踩坑表新增"schema 单一来源原则"；代码约定表替换旧 migrate_v223 约定为新 schema 规则；health_reports / polish_suggestions 建表来源描述改为 init_tables
+- `README.md`：顶部版本号升至 v2.3.0-part2.1；目录结构删除 migrate_v223.py 和 migrate_v230_part2.py 两行；技术栈 SQLite 描述更新；迭代路线新增 v2.3.0-part2.1 行
+- `CHANGELOG.md`：本条目
+- 02_知识体系.md / 03_Prompt手册.md：本次不动
+
+### 老唐操作清单（4 步）
+
+1. **替换 2 个代码文件**：`scripts/db_manager.py` / `scripts/setup.py`
+2. **删除 2 个文件**：`scripts/migrate_v223.py` / `scripts/migrate_v230_part2.py`
+3. **推送 GitHub**（Summary: `v2.3.0-part2.1: schema 单一来源修复 + migrate 脚本退役`）
+4. **新电脑验证**：在新电脑上 clone 仓库 → 双击 `首次安装.bat` → 一键建完 18 张表
+
+### 验证清单
+
+- [ ] 新电脑跑完首次安装.bat，SQLite 库查询 `SELECT name FROM sqlite_master WHERE type='table'` 返回 18 张业务表（含 health_reports / polish_suggestions）
+- [ ] 启动后台 → Tab 2 → 工具箱 → 第 10 张"知识库体检"卡点击无报错
+- [ ] 30 条档位试跑一次体检，能完成并产出报告
+- [ ] scripts 目录下**不存在** migrate_v223.py 和 migrate_v230_part2.py
+- [ ] 老电脑零感知：现有数据完好，原有功能全部正常
+
+---
+
 ## [v2.3.0-part2] - 2026-04-22
 
 ### F048 知识库体检 Agent - 界面层前端正式版(对话3/3 后半部分) 三对话闭环完成
