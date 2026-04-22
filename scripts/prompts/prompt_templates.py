@@ -1,7 +1,20 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.3.0-part2.2 - F048 体检/打磨 6 Prompt 正式落地 + import 顶层化
+版本：v2.3.0-part3-alpha1 - F062 端到端健康测试 Agent 基础层 Prompt
+
+变更说明（v2.3.0-part3-alpha1 对话 1/3）：
+  - 新增 1 个 F062 体检 Prompt 正式版文本:
+    * E2E_RESPONSE_JUDGE_PROMPT (V3, 端到端响应语义判断)
+      职责: 对 HTTP 响应 + 最近 operation_events 片段做"真假绿色"判断
+      核心: 识别"抢救/降级/跳过/异常继续"等关键词,揪出"字面 200 但实际降级"
+      输出: judgment=pass/warn/fail + reasons + keywords_hit + confidence
+  - 双 key 严格对齐对话 A 立规则:system_prompt / user_prompt_template
+  - 顶层可 import（对话 2 e2e_tester.py 将顶层 from ... import E2E_RESPONSE_JUDGE_PROMPT,
+    禁止 try/except + None 降级模式）
+  - 内省型 Prompt,不注入策略块(对齐 F048 HEALTH_DIAGNOSIS 模式)
+  - PROMPT_VERSION 从 v2.3.0-part2.2 升到 v2.3.0-part3-alpha1
+  - get_all_prompt_names() 追加 1 条 F062 Prompt 登记
 
 变更说明（v2.3.0-part2.2 对话A）：
   - 新增 6 个 F048 体检/打磨 Prompt 正式版文本(之前 v2.3.0-part2 仅在 03 手册声明契约,代码未落地):
@@ -95,7 +108,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.3.0-part2.2"
+PROMPT_VERSION = "v2.3.0-part3-alpha1"
 
 
 def get_prompt_version():
@@ -1648,6 +1661,106 @@ HEALTH_MONETIZE_REPORT_PROMPT = {
 
 
 # ============================================================
+# v2.3.0-part3-alpha1 F062 端到端健康测试 Agent Prompt（1 个）
+# 对话 1/3 基础层 - 契约 → 骨架关卡
+# ============================================================
+
+# ----------------------------------------------------------------
+# E2E_RESPONSE_JUDGE_PROMPT (V3, 端到端响应语义判断)
+# 职责: 对单个 HTTP 响应 + 最近相关 operation_events,
+#       判断是否"真的成功"还是"假绿色"(字面 200 实际降级)
+# 注入策略块: 无(内省型 Prompt,只判断不生产,对齐 F048 HEALTH_DIAGNOSIS 模式)
+# 输入占位符:
+#   {endpoint}             被测路由（如 /api/tools/health/start）
+#   {method}               GET / POST
+#   {status_code}          HTTP 状态码（200/400/409/500 等）
+#   {response_excerpt}     响应 body 前 2000 字（超长截断）
+#   {recent_events_json}   最近 N=20 条相关 operation_events（JSON 数组）
+#   {expected_behavior}    测试契约：期望该端点本次应该怎样（一段自然语言）
+# 输出: 单个 JSON 对象(不用数组包裹)
+#   {
+#     "judgment":      "pass" | "warn" | "fail",
+#     "reasons":       [ "理由1(50字内)", ... ],
+#     "keywords_hit":  [ "抢救" | "降级" | "跳过" | "异常继续" | ... ],
+#     "confidence":    "high" | "medium" | "low"
+#   }
+# 关键设计: 禁止被"字面 HTTP 200"蒙混过关——operation_events 里出现
+#          warning/error 级的"抢救/降级/跳过/异常继续"字眼时,
+#          无论响应多"漂亮"都必须判 warn 或 fail
+# ----------------------------------------------------------------
+E2E_RESPONSE_JUDGE_PROMPT = {
+    "system_prompt": """你是接口健康度的"较真型审计员"。
+
+你的职责: 对一次 HTTP 调用的响应 + 最近相关事件日志,判断这次调用是"真·成功"还是"假绿色成功"(字面返回 200 但实际降级/抢救/吞异常)。
+
+=== 硬规则: 不被表象蒙混 ===
+
+很多时候系统会表现出"字面上 HTTP 200 + success=true",但 operation_events 里同时有:
+  - 抢救(rescue / recovery): 比如 R1 截断补救、分段重提等。抢救本身不是 bug,但如果在"本次测试应一次成功"的场景下发生,说明调用质量下降。
+  - 降级(fallback / downgrade): 三级降级、规则兜底、走 L2 保守打磨、manual_review_needed 等。降级出现就要 warn。
+  - 跳过(skip / ignore / bypass): 关键校验被绕过、候选被过滤掉 0 条等。直接 fail。
+  - 异常继续(exception_swallowed / silent_degrade / None fallback): 像 "try/except X=None"、"print 当错误处理"、静默 return None 这类模式。直接 fail。
+
+只要 operation_events 里出现以上 4 类关键词或其同义词,即使 HTTP 状态码是 200,你也必须给出 warn 或 fail,并在 keywords_hit 里列出命中的关键词。
+
+=== 判断标准 ===
+
+pass (真·成功):
+  - HTTP 状态码符合 expected_behavior 的期望
+  - response_excerpt 结构正常、业务字段齐全、无报错
+  - recent_events_json 中无 warning/error 级的抢救/降级/跳过/异常继续事件
+  - 即"静默成功": 既无表象报错,也无背后偷偷降级
+
+warn (可工作但有瑕疵):
+  - HTTP 状态码基本符合预期,但响应里有部分字段缺失 / 格式略怪
+  - recent_events_json 中出现抢救或降级但不影响最终结果(如 F057 截断补救成功、F058 三级降级但最终 qa_score 齐全)
+  - 或者出现"这个场景不该出现这种抢救"的可疑信号(expected_behavior 说"应一次成功"但日志说"降级了")
+
+fail (真·失败 / 假绿色):
+  - HTTP 状态码不符合 expected_behavior
+  - 响应里含显式错误字段(error / exception / traceback)
+  - recent_events_json 中出现"跳过""异常继续"类事件
+  - 或者出现"bug 伪装成 feature"的强信号: 比如返回 200 但 operation_events 显示某个关键维度 score=0 / 整体 score=100 但无任何调用记录
+
+=== 输出 ===
+
+请严格按 JSON 输出单个对象,不要用数组包裹,不要输出任何其他文字:
+{
+  "judgment": "pass | warn | fail",
+  "reasons": ["理由1(50字内)", "理由2", ...],   // 2-4 条,具体指出依据
+  "keywords_hit": ["抢救" | "降级" | "跳过" | "异常继续" | "假绿色" | ...],  // 可为空数组
+  "confidence": "high | medium | low"
+}
+
+=== 6 条硬约束 ===
+
+1. keywords_hit 必须从 events 或响应里有实际依据,禁止臆造
+2. reasons 必须具体指向具体字段或事件,禁止"整体质量偏低"类空泛评语
+3. 不要解读 expected_behavior 之外的业务语义,只做"行为 vs 期望"对照
+4. confidence=low 时必须在 reasons 里说明"信息不足以定性"
+5. 字面 HTTP 200 + 背后降级 = warn 起步(除非降级链本身就是期望行为,如 F058 的 qc_downgrade)
+6. 禁止对用户的产品逻辑做道德评价,只对"调用是否健康"做技术判断""",
+
+    "user_prompt_template": """请对以下一次 HTTP 调用做健康度判断。
+
+被测端点: {endpoint}
+请求方法: {method}
+HTTP 状态码: {status_code}
+
+期望行为(测试契约):
+{expected_behavior}
+
+响应正文摘录(前 2000 字,超长已截断):
+{response_excerpt}
+
+最近相关 operation_events(JSON 数组,至多 20 条):
+{recent_events_json}
+
+请严格按上述 JSON 格式输出单个判断对象。"""
+}
+
+
+# ============================================================
 # get_all_prompt_names(): 供外部查询所有 Prompt 登记
 # v2.3.0-part2.2 新增 6 条 F048 登记
 # ============================================================
@@ -1680,4 +1793,6 @@ def get_all_prompt_names():
         {"id": "health_polish_conservative", "name": "体检-L2保守打磨(V3)", "version": PROMPT_VERSION},
         {"id": "health_island_judge", "name": "体检-孤岛精判(V3)", "version": PROMPT_VERSION},
         {"id": "health_monetize_report", "name": "体检-变现匹配度报告(V3)", "version": PROMPT_VERSION},
+        # --- v2.3.0-part3-alpha1 F062 端到端健康测试 1 个 ---
+        {"id": "e2e_response_judge", "name": "E2E-响应语义判断(V3)", "version": PROMPT_VERSION},
     ]

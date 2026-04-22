@@ -1,7 +1,29 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part2.2 - F048 字段契约兑现 hotfix（对话 B / 三对话拆分的防护层）
+版本：v2.3.0-part3-alpha1 - F062 端到端健康测试 Agent 基础层（对话 1/3）
+
+v2.3.0-part3-alpha1 新增（F062 基础层 / 对话 1/3）：
+  - 3 张新表（init_tables 内建，对齐 v2.3.0-part2.1 立规则"schema 单一来源"）：
+    * api_endpoint_registry：接口登记表（endpoint PK + methods + first_seen_at
+                                           + last_tested_at + test_template_json）
+    * e2e_test_reports：E2E 测试整体报告（六维度汇总 + 新增接口清单 + 完整 JSON）
+    * e2e_issues：四态 issue 跟踪（pending/fixed/intermittent/ignored + signature
+                                    去重键 + occurrence_count + 偶发升级逻辑）
+  - 3 条 F062 索引：idx_e2e_report_created / idx_e2e_issue_status /
+                    idx_e2e_issue_signature
+  - 8 个新方法（严格按对话 1 Phase 2 锁定契约）：
+      路由自省(3)：register_endpoint / get_endpoint_registry /
+                   update_endpoint_last_tested
+      报告读写(3)：save_e2e_test_report / get_latest_e2e_test_report /
+                   get_e2e_test_report_detail
+      issue 四态(2)：upsert_e2e_issue（含偶发升级）/ set_e2e_issue_status
+  - 所有 JSON 字段（test_template_json / new_endpoints_json / full_report_json /
+    payload_json）传入支持 dict/list 自动 json.dumps，读取自动 json.loads
+  - severity 取值严格对齐 operation_events 的 CHECK：info / warning / error
+    （禁用 "warn" 简写，对话 A 立规则）
+  - e2e_issues.status 用 CHECK 约束锁死四态白名单
+  - 数据库表总数：18 → 21
 
 v2.3.0-part2.2 修复（hotfix 对话 B）：
   - F048 维度②结构分布=0 根因修复：三个扫描查询（get_kp_for_health_scan /
@@ -52,7 +74,7 @@ v2.2.3 新增（hotfix）：
   - 新方法 log_operation_event / get_qc_rerun_candidates
   - update_knowledge_point 白名单追加 qa_source
 
-数据库表（18张，v2.3.0-part2 新增 health_reports / polish_suggestions）：
+数据库表（21张，v2.3.0-part3-alpha1 新增 api_endpoint_registry / e2e_test_reports / e2e_issues）：
   categories - 知识库分类体系（5大类27+子类）
   source_files - 原始文件记录（v2.2.3新增3字段用于截断补救追溯）
   knowledge_points - 知识点（核心表，v2.2.3新增qa_source字段）
@@ -71,6 +93,9 @@ v2.2.3 新增（hotfix）：
   operation_events - 结构化事件日志（v2.2.3 F057/F058/F060新增）
   health_reports - 体检报告（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
   polish_suggestions - 打磨建议（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
+  api_endpoint_registry - 接口登记表（v2.3.0-part3-alpha1 F062新增，路由自省用）
+  e2e_test_reports - E2E 测试报告（v2.3.0-part3-alpha1 F062新增）
+  e2e_issues - E2E issue 四态跟踪（v2.3.0-part3-alpha1 F062新增）
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -360,6 +385,52 @@ class DatabaseManager:
             created_at TEXT NOT NULL,
             FOREIGN KEY (report_id) REFERENCES health_reports(report_id)
         )""")
+        # --- v2.3.0-part3-alpha1 F062 接口登记表（路由自省用） ---
+        # endpoint 作为 PRIMARY KEY,同一 endpoint 多 methods 合成逗号分隔("GET,POST")
+        c.execute("""CREATE TABLE IF NOT EXISTS api_endpoint_registry (
+            endpoint TEXT PRIMARY KEY,
+            methods TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL,
+            last_tested_at TEXT,
+            test_template_json TEXT
+        )""")
+        # --- v2.3.0-part3-alpha1 F062 E2E 测试整体报告 ---
+        c.execute("""CREATE TABLE IF NOT EXISTS e2e_test_reports (
+            report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            trigger_type TEXT NOT NULL,
+            scan_depth TEXT NOT NULL DEFAULT 'quick',
+            total_endpoints INTEGER,
+            passed_count INTEGER,
+            failed_count INTEGER,
+            warning_count INTEGER,
+            new_endpoints_json TEXT,
+            full_report_json TEXT,
+            v3_call_count INTEGER DEFAULT 0,
+            cost_estimate REAL DEFAULT 0.0
+        )""")
+        # --- v2.3.0-part3-alpha1 F062 E2E issue 四态跟踪 ---
+        # status 四态白名单: pending(待修) / fixed(已修复) / intermittent(偶发) / ignored(忽略)
+        # severity 对齐 operation_events CHECK: info / warning / error (禁"warn"简写)
+        # signature 作为去重键: "{dim_code}|{endpoint}|{rule_id}" 单字段,不加 UNIQUE 约束,
+        #   允许跨 report 多次出现,upsert 时按 signature 查最新 pending/intermittent 记录更新
+        c.execute("""CREATE TABLE IF NOT EXISTS e2e_issues (
+            issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL,
+            dim_code TEXT NOT NULL,
+            endpoint TEXT,
+            severity TEXT NOT NULL DEFAULT 'warning'
+                CHECK(severity IN ('info','warning','error')),
+            signature TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending','fixed','intermittent','ignored')),
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            occurrence_count INTEGER NOT NULL DEFAULT 1,
+            resolved_at TEXT,
+            payload_json TEXT DEFAULT '{}',
+            FOREIGN KEY (report_id) REFERENCES e2e_test_reports(report_id)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -385,6 +456,10 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_health_created ON health_reports(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_polish_report ON polish_suggestions(report_id)",
             "CREATE INDEX IF NOT EXISTS idx_polish_status ON polish_suggestions(status)",
+            # v2.3.0-part3-alpha1 F062 E2E 测试报告/issue 索引
+            "CREATE INDEX IF NOT EXISTS idx_e2e_report_created ON e2e_test_reports(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_e2e_issue_status ON e2e_issues(status, dim_code)",
+            "CREATE INDEX IF NOT EXISTS idx_e2e_issue_signature ON e2e_issues(signature)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -1994,4 +2069,313 @@ class DatabaseManager:
             "total_truncations": total_truncations,
             "total_recovery_runs": total_recovery_runs
         }
+
+    # ==================================================
+    # v2.3.0-part3-alpha1 F062 端到端健康测试 Agent
+    # 8 个新方法：路由自省 3 + 报告读写 3 + issue 四态 2
+    # 严格遵守对话 1 Phase 2 锁定契约
+    # ==================================================
+
+    # -------- 路由自省（3 个） --------
+
+    def register_endpoint(self, endpoint, methods, test_template=None):
+        """登记或更新 Flask 路由。
+
+        endpoint: TEXT 路由路径（PRIMARY KEY），如 "/api/tools/health/start"
+        methods:  list[str] 或 str，多方法合成逗号分隔（如 ["GET","POST"] → "GET,POST"）
+        test_template: dict 可选，手动定义的测试模板（入参样例/期望响应等），内部 json.dumps
+
+        返回: dict {endpoint, methods, first_seen_at, last_tested_at, test_template_json(已parse)}
+
+        UPSERT 语义：
+          - 首次登记：插入 first_seen_at = 当前时间，last_tested_at = NULL
+          - 已存在：仅更新 methods（如果 methods 变化时）和 test_template_json（如果非 None）
+          - 不改 first_seen_at（"新增端点发现"靠 first_seen_at vs 上份报告 created_at 对比识别）
+        """
+        if isinstance(methods, (list, tuple, set)):
+            methods_str = ",".join(sorted(set(str(m).upper() for m in methods if m)))
+        else:
+            methods_str = str(methods or "").upper()
+        if not methods_str:
+            methods_str = "GET"
+
+        tmpl_str = None
+        if test_template is not None:
+            if isinstance(test_template, (dict, list)):
+                try:
+                    tmpl_str = json.dumps(test_template, ensure_ascii=False, default=str)
+                except Exception:
+                    tmpl_str = json.dumps({"_raw": str(test_template)}, ensure_ascii=False)
+            elif isinstance(test_template, str):
+                tmpl_str = test_template
+            else:
+                tmpl_str = json.dumps({"_raw": str(test_template)}, ensure_ascii=False)
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM api_endpoint_registry WHERE endpoint=?", (endpoint,))
+        row = c.fetchone()
+        if row is None:
+            c.execute("""INSERT INTO api_endpoint_registry
+                (endpoint, methods, first_seen_at, last_tested_at, test_template_json)
+                VALUES (?, ?, ?, NULL, ?)""",
+                (endpoint, methods_str, now, tmpl_str))
+        else:
+            # 只更新 methods 和 test_template_json；first_seen_at 保留
+            if tmpl_str is not None:
+                c.execute("""UPDATE api_endpoint_registry
+                    SET methods=?, test_template_json=?
+                    WHERE endpoint=?""", (methods_str, tmpl_str, endpoint))
+            else:
+                c.execute("""UPDATE api_endpoint_registry
+                    SET methods=?
+                    WHERE endpoint=?""", (methods_str, endpoint))
+        conn.commit()
+        c.execute("SELECT * FROM api_endpoint_registry WHERE endpoint=?", (endpoint,))
+        r = dict(c.fetchone())
+        conn.close()
+        # 自动 parse test_template_json
+        r["test_template_json"] = self._safe_json_parse(r.get("test_template_json"), default=None)
+        return r
+
+    def get_endpoint_registry(self):
+        """读全量路由登记表。返回 list[dict]，test_template_json 已 parse。"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT endpoint, methods, first_seen_at, last_tested_at,
+                            test_template_json
+                     FROM api_endpoint_registry
+                     ORDER BY first_seen_at ASC, endpoint ASC""")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["test_template_json"] = self._safe_json_parse(
+                r.get("test_template_json"), default=None)
+        return rows
+
+    def update_endpoint_last_tested(self, endpoint, tested_at=None):
+        """标记某条端点的 last_tested_at 时间戳。
+
+        tested_at: ISO 字符串；None 则用当前时间。
+        返回: True 成功（行数=1）/ False 未找到端点。
+        """
+        if tested_at is None:
+            tested_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE api_endpoint_registry
+                     SET last_tested_at=?
+                     WHERE endpoint=?""", (tested_at, endpoint))
+        affected = c.rowcount
+        conn.commit(); conn.close()
+        return affected > 0
+
+    # -------- E2E 测试报告（3 个） --------
+
+    def save_e2e_test_report(self, report_data):
+        """保存 E2E 测试整体报告。
+
+        入参 report_data: dict，允许字段（白名单，未列出的字段自动忽略）：
+          trigger_type    str  "manual" / "scheduled" / "post_upgrade"
+          scan_depth      str  "quick" / "deep" （默认 quick）
+          total_endpoints int
+          passed_count    int
+          failed_count    int
+          warning_count   int
+          new_endpoints_json   list/dict  (自动 json.dumps)
+          full_report_json     list/dict  (自动 json.dumps)
+          v3_call_count   int  (默认 0)
+          cost_estimate   float (默认 0.0)
+          created_at      str  (可选，未传则用当前时间)
+
+        返回: 新插入的 report_id
+        """
+        whitelist = {
+            "trigger_type", "scan_depth", "total_endpoints",
+            "passed_count", "failed_count", "warning_count",
+            "new_endpoints_json", "full_report_json",
+            "v3_call_count", "cost_estimate", "created_at"
+        }
+        data = {k: v for k, v in (report_data or {}).items() if k in whitelist}
+        # created_at 默认当前
+        data.setdefault("created_at",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        data.setdefault("trigger_type", "manual")
+        data.setdefault("scan_depth", "quick")
+        data.setdefault("v3_call_count", 0)
+        data.setdefault("cost_estimate", 0.0)
+        # JSON 字段自动序列化
+        for jf in ("new_endpoints_json", "full_report_json"):
+            v = data.get(jf)
+            if v is None:
+                continue
+            if isinstance(v, (dict, list)):
+                try:
+                    data[jf] = json.dumps(v, ensure_ascii=False, default=str)
+                except Exception:
+                    data[jf] = json.dumps({"_raw": str(v)}, ensure_ascii=False)
+            elif not isinstance(v, str):
+                data[jf] = json.dumps({"_raw": str(v)}, ensure_ascii=False)
+
+        cols = list(data.keys())
+        placeholders = ",".join("?" for _ in cols)
+        sql = ("INSERT INTO e2e_test_reports (" + ",".join(cols) +
+               ") VALUES (" + placeholders + ")")
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(sql, [data[k] for k in cols])
+        report_id = c.lastrowid
+        conn.commit(); conn.close()
+        return report_id
+
+    def get_latest_e2e_test_report(self):
+        """取最新一份 E2E 报告的瘦身摘要（不含 full_report_json 省带宽）。
+        无数据返回 None。
+        new_endpoints_json 自动 parse；full_report_json 不返回。
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT report_id, created_at, trigger_type, scan_depth,
+                            total_endpoints, passed_count, failed_count,
+                            warning_count, new_endpoints_json,
+                            v3_call_count, cost_estimate
+                     FROM e2e_test_reports
+                     ORDER BY report_id DESC LIMIT 1""")
+        row = c.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        r = dict(row)
+        r["new_endpoints_json"] = self._safe_json_parse(
+            r.get("new_endpoints_json"), default=[])
+        return r
+
+    def get_e2e_test_report_detail(self, report_id):
+        """取某份 E2E 报告完整内容（含 full_report_json 自动 parse）。"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM e2e_test_reports WHERE report_id=?",
+                  (int(report_id),))
+        row = c.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        r = dict(row)
+        r["new_endpoints_json"] = self._safe_json_parse(
+            r.get("new_endpoints_json"), default=[])
+        r["full_report_json"] = self._safe_json_parse(
+            r.get("full_report_json"), default={})
+        return r
+
+    # -------- E2E issue 四态跟踪（2 个） --------
+
+    # 偶发升级阈值（类级常量，方便对话 2 引擎层联调时覆盖）
+    E2E_INTERMITTENT_WINDOW_DAYS = 7
+    E2E_INTERMITTENT_UPGRADE_THRESHOLD = 5
+
+    def upsert_e2e_issue(self, report_id, dim_code, endpoint, severity,
+                        signature, payload=None):
+        """四态 issue 去重写入 + 偶发升级判定。
+
+        语义：
+          - 按 signature 查库
+          - 不存在：INSERT,status=pending,occurrence_count=1,first_seen_at=last_seen_at=now
+          - 存在且 status in (fixed, ignored)：不动老记录,INSERT 一条新的 pending(允许回归再被关注)
+          - 存在且 status in (pending, intermittent)：
+                UPDATE 老记录 last_seen_at=now, occurrence_count+=1,
+                report_id 刷新为当前 report_id（便于按最新报告定位）
+                如果老记录是 intermittent 且 近 EE2E_INTERMITTENT_WINDOW_DAYS 天
+                  累计 occurrence_count > E2E_INTERMITTENT_UPGRADE_THRESHOLD
+                  → 自动降级升级回 pending（"偶发升级为待修"）
+
+        入参：
+          report_id: int 当前 E2E 报告 id（关联到最新报告）
+          dim_code:  str  "1_route"/"2_readiness"/"3_prompt_call"/"4_field_contract"/"5_event"/"6_code_smell"
+          endpoint:  str|None（维度 3/4/6 可为 None，静态代码规则不挂接口）
+          severity:  "info"/"warning"/"error"
+          signature: str 去重键（建议 "{dim_code}|{endpoint或'-'}|{rule_id}"）
+          payload:   dict/list 详细信息，自动 json.dumps
+
+        返回: issue_id（新插入或被更新的 id）
+        """
+        if severity not in ("info", "warning", "error"):
+            severity = "warning"
+        if payload is None:
+            payload_str = "{}"
+        elif isinstance(payload, (dict, list)):
+            try:
+                payload_str = json.dumps(payload, ensure_ascii=False, default=str)
+            except Exception:
+                payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
+        else:
+            payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = self.get_connection(); c = conn.cursor()
+        # 找最新一条同 signature 的 pending/intermittent（这两个状态需要合并）
+        c.execute("""SELECT issue_id, status, occurrence_count, first_seen_at
+                     FROM e2e_issues
+                     WHERE signature=? AND status IN ('pending','intermittent')
+                     ORDER BY issue_id DESC LIMIT 1""", (signature,))
+        existing = c.fetchone()
+        if existing is None:
+            # 全新：INSERT
+            c.execute("""INSERT INTO e2e_issues
+                (report_id, dim_code, endpoint, severity, signature,
+                 status, first_seen_at, last_seen_at, occurrence_count,
+                 resolved_at, payload_json)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 1, NULL, ?)""",
+                (int(report_id), dim_code, endpoint, severity, signature,
+                 now, now, payload_str))
+            issue_id = c.lastrowid
+            conn.commit(); conn.close()
+            return issue_id
+
+        # 已存在 pending/intermittent：UPDATE 合并
+        issue_id = existing["issue_id"]
+        old_status = existing["status"]
+        new_count = (existing["occurrence_count"] or 0) + 1
+        first_seen = existing["first_seen_at"]
+
+        # 偶发升级判定：仅对 intermittent 判定
+        # 条件：近 WINDOW_DAYS 天内累计 > THRESHOLD → 升级回 pending
+        new_status = old_status
+        if old_status == "intermittent":
+            try:
+                from datetime import datetime as _dt, timedelta as _td
+                first_dt = _dt.strptime(first_seen, "%Y-%m-%d %H:%M:%S")
+                now_dt = _dt.strptime(now, "%Y-%m-%d %H:%M:%S")
+                within_window = (now_dt - first_dt).days <= self.E2E_INTERMITTENT_WINDOW_DAYS
+                if within_window and new_count > self.E2E_INTERMITTENT_UPGRADE_THRESHOLD:
+                    new_status = "pending"
+            except Exception:
+                pass  # 时间解析失败不阻断主流程
+
+        c.execute("""UPDATE e2e_issues
+                     SET report_id=?, severity=?, last_seen_at=?,
+                         occurrence_count=?, status=?, payload_json=?
+                     WHERE issue_id=?""",
+                  (int(report_id), severity, now, new_count,
+                   new_status, payload_str, issue_id))
+        conn.commit(); conn.close()
+        return issue_id
+
+    def set_e2e_issue_status(self, issue_id, status, resolved_at=None):
+        """手动更新 issue 四态（前端"已修复/忽略"按钮用，对话 3 界面层接入）。
+
+        status: pending / fixed / intermittent / ignored
+        resolved_at: fixed/ignored 时自动落当前时间戳（除非显式传）
+                     pending/intermittent 时清空 resolved_at
+        返回: True 成功 / False 未找到。
+        """
+        if status not in ("pending", "fixed", "intermittent", "ignored"):
+            return False
+        if status in ("fixed", "ignored"):
+            if resolved_at is None:
+                resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            resolved_at = None
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE e2e_issues
+                     SET status=?, resolved_at=?
+                     WHERE issue_id=?""",
+                  (status, resolved_at, int(issue_id)))
+        affected = c.rowcount
+        conn.commit(); conn.close()
+        return affected > 0
 
