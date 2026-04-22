@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.0-part1</title>
+<title>乡村振兴知识库 v2.3.0-part2</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -497,13 +497,101 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .tr-ok{color:var(--success);font-weight:700;min-width:20px}
 .tr-fail{color:var(--danger);font-weight:700;min-width:20px}
 .tr-warn{color:var(--warning);font-weight:700;min-width:20px}
+
+/* === F048 知识库体检 (v2.3.0-part2) === */
+/* tier 三色边框（L1 绿 / L2 黄 / L3 灰） */
+.tier-L1{border-left:4px solid #52c41a}
+.tier-L2{border-left:4px solid #faad14;background:#FFFBEF}
+.tier-L3{border-left:4px solid #8c8c8c;background:#F5F5F7}
+/* tier 徽章 */
+.tier-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-right:6px}
+.tier-badge.tier-L1{background:#E6F7DB;color:#389E0D;border:0}
+.tier-badge.tier-L2{background:#FFF4D6;color:#AD6800;border:0}
+.tier-badge.tier-L3{background:#EDEDED;color:#595959;border:0}
+/* suggestion_type 徽章（drop 红 / split 蓝 / improve 紫 / manual 灰 / enrich 青 / merge 橙） */
+.stype-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:6px}
+.badge-drop{background:#FFEFEE;color:#C5281C}
+.badge-split{background:#E7F1FF;color:#0050B3}
+.badge-improve{background:#F3EAFA;color:#7A38A6}
+.badge-manual{background:#EDEDED;color:#595959}
+.badge-enrich{background:#E6FFFB;color:#08979C}
+.badge-merge{background:#FFF4E6;color:#C97A2C}
+/* 六维度 grid（2×3） */
+.dim-grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;margin:16px 0}
+.dim-card{background:var(--card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:14px;position:relative;overflow:hidden}
+.dim-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--primary)}
+.dim-card.dim-good::before{background:#52c41a}
+.dim-card.dim-mid::before{background:#faad14}
+.dim-card.dim-bad::before{background:#ff4d4f}
+.dim-card .dim-name{font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600}
+.dim-card .dim-score{font-size:26px;font-weight:700;color:var(--text);line-height:1.1}
+.dim-card .dim-weight{font-size:10px;color:var(--text-muted);margin-left:4px;font-weight:400}
+.dim-card .dim-note{font-size:11px;color:var(--text-secondary);margin-top:6px;line-height:1.4}
+/* 总分大字 */
+.health-total{text-align:center;padding:18px 0;border-bottom:1px solid var(--border-light);margin-bottom:4px}
+.health-total .ht-num{font-size:48px;font-weight:700;color:var(--primary);line-height:1}
+.health-total .ht-label{font-size:12px;color:var(--text-muted);margin-bottom:6px}
+.health-total .ht-trend{font-size:12px;color:var(--text-secondary);margin-top:6px}
+/* 变现场景行 */
+.monetize-section{margin-top:10px;padding-top:12px;border-top:1px solid var(--border-light)}
+.monetize-section .ms-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px}
+.monetize-row{display:flex;gap:10px;align-items:center;padding:8px 0;font-size:12px}
+.monetize-row .mr-name{min-width:80px;font-weight:600;color:var(--text-secondary)}
+.monetize-row .mr-bar-wrap{flex:1;background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
+.monetize-row .mr-bar{height:100%;background:linear-gradient(90deg,#0A9B80,#34C759);border-radius:6px;transition:width .3s ease}
+.monetize-row .mr-score{min-width:36px;text-align:right;font-weight:700;color:var(--text)}
+.monetize-row .mr-gap{flex-basis:100%;margin-left:90px;margin-top:2px;font-size:11px;color:var(--text-muted)}
+/* 喂料方向建议 */
+.feed-section{margin-top:14px;padding:12px 14px;background:var(--primary-light);border-radius:var(--radius);border-left:3px solid var(--primary)}
+.feed-section .fs-title{font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px}
+.feed-section ol{margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.8}
+/* Review 左右对比 */
+.review-header{display:flex;align-items:center;justify-content:space-between;padding:10px 0 14px;border-bottom:1px solid var(--border-light);margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.review-header .rh-pos{font-size:13px;font-weight:700;color:var(--text)}
+.review-header .rh-badges{display:flex;gap:0;flex-wrap:wrap}
+.review-compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px}
+.review-side{background:var(--card);border:1px solid var(--border-light);border-radius:var(--radius);padding:12px;max-height:380px;overflow-y:auto}
+.review-side .rs-title{font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.review-side .rs-field{margin-bottom:10px;font-size:12px;line-height:1.6}
+.review-side .rs-field .rs-label{color:var(--text-muted);font-size:11px;font-weight:600;margin-bottom:2px}
+.review-side .rs-field .rs-val{color:var(--text);word-break:break-word}
+.review-side .rs-field .rs-val.muted{color:var(--text-muted);font-style:italic}
+.review-side .rs-tag{display:inline-block;padding:1px 7px;margin:2px 3px 2px 0;background:var(--bg);border-radius:10px;font-size:11px;color:var(--text-secondary)}
+.review-side .rs-insight{background:var(--bg);padding:6px 10px;border-radius:6px;margin-bottom:4px;font-size:12px;color:var(--text-secondary);line-height:1.5}
+.review-side.polished{background:#FAFCFE;border-color:var(--primary-soft)}
+.review-side.polished .rs-title{color:var(--primary)}
+.review-diag{margin-bottom:12px;font-size:12px;color:var(--text-secondary);background:var(--bg);border-radius:var(--radius);padding:0}
+.review-diag summary{cursor:pointer;padding:8px 12px;font-weight:600;color:var(--text);font-size:12px;user-select:none}
+.review-diag summary:hover{color:var(--primary)}
+.review-diag[open] summary{border-bottom:1px solid var(--border-light)}
+.review-diag .rd-body{padding:10px 12px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.review-diag .rd-kv{display:inline-block;background:var(--card);padding:1px 8px;border-radius:8px;font-size:11px;margin-right:6px;margin-bottom:4px;color:var(--text-muted);border:1px solid var(--border-light)}
+.review-actions{display:flex;gap:8px;justify-content:space-between;padding-top:14px;border-top:1px solid var(--border-light);flex-wrap:wrap}
+.review-actions .ra-nav{display:flex;gap:6px}
+.review-actions .ra-decide{display:flex;gap:6px;flex-wrap:wrap}
+.btn-sm{padding:6px 12px;font-size:12px}
+/* 档位选择按钮 */
+.tier-option{width:100%;padding:14px 16px;margin-bottom:10px;text-align:left;display:block;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:inherit;color:var(--text);transition:var(--transition)}
+.tier-option:hover{border-color:var(--primary);background:var(--primary-light)}
+.tier-option .to-head{font-weight:700;font-size:14px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
+.tier-option .to-time{font-weight:400;color:var(--text-muted);font-size:11px}
+.tier-option .to-desc{font-size:12px;color:var(--text-secondary);font-weight:400;line-height:1.5}
+.tier-option.default-option{border:1px solid var(--primary-soft);background:var(--primary-light)}
+.tier-option.default-option .to-head{color:var(--primary)}
+/* 历史报告列表项 */
+.history-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border-light);font-size:12px;cursor:pointer;transition:var(--transition)}
+.history-item:last-child{border-bottom:none}
+.history-item:hover{background:var(--bg)}
+.history-item .hi-date{min-width:140px;color:var(--text-secondary)}
+.history-item .hi-score{font-weight:700;color:var(--primary);min-width:48px;text-align:right}
+.history-item .hi-count{color:var(--text-muted);min-width:72px;text-align:right}
 </style>
 </head>
 <body>
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part1</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part2</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -683,6 +771,11 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-icon" style="background:var(--bg);color:var(--text-secondary)">$</div>
         <div class="tool-name">API费用</div>
         <div class="tool-desc">查看费用详情与趋势</div>
+      </div>
+      <div class="tool-card" id="tc-health" onclick="runTool('health')">
+        <div class="tool-icon" style="background:#F3EAFA;color:#7A38A6">H</div>
+        <div class="tool-name">知识库体检</div>
+        <div class="tool-desc">六维报告 + 低分打磨 Review</div>
       </div>
     </div>
     <div class="tool-result" id="toolResult">
@@ -900,6 +993,67 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <div class="modal-footer"><button class="btn" onclick="closeModal('dupModeDlg')">取消</button></div>
 </div></div>
 
+<!-- F048 知识库体检：档位选择对话框 -->
+<div class="modal-overlay" id="healthStartDlg"><div class="modal" style="width:560px">
+  <div class="modal-header">知识库体检 <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px">选择本次打磨档位</span></div>
+  <div class="modal-body">
+    <div style="margin-bottom:12px;font-size:12px;color:var(--text-muted);line-height:1.7">体检会扫描全库六个维度(健康度/结构/加工/关联/打磨/变现)，并按档位对低分知识点逐条生成打磨建议。<b>档位只限制本次打磨条数</b>，不影响其他维度扫描。</div>
+    <div style="margin-bottom:8px;font-size:11px;color:var(--text-muted)">瓶颈不在 AI 生成，在你逐条 Review。首次建议选 30 条试水。</div>
+    <button class="tier-option" onclick="doHealthStart(30)">
+      <div class="to-head"><span>30 条</span><span class="to-time">约 10 分钟</span></div>
+      <div class="to-desc">首次试水推荐，Review 半小时内可做完</div>
+    </button>
+    <button class="tier-option default-option" onclick="doHealthStart(50)">
+      <div class="to-head"><span>50 条 <span style="font-size:11px;color:var(--primary);font-weight:400">(默认)</span></span><span class="to-time">约 17 分钟</span></div>
+      <div class="to-desc">日常推荐档位，Review 半天内做完</div>
+    </button>
+    <button class="tier-option" onclick="doHealthStart(100)">
+      <div class="to-head"><span>100 条</span><span class="to-time">约 35 分钟</span></div>
+      <div class="to-desc">周期性深度打磨，Review 需 1 个工作日</div>
+    </button>
+    <button class="tier-option" onclick="doHealthStart(200)">
+      <div class="to-head"><span>200 条</span><span class="to-time">约 70 分钟</span></div>
+      <div class="to-desc">大批量打磨，注意避免堆积未 Review 的建议</div>
+    </button>
+    <button class="tier-option" onclick="doHealthStart('none')" style="border:1px dashed var(--border)">
+      <div class="to-head"><span>不限</span><span class="to-time">按库容估算</span></div>
+      <div class="to-desc">全库所有低分都打磨，慎用：可能耗时数小时</div>
+    </button>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="openHealthHistory()">历史报告</button>
+    <button class="btn" onclick="closeModal('healthStartDlg')">取消</button>
+  </div>
+</div></div>
+
+<!-- F048 知识库体检：报告详情对话框 -->
+<div class="modal-overlay" id="healthReportDlg"><div class="modal" style="width:760px">
+  <div class="modal-header">
+    <span id="healthReportTitle">体检报告</span>
+    <span id="healthReportTime" style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px"></span>
+  </div>
+  <div class="modal-body" id="healthReportBody">
+    <div class="loading">正在加载报告...</div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="openHealthHistory()">历史报告</button>
+    <button class="btn" onclick="closeModal('healthReportDlg')">关闭</button>
+    <button class="btn btn-primary" id="healthReviewStartBtn" onclick="startHealthReview(_healthReportId)">开始 Review</button>
+  </div>
+</div></div>
+
+<!-- F048 知识库体检：逐条 Review 对话框 -->
+<div class="modal-overlay" id="healthReviewDlg"><div class="modal" style="width:820px">
+  <div class="modal-header">
+    逐条 Review
+    <span id="healthReviewSubtitle" style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px"></span>
+  </div>
+  <div class="modal-body" id="healthReviewBody">
+    <div class="loading">正在加载打磨建议...</div>
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('healthReviewDlg')">关闭 Review</button></div>
+</div></div>
+
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -983,7 +1137,7 @@ function switchTab(tab){
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
     if(r.running){
-      var titles={"preprocess":"预处理进行中","extract":"知识提取进行中","reextract":"版本重提取进行中","batch_rerun":"批量重跑进行中"};
+      var titles={"preprocess":"预处理进行中","extract":"知识提取进行中","reextract":"版本重提取进行中","batch_rerun":"批量重跑进行中","health":"知识库体检进行中"};
       showTaskProgress(titles[r.type]||"任务进行中");
       startPolling();
     }
@@ -1839,6 +1993,25 @@ function runTool(name){
       showToolResult("API费用详情",h);
     });
   }
+  else if(name==="health"){
+    /* v2.3.0-part2 F048: 先探最新报告摘要,有则展示一行提示 + "开始新体检/查看报告"两选一,无则直接档位弹窗 */
+    apiGet("/api/tools/health/latest").then(function(r){done();
+      if(r&&r.report){
+        var rpt=r.report;
+        var msg='最近一次: '+esc(rpt.created_at||"")+' / 总分 '+(rpt.total_score!==undefined&&rpt.total_score!==null?rpt.total_score:"--")+' / 扫描 '+(rpt.scanned_kp_count||0)+' 条';
+        var html='<p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">'+msg+'</p>';
+        html+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        html+='<button class="btn btn-primary btn-sm" onclick="openHealthReport('+rpt.report_id+')">查看报告</button>';
+        html+='<button class="btn btn-sm" onclick="document.getElementById(\'healthStartDlg\').classList.add(\'open\');closeToolResult()">开始新体检</button>';
+        html+='<button class="btn btn-sm" onclick="openHealthHistory()">历史报告</button>';
+        html+='</div>';
+        showToolResult("知识库体检",html);
+      }else{
+        /* 无历史报告 → 直接打开档位弹窗 */
+        document.getElementById("healthStartDlg").classList.add("open");
+      }
+    });
+  }
   else{done()}
 }
 
@@ -1890,8 +2063,8 @@ function showTaskProgress(title){
   document.getElementById("taskCount").textContent="";
   document.getElementById("taskMsg").textContent="";
   p.scrollIntoView({behavior:"smooth"});
-  // 禁用提取管理按钮
-  var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun"];
+  // 禁用提取管理按钮 + 体检按钮
+  var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health"];
   for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.add("running")}
 }
 
@@ -1925,9 +2098,15 @@ function startPolling(){
           if(res.ok!==undefined){msg=res.ok+"个成功";if(res.skip)msg+=" / "+res.skip+"个跳过";msg+=" / "+(res.fail||0)+"个失败";if(res.total_kps!==undefined)msg+=", 共"+res.total_kps+"条知识点"}
           if(res.deleted_old)msg="(已删除"+res.deleted_old+"条旧知识点) "+msg;
           document.getElementById("taskMsg").textContent=msg;
+          /* v2.3.0-part2 F048: 体检完成弹 confirm 跳报告 */
+          if(r.type==="health" && res && res.success && res.report_id){
+            showConfirm("体检完成","体检完成，总分 "+(res.total_score!==undefined&&res.total_score!==null?res.total_score:"--")+"，是否立即查看报告?",function(ok){
+              if(ok){openHealthReport(res.report_id)}
+            });
+          }
         }
         // 恢复按钮
-        var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun"];
+        var btns=["tc-preprocess","tc-extract","tc-reextract","tc-batchRerun","tc-health"];
         for(var i=0;i<btns.length;i++){var b=document.getElementById(btns[i]);if(b)b.classList.remove("running")}
         // 刷新仪表盘
         loadDashboard();
@@ -2079,6 +2258,430 @@ function doBatchRerun(){
     apiPost("/api/tasks/batch_rerun",{file_ids:ids,model:document.getElementById("extractModelSelect").value}).then(function(r){
       if(r.error){showToast(r.error,"error");return}
       showTaskProgress("批量重跑("+ids.length+"个文件)");startPolling();
+    });
+  });
+}
+
+/* ============================================= */
+/* === F048 知识库体检 (v2.3.0-part2)        === */
+/* ============================================= */
+var _healthReviewList=[];
+var _healthReviewIdx=0;
+var _healthReportId=null;
+
+function doHealthStart(polishMax){
+  closeModal("healthStartDlg");
+  var body={};
+  if(polishMax==="none"||polishMax===null||polishMax===undefined){body.polish_max=null}
+  else{body.polish_max=parseInt(polishMax,10)}
+  apiPost("/api/tools/health/start",body).then(function(r){
+    if(r.error){showToast("启动失败: "+r.error,"error");return}
+    if(r.success){
+      var polishLabel=(body.polish_max===null?"不限":(body.polish_max+" 条"));
+      showTaskProgress("知识库体检("+polishLabel+")");
+      startPolling();
+      showToast("体检已启动,任务会在后台运行","success");
+    }
+  });
+}
+
+function openHealthHistory(){
+  closeModal("healthStartDlg");
+  closeModal("healthReportDlg");
+  loadHealthHistory();
+}
+
+function loadHealthHistory(){
+  showToolResult("体检历史报告",'<div class="loading">正在加载历史记录...</div>');
+  apiGet("/api/tools/health/history?limit=50").then(function(r){
+    if(r.error){showToolResult("体检历史报告","<p style='color:var(--danger)'>加载失败: "+esc(r.error)+"</p>");return}
+    var items=r.items||[];
+    if(!items.length){
+      showToolResult("体检历史报告","<p style='color:var(--text-muted)'>暂无历史体检报告。点击工具箱\"知识库体检\"开始第一次。</p>");
+      return;
+    }
+    var h='<p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">共 '+items.length+' 份历史报告(最新在前)</p>';
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      var score=(it.total_score!==undefined&&it.total_score!==null)?it.total_score:"--";
+      var status=it.status||"-";
+      var statusColor=status==="completed"?"var(--success)":(status==="failed"?"var(--danger)":"var(--warning)");
+      h+='<div class="history-item" onclick="openHealthReport('+it.report_id+')">';
+      h+='<span class="hi-date">'+esc(it.created_at||"-")+'</span>';
+      h+='<span style="color:'+statusColor+';font-size:11px;min-width:70px">'+esc(status)+'</span>';
+      h+='<span class="hi-score">'+score+'</span>';
+      h+='<span class="hi-count">'+(it.scanned_kp_count||0)+' 条</span>';
+      h+='</div>';
+    }
+    showToolResult("体检历史报告",h);
+  });
+}
+
+function openHealthReport(reportId){
+  if(!reportId){showToast("缺少报告 ID","error");return}
+  closeModal("healthStartDlg");
+  closeModal("healthReviewDlg");
+  _healthReportId=reportId;
+  document.getElementById("healthReportTitle").textContent="体检报告 #"+reportId;
+  document.getElementById("healthReportTime").textContent="";
+  document.getElementById("healthReportBody").innerHTML='<div class="loading">正在加载报告...</div>';
+  document.getElementById("healthReportDlg").classList.add("open");
+  apiGet("/api/tools/health/report/"+reportId).then(function(r){
+    if(r.error){document.getElementById("healthReportBody").innerHTML='<p style="color:var(--danger)">加载失败: '+esc(r.error)+'</p>';return}
+    renderHealthReport(r);
+  });
+}
+
+function renderHealthReport(r){
+  var rpt=r.report||r;
+  if(!rpt||(!rpt.report_id&&!rpt.total_score&&rpt.total_score!==0)){
+    document.getElementById("healthReportBody").innerHTML='<p style="color:var(--danger)">报告数据异常</p>';
+    return;
+  }
+  document.getElementById("healthReportTime").textContent=esc(rpt.created_at||"");
+  var total=(rpt.total_score!==undefined&&rpt.total_score!==null)?rpt.total_score:"--";
+  /* full_report_json 已由 api_server 自动 parse 成 dict */
+  var full=rpt.full_report_json||{};
+  var dims=full.dimensions||{};
+  var monetize=(dims.dim6_monetize&&dims.dim6_monetize.detail)||full.monetize||{};
+  var scenarios=monetize.scenario_scores||{};
+  var feed=monetize.feed_direction||[];
+  var readiness=monetize.monetize_readiness||"-";
+  var html='';
+  /* 总分 */
+  html+='<div class="health-total">';
+  html+='<div class="ht-label">体检总分</div>';
+  html+='<div class="ht-num">'+total+'</div>';
+  if(rpt.scanned_kp_count){html+='<div class="ht-trend">扫描知识点 '+rpt.scanned_kp_count+' 条</div>'}
+  /* 与上一次对比 */
+  var prev=full.prev_comparison||rpt.prev_comparison||null;
+  if(prev&&prev.diff!==undefined&&prev.diff!==null){
+    var arrow=prev.diff>0?"↑":(prev.diff<0?"↓":"→");
+    var diffColor=prev.diff>0?"var(--success)":(prev.diff<0?"var(--danger)":"var(--text-muted)");
+    html+='<div style="margin-top:6px;font-size:12px;color:'+diffColor+'">对比上次: '+arrow+' '+Math.abs(prev.diff)+' 分</div>';
+  }
+  html+='</div>';
+  /* 六维度 2x3 */
+  html+='<div class="dim-grid">';
+  html+=renderDimCard("健康度",dims.dim1_health||{score:rpt.dim1_health_score},25);
+  html+=renderDimCard("结构分布",dims.dim2_structure||{score:rpt.dim2_structure_score},10);
+  html+=renderDimCard("加工深度",dims.dim3_processing||{score:rpt.dim3_processing_score},20);
+  html+=renderDimCard("关联密度",dims.dim4_relation||{score:rpt.dim4_relation_score},10);
+  html+=renderDimCard("低分打磨",dims.dim5_polish||{score:rpt.dim5_polish_score},20);
+  html+=renderDimCard("变现匹配",dims.dim6_monetize||{score:rpt.dim6_monetize_score},15);
+  html+='</div>';
+  /* 变现场景行 */
+  html+='<div class="monetize-section">';
+  html+='<div class="ms-title">变现场景匹配度 <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(就绪度: '+esc(readiness)+')</span></div>';
+  var scenKeys=["咨询答疑","方案撰写","政策解读","汇报话术","投标辅助"];
+  for(var i=0;i<scenKeys.length;i++){
+    var sk=scenKeys[i];
+    var sc=scenarios[sk]||{};
+    var ss=(sc.score!==undefined&&sc.score!==null)?sc.score:0;
+    var cov=sc.coverage||"";
+    var gap=sc.gap||"";
+    html+='<div class="monetize-row">';
+    html+='<span class="mr-name">'+esc(sk)+'</span>';
+    html+='<div class="mr-bar-wrap"><div class="mr-bar" style="width:'+ss+'%"></div></div>';
+    html+='<span class="mr-score">'+ss+(cov?(' <span style="font-weight:400;color:var(--text-muted);font-size:10px">'+esc(cov)+'</span>'):'')+'</span>';
+    if(gap){html+='<div class="mr-gap">缺: '+esc(gap)+'</div>'}
+    html+='</div>';
+  }
+  html+='</div>';
+  /* 喂料方向 */
+  if(feed&&feed.length){
+    html+='<div class="feed-section">';
+    html+='<div class="fs-title">优先喂料方向</div>';
+    html+='<ol>';
+    for(var j=0;j<feed.length;j++){html+='<li>'+esc(feed[j])+'</li>'}
+    html+='</ol>';
+    html+='</div>';
+  }
+  document.getElementById("healthReportBody").innerHTML=html;
+}
+
+function renderDimCard(name,dim,weight){
+  var score=(dim&&dim.score!==undefined&&dim.score!==null)?dim.score:"--";
+  var numScore=(typeof score==="number")?score:-1;
+  var cls="dim-card";
+  if(numScore>=80)cls+=" dim-good";
+  else if(numScore>=60)cls+=" dim-mid";
+  else if(numScore>=0)cls+=" dim-bad";
+  var note="";
+  if(dim){
+    if(dim.note)note=dim.note;
+    else if(dim.detail&&dim.detail.summary)note=dim.detail.summary;
+    else if(dim.summary)note=dim.summary;
+  }
+  var h='<div class="'+cls+'">';
+  h+='<div class="dim-name">'+esc(name)+'</div>';
+  h+='<div class="dim-score">'+score+'<span class="dim-weight">权重 '+weight+'%</span></div>';
+  if(note)h+='<div class="dim-note">'+esc(String(note).slice(0,60))+'</div>';
+  h+='</div>';
+  return h;
+}
+
+function startHealthReview(reportId){
+  if(!reportId){showToast("缺少报告 ID","error");return}
+  _healthReportId=reportId;
+  closeModal("healthReportDlg");
+  document.getElementById("healthReviewDlg").classList.add("open");
+  document.getElementById("healthReviewBody").innerHTML='<div class="loading">正在加载打磨建议...</div>';
+  document.getElementById("healthReviewSubtitle").textContent="加载中...";
+  apiGet("/api/tools/health/suggestions/"+reportId).then(function(r){
+    if(r.error){
+      document.getElementById("healthReviewBody").innerHTML='<p style="color:var(--danger)">加载失败: '+esc(r.error)+'</p>';
+      return;
+    }
+    var items=r.items||[];
+    /* 前端只保留 pending 和 manual_review_needed */
+    var pending=[];
+    for(var i=0;i<items.length;i++){
+      var st=items[i].status||"";
+      if(st==="pending"||st==="manual_review_needed")pending.push(items[i]);
+    }
+    _healthReviewList=pending;
+    _healthReviewIdx=0;
+    renderHealthReview(_healthReviewList);
+  });
+}
+
+function renderHealthReview(items){
+  var n=items?items.length:0;
+  var body=document.getElementById("healthReviewBody");
+  if(!n){
+    document.getElementById("healthReviewSubtitle").textContent="0 / 0";
+    body.innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--text-secondary)"><p style="font-size:14px;font-weight:600;margin-bottom:8px">本份报告没有待 Review 的打磨建议</p><p style="font-size:12px;color:var(--text-muted)">可能都已 Review 完,或本次体检的打磨档位未生成新建议。</p></div>';
+    return;
+  }
+  if(_healthReviewIdx<0)_healthReviewIdx=0;
+  if(_healthReviewIdx>=n){
+    document.getElementById("healthReviewSubtitle").textContent=n+" / "+n+" (已完成)";
+    body.innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--text-secondary)"><p style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--success)">本轮 Review 完成</p><p style="font-size:12px;color:var(--text-muted)">共处理 '+n+' 条打磨建议。关闭本窗口返回报告。</p></div>';
+    return;
+  }
+  var sg=items[_healthReviewIdx];
+  document.getElementById("healthReviewSubtitle").textContent=(_healthReviewIdx+1)+" / "+n;
+  var tier=sg.tier||"L1_r1_polish";
+  var stype=sg.suggestion_type||"improve";
+  var diagnosis=sg.diagnosis||"";
+  var orig=sg.original_content||{};
+  var sc=sg.suggested_content;
+  var kpCurTitle=sg.kp_current_title||orig.title||"(未知标题)";
+  var kpStatus=sg.kp_current_status||"";
+  var splitCount=0;
+  var shownSc=sc;
+  if(sc&&Object.prototype.toString.call(sc)==="[object Array]"){
+    splitCount=sc.length;
+    shownSc=sc[0]||{};
+  }else{
+    shownSc=sc||{};
+  }
+  var tierClass="tier-L1";
+  if(tier==="L2_v3_conservative")tierClass="tier-L2";
+  else if(tier==="L3_manual")tierClass="tier-L3";
+  var stypeClass="badge-improve";
+  if(stype==="drop")stypeClass="badge-drop";
+  else if(stype==="split")stypeClass="badge-split";
+  else if(stype==="manual_review")stypeClass="badge-manual";
+  else if(stype==="enrich")stypeClass="badge-enrich";
+  else if(stype==="merge")stypeClass="badge-merge";
+  var h='';
+  /* Header */
+  h+='<div class="review-header '+tierClass+'" style="padding-left:10px;padding-right:10px">';
+  h+='<div class="rh-pos">第 '+(_healthReviewIdx+1)+' / '+n+' 条 <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px">kp#'+sg.kp_id+'</span></div>';
+  h+='<div class="rh-badges">';
+  h+='<span class="tier-badge '+tierClass+'">'+esc(tier)+'</span>';
+  h+='<span class="stype-badge '+stypeClass+'">'+esc(stype)+'</span>';
+  if(splitCount>1)h+='<span class="stype-badge badge-split">拆 '+splitCount+' 条</span>';
+  if(kpStatus&&kpStatus!=="pending"&&kpStatus!=="confirmed"){h+='<span class="stype-badge badge-manual">kp 状态: '+esc(kpStatus)+'</span>'}
+  h+='</div>';
+  h+='</div>';
+  /* 诊断折叠 */
+  if(diagnosis){
+    h+='<details class="review-diag">';
+    h+='<summary>诊断详情 (V3)</summary>';
+    h+='<div class="rd-body">'+esc(diagnosis)+'</div>';
+    h+='</details>';
+  }
+  /* drop 场景特殊提示 */
+  if(stype==="drop"){
+    h+='<div style="padding:10px 14px;margin-bottom:12px;background:#FFEFEE;border-left:3px solid #C5281C;border-radius:6px;font-size:12px;color:#991B1B">AI 诊断建议删除此知识点。点"确认删除"将把原 kp 标记为 ignored(可在 Tab 1 "已忽略"找回,不会物理删除)。</div>';
+  }
+  /* split 场景特殊提示 */
+  if(splitCount>1){
+    h+='<div style="padding:10px 14px;margin-bottom:12px;background:#E7F1FF;border-left:3px solid #0050B3;border-radius:6px;font-size:12px;color:#0050B3">AI 建议拆为 '+splitCount+' 条独立知识点。点"采纳第 1 条"只把第 1 条合并回原 kp;其余 '+(splitCount-1)+' 条需你到 Tab 1 手动创建。</div>';
+  }
+  /* L3_manual 特殊提示 */
+  if(tier==="L3_manual"){
+    h+='<div style="padding:10px 14px;margin-bottom:12px;background:#F5F5F7;border-left:3px solid #8c8c8c;border-radius:6px;font-size:12px;color:#595959">L3 三层降级均失败,AI 无法自动打磨。请到 Tab 1 手工修订本条知识点。本卡只能"驳回"或"略过"。</div>';
+  }
+  /* 左右对比 */
+  h+='<div class="review-compare">';
+  h+=_renderReviewSide("原文",kpCurTitle,orig,false);
+  if(tier==="L3_manual"||stype==="drop"){
+    h+='<div class="review-side polished"><div class="rs-title">打磨稿</div>';
+    h+='<div class="rs-field"><div class="rs-val muted">'+(stype==="drop"?"(建议删除,无打磨内容)":"(L3 人工介入,无打磨内容)")+'</div></div>';
+    h+='</div>';
+  }else{
+    h+=_renderReviewSide("打磨稿",(shownSc&&shownSc.title)||"",shownSc,true);
+  }
+  h+='</div>';
+  /* polish_notes */
+  var notes=shownSc&&shownSc.polish_notes;
+  if(notes){
+    h+='<div style="padding:8px 12px;margin-bottom:12px;background:var(--primary-light);border-radius:6px;font-size:12px;color:var(--primary)"><b>打磨说明: </b>'+esc(notes)+'</div>';
+  }
+  /* 动态按钮区 */
+  h+='<div class="review-actions">';
+  h+='<div class="ra-nav">';
+  h+='<button class="btn btn-sm" onclick="healthReviewPrev()" '+(_healthReviewIdx===0?'disabled':'')+'>上一条</button>';
+  h+='</div>';
+  h+='<div class="ra-decide">';
+  if(tier==="L3_manual"){
+    h+='<button class="btn btn-sm" onclick="healthRejectCurrent()">驳回</button>';
+    h+='<button class="btn btn-sm btn-primary" onclick="healthReviewNext()">略过</button>';
+  }else if(stype==="drop"){
+    h+='<button class="btn btn-sm btn-danger" onclick="healthDropCurrent()">确认删除</button>';
+    h+='<button class="btn btn-sm" onclick="healthRejectCurrent()">驳回</button>';
+    h+='<button class="btn btn-sm" onclick="healthReviewNext()">略过</button>';
+  }else if(stype==="split"){
+    h+='<button class="btn btn-sm btn-primary" onclick="healthAdoptCurrent()">采纳第 1 条</button>';
+    h+='<button class="btn btn-sm" onclick="healthRejectCurrent()">驳回</button>';
+    h+='<button class="btn btn-sm" onclick="healthReviewNext()">略过</button>';
+  }else{
+    h+='<button class="btn btn-sm btn-primary" onclick="healthAdoptCurrent()">采纳</button>';
+    h+='<button class="btn btn-sm" onclick="healthRejectCurrent()">驳回</button>';
+    h+='<button class="btn btn-sm" onclick="healthReviewNext()">略过</button>';
+  }
+  h+='</div>';
+  h+='</div>';
+  body.innerHTML=h;
+}
+
+/* 辅助: 渲染 Review 单侧对比卡 (原文或打磨稿) */
+function _renderReviewSide(title,kpTitle,data,isPolished){
+  var cls="review-side"+(isPolished?" polished":"");
+  var h='<div class="'+cls+'">';
+  h+='<div class="rs-title">'+esc(title)+'</div>';
+  h+='<div class="rs-field"><div class="rs-label">标题</div><div class="rs-val">'+esc(kpTitle||"")+'</div></div>';
+  /* description (仅打磨侧展示,作为 polished_description 预览) */
+  if(isPolished&&data&&data.description){
+    var descStr=String(data.description);
+    h+='<div class="rs-field"><div class="rs-label">描述预览 (polished_description,采纳后存于 ai_extracted_content 新键)</div><div class="rs-val" style="font-size:11px;color:var(--text-secondary)">'+esc(descStr.slice(0,300))+(descStr.length>300?"...":"")+'</div></div>';
+  }
+  /* practical_insights */
+  var ins=data&&data.practical_insights;
+  if(ins&&ins.length){
+    h+='<div class="rs-field"><div class="rs-label">举一反三 ('+ins.length+')</div>';
+    for(var i=0;i<ins.length;i++){
+      var it=ins[i];
+      var txt=(typeof it==="string")?it:(it&&(it.insight||it.text)?(it.insight||it.text):JSON.stringify(it));
+      var conf=it&&it.confidence?(' <span style="font-size:10px;color:var(--text-muted)">'+esc(it.confidence)+'</span>'):'';
+      h+='<div class="rs-insight">'+esc(String(txt).slice(0,150))+conf+'</div>';
+    }
+    h+='</div>';
+  }else{
+    h+='<div class="rs-field"><div class="rs-label">举一反三</div><div class="rs-val muted">(无)</div></div>';
+  }
+  /* tags 三层 */
+  var tags=data&&data.tags;
+  if(tags){
+    var l1=tags.layer1||tags.category||[];
+    var l2=tags.layer2||tags.attribute||{};
+    var l3=tags.layer3||tags.keywords||[];
+    if(l1&&l1.length){
+      h+='<div class="rs-field"><div class="rs-label">分类标签 (layer1)</div><div class="rs-val">';
+      for(var i=0;i<l1.length;i++)h+='<span class="rs-tag">'+esc(l1[i])+'</span>';
+      h+='</div></div>';
+    }
+    var l2Keys=[];
+    if(l2&&typeof l2==="object"){for(var k in l2)if(Object.prototype.hasOwnProperty.call(l2,k))l2Keys.push(k)}
+    if(l2Keys.length){
+      h+='<div class="rs-field"><div class="rs-label">属性标签 (layer2)</div><div class="rs-val">';
+      for(var i=0;i<l2Keys.length;i++){
+        var v=l2[l2Keys[i]];
+        var vs=(typeof v==="string")?v:(v&&v.join?v.join(","):JSON.stringify(v));
+        h+='<span class="rs-tag">'+esc(l2Keys[i])+': '+esc(vs)+'</span>';
+      }
+      h+='</div></div>';
+    }
+    if(l3&&l3.length){
+      h+='<div class="rs-field"><div class="rs-label">关键词 (layer3)</div><div class="rs-val">';
+      for(var i=0;i<l3.length;i++)h+='<span class="rs-tag">'+esc(l3[i])+'</span>';
+      h+='</div></div>';
+    }
+  }
+  h+='</div>';
+  return h;
+}
+
+function healthReviewNext(){
+  /* 略过: 纯前端指针 +1,不发请求、不改 DB */
+  _healthReviewIdx+=1;
+  renderHealthReview(_healthReviewList);
+}
+
+function healthReviewPrev(){
+  if(_healthReviewIdx>0)_healthReviewIdx-=1;
+  renderHealthReview(_healthReviewList);
+}
+
+function healthAdoptCurrent(){
+  var sg=_healthReviewList[_healthReviewIdx];
+  if(!sg){showToast("当前无建议","error");return}
+  var sid=sg.suggestion_id;
+  apiPost("/api/tools/health/suggestions/"+sid+"/adopt",{}).then(function(r){
+    if(r.error){
+      var msg="采纳失败: "+r.error;
+      if(r.step)msg+=" (step="+r.step+")";
+      showToast(msg,"error");
+      return;
+    }
+    if(r.success){
+      var toastMsg="已采纳";
+      if(r.fields_updated&&r.fields_updated.length)toastMsg+=" ("+r.fields_updated.length+" 个字段更新)";
+      showToast(toastMsg,"success");
+      if(r.split_note){
+        setTimeout(function(){showToast(r.split_note,"info")},600);
+      }
+      /* 成功后把当前项从列表移除,指针不动,自然显示下一条 */
+      _healthReviewList.splice(_healthReviewIdx,1);
+      renderHealthReview(_healthReviewList);
+    }
+  });
+}
+
+function healthRejectCurrent(){
+  var sg=_healthReviewList[_healthReviewIdx];
+  if(!sg){showToast("当前无建议","error");return}
+  var sid=sg.suggestion_id;
+  apiPost("/api/tools/health/suggestions/"+sid+"/reject",{reason:""}).then(function(r){
+    if(r.error){showToast("驳回失败: "+r.error,"error");return}
+    showToast("已驳回","success");
+    _healthReviewList.splice(_healthReviewIdx,1);
+    renderHealthReview(_healthReviewList);
+  });
+}
+
+function healthDropCurrent(){
+  var sg=_healthReviewList[_healthReviewIdx];
+  if(!sg){showToast("当前无建议","error");return}
+  var sid=sg.suggestion_id;
+  showConfirm("确认删除","将把原知识点 kp#"+sg.kp_id+' 标记为 ignored (可在 Tab 1 "已忽略"找回,不会物理删除)。确认?',function(ok){
+    if(!ok)return;
+    apiPost("/api/tools/health/suggestions/"+sid+"/drop",{}).then(function(r){
+      if(r.error){
+        var msg="删除失败: "+r.error;
+        if(r.step)msg+=" (step="+r.step+")";
+        showToast(msg,"error");
+        return;
+      }
+      if(r.success){
+        showToast("已删除 (kp#"+sg.kp_id+" → ignored)","success");
+        _healthReviewList.splice(_healthReviewIdx,1);
+        renderHealthReview(_healthReviewList);
+      }
     });
   });
 }
