@@ -5,6 +5,215 @@
 
 ---
 
+## [v2.3.0-part2.2] - 2026-04-22 (hotfix, 三对话拆分完成)
+
+**定位**：F048 体检防护层 hotfix — 修复上一轮老唐实测截图总分 47.16 分暴露的四类系统性 bug + 加启动就绪性自检防护墙,让六维度体检从"假绿色"走向"真能跑"。三对话拆分:对话 A(基础层) → 对话 B(防护层) → 对话 C(收尾)。
+
+### 根因(上一轮截图 47.16 分拆解)
+
+实测截图六维度分数分布异常:
+
+| 维度 | 分数 | 真假 | 根因 |
+|------|------|------|------|
+| ①健康 | 40.13 | 真 | 不依赖 Prompt / 分类字段 |
+| ②结构 | 0 | **字段读取 bug** | db 只 AS 出 `category_id`(int 外键),代码读 `category`(str) |
+| ③加工 | 35.65 | 真 | 不依赖 Prompt / 分类字段 |
+| ④关联 | 100 | **假满分** | Prompt=None → `if not HEALTH_*_PROMPT: return None` 防御分支短路返回"没问题" |
+| ⑤打磨 | 100 | **假满分** | 同上 |
+| ⑥变现 | 0 | **Prompt 未落地 + 字段读取 bug** | Prompt 从未定义 + 读不到 category |
+
+审计叠加实测挖出**四类系统性 bug**:
+
+1. **缺陷 1 Prompt 未落地**:`scripts/prompts/prompt_templates.py` 6 个 F048 Prompt(HEALTH_DIAGNOSIS / HEALTH_POLISH / HEALTH_POLISH_VERIFY / HEALTH_POLISH_CONSERVATIVE / HEALTH_ISLAND_JUDGE / HEALTH_MONETIZE_REPORT)从未真正定义,PROMPT_VERSION 也停留在 v2.2.3。
+2. **缺陷 2 import 静默降级**:`health_checker.py` 用 `try: from ... import HEALTH_DIAGNOSIS_PROMPT except: HEALTH_DIAGNOSIS_PROMPT = None` 吞掉 ImportError,把"包坏了"伪装成"Prompt 可选"。
+3. **缺陷 3 字段读取 bug**:`_dim2_structure_score` / `_build_library_summary` / `_build_nearby_summary` 等读 `k.get('category')` / `k.get('subcategory')`,但 db_manager 的 AS 映射只提供 `category_id`(int 外键)/ `final_category_tags`(JSON,layer1 是 A 组业务领域标签,不是 5 大类)。
+4. **缺陷 4 Prompt key 错配**(对话 A 实测挖出):`health_checker.py` 6 处 AI 调用用 `HEALTH_*_PROMPT['system']` / `['user']`,但 Prompt dict 实际 key 是 `system_prompt` / `user_prompt_template`。此 bug 从未爆出的原因是 import try/except 把 Prompt 降级成 None,`if not HEALTH_*_PROMPT: return None` 防御分支拦在 KeyError 之前。**若只修 import 而不修 key,六维度必立即全炸 KeyError**。
+
+### 三对话拆分交付
+
+| 对话 | 层级 | 日期 | 范围 |
+|------|------|------|------|
+| A | 基础层 | 2026-04-22 | `prompt_templates.py` 落地 6 Prompt + PROMPT_VERSION 升版 + 补登 QC_CHECK_SINGLE;`health_checker.py` import 顶层化 + 6 处 Prompt key 修正 + 6 处防御分支清理;`03_Prompt手册.md` |
+| B | 防护层 | 2026-04-22 | `db_manager.py` 三查询追加 LEFT JOIN + category/subcategory AS 映射;`api_server.py` `_health_readiness_check()` 4 层自检 + `/start` 路由前置调用(失败 400 + details,不占 _task 单例);`check_system.py` 第 17 项 F048 就绪度;`db_health_check.py` [11/11] F048 代码层契约一致性;`setup.py` 核心文件清单;`01_工程手册.md` 踩坑 6 条 + 立规则 4 条 + 对话 A/B 复盘专节 |
+| C | 收尾 | 2026-04-22 | `health_checker.py` `_dim2_structure_score` detail 追加 `uncategorized_count` / `uncategorized_pct` 可观察性字段;`00_项目全景.md` / `README.md` / `CHANGELOG.md`(本条目,合并 A/B 草稿) |
+
+### Fixed — 对话 A(基础层)
+
+**scripts/prompts/prompt_templates.py(v2.2.3 → v2.3.0-part2.2)**
+
+- 顶部 docstring 追加 v2.3.0-part2.2 变更说明段
+- `PROMPT_VERSION` 常量 `"v2.2.3"` → `"v2.3.0-part2.2"`(跨越 v2.3.0-part2 版号占位)
+- 在 `def get_all_prompt_names()` 之前**完整新增 6 个 F048 Prompt 定义**:
+  - `HEALTH_DIAGNOSIS_PROMPT`(V3,诊断低分病根,占位符 `{filename}` + `{knowledge_point_json}`)
+  - `HEALTH_POLISH_PROMPT`(R1,创造性打磨,占位符 `{filename}` + `{knowledge_point_json}` + `{diagnosis}` + `{polish_direction}`)
+  - `HEALTH_POLISH_VERIFY_PROMPT`(V3,校验,占位符 `{diagnosis}` + `{original_json}` + `{polished_json}`)
+  - `HEALTH_POLISH_CONSERVATIVE_PROMPT`(V3,L2 保守,占位符 `{diagnosis}` + `{original_json}`)
+  - `HEALTH_ISLAND_JUDGE_PROMPT`(V3,孤岛精判,占位符 `{knowledge_point_json}` + `{nearby_kp_summary}`)
+  - `HEALTH_MONETIZE_REPORT_PROMPT`(V3,变现报告,占位符 `{library_summary_json}`)
+- 策略块注入按内省型 vs 生产型分流:
+  - `HEALTH_POLISH` 注入 PRODUCT_CONTEXT / DATA_PRECISION_RULE / SICHUAN_SENSITIVITY / EXCERPT_REQUIREMENT
+  - `HEALTH_POLISH_CONSERVATIVE` 注入 DATA_PRECISION_RULE
+  - `HEALTH_MONETIZE_REPORT` 注入 PRODUCT_CONTEXT
+  - 诊断 / 校验 / 孤岛精判 不注入策略块(职责是判断,不是生产)
+- `get_all_prompt_names()` 末尾追加 6 条 F048 Prompt 登记
+- **顺手补登** `qc_check_single`(F058 逐条质检 Prompt,v2.2.3 起代码存在但从未登记到 get_all_prompt_names)
+- 注册表总数:**18 → 25**(+ 1 补登 + 6 新增)。仪表盘"Prompt 总数"从 18 跳到 25,是正确数字,不是 bug。
+
+**scripts/health_checker.py(v2.3.0-part2-alpha2 → v2.3.0-part2.2)**
+
+- 顶部 docstring 改版,新增变更说明段
+- **import 段顶层化**(缺陷 2 修复):`DatabaseManager` / `DeepSeekClient` / 6 个 `HEALTH_*_PROMPT` 全部改为顶层直接 import,删除所有 `try/except Exception: X = None` fallback。import 失败由解释器在启动时直接崩,不再静默降级。
+- **6 处 Prompt key 修正**(缺陷 4 修复):`HEALTH_*_PROMPT['system']` → `['system_prompt']`,`HEALTH_*_PROMPT['user']` → `['user_prompt_template']`。分布在 `_judge_island` / `_diagnose_polish_candidate` / `_polish_with_r1` / `_verify_polish` / `_polish_conservative` / `_dim6_monetize_score` 6 个方法。
+- **6 处防御分支删除**:`if not HEALTH_*_PROMPT: return None` 全部清理。顶层 import 保证 Prompt 永不为 None,防御分支是死代码,留着反而掩盖真实故障。
+- **`__init__` 2 处死代码清理**:`if DatabaseManager is None: raise RuntimeError(...)` / `if DeepSeekClient is None: raise RuntimeError(...)`。
+- **5 处字段 bug 位置加契约锚点注释**(缺陷 3 部分修复):
+  - `_dim2_structure_score`:注明"v2.3.0-part2.1 截图结构=0 的根因"、修复走对话 B
+  - `_build_nearby_summary`:依赖 db 层 LEFT JOIN categories AS 映射
+  - `_kp_to_judge_payload`:同上
+  - `_build_library_summary`:未兑现则维度⑥变现统计失真
+  - `_kp_to_full_payload`:未兑现则维度⑤打磨诊断精度降低
+- **代码逻辑本身不动**(第 3 类 bug 的真正修复在对话 B db_manager):字段读取代码保持原样,不引入上层猜分类逻辑。
+
+**03_Prompt 手册.md(完整更新)**
+
+- 版本行 `v2.3.0-part2` → `v2.3.0-part2.2`
+- F048 章节新增"6 个 Prompt 正式版文本"完整章节,每个 Prompt 含占位符 / 策略块注入 / 输出 schema / 降级触发条件 / 正式版文本要点
+- 共享策略块表格新增 F048 注入情况列
+- 关键设计要点新增"F048 内省型 vs 生产型分流"
+- 调用位置对照表更新,注明"无防御分支,Prompt 顶层 import"
+- 新增"v2.3.0-part2.2 对话 A 发现的系统性 bug 四类"章节
+
+### Fixed — 对话 B(防护层)
+
+**scripts/db_manager.py(v2.3.0-part2.1 → v2.3.0-part2.2)**
+
+- 顶部 docstring 追加 v2.3.0-part2.2 变更说明段(三对话拆分背景 + 字段契约兑现方案)
+- `get_kp_for_health_scan(include_annotations=True/False)` 两分支 SQL 统一追加:
+  - `LEFT JOIN categories c ON c.id = kp.final_category_id`
+  - SELECT 列表追加 `c.level1_name AS category` + `c.level2_name AS subcategory`
+- `get_polish_candidates()` SQL 追加相同 JOIN + 字段(categories alias 用 `cat` 避免与 Python cursor `c` 视觉混淆)
+- `get_island_candidates()` SQL 追加相同 JOIN + 字段(alias `cat`)
+- **已有的 `kp.final_category_id AS category_id` 外键 int 映射保留不动**(最小改动,避免影响其他查询消费方)
+- **历史库 final_category_id IS NULL 的未分类 kp**:LEFT JOIN 后 category/subcategory 返回 None,health_checker `.get()` 取值 + set 操作天然忽略 None,不崩但会让维度②略低(对话 C 加 uncategorized_count 可观察性暴露此数据原因)
+
+**scripts/api_server.py(v2.3.0-part2 → v2.3.0-part2.2)**
+
+- 顶部 docstring 追加 v2.3.0-part2.2 变更说明段(启动就绪性自检 4 层设计)
+- 新增模块级辅助函数 `_health_readiness_check()`(~85 行,放 `_health_progress_adapter` 之后、`/latest` 路由之前):
+  - 返回 `(ok: bool, errors: list[str])`,自检 4 层:
+    - [1] `scripts.prompts.prompt_templates` 模块可 import(对话 A 缺陷 1)
+    - [2] 6 个 `HEALTH_*_PROMPT` 非 None 且为 dict(对话 A 缺陷 2)
+    - [3] 每 Prompt dict 含非空 `system_prompt` + `user_prompt_template`(对话 A 缺陷 4)
+    - [4] `db.get_kp_for_health_scan(include_annotations=False)` 首条含 `category` + `subcategory` key(对话 B 缺陷 3)
+  - 空库时 [4] 跳过(新部署允许启动)
+  - 总耗时 <100ms
+- `/api/tools/health/start` 路由在 `with _task_lock:` **之前**调用自检:
+  - 失败 → HTTP 400 + `{success:false, error, details:[...], message}`
+  - 失败时 `db.log_operation_event(event_type="health_readiness_check_failed", severity="error", payload={"errors":...})`
+  - 自检通过才进入原有 `with _task_lock:` 占用 _task 的逻辑
+- `main()` 启动横幅版本号 v2.3.0-part2 → v2.3.0-part2.2
+
+**scripts/check_system.py(v2.5 → v2.5.1)**
+
+- 顶部 docstring 版本号 + 变更说明段
+- 新增函数 `check_f048_readiness()`(放 `check_annotation_status` 后、`run_checks_json` 前):命令行版第 17 项,4 小项(17.1/17.2/17.3/17.4):
+  - 17.1/17.2 Prompt import + dict + key 三关(同 api_server 自检)
+  - 17.3 health_reports / polish_suggestions 两表存在
+  - 17.4 近 2 小时无 `status='running'` 僵尸任务,有则给清理 SQL 示例
+- `run_checks_json` 两处扩:
+  - [4] 数据库基础 `expected` 列表追加 `health_reports / polish_suggestions`(扩到 9 张,不扩到 18 张——避免干扰非 F048 老数据库)
+  - 末尾追加 [18] F048 就绪度
+
+**scripts/db_health_check.py(v1.0 → v1.1)**
+
+- 顶部 docstring 版本号 + 日期追加"v1.1 (v2.3.0-part2.2 对话 B 扩展 [11/11] F048 代码层契约一致性)"
+- `main()` 循环加 `check_11_f048_code_contract(conn)` 调用,总结文案"全部 10 项" → "全部 11 项"
+- 新增函数 `check_11_f048_code_contract(conn)`:5 小项
+  - 11.1 6 个 F048 Prompt 顶层可 import(对话 A 缺陷 1/2)
+  - 11.2 每 Prompt dict 含非空 system_prompt / user_prompt_template(对话 A 缺陷 4)
+  - 11.3 PROMPT_VERSION 常量值校验(含 `v2.3.0-part2.2` 验证对话 A 代码已替换)
+  - 11.4 `scripts.health_checker` 顶层 import 测试(对话 A 修复验证)
+  - 11.5 `db.get_kp_for_health_scan` 返回首条含 `category` + `subcategory` 字段 + 未分类比例统计(对话 B 契约验证)
+- 新增顶部模块常量 `F048_PROMPTS = [...]`,避免函数内硬编码
+
+**scripts/setup.py(v2.3.0-part2.1 → v2.3.0-part2.2)**
+
+- 顶部 docstring 版本号 + v2.3.0-part2.2 变更说明段
+- `get_version()` 兜底字符串 `"2.3.0-part2.1"` → `"2.3.0-part2.2"`
+- 核心文件校验清单追加 2 项:
+  - `scripts/health_checker.py`(F048 六维度扫描引擎)
+  - `scripts/db_health_check.py`(数据层只读体检脚本)
+- 数据库表数量保持 18 张(无 schema 变更)
+
+**首次安装.bat**:零改动(v2.3.0-part2.1 既有决策延续,setup.py → init_tables 一次覆盖 18 张表)
+
+**01_工程手册.md(完整更新)**
+
+- 高频修改表版本号同步 v2.3.0-part2.2(api_server / db_manager / prompt_templates / check_system / health_checker)
+- 低频修改表 setup.py 升 v2.3.0-part2.2 + 追加 `scripts/db_health_check.py v1.1`
+- 踩坑列表新增 6 条(对话 A 第 4 类 key 错配 + 对话 B 字段口径陷阱 + categories 表真实结构锚点 + 启动就绪性自检位置 + check_system [4] 表清单扩张时机 + 对话 A/B 复盘小标题)
+- 代码约定表追加 4 条立规则(禁止"包级静默降级" / 文档契约字段名从 schema 取真相 / 启动就绪性自检位置 / 项目文件 ≠ 代码对齐窗口)
+- 文末新增专节"v2.3.0-part2.2 对话 A/B 四类系统性 bug 复盘",含:
+  - 截图 47.16 分根因拆解
+  - 4 类 bug 的定位、修复、立规则
+  - 5 条立规则汇总 + 第 5 条对齐窗口详解
+  - 启动就绪性自检的标准模板代码
+  - 对话 A/B 代码可观察性增强决策
+
+### Fixed — 对话 C(收尾)
+
+**scripts/health_checker.py(docstring 追加对话 C 段 + `_dim2_structure_score` 3 处精确替换)**
+
+- 顶部 docstring 追加对话 C 变更说明段:
+  - `_dim2_structure_score` detail 追加未分类可观察性,区分"数据未分类"与"代码 bug"
+  - score 计算逻辑零改动,纯可观察性增强
+  - 对话 A/B 已把六维度真实分数调出来,对话 C 这行 detail 是锦上添花
+- `_dim2_structure_score` 循环段新增变量 `uncategorized_count = 0` + `if not cat: uncategorized_count += 1`
+- `_dim2_structure_score` return detail 块追加 2 字段:
+  - `uncategorized_count`:未分类 kp 数(`final_category_id IS NULL` 的 kp 在 LEFT JOIN 后 `category` 为 None/空串)
+  - `uncategorized_pct`:未分类占比百分数(保留 1 位小数)
+- 文件行数 1358 → 1371(+13 行),AST 验证通过
+- **score 计算逻辑零改动**(对话 B 落地后 score 已恢复真实值,对话 C 只在 detail 加可观察性)
+
+### 立规则(写入 01 工程手册)
+
+对话 A/B 累计立下 5 条(第 1 条沿用 v2.3.0-part2.1):
+
+1. **schema 单一来源原则**(v2.3.0-part2.1 已立):`init_tables()` 必须是唯一的建表真相。
+2. **禁止"包级静默降级"**(对话 A 立):业务必需模块的对外接口对象(Prompt/DB connection/Client)禁止使用 `try: from X import Y except: Y = None` 的兜底模式。识别信号:对象名字是"配置/实例/客户端"而不是"扩展插件"的,都应顶层 import。
+3. **文档契约字段名必须从 schema 源文件取真相**(对话 B 立):所有项目文件(00/01/02/03)引用表字段名时,必须从 `db_manager.py init_tables()` 的 CREATE TABLE SQL 复制真实列名,不能靠记忆或 docstring 口述(对话 A/B 曾把 `final_category_id` 误写成 `category_id`)。
+4. **长任务启动就绪性自检必须在 `_task_lock` 之前**(对话 B 立):所有占用 `_task` 单例的长任务 `/start` 路由前置校验都要在 `with _task_lock:` 之前执行。自检失败零污染 _task 状态,返回 400 后下次请求可立即重试。自检至少覆盖"外部依赖能 import + 依赖对象非空 + 依赖 key 齐全 + db 字段契约兑现"四类。
+5. **项目文件契约与代码实装对齐窗口**(对话 A/B 立):项目文件"字段名承诺/API 承诺/Prompt 承诺"必须在当对话或紧邻对话内兑现到代码,不能跨版本拖延(本地化交付 + 分对话拆分时尤其容易踩坑)。
+
+### 老唐操作清单
+
+老唐已在本机完成对话 A / B 代码替换 + 两个只读自检(db_health_check.py / check_system.py)。对话 C 只需:
+
+1. **替换 1 个代码文件**:`scripts/health_checker.py`(对话 C 版本,1371 行)
+2. **替换 4 个项目文件**:`00_项目全景.md` / `README.md` / `CHANGELOG.md` / (`01_工程手册.md` 对话 B 已替换无需再动)
+3. **推送 GitHub**(Summary: `v2.3.0-part2.2: F048 体检防护层 hotfix - 四类系统性 bug 一次清除 + 启动就绪性自检防护墙 + 未分类可观察性`)
+4. **Projects 更新**:对应覆盖 00 / 01(对话 B 已同步) / 03(对话 A 已同步) / README / CHANGELOG
+5. **验证(一行命令)**:
+   ```
+   python -c "import json; from scripts.health_checker import HealthChecker; print('AST+import OK')"
+   ```
+   然后手动跑一次 30 条档位体检,打开报告看维度②结构卡的 detail,能看到 `uncategorized_count` / `uncategorized_pct` 两字段。
+
+### 验证清单
+
+- [ ] `python scripts/db_health_check.py` → [11/11] F048 代码层契约一致性全 OK
+- [ ] `python scripts/check_system.py` → 第 17 项 F048 就绪度 4 小项全 OK
+- [ ] 手工体检(30 条档位)完成后,报告维度②结构卡 detail 出现 `uncategorized_count` / `uncategorized_pct` 两字段
+- [ ] 维度②结构分不再是 0、维度⑥变现有分数条、维度④/⑤ 不再是假 100
+- [ ] 故意把 prompt_templates.py 里某个 HEALTH_* Prompt 改成 `= None` → 重启服务 → 点"知识库体检"按钮秒回 400 + details 故障清单(自检防护墙验证)
+- [ ] 自检失败后立即可重试(不出现 409"有任务正在执行",证明 _task 单例零污染)
+
+### 已撤销
+
+- 两份对话草稿 `CHANGELOG_v2_3_0-part2_2-A_draft.md` / `CHANGELOG_v2_3_0-part2_2-B_draft.md` 内容已并入本条目,可删除或保留为历史归档。
+
+---
+
 ## [v2.3.0-part2.1] - 2026-04-22 (hotfix)
 
 **定位**：建表单一来源修复 + migrate 脚本退役，彻底清理"新电脑首次部署"路径。

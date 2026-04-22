@@ -4,7 +4,7 @@
 >
 > **知识工厂：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。**
 >
-> **当前版本：v2.3.0-part2.1（建表单一来源修复 hotfix；v2.3.0-part2 F048 体检闭环 + schema 整合 migrate 脚本退役）**
+> **当前版本：v2.3.0-part2.2（F048 体检防护层 hotfix,三对话拆分完成;在 v2.3.0-part2 正式版基础上修复四类系统性 bug + 启动就绪性自检防护墙）**
 
 ---
 
@@ -24,7 +24,83 @@
 
 ---
 
-## v2.3.0-part2 本次交付内容
+## v2.3.0-part2.2 本次交付内容（F048 体检防护层 hotfix）
+
+v2.3.0-part2.2 是 **F048 知识库体检 Agent 的 hotfix**,修复上一轮老唐实测截图总分 47.16 分暴露的四类系统性 bug + 加启动就绪性自检防护墙,让六维度体检从"假绿色"走向"真能跑"。分 3 个对话交付,全部完成:
+
+| 对话 | 范围 | 状态 |
+|------|------|------|
+| A 基础层 | prompt_templates.py 落地 6 个 F048 Prompt 正式版文本 + PROMPT_VERSION 升 v2.3.0-part2.2 + 补登 QC_CHECK_SINGLE;health_checker.py import 顶层化 + 6 处 Prompt key 修正(`['system']`→`['system_prompt']`/`['user']`→`['user_prompt_template']`)+ 6 处防御分支清理;03_Prompt手册.md | ✅ 2026-04-22 |
+| B 防护层 | db_manager.py 三查询追加 `LEFT JOIN categories c ON c.id = kp.final_category_id` + `AS category / subcategory`;api_server.py 新增 `_health_readiness_check()` 4 层自检(Prompt import / dict 非空 / key 齐全 / db 字段契约)+ `/start` 路由前置调用(失败 400 + details,不占 _task 单例);check_system.py 第 17 项 F048 就绪度;db_health_check.py [11/11] F048 代码层契约一致性;setup.py 核心文件校验清单追加;01_工程手册.md 踩坑 6 条 + 立规则 4 条 + 对话 A/B 复盘专节 | ✅ 2026-04-22 |
+| C 收尾 | health_checker.py `_dim2_structure_score` detail 追加 `uncategorized_count` / `uncategorized_pct` 可观察性字段;00_项目全景.md / README.md / CHANGELOG.md 合并 A/B 草稿为正式 `[v2.3.0-part2.2]` 条目 | ✅ 2026-04-22 |
+
+### 四类系统性 bug 修复概览
+
+上一轮实测截图六维度分数分布:
+
+| 维度 | 分数 | 真假 | 根因 |
+|------|------|------|------|
+| ①健康 | 40.13 | 真 | 不依赖 Prompt / 分类字段 |
+| ②结构 | 0 | **字段读取 bug** | db 只 AS 出 `category_id`(int),代码读 `category`(str) |
+| ③加工 | 35.65 | 真 | 不依赖 Prompt / 分类字段 |
+| ④关联 | 100 | **假满分** | Prompt=None → 防御分支直接返回 100 |
+| ⑤打磨 | 100 | **假满分** | 同上 |
+| ⑥变现 | 0 | **Prompt 未落地 + 字段读取 bug** | Prompt 从未定义 + 读不到 category |
+
+审计 + 实测挖出四类 bug:
+
+1. **缺陷 1 Prompt 未落地**(对话 A 修复):`prompt_templates.py` 6 个 F048 Prompt 从未定义,PROMPT_VERSION 停留 v2.2.3 → 全部落地,PROMPT_VERSION 升 v2.3.0-part2.2
+2. **缺陷 2 import 静默降级**(对话 A 修复):`health_checker.py` 用 `try/except: X = None` 吞掉 ImportError → 顶层 import,失败让解释器启动时直接崩
+3. **缺陷 3 字段读取 bug**(对话 B 修复):代码读 `k.get('category')` 但 db 只 AS 出 `category_id` 外键 → 三查询追加 LEFT JOIN categories + AS 字符串字段
+4. **缺陷 4 Prompt key 错配**(对话 A 实测挖出):6 处 AI 调用用 `['system']`/`['user']`,实际 key 是 `system_prompt`/`user_prompt_template`。之前被缺陷 2 掩盖(None 防御分支拦在 KeyError 之前),单改 import 不修 key 六维度必立即全炸 → 6 处全改
+
+### 启动就绪性自检防护墙(对话 B 新增)
+
+`api_server.py /api/tools/health/start` 路由在 `with _task_lock:` **之前**调用 `_health_readiness_check()`,4 层自检:
+
+| 层 | 检查 | 失败表现 |
+|---|------|---------|
+| [1] | `scripts.prompts.prompt_templates` 模块可 import | HTTP 400 + `details` 故障清单 |
+| [2] | 6 个 `HEALTH_*_PROMPT` 非 None 且为 dict | 同上 |
+| [3] | 每 Prompt dict 含非空 `system_prompt` + `user_prompt_template` | 同上 |
+| [4] | `db.get_kp_for_health_scan()` 首条含 `category` + `subcategory` key(空库跳过) | 同上 |
+
+**效果**:依赖不全时点"体检"按钮秒回 400 + 故障清单,不占用任务锁,可立即重试。
+
+### 新增可观察性字段(对话 C 落地)
+
+`health_checker.py _dim2_structure_score` 的 detail 追加:
+- `uncategorized_count`:未分类 kp 数(`final_category_id IS NULL`)
+- `uncategorized_pct`:未分类占比
+
+老唐看报告时维度②结构分低,可直接判断是"数据未分类"(`uncategorized_pct > 0`)还是"分类覆盖不全"(两者都是 0 但 l1_rate/l2_rate 低)。
+
+### 老唐需要做的操作(4 步)
+
+v2.3.0-part2.2 **无数据库 schema 变更**,不需要重跑 migrate。
+
+1. **备份数据库**:`启动后台.bat` 点"一键备份",或手动复制 `data/database/knowledge_base.db`。
+2. **替换代码文件**:
+   - 对话 A(已替换):`scripts/prompts/prompt_templates.py` / `scripts/health_checker.py`
+   - 对话 B(已替换):`scripts/db_manager.py` / `scripts/api_server.py` / `scripts/check_system.py` / `scripts/db_health_check.py` / `scripts/setup.py`
+   - 对话 C(本次):`scripts/health_checker.py`(detail 两字段微调) + 4 个项目文件
+3. **重启服务**:关闭 `启动后台.bat` 后重开。
+4. **验证**:
+   - 跑 `python scripts/db_health_check.py` → [11/11] F048 代码层契约一致性全 OK
+   - 跑 `python scripts/check_system.py` → 第 17 项 F048 就绪度全 OK
+   - 手工体检(30 条档位):维度②结构有真实分数、维度⑥变现有分数条、六维度不崩
+
+### 验证清单
+
+- `db_health_check.py` [11.3] PROMPT_VERSION 显示 `v2.3.0-part2.2` → 对话 A Prompt 已落地。
+- `db_health_check.py` [11.5] `OK category / subcategory 字段均存在` → 对话 B db_manager 契约已兑现。
+- 体检报告维度②结构卡展开 detail 能看到 `uncategorized_count` / `uncategorized_pct` → 对话 C 落地。
+- 故意破坏 prompt_templates.py 让 Prompt=None → 点"体检"按钮秒回 400 + details 故障清单 → 自检防护墙工作。
+- 正常体检 30 条:维度②结构分 ≠ 0、维度⑥变现分 ≠ 0、维度④关联 ≠ 假 100、维度⑤打磨 ≠ 假 100。
+
+---
+
+## v2.3.0-part2 正式版历史交付
 
 v2.3.0-part2 是 **F048 知识库体检 Agent** 的完整落地,提供"六维度扫描 + 三层打磨降级链 + 逐条 Review UI"的质量抓手闭环。分 3 个对话交付,全部完成:
 
@@ -37,7 +113,7 @@ v2.3.0-part2 是 **F048 知识库体检 Agent** 的完整落地,提供"六维度
 ### 新增能力概览
 
 - **F048 知识库体检 Agent(完整版)**
-  - 工具箱新增第 10 张紫色"知识库体检"卡,点击弹档位选择对话框(30/50/100/200/不限),每档显示预计时间(约 10/17/35/70 分钟 / 按库容估)
+  - 工具箱新增第 10 张紫色"知识库体检"卡,点击弹档位选择对话框(30/50/100/200/不限),每档显示预计时间
   - 六维度扫描:健康度 / 结构分布 / 加工深度 / 关联密度 / 低分打磨 / 变现匹配度(权重 25/10/20/10/20/15)
   - 三层打磨降级链:L1 主链(V3 诊断 → R1 创造打磨 → V3 校验)→ L2 保守打磨(V3 微调不创造)→ L3 人工兜底(规则标记 status=manual_review_needed)
   - 报告详情页:顶部总分 + 2×3 六维度卡 + 变现场景行(5 场景横排分数条) + "对比上次"文字 + "开始 Review"按钮
@@ -48,29 +124,6 @@ v2.3.0-part2 是 **F048 知识库体检 Agent** 的完整落地,提供"六维度
 
 - **F060 备份触发点补齐**:operation_hook("health_adopt") 作为第 6 个触发点正式接入(至此 6 触发点全齐:reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt),每类 op_name 保留最近 5 个 + 2GB 总量上限
 
-### 老唐需要做的操作(5 步)
-
-v2.3.0-part2 **无数据库 schema 变更**(alpha1 已完成迁移),不需要重跑 migrate。
-
-1. **备份数据库**:`启动后台.bat` 点"一键备份",或手动复制 `data/database/knowledge_base.db`。
-2. **替换 2 个代码文件**:`scripts/api_server.py` / `web/templates/review.html`。
-3. **重启服务**:关闭 `启动后台.bat` 后重开。
-4. **首次体检**:Tab 2 → 工具箱 → 知识库体检 → 选 **30 条档位**(首次试水约 10 分钟)。
-5. **Review 一轮**:报告弹窗查看六维度分数 → 点"开始 Review" → 逐条决策(采纳 / 驳回 / 略过 / 确认删除)。
-
-### 验证清单
-
-- 工具箱末尾看得到第 10 张紫色"知识库体检"卡。
-- 点击弹出档位对话框,5 个选项(30/50/100/200/不限)显示预计时间。
-- 体检运行中,"一键提取"按钮被禁用 + 进度条标题显示"知识库体检进行中"。
-- 完成后弹 confirm"体检完成,总分 XX,是否立即查看报告?",点确认打开报告详情。
-- 报告详情:2×3 六维度卡 + 变现场景 5 项分数条 + "开始 Review"按钮。
-- 逐条 Review 弹窗:左右对比,L1 绿边,L2 黄边,L3 灰边;diagnosis 默认折叠。
-- L3_manual 卡片只显示"驳回 + 略过"(无采纳按钮)。
-- split 场景采纳后 Toast"AI 建议拆为 N 条,已采纳第 1 条;其余请到 Tab 1 手动创建"。
-- drop 场景采纳后原 kp review_status 变 ignored(Tab 1"已忽略"筛选里找得到)。
-- 略过按钮:开 F12 Network 核验不发请求、不改 DB。
-
 ---
 
 ## 历史版本功能累积（v2.2.3 / v2.3.0-part1 已交付）
@@ -78,41 +131,28 @@ v2.3.0-part2 **无数据库 schema 变更**(alpha1 已完成迁移),不需要重
 以下能力在 v2.2.3 hotfix 落地后持续生效，v2.3.0-part1 继续沿用：
 
 - **F057 R1 截断自动补救**：R1 输出 JSON 被截断时不再丢数据。保留已解析部分，用末条 excerpt 定位切分点，重提尾段（最多 3 次降级至 500 字），按 title + excerpt 去重合并。
-- **F058 质检三级降级链**：V3 批量质检格式异常时不再跳过条目。链路 `L0 批量 15 → L1 小批 3×2 → L2 逐条 → L3 本地规则兜底`，每条 kp 必有 qa_score + qa_source。
-- **F060 关键操作强制备份**：版本重提取 / 重复合并 / 全库重扫 / 批量重跑（v2.3.0-part1 新接入） 前自动备份，备份失败立即终止操作；每类 op_name 保留 5 个 + 总量 2GB 上限。
-- **F061 历史质检补跑**：工具箱"质检补跑"按钮扫描未质检 + 格式异常条目，走三级降级链重跑。
-- **事件日志**：所有截断 / 降级 / 兜底 / 备份信号写入 operation_events 表；仪表盘"截断补救"卡 + 事件日志模态框查看。
-- **规则兜底可视化**：审核界面规则兜底条目整卡黄色高亮 + "规则兜底"小标签，侧边栏"质检来源"筛选器。
+- **F058 V3 质检三级降级**：每条知识点强制标 qa_score + qa_source，格式 / 超时 / 限流时三级自动降级（AI → 启发式 → 规则兜底），规则兜底条目 Tab 1 黄色高亮 + "规则兜底"标签。
+- **F060 操作备份护栏**：关键操作触发点（reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt 6 类）先 `operation_hook(op_name)` 备份，失败立即终止；每类 op_name 保留最近 5 个 + 2GB 总量上限，pytest 全绿。
+- **F061 质检补跑**：Tab 2 系统管理页"工具箱"新增"质检补跑"按钮，扫描所有 qa_score = 0 的条目触发 V3 复检，跟 F058 走同一条三级降级链。
+- **F049 仪表盘工具箱优化**：Card 12/13/14 标签分布 Top5 + 展开全部 + 穿透跳转 Tab 1 带 layer1_tag 参数；工具箱"全库重复检测 + 清理并重扫"合并为"智能重复检测"三选一弹窗（最近 7 天 / 全库扫描 / 彻底重扫）。
+- **F059 批量重跑 + AI 去重联动**：提取管理页"批量重跑"卡，勾选文件 → 自动备份 → 版本重提取 → 跨文件 AI 去重联动；注解警告复用 v2.2.3 机制。
 
 ---
 
-## 商业化场景
+## 模块状态速览
 
-| 场景 | 客户群 | 产品形态 |
-|------|--------|---------|
-| 政策解读订阅 | 乡镇干部 / 小型咨询公司 | 新政策解读 + 操作建议 + 月报 |
-| 问答助手订阅 | 基层干部 / 施工项目经理 | 微信小程序 / 网页问答 |
-| 行业培训课程 | 县级自然资源局 / 咨询公司 | 线下培训 + 线上课件 |
-| 投标方案辅助 | 工程咨询公司 / 规划设计院 | 投标素材包自动生成 |
-| 合规自检工具 | 施工企业 / 项目经理 | 在线自检 + 整改建议 |
-| 数据查询与测算 | 工程咨询 / 规划设计 | 指标数据查询 + 费用测算 |
-
----
-
-## 模块状态
-
-| 模块 | 定位 | 状态 |
-|------|------|------|
-| 1 知识提取引擎 | 文件 → 结构化知识点（含举一反三 + 截断补救 + 重复检测 + 批量重跑） | ✅ **v2.3.0-part1 完成** |
-| 2 知识审核与管理 | 审核 / 标签 / 保鲜 / 政策 / 质控（三级降级） / 管理后台 / 标签分布视图 | ✅ **v2.3.0-part1 完成** |
-| 3 经验录入 | 专家注解 + 经验速记 | ✅ v2.2.0 完成 |
-| 4 质量体检 | AI 全盘扫描 + 低分打磨 + 喂料建议 | ✅ **v2.3.0-part2 完成(三对话闭环:基础+引擎+界面)** |
-| 5 端到端测试 | 路由自省 + AI 判断 + 自动报告 | 🚧 v2.3.0 Part3 规划中 |
-| 6 本地问答助手 | 顾问式答疑 + 朋友试用 | 🚧 v2.3.2 规划中 |
-| 7 内容生产引擎 | AI 辅助生成政策解读 / 指南 / 课件 | 未开发（v2.4.0+） |
-| 8 云端问答产品 | 高并发问答服务 | 未开发（v3.x） |
-| 9 内容分发与付费 | 产品化 + 收费 | 未开发（v3.x） |
-| 10 信息采集 | 政策更新抓取 | 未开发（远期） |
+| 模块 | 状态 |
+|------|------|
+| 1 知识提取引擎 | ✅ v2.3.0-part1 完成 |
+| 2 知识审核与管理 | ✅ v2.3.0-part1 完成 |
+| 3 经验录入 | ✅ v2.2.0 完成 |
+| 4 质量体检 | ✅ **v2.3.0-part2 完成(三对话闭环:基础+引擎+界面)+ v2.3.0-part2.2 hotfix 修复四类系统性 bug + 启动就绪性自检防护墙** |
+| 5 端到端测试 | 🚧 v2.3.0 Part3 规划中 |
+| 6 本地问答助手 | 🚧 v2.3.2 规划中 |
+| 7 内容生产引擎 | 未开发（v2.4.0+） |
+| 8 云端问答产品 | 未开发（v3.x） |
+| 9 内容分发与付费 | 未开发（v3.x） |
+| 10 信息采集 | 未开发（远期） |
 
 ---
 
@@ -168,95 +208,24 @@ v2.3.0-part2 **无数据库 schema 变更**(alpha1 已完成迁移),不需要重
    - 随时记录碎片化经验，V3 自动结构化入库
 ```
 
-### 3. 维护工具（Tab 2 工具箱 10 张卡,v2.3.0-part2 新增第 10 张"知识库体检"）
-
-系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一：最近 7 天 / 全库扫描 / 彻底重扫）** / 政策补跑 / 质检补跑（三级降级链） / 审核统计 / API 费用详情 / **知识库体检（v2.3.0-part2 新增,档位弹窗 + 六维报告 + 逐条 Review）**。
-
----
-
-## 管理后台结构
-
-### Tab 1 知识审核
-
-- 知识点列表 + 分页 + 跨页全选
-- 侧边栏筛选：审核状态 / 知识类型 / 分类体系 / 就绪度 / 质检分数 / 质检来源 / **一级标签（v2.3.0-part1 新增）** / 保鲜状态 / 政策校验 / 来源类型
-- 审核操作：确认入库 / 编辑 / 忽略 / 删除 / 豁免 / 重新校验 / 续期 / 标记过时
-- 专家注解折叠区（5 种注解类型）
-- 规则兜底条目黄色高亮 + "规则兜底"标签
-
-### Tab 2 系统管理
-
-- **仪表盘 14 张卡（v2.3.0-part1 从 11 张扩至 14 张）**：
-  - Card 1~10：状态分布 / 类型分布 / 就绪度 / 质检分数 / 保鲜 / 政策校验 / 重复检测 / 文件管线 / API 费用 / 专家注解
-  - Card 11：截断补救（v2.2.3 新增）
-  - **Card 12 / 13 / 14：业务领域 / 知识形态 / 客户视角 三组标签分布（v2.3.0-part1 新增，Top5 + 展开全部 + 穿透跳转）**
-- **工具箱 10 张卡（v2.3.0-part2 新增第 10 张"知识库体检"）**：系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **智能重复检测（三选一弹窗，合并原两个入口）** / 政策补跑 / 质检补跑 / 审核统计 / API 费用 / **知识库体检(档位弹窗 + 六维报告 + 逐条 Review UI)**
-- **经验速记**：3 分钟快速录入 + V3 自动结构化
-- **提取管理 4 张卡（v2.3.0-part1 从 3 张扩至 4 张）**：预处理 / 一键提取 / 版本重提取 / **批量重跑（新增，支持文件勾选 + 含注解警告不禁用 + 自动备份 + 跨文件 AI 去重联动）**
-- **事件日志**：仪表盘"截断补救"卡的按钮打开
-
-### Tab 3 智能问答（v2.3.2 规划中）
-
-问答工作台（4 板块输出） / 场景选择器 / 追问建议 / 历史记录 / 导出 Word / 朋友试用简化模式。
-
----
-
-## 目录结构
+### 3. 定期体检（v2.3.0-part2 正式版 / v2.3.0-part2.2 防护墙加固）
 
 ```
-rural-revitalization-kb/
-├── scripts/                # Python 脚本
-│   ├── prompts/            # Prompt 模板（27 个,v2.3.0-part2-alpha1 新增 6 个 F048 体检 Prompt:HEALTH_DIAGNOSIS / HEALTH_POLISH / HEALTH_POLISH_VERIFY / HEALTH_POLISH_CONSERVATIVE / HEALTH_ISLAND_JUDGE / HEALTH_MONETIZE_REPORT）
-│   ├── api_server.py       # 管理后台 API（v2.3.0-part2,新增 F048 8 路由 + 3 辅助函数）
-│   ├── extractor.py        # 知识提取引擎（含 F057/F058 + Step 8 修正）
-│   ├── deepseek_client.py  # API 封装（DeepSeek + 硅基流动）
-│   ├── preprocessor.py     # 文件预处理 + .md 缓存
-│   ├── db_manager.py       # 数据库管理（v2.3.0-part2-alpha1 新增 F048 12 方法 + 2 张新表 CRUD）
-│   ├── experience_notes.py # 经验速记模块
-│   ├── config_wizard.py    # 配置向导（双 API Key）
-│   ├── check_system.py     # 系统检查 v2.5
-│   ├── duplicate_checker.py# 重复检测（v2.3.0-part1 新增 scan_recent/scan_full/scan_incremental 三套入口）
-│   ├── policy_validator.py # 政策依赖校验
-│   ├── freshness_checker.py# 保鲜扫描
-│   ├── backup_manager.py   # 备份恢复 + operation_hook 钩子（6 触发点:reextract / dup_merge / dup_merge_batch / full_rescan / batch_rerun / health_adopt,v2.3.0-part2 完成最后一处接入）
-│   ├── review_analytics.py # 审核统计
-│   ├── tag_config.py       # 标签体系配置
-│   ├── file_reader.py      # 多格式文件读取
-│   ├── setup.py            # 初始化
-│   ├── upgrade_manager.py  # 架构升级迁移
-│   └── health_checker.py   # F048 知识库体检引擎（v2.3.0-part2-alpha2 新增,~1350 行,六维度扫描 + 三层打磨降级链）
-├── web/templates/          # 前端页面
-│   └── review.html         # 管理后台（双 Tab,v2.3.0-part2 新增工具箱第 10 卡 + 3 F048 模态框 + 13 JS 函数 + tier 三色）
-├── data/                   # 数据目录
-│   ├── pending/            # 待处理文件
-│   ├── processing/         # 处理中（含 .md 缓存）
-│   ├── completed/          # 已完成（含 .md 缓存归档）
-│   ├── failed/             # 失败文件
-│   └── database/           # SQLite 数据库
-├── backups/                # 备份目录（operation_hook 自动写入）
-├── config/                 # 配置文件
-├── 启动后台.bat            # 日常主入口：管理后台
-├── 首次安装.bat            # 初次部署
-├── CHANGELOG.md            # 变更日志
-└── README.md
+1. Tab 2 系统管理 → 工具箱 → 知识库体检
+2. 弹窗选档位（30/50/100/200/不限,首次试水选 30 条约 10 分钟）
+3. 体检运行中,一键提取按钮禁用 + 进度条标题"知识库体检进行中"
+4. 完成弹 confirm"总分 XX,是否立即查看报告?"
+5. 报告详情:2×3 六维度卡 + 变现场景 5 项分数条 + "开始 Review"按钮
+6. 逐条 Review:左右对比 + L1/L2/L3 tier 徽章 + diagnosis 折叠
+7. 四态操作:采纳(走备份) / 驳回(AI 建议作废) / 略过(不决策) / 确认删除(drop 场景)
 ```
 
 ---
 
-## 知识体系
+## 三层标签体系（v2.3.0-part1 起在仪表盘展示）
 
-### 分类体系（5 大类 27+ 子类）
-
-1. **政策库**（法规依据）：全域整治 / 增减挂钩 / 入市 / 专项债 / 林盘保护 / 乡村振兴综合 / 自然资源规划
-2. **案例库**（项目参考）：全域整治项目 / 增减挂钩项目 / 林盘修复运营 / 融资创新 / 产业运营 / 失败风险
-3. **经验库**（差异化资产）：策略判断 / 操盘方法 / 反常识洞察 / 踩坑记录 / 客户沟通
-4. **工具库**（可复用模板）：方案 / 合同 / 评审 / 招标 / 汇报 / 申报
-5. **数据库**（数据支撑）：资金测算 / 指标 / 政策对比 / 项目规模 / 行业基准
-
-### 三层标签体系
-
-- **第一层 分类标签**：6 组 41 个（业务领域 / 项目阶段 / 知识形态 / 客户视角 / 稀缺度 / 内容状态）
-- **第二层 属性标签**：8 个维度（政策层级 / 资金渠道 / 主体 / 区域 / 时效 / 年份 / 可复制性 / 资金规模）
+- **第一层 业务领域**：策略落地 / 一线操作 / 政策制度 / 数据与测算 / 多维判断
+- **第二层 知识形态**：概念 / 流程 / 方法论 / 清单 / 数据 / 案例 / 模板 / 经验
 - **第三层 关键词**：AI 自由提取 5-15 个
 
 ---
@@ -267,9 +236,10 @@ rural-revitalization-kb/
 |------|------|---------|------|
 | v1.0 ~ v2.2.2 | 基础 → 提取 → 管理 → 资产沉淀 → 质量管控 | 全部已完成 | ✅ 已完成 |
 | v2.2.3 hotfix | 紧急 bug 修复 + 护栏 | F057 截断补救 + F058 质检降级 + F060 操作备份 + F061 质检补跑 | ✅ 已完成 |
-| **v2.3.0-part1** | **工具箱整体优化** | **F049 仪表盘工具箱优化 + F059 批量重跑与 AI 去重联动 + Step 8 bug 修正** | ✅ **全部完成** |
-| **v2.3.0-part2** | **质量抓手** | **F048 知识库体检 Agent(六维度扫描 + 三层打磨降级链 + 逐条 Review UI)** | ✅ **本次完成** |
-| **v2.3.0-part2.1** | **schema 整合 hotfix** | **db_manager.init_tables() 吸收 health_reports / polish_suggestions 两表 + 3 索引；setup.py 版本号升至 v2.3.0-part2.1；删除 migrate_v223.py 和 migrate_v230_part2.py** | ✅ **已交付（2026-04-22）** |
+| v2.3.0-part1 | 工具箱整体优化 | F049 仪表盘工具箱优化 + F059 批量重跑与 AI 去重联动 + Step 8 bug 修正 | ✅ 已完成 |
+| v2.3.0-part2 | 质量抓手 | F048 知识库体检 Agent(六维度扫描 + 三层打磨降级链 + 逐条 Review UI) | ✅ 已完成 |
+| v2.3.0-part2.1 | schema 整合 hotfix | db_manager.init_tables() 吸收 health_reports / polish_suggestions 两表 + 3 索引；setup.py 版本号升至 v2.3.0-part2.1；删除 migrate_v223.py 和 migrate_v230_part2.py | ✅ 已交付（2026-04-22） |
+| **v2.3.0-part2.2** | **F048 防护层 hotfix(三对话拆分)** | **对话 A 修四类系统性 bug(Prompt 未落地/import 静默降级/字段读取/Prompt key 错配);对话 B 加启动就绪性自检防护墙 + db 字段契约兑现 + 数据层只读契约体检;对话 C 补 uncategorized 可观察性 + 项目文件收尾** | ✅ **本次完成（2026-04-22）** |
 | v2.3.0 Part3 | 端到端测试 | F062 端到端健康测试 Agent（方案 A） | 规划中 |
 | v2.3.1 | 批量重算成熟度 + 关联体系 | 批量重算 content_readiness 按钮(与 F048 打磨解耦) + F020 冲突检测 + F030 知识关联网络 | 规划中 |
 | v2.3.2 | 本地问答助手 | F055 顾问式答疑 + F056 发布 JSON 标准 | 规划中 |
@@ -291,9 +261,9 @@ rural-revitalization-kb/
 ### 技术文档（Claude Projects 4 个项目文件）
 
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化路径
-- `01_工程手册.md`：代码文件清单 / 技术踩坑 / 关键设计决策
+- `01_工程手册.md`：代码文件清单 / 技术踩坑 / 关键设计决策 / **v2.3.0-part2.2 对话 A/B 四类系统性 bug 复盘专节 + 5 条立规则**
 - `02_知识体系.md`：五大类分类 + 三层标签
-- `03_Prompt手册.md`：27 个 Prompt 模板清单(v2.3.0-part2 含 6 个 F048 体检 Prompt)
+- `03_Prompt手册.md`：27 个 Prompt 模板清单(v2.3.0-part2 含 6 个 F048 体检 Prompt,v2.3.0-part2.2 落地正式版文本)
 
 ### GitHub 仓库
 
@@ -317,6 +287,11 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 - **v2.3.0-part2 约定 2**:低分候选严格口径 `(qa_score>0 AND qa_score<=2) OR qa_source='rule_fallback'`;qa_score>0 过滤未质检 kp(默认值 0.0),避免把"未质检"的 kp 误拉进打磨池。未质检应先走 F061 质检补跑补 qa_score。
 - **v2.3.0-part2 约定 3**:split 场景只采纳第 1 条不自动建新 kp(避免污染审核池,老唐手动到 Tab 1 创建其余);drop 走独立 `/api/tools/health/suggestions/<sid>/drop` 路由调 `ignore_knowledge_point`,不走 `/adopt` 路由;op_name 复用 `"health_adopt"` 不新增(backup 分桶按 op_name 不碎)。
 - **v2.3.0-part2 约定 4**:采纳后 `content_readiness` 保留原值不动(打磨是"修字句/补结构"不是"重评成熟度",避免 L2 保守打磨虚高成熟度统计);成熟度重算规划 v2.3.1 单开"批量重算成熟度"按钮解耦。
+- **v2.3.0-part2.1 约定**:schema 单一来源原则 — `init_tables()` 必须是唯一的建表真相,任何 schema 变更都要同步改 init_tables();migrate 脚本仅作为"已部署老库的一次性升级工具",升完立即退役(源文件删除 + setup.py 吸收)。
+- **v2.3.0-part2.2 约定 1**(对话 A 立):禁止"包级静默降级"— 业务必需模块的对外接口对象(Prompt/DB connection/Client)禁止使用 `try: from X import Y except: Y = None` 的兜底模式。识别信号:对象名字是"配置/实例/客户端"而不是"扩展插件"的,都应顶层 import,失败让解释器启动时直接崩。
+- **v2.3.0-part2.2 约定 2**(对话 B 立):文档契约字段名必须从 schema 源文件取真相 — 所有项目文件(00/01/02/03)引用表字段名时,必须从 `db_manager.py init_tables()` 的 CREATE TABLE SQL 复制真实列名,不能靠记忆或 docstring 口述(对话 A/B 曾把 `final_category_id` 误写成 `category_id`)。
+- **v2.3.0-part2.2 约定 3**(对话 B 立):长任务启动就绪性自检必须在 `_task_lock` 之前 — 所有占用 `_task` 单例的长任务 `/start` 路由前置校验都要在 `with _task_lock:` 之前执行;自检失败零污染 _task 状态,返回 400 后下次请求可立即重试。自检至少覆盖"外部依赖能 import + 依赖对象非空 + 依赖 key 齐全 + db 字段契约兑现"四类。
+- **v2.3.0-part2.2 约定 4**(对话 A/B 立):项目文件契约与代码实装对齐窗口 — 项目文件"字段名承诺/API 承诺/Prompt 承诺"必须在当对话或紧邻对话内兑现到代码,不能跨版本拖延(本地化交付 + 分对话拆分时尤其容易踩坑)。
 
 ---
 
@@ -330,6 +305,6 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 
 本项目为个人实战资产沉淀工具，当前阶段仅供老唐本人使用。未来商业化路径见 `00_项目全景.md`。
 
-## v2.3.0-part2 致谢
+## v2.3.0-part2.2 致谢
 
-感谢老唐 20 年乡村振兴实战经验沉淀出的判断力。v2.2.3 补上了质量护栏,v2.3.0-part1 把工具箱和仪表盘往前推了一步,v2.3.0-part2 则把最后一块短板补上了——F048 知识库体检 Agent 三对话闭环完成,质量抓手从"审核为主"升级为"审核 + 打磨双抓手"。从此精品知识不仅能"审核出来",也能"打磨出来"。下一步 v2.3.1 会把"批量重算成熟度"按钮补上,把打磨和成熟度评定彻底解耦。
+感谢老唐 20 年乡村振兴实战经验沉淀出的判断力,也感谢老唐上一轮在截图 47.16 分那里停住,不把"假绿色"当成"真能跑"。v2.2.3 补上了质量护栏,v2.3.0-part1 把工具箱和仪表盘往前推了一步,v2.3.0-part2 把 F048 体检抓手搭起来,v2.3.0-part2.2 则把这个抓手的四类系统性缺陷一次清掉 —— Prompt 没写的补上,静默降级的改成顶层 import,字段读错的改成 LEFT JOIN,key 错配的逐字改对。再加上一堵启动就绪性自检的墙,把所有"依赖缺失的新故障"从运行时崩提前到点按钮秒回 400。质量抓手不再是"展示型 UI",而是"真能跑的生产车间"。下一步 v2.3.0 Part3 上端到端健康测试 Agent,把所有 API 路由都纳入 AI 自检范围。

@@ -16,6 +16,16 @@ health_checker.py - 知识库体检 Agent 引擎层（F048）
     - 其他代码逻辑一律不动: 降级链 / 权重 / 维度方法签名 / 进度回调
     - 体检 Prompt 正式落地到 prompt_templates.py v2.3.0-part2.2
 
+变更说明(v2.3.0-part2.2 对话C 落地):
+    - _dim2_structure_score detail 追加 uncategorized_count / uncategorized_pct 两字段,
+      未分类判定以 category 字符串是否为空为准(不是 category_id IS NULL)
+      理由: 历史库若有未分类 kp(final_category_id IS NULL), LEFT JOIN 后 category=None,
+            l1_set 不增, 会拉低维度②结构分。追加这两字段让老唐在报告里
+            一眼看到"分低是因为有 X 条 kp 未分类"还是"分类覆盖本就不全",
+            区分"数据原因"和"代码 bug"
+    - 仅增强可观察性,score 计算逻辑零改动;旧版报告无此字段天然向后兼容
+    - 其他代码一律不动
+
 职责:
     六维度扫描知识库健康度,生成 health_report + polish_suggestions
     维度①健康度  维度②结构分布  维度③加工深度
@@ -400,9 +410,12 @@ class HealthChecker:
         # "结构 0" 的根因,修复走对话 B 而不是本文件
         l1_set = set()
         l2_set = set()
+        uncategorized_count = 0  # v2.3.0-part2.2 对话 C: 未分类 kp 计数, category 空串即计入
         for k in kps:
             cat = (k.get('category') or '').strip()
             subcat = (k.get('subcategory') or '').strip()
+            if not cat:
+                uncategorized_count += 1
             # 粗匹配大类(前缀或包含)
             for tc in TOP_CATEGORIES:
                 if tc and (cat == tc or (cat and cat.startswith(tc[:2]))):
@@ -433,6 +446,9 @@ class HealthChecker:
                 'l2_rate': round(l2_rate, 4),
                 'tag_balance': round(variance, 4),
                 'tag_balance_explain': '1=完全均衡, 0=严重失衡',
+                # v2.3.0-part2.2 对话 C: 未分类可观察性(区分"数据未分类"vs"代码 bug")
+                'uncategorized_count': uncategorized_count,
+                'uncategorized_pct': round(uncategorized_count * 100.0 / total, 1) if total else 0,
             },
         }
 
