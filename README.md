@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**：v2.3.0-part3（F062 端到端健康测试 Agent 全闭环）
+> **当前版本**：v2.3.0-part3.1（hotfix：F061 质检补跑签名漂移 + F062 老库自动追齐）
 
 ---
 
@@ -78,7 +78,7 @@
 rural-revitalization-kb/
 ├── scripts/
 │   ├── prompts/             # Prompt 模板（26 个）
-│   ├── api_server.py        # 管理后台 API（v2.3.0-part3，含 F048 8 + F062 7 路由）
+│   ├── api_server.py        # 管理后台 API（v2.3.0-part3.1，含 F048 8 + F062 7 路由 + 启动兜底 init_tables）
 │   ├── extractor.py         # 知识提取引擎（含 F057/F058）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
 │   ├── preprocessor.py      # 文件预处理 + .md 缓存
@@ -141,7 +141,8 @@ rural-revitalization-kb/
 | v2.3.0-part2 | F048 知识库体检 Agent | ✅ |
 | v2.3.0-part2.1 | schema 单一来源 hotfix | ✅ |
 | v2.3.0-part2.2 | F048 四类系统性 bug 防护层 hotfix | ✅ |
-| **v2.3.0-part3** | **F062 端到端健康测试 Agent 全闭环** | ✅ |
+| v2.3.0-part3 | F062 端到端健康测试 Agent 全闭环 | ✅ |
+| **v2.3.0-part3.1** | **hotfix：F061 质检补跑签名漂移 + F062 老库自动追齐** | ✅ |
 | v2.3.1 | 批量重算成熟度 + 关联体系 | 规划 |
 | v2.3.2 | 本地问答助手 | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
@@ -164,7 +165,7 @@ rural-revitalization-kb/
 ### Claude Projects 6 个项目文件
 
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化 / **新对话启动指南**
-- `01_工程手册.md`：代码清单 / 立规则（42 条，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
+- `01_工程手册.md`：代码清单 / 立规则（44 条，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
 - `02_知识体系.md`：分类 + 三层标签
 - `03_Prompt手册.md`：26 个 Prompt 清单与接口契约
 - `CHANGELOG.md`：近 3 版完整 + 早期摘要
@@ -178,7 +179,7 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 
 ## 关键约束（改代码时必读）
 
-> 完整立规则见 `01_工程手册.md` §二（分数据层 / 代码层 / 交互层 / 流程层 4 类 42 条）。以下是高频命中项：
+> 完整立规则见 `01_工程手册.md` §二（分数据层 / 代码层 / 交互层 / 流程层 4 类 44 条）。以下是高频命中项：
 
 **环境约束**：
 - **bat 文件**：GBK 编码 + CRLF 换行；不在 Python `-c` 参数内用 `%~dp0`
@@ -190,12 +191,14 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 **数据约束**：
 - **删除知识点必手动级联 annotations**（外键无 CASCADE）
 - **schema 单一来源**：`init_tables()` 是唯一建表真相，migrate 脚本升完即退役
+- **api_server 启动兜底 init_tables**（v2.3.0-part3.1 起）：避免老库缺新表
 - **字段真名**：kp 表外键是 `final_category_id` 不是 `category_id`
 
 **流程约束**：
 - **长任务启动就绪性自检必须在 `_task_lock` 之前**
 - **6 个关键操作触发点必须先 `operation_hook(op_name)` 备份**
 - **`_task["type"]` 前后端字面锁定**：F048 用 `"health"`，F062 用 `"e2e"`
+- **跨版本调用外部模块方法前必须对照真实签名**（v2.3.0-part3.1 起铁律）：`grep -n "def <方法名>"` 查源码，不相信记忆不相信旧文档
 
 **AI 调用约束**：
 - **Prompt 双 key 严格**：`system_prompt` / `user_prompt_template`

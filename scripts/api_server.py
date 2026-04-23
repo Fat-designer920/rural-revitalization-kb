@@ -1,9 +1,19 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3 - F062 端到端健康测试 Agent 界面层（对话 3/3 正式版）
+版本：v2.3.0-part3.1 - hotfix(F061 质检补跑签名漂移 + F062 老库自动追齐)
 
-v2.3.0-part3 变更（F062 界面层）：
+v2.3.0-part3.1 变更(hotfix,2026-04-24)：
+    Bug A 修复(F061 质检补跑全线崩溃)：
+      - _qc_rerun_core 两处 ext._quality_check() 调用补齐 filename/content_summary 参数
+      - 根因：F058(v2.2.3)重构 _quality_check 强制 5 参,F061 的调用保留旧 2 参签名
+      - 影响：潜伏 2 个月,首次触发质检补跑立刻 TypeError 全线崩
+    Bug B 修复(F062 三表老库未建,500 错误):
+      - 模块顶层 DatabaseManager() 实例化后追加 db.init_tables() 兜底
+      - 根因：part3 升级只替换代码不重跑首次安装,init_tables() 无机会执行
+      - 影响：立规则"api_server 启动兜底 init_tables"写入 01 工程手册 §二
+
+v2.3.0-part3 变更(F062 界面层)：
     新增 7 个 F062 端到端测试路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
       GET  /api/tools/e2e/latest                      —— 工具箱第 11 卡显示"最近一次"+ 软提醒徽章
       POST /api/tools/e2e/start                       —— 启动端到端测试（后台线程，_task type="e2e"）
@@ -104,6 +114,15 @@ from scripts.backup_manager import operation_hook, BackupFailedError
 app = Flask(__name__)
 CORS(app)
 db = DatabaseManager()
+
+# v2.3.0-part3.1 (hotfix): 启动追齐 schema
+# 避免"只替换代码不重跑首次安装"导致老库缺新表(如 F062 三表)
+# CREATE TABLE IF NOT EXISTS 无副作用,失败打 WARN 不阻塞启动
+# 立规则: api_server 启动入口必须 silent 重入一次 init_tables(),详见 01 工程手册 §二
+try:
+    db.init_tables()
+except Exception as _e:
+    print("[WARN] init_tables 启动兜底失败(将继续启动): %s" % str(_e))
 
 # ================================================================
 # v2.1.2 F047: 长任务管理器
@@ -1407,7 +1426,12 @@ def _qc_rerun_core():
             content = _load_source_content(sf) if sf else ""
             # 即便 content 为空也继续——规则兜底的 excerpt 存在性检查会自适应
             kps_list, kps_info = _build_kps_and_info(kps)
-            ext._quality_check(kps_list, kps_info, source_content=content)
+            # v2.3.0-part3.1 (hotfix): 补齐 filename/content_summary 位置参数
+            # 真实签名 _quality_check(self, filename, content_summary, kps, kps_info, source_content="")
+            # 历史补跑场景无预分析上下文,content_summary 传空串
+            filename = ((sf.get("renamed_filename") or sf.get("original_filename")
+                         or ("file_%d" % fid)) if sf else ("file_%d" % fid))
+            ext._quality_check(filename, "", kps_list, kps_info, source_content=content)
             total_processed += len(kps)
             processed_file_count += 1
         except Exception as ex:
@@ -1418,7 +1442,8 @@ def _qc_rerun_core():
     if orphans:
         try:
             kps_list, kps_info = _build_kps_and_info(orphans)
-            ext._quality_check(kps_list, kps_info, source_content="")
+            # v2.3.0-part3.1 (hotfix): 同上,补齐 filename/content_summary
+            ext._quality_check("experience_notes", "", kps_list, kps_info, source_content="")
             total_processed += len(orphans)
         except Exception as ex:
             traceback.print_exc()
@@ -3236,9 +3261,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3.1")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part3: F062 端到端健康测试 Agent 界面层（对话 3/3 全闭环）")
+    print(f"  v2.3.0-part3.1 hotfix: F061 质检补跑签名漂移 + F062 老库自动追齐")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

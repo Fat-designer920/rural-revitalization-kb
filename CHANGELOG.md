@@ -6,6 +6,53 @@
 
 ---
 
+## [v2.3.0-part3.1] - 2026-04-24 (hotfix)
+
+**定位**：F061 质检补跑签名漂移 + F062 老库自动追齐 init_tables —— 两个系统性风险一次根治
+
+### Added
+
+- **`scripts/api_server.py`**（+16 行）：模块顶层 `DatabaseManager()` 实例化后追加 `db.init_tables()` 兜底（`CREATE TABLE IF NOT EXISTS` 无副作用，失败打 WARN 不阻塞启动）
+
+### Fixed
+
+**Bug A — F061 质检补跑全线崩溃**
+- **现象**：工具箱"质检补跑"点击后 45 个分组全部跳过，0 条成功，候选 2043 条全部卡住，前端"质检补跑结果"弹窗显示"跳过 45 个分组: 文件#2: Extractor._quality_check() missing 2 required positional arguments: 'kps' and 'kps_info'"
+- **位置**：`api_server.py` line 1410 + 1421（共 2 处）
+- **根因**：F058（v2.2.3）重构 `_quality_check` 把签名从 3 参强制扩成 5 参：`_quality_check(self, filename, content_summary, kps, kps_info, source_content="")`；F061 的 `_qc_rerun_core` 保留旧 2 参调用 `ext._quality_check(kps_list, kps_info, source_content=content)`，Python 把 `kps_list` 当成 `filename`、`kps_info` 当成 `content_summary`，然后 `kps` 和 `kps_info` 真的缺了 → TypeError
+- **为什么潜伏 2 个月**：v2.2.3 发布以来老唐从未触发质检补跑，首次触发立刻全线崩
+- **修复**：两处调用补齐 `filename`（正常分支用 `renamed_filename`/`original_filename`/`"file_<fid>"` 三级兜底，孤儿分支固定 `"experience_notes"`）和 `content_summary=""`（历史补跑场景无预分析上下文）
+
+**Bug B — F062 三表老库未建，`/api/tools/e2e/latest` 返 500**
+- **现象**：后台日志 `sqlite3.OperationalError: no such table: e2e_test_reports`
+- **位置**：`api_server.py` line 106 模块顶层 `db = DatabaseManager()` 后从未调用 `init_tables()`
+- **根因**：v2.3.0-part3 升级时老唐只替换代码未重跑 `首次安装.bat`，F062 三张新表（`api_endpoint_registry` / `e2e_test_reports` / `e2e_issues`）在 init_tables 里定义好却没机会执行
+- **修复**：实例化后 silent 重入 `db.init_tables()`，`CREATE TABLE IF NOT EXISTS` 幂等无副作用
+
+### Changed
+
+- **版本号**：api_server.py 顶部 docstring + main banner 同步升 `v2.3.0-part3.1`
+- **立规则新增 2 条**（写入 01 工程手册 §二数据层）：
+  - **第 8 条 — api_server 启动兜底 init_tables**：`DatabaseManager()` 实例化后必须 silent 调用一次 `db.init_tables()`。避免"只替换代码不重跑首次安装"导致的老库 schema 漂移
+  - **第 9 条 — 跨版本调用外部模块方法前必须对照真实签名**：改动前 `grep -n "def <方法名>"` 查真实签名、对照参数个数和关键字/位置参数区分。这是跨版本开发的强制纪律
+- **立规则编号全局顺延**：原数据层 1-7 条后插入新 8、9 条，后续代码层（原 8-19→新 10-21）/ 交互层（原 20-27→新 22-29）/ 流程层（原 28-42→新 30-44）全部 +2
+- **项目文件全量更新**：00 / 01 / CHANGELOG / README（02 / 03 无改动）
+
+### Migration
+
+**无 schema 变更**。本次修复纯代码层，老库无需 migration 脚本。升级后首次启动 `启动后台.bat` 时 `db.init_tables()` 自动追齐 F062 三张表（如已存在则幂等跳过）。
+
+### Upgrade Path
+
+1. 备份数据库（可选，本次无 schema 变更，风险极低）
+2. 替换 1 个文件：`scripts/api_server.py`
+3. 推送 GitHub（Summary: `v2.3.0-part3.1: hotfix F061 质检补跑签名漂移 + F062 老库自动追齐`）
+4. 重启 `启动后台.bat`（启动时日志应看到 `v2.3.0-part3.1 hotfix` + `数据库正常` 两行）
+5. 验证 Bug A：Tab 2 → 工具箱 → 质检补跑 → 应正常处理候选（不再跳过 45 个分组）
+6. 验证 Bug B：Tab 2 → 工具箱 → 端到端测试（青蓝 E 卡） → 点击后不再 500、应正常弹档位选择框
+
+---
+
 ## [v2.3.0-part3] - 2026-04-24
 
 **定位**：F062 端到端健康测试 Agent 三对话拆分 —— 对话 3/3 界面层正式版（全闭环）
@@ -81,105 +128,35 @@
 
 ---
 
-## [v2.3.0-part2] - 2026-04-22
-
-**定位**：F048 知识库体检 Agent 三对话拆分全闭环（基础层 + 引擎层 + 界面层）
-
-### Added
-
-- **`prompt_templates.py`**：6 个 F048 Prompt 契约 + PROMPT_VERSION v2.2.3 → v2.3.0-part2
-- **`db_manager.py`**：+2 张表（health_reports / polish_suggestions）+ 3 索引 + 12 个方法（5 读写 + 4 打磨 + 3 扫描候选）
-- **`health_checker.py`**（新建 ~1360 行）：F048 引擎核心
-  - 六维度扫描（`_safe_dim` 单维度异常隔离）
-  - 三层打磨降级链（V3 诊断 → R1 打磨 → V3 校验 → L2 保守 → L3 规则兜底）
-  - 孤岛精判（抽样外推，ISLAND_JUDGE_MAX_COUNT=50）
-  - 变现报告（5 场景评分 + overall_monetize_score）
-  - V3 调用五方法两签名适配器
-  - 9 stage progress_callback + 10 种 operation_events 埋点
-- **`api_server.py`**：+8 F048 路由 + `_health_progress_adapter`（total_files=8）
-- **`review.html`**（+603 行）：工具箱第 10 卡 `tc-health`（紫 H）+ 3 模态框（档位 / 报告 / Review）+ 13 JS 函数 + `_renderReviewSide` 辅助 + CSS ~85 行
-- **operation_hook("health_adopt")**：6 个关键备份触发点第 6 个正式接入
-
-### Fixed
-
-- v2.1.2 分批质检内层循环 bug（v2.2.3 已顺手修，此版本不再相关）
-
-### Changed
-
-- 工具箱卡 9 → 10（part3 F062 才到 11）
-- `_task["type"]="health"`（代码实装口径）
-- `suggestion_type` 徽章六色：drop 红 / split 蓝 / improve 紫 / manual 灰 / enrich 青 / merge 橙
-- 按钮矩阵 4 分支严格对齐 tier × suggestion_type
-
-### Migration
-
-```sql
-CREATE TABLE health_reports (...);
-CREATE INDEX idx_health_created ON health_reports(created_at DESC);
-CREATE TABLE polish_suggestions (...);
-CREATE INDEX idx_polish_report ON polish_suggestions(report_id);
-CREATE INDEX idx_polish_status ON polish_suggestions(status);
-```
-
-（v2.3.0-part2.1 hotfix 已将两表吸收进 `init_tables`，migrate 脚本退役）
-
-### 关键设计决策
-
-1. `_merge_ai_content` 固定 8 条映射（不按 content_type 分流）
-2. split 采纳只取 `sc[0]` + split_note 提示手动
-3. drop 独立路由 + op_name 复用 `"health_adopt"`
-4. content_readiness 采纳后不动
-5. /latest 瘦身返回 + /report/<rid> 完整
-6. 本地 splice 不重新请求
-7. 略过纯前端指针移动
-
----
-
 ## 早期版本精简摘要
+
+### v2.3.0-part2 — 2026-04-22
+
+F048 知识库体检 Agent 三对话拆分全闭环（基础层 + 引擎层 + 界面层）：prompt_templates（6 个 F048 Prompt）+ db_manager（+2 表 +12 方法）+ `health_checker.py`（新建 ~1360 行，六维度 + 三层打磨降级链 + 孤岛精判 + 变现报告）+ api_server（+8 F048 路由）+ review.html（+603 行，工具箱第 10 卡 + 3 模态框 + 13 JS 函数）。v2.3.0-part2.1 hotfix 将两表吸收进 init_tables，migrate 脚本退役。
 
 ### v2.3.0-part3-alpha2 — 2026-04-23 (alpha)
 
-F062 对话 2/3 引擎层 `e2e_tester.py`（~1250 行）新建。六维度扫描 + V3 调用五方法两签名适配器 + 白名单二次过滤（dim4 35 + dim6 6 = 41 unique signature）+ 9 stage progress_callback + 16 种 operation_events 埋点。dry run 验证通过。
+F062 对话 2/3 引擎层 `e2e_tester.py`（~1250 行）新建。六维度扫描 + V3 调用五方法两签名适配器 + 白名单二次过滤（dim4 35 + dim6 6 = 41 unique signature）+ 9 stage progress_callback + 16 种 operation_events 埋点。
 
 ### v2.3.0-part3-alpha1 — 2026-04-23 (alpha)
 
-F062 对话 1/3 基础层：prompt_templates（+E2E_RESPONSE_JUDGE_PROMPT + PROMPT_VERSION 升版）+ db_manager（+3 表 api_endpoint_registry / e2e_test_reports / e2e_issues + 3 索引 + 8 方法）+ static_analyzer.py（新建 645 行，维度③④⑥ AST 规则库）。SQLite 表总数 18 → 21。立规则 6 条（severity 严格三态 / 四态 CHECK 强约束 / 偶发升级内置 upsert / fixed 回归检测 / static_analyzer 宁可多告警 / endpoint TEXT PRIMARY KEY）。
-
-### v2.3.0-part2.1 — 2026-04-22 (hotfix)
-
-schema 单一来源修复：`init_tables()` 吸收 health_reports / polish_suggestions 两表 + 3 索引；setup.py 版本号同步；`migrate_v223.py` / `migrate_v230_part2.py` 两个迁移脚本退役删除。**立规则**：`init_tables()` 是唯一建表真相，migrate 脚本升完立即退役。
+F062 对话 1/3 基础层：prompt_templates（+E2E_RESPONSE_JUDGE_PROMPT）+ db_manager（+3 表 +8 方法）+ `static_analyzer.py`（新建 645 行，维度③④⑥ AST 规则库）。SQLite 表总数 18 → 21。
 
 ### v2.3.0-part1.1 — 2026-04-18 (hotfix)
 
-修复 `backup_manager.py` 缺失模块级 `operation_hook` 包装函数导致 `api_server` 启动 ImportError。在文件底部追加 5 行模块级便捷函数。**立规则**：对外 import 契约首次交付即提供模块级包装，凡其他文件会 `from X import y`，y 必须在 X 模块 top-level def/class。
+修复 `backup_manager.py` 缺失模块级 `operation_hook` 包装函数导致 `api_server` 启动 ImportError。**立规则**：对外 import 契约首次交付即提供模块级包装。
 
 ### v2.3.0-part1 — 2026-04-16
 
-仪表盘工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 增量重复检测 bug 修正。
-- **F049**：合并三种重复检测为"智能重复检测"三选一；仪表盘新增 3 张标签分布卡（Card 12/13/14 覆盖 A/C/D 组）；侧边栏一级标签筛选；新增 `/api/tools/duplicate_unified`
-- **F059**：提取管理第 4 卡"批量重跑"；候选列表含注解警告 + 截断计数；`operation_hook("batch_rerun")` 强制备份 + 逐文件只删 pending（保留 confirmed/ignored 审核成果）+ 跨文件 `scan_incremental` 去重联动
-- **Step 8 bug**：`extract_from_file` 原用 `info["id"]` 实际应是 `info["kp_id"]`（自 v2.2.0 潜伏），导致增量重复检测从未触发
+仪表盘工具箱整体优化 + 批量重跑与 AI 去重联动 + Step 8 增量重复检测 bug 修正。F049 智能重复检测三选一 + 仪表盘 3 张标签分布卡 + 侧边栏一级标签筛选；F059 批量重跑（operation_hook 强制备份 + 逐文件只删 pending + 跨文件 scan_incremental 去重联动）；Step 8 修正 `info["id"]` → `info["kp_id"]`（自 v2.2.0 潜伏）。
 
 ### v2.2.3 — 2026-04-12 (hotfix)
 
-- **F057 R1 截断自动补救**：保留已解析 kp，末条 excerpt 三级定位（完整匹配 → 首 30 字 → 尾 30 字反向），取尾段重提最多 3 次降级至 500 字
-- **F058 质检三级降级链**：L0 批量 15 → L1 小批 3×2 轮 → L2 逐条 → L3 规则兜底；守门员强制兜底；qa_source 字段新增
-- **F060 关键操作强制备份**：6 触发点接入 `operation_hook`；保留策略每 op_name 5 个 + 2GB 上限
-- **F061 历史质检补跑**：`/api/tools/qc_rerun` 扫未质检/格式异常 kp
-- **事件日志**：`operation_events` 表 + `/api/events` 查询 + 仪表盘 Card 11 截断补救
-
-```sql
-ALTER TABLE source_files ADD COLUMN truncation_count INTEGER DEFAULT 0;
-ALTER TABLE source_files ADD COLUMN recovery_runs INTEGER DEFAULT 0;
-ALTER TABLE source_files ADD COLUMN last_recovery_at TEXT;
-ALTER TABLE knowledge_points ADD COLUMN qa_source TEXT DEFAULT 'batch';
-CREATE TABLE operation_events (...);
-CREATE INDEX idx_events_time / idx_events_type / idx_events_file;
-```
+F057 R1 截断自动补救（三级定位，最多 3 次降级至 500 字）+ F058 质检三级降级链（L0 批量 → L1 小批 → L2 逐条 → L3 规则兜底 + 守门员兜底）+ F060 关键操作强制备份（6 触发点）+ F061 历史质检补跑（`/api/tools/qc_rerun`）+ `operation_events` 表。**注**：F058 重构 `_quality_check` 扩成 5 参，F061 调用未跟上，v2.3.0-part3.1 修复。
 
 ### v2.2.2 — 2025
 
-重复检测合并与批量处理：F051-F054 多选合并 / 批量解决 / 跨页全选 / 自动刷新按钮计数。F039 重复检测 V3 精判补齐 client 参数，消除假阳性。
+重复检测合并与批量处理：F051-F054 多选合并 + 跨页全选 + 自动刷新按钮计数。F039 重复检测 V3 精判补齐 client，消除假阳性。
 
 ### v2.2.1 — 2025
 
@@ -187,7 +164,7 @@ CREATE INDEX idx_events_time / idx_events_type / idx_events_file;
 
 ### v2.2.0 — 2025
 
-专家注解 + 经验速记：F029 专家注解 5 类型（纠错 / 补充 / 情境 / 反例 / 引用）+ F045 经验速记 V3 结构化入库 + 预处理保存 .md 缓存。
+专家注解 + 经验速记：F029 专家注解 5 类型 + F045 经验速记 V3 结构化 + 预处理保存 .md 缓存。
 
 ### v2.1.2 — 2025
 
@@ -199,7 +176,7 @@ F028 政策依赖校验 + F039 重复检测（本地粗筛 + V3 精判）。
 
 ### v2.1.0 — 2025
 
-三层标签体系 + 保鲜：F021-F027 三层标签（6 组 41 个一级标签 + 8 维度属性 + 关键词）+ F028 保鲜扫描（checked_at + interval_days）。
+三层标签体系 + 保鲜：F021-F027 三层标签 + F028 保鲜扫描（checked_at + interval_days）。
 
 ### v2.0.0 — 2025
 
@@ -207,12 +184,12 @@ Flask 本地 Web 管理后台。Tab 双视图 + 知识点 CRUD + 编辑历史追
 
 ### v1.x — 2024
 
-基础提取引擎：R1 提取 + 硅基流动 OCR + SQLite 底座。双 API 架构（DeepSeek 推理 + 硅基流动仅 OCR）。
+基础提取引擎：R1 提取 + 硅基流动 OCR + SQLite 底座。
 
 ---
 
 ## 附录：完整历史
 
-更详细的每版交付清单（完整 Added/Fixed/Changed/验证清单 / 设计决策 Q&A / dry run 数据 / 老唐操作清单）见 [GitHub Releases](https://github.com/Fat-designer920/rural-revitalization-kb/releases) 和 Git commit 记录。
+更详细的每版交付清单见 [GitHub Releases](https://github.com/Fat-designer920/rural-revitalization-kb/releases) 和 Git commit 记录。
 
-**重构说明**（2026-04-24）：本 CHANGELOG 自 v2.3.0-part3 起采用"近 3 版完整 + 早期折叠"格式，总体积从 1021 行压缩到约 300 行。立规则与架构契约已迁移至 `01_工程手册.md`，不再在 CHANGELOG 重复。未来新版本仅保留最近 3 版完整记录，老版本顺延折叠。
+**重构说明**（2026-04-24）：本 CHANGELOG 自 v2.3.0-part3 起采用"近 3 版完整 + 早期折叠"格式，立规则与架构契约已迁移至 `01_工程手册.md`，不再在 CHANGELOG 重复。未来新版本仅保留最近 3 版完整记录，老版本顺延折叠。
