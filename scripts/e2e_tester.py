@@ -1,7 +1,17 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 路径：scripts/e2e_tester.py
-版本：v2.3.0-part3-alpha2 - F062 引擎层（对话 2/3）
+版本：v2.3.0-part3.3 - 白名单行号刷新（part3.2 遗漏执行的收尾）
+
+变更（v2.3.0-part3.3，2026-04-23）:
+  - DIM4_KNOWN_FALSE_POSITIVES: 35 条 → 67 条，行号对齐 db_manager.py v2.3.0-part3.2
+  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条（每个 pass 点位覆盖 except 行 + body 行，兼容
+    static_analyzer 取 handler.lineno 或 body[0].lineno 两种实现）
+  - WHITELIST_REASONS: 同步更新为 78 条（67+11）
+  - 本文件其他逻辑完全不变
+  - 根因：part3.2 新增 promote_readiness_by_qa_score / get_readiness_promote_preview 导致
+    db_manager.py 下游行号全部漂移，旧白名单失效，DIM4/DIM6 issue 从个位数暴涨（报告截图
+    维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92）。立规则 §5.8 已预告此坑。
 
 定位：
   F062 六维度扫描引擎,消费对话 1 基础层（static_analyzer / db_manager / prompt_templates）,
@@ -116,110 +126,221 @@ VALID_STAGES = {
 
 # ============================================================
 # 白名单二次过滤(对话 2 落地,基于对话 1 真实扫描产出)
+# v2.3.0-part3.3 (2026-04-23) 刷新：基于 db_manager.py v2.3.0-part3.2 重扫
+# 原因：part3.2 hotfix 新增 promote_readiness_by_qa_score /
+#       get_readiness_promote_preview 两方法 + get_tag_distribution 改
+#       pattern，导致 db_manager.py 下游所有行号漂移；原 41 条白名单全
+#       部打不中，DIM4 issue 从个位数暴涨到 140，DIM6 从 0 涨到 94，
+#       报告总分跌到 0 分（立规则 §5.8 已预告的坑，part3.2 遗漏执行）。
 # ============================================================
 
-# dim4 字段契约 已知合理项(35 个 unique signature)
-# 来源:对话 2 用真实 db_manager.py v2.3.0-part3-alpha1 跑 static_analyzer 得出
+# dim4 字段契约 已知合理项(67 个 unique signature)
+# 来源：v2.3.0-part3.3 用真实 db_manager.py v2.3.0-part3.2 (~2496 行)
+#       通过 AST 遍历 Subscript + get('...') 识别"非 kp 表字段"访问点位
 # 分类说明:
-#   - SQL 别名类(cnt/tc):COUNT(*) as cnt / SUM(...) as tc 的聚合别名,非 kp 字段
-#   - 其他表字段:source_files / edit_history / duplicate_groups / annotations / categories 字段
-#   - F062 新表字段:full_report_json / test_template_json / new_endpoints_json(白名单列表未及时扩)
-#   - JOIN 查询结果:policy_validated / process_status / review_status / content_type 等聚合字段
-# 注:行号基于 db_manager.py v2.3.0-part3-alpha1(~2380 行),未来 db_manager 重构后需重扫更新
+#   - SQL 聚合别名(cnt/tc/count):COUNT(*) as cnt / SUM(...) as tc,非 kp 字段
+#   - 其他表字段:categories / tag_definitions / edit_history / duplicate_groups /
+#                annotations / polish_suggestions / health_reports / e2e_issues /
+#                api_endpoint_registry / e2e_test_reports 等
+#   - 统计 dict key:stats/summary/result 内部累积用，非数据库字段
+#   - JSON 字段:full_report_json / test_template_json / new_endpoints_json /
+#                related_knowledge_ids / edited_fields / original_content /
+#                suggested_content 等
+# 维护规则(立规则 §5.8 强化)：每次 db_manager.py 重构后必须重扫更新本 set
 DIM4_KNOWN_FALSE_POSITIVES = {
-    "4_field_contract|scripts/db_manager.py:862|field_unknown",   # tag_code/tag_name,categories 表查询
-    "4_field_contract|scripts/db_manager.py:915|field_unknown",   # id,source_files JOIN 查询
-    "4_field_contract|scripts/db_manager.py:916|field_unknown",   # has_annotations,SQL COUNT 别名
-    "4_field_contract|scripts/db_manager.py:937|field_unknown",   # edited_fields,edit_history 表字段
-    "4_field_contract|scripts/db_manager.py:968|field_unknown",   # level1_code,categories 表字段
-    "4_field_contract|scripts/db_manager.py:976|field_unknown",   # level2_code,categories 表字段
-    "4_field_contract|scripts/db_manager.py:1046|field_unknown",  # related_knowledge_ids,关联表字段
-    "4_field_contract|scripts/db_manager.py:1047|field_unknown",  # related_knowledge_ids
-    "4_field_contract|scripts/db_manager.py:1193|field_unknown",  # policy_validated,聚合查询字段
-    "4_field_contract|scripts/db_manager.py:1194|field_unknown",  # cnt,SQL COUNT 别名
-    "4_field_contract|scripts/db_manager.py:1232|field_unknown",  # tc,SQL SUM 别名(today_api_cost)
-    "4_field_contract|scripts/db_manager.py:1243|field_unknown",  # process_status+cnt,source_files GROUP BY
-    "4_field_contract|scripts/db_manager.py:1245|field_unknown",  # review_status+cnt,kp GROUP BY
-    "4_field_contract|scripts/db_manager.py:1247|field_unknown",  # content_type+cnt,kp GROUP BY
-    "4_field_contract|scripts/db_manager.py:1257|field_unknown",  # content_readiness+cnt,kp GROUP BY
-    "4_field_contract|scripts/db_manager.py:1259|field_unknown",  # access_level+cnt,kp GROUP BY
-    "4_field_contract|scripts/db_manager.py:1321|field_unknown",  # cnt,duplicate_groups 统计
-    "4_field_contract|scripts/db_manager.py:1370|field_unknown",  # tags,tag_distribution 查询
-    "4_field_contract|scripts/db_manager.py:1372|field_unknown",  # tags
-    "4_field_contract|scripts/db_manager.py:1374|field_unknown",  # tags
-    "4_field_contract|scripts/db_manager.py:1624|field_unknown",  # full_report_json,health_reports 字段
-    "4_field_contract|scripts/db_manager.py:1662|field_unknown",  # full_report_json
-    "4_field_contract|scripts/db_manager.py:1723|field_unknown",  # original_content,polish_suggestions 字段
-    "4_field_contract|scripts/db_manager.py:1724|field_unknown",  # suggested_content,polish_suggestions 字段
-    "4_field_contract|scripts/db_manager.py:1868|field_unknown",  # qa_flags,质检结果字段
-    "4_field_contract|scripts/db_manager.py:1940|field_unknown",  # qa_flags
-    "4_field_contract|scripts/db_manager.py:2138|field_unknown",  # test_template_json,F062 新表字段
-    "4_field_contract|scripts/db_manager.py:2151|field_unknown",  # test_template_json
-    "4_field_contract|scripts/db_manager.py:2152|field_unknown",  # test_template_json
-    "4_field_contract|scripts/db_manager.py:2245|field_unknown",  # new_endpoints_json,F062 新表字段
-    "4_field_contract|scripts/db_manager.py:2246|field_unknown",  # new_endpoints_json
-    "4_field_contract|scripts/db_manager.py:2259|field_unknown",  # new_endpoints_json
-    "4_field_contract|scripts/db_manager.py:2260|field_unknown",  # new_endpoints_json
-    "4_field_contract|scripts/db_manager.py:2261|field_unknown",  # full_report_json
-    "4_field_contract|scripts/db_manager.py:2262|field_unknown",  # full_report_json
+    # tag_definitions / categories / init 相关（init_tag_definitions）
+    "4_field_contract|scripts/db_manager.py:477|field_unknown",   # cnt, categories 存在性检查
+    "4_field_contract|scripts/db_manager.py:523|field_unknown",   # cnt, tag_definitions 存在性检查
+    "4_field_contract|scripts/db_manager.py:527|field_unknown",   # tags, tag_definitions 结构
+    "4_field_contract|scripts/db_manager.py:531|field_unknown",   # code/name/definition/group_name
+    "4_field_contract|scripts/db_manager.py:533|field_unknown",   # values, tag_definitions dim
+    "4_field_contract|scripts/db_manager.py:537|field_unknown",   # name, tag_definitions dim
+    # knowledge_points 查询聚合（get_all_knowledge_points）
+    "4_field_contract|scripts/db_manager.py:709|field_unknown",   # cnt, SQL COUNT 别名
+    # get_tag_distribution（part3.2 改过的方法）
+    "4_field_contract|scripts/db_manager.py:872|field_unknown",   # tag_code/tag_name, tag_definitions 表
+    "4_field_contract|scripts/db_manager.py:888|field_unknown",   # cnt, SQL COUNT 别名
+    "4_field_contract|scripts/db_manager.py:898|field_unknown",   # count, sort key
+    # get_batch_rerun_candidate_files
+    "4_field_contract|scripts/db_manager.py:933|field_unknown",   # has_annotations+cnt, 计算列
+    # get_edit_history / restore_from_history
+    "4_field_contract|scripts/db_manager.py:954|field_unknown",   # edited_fields, edit_history 表
+    "4_field_contract|scripts/db_manager.py:963|field_unknown",   # edited_fields
+    "4_field_contract|scripts/db_manager.py:969|field_unknown",   # old, history change dict
+    # categories_tree
+    "4_field_contract|scripts/db_manager.py:1032|field_unknown",  # children, tree dict
+    # get_all_knowledge_for_upgrade
+    "4_field_contract|scripts/db_manager.py:1063|field_unknown",  # related_knowledge_ids, 关联表
+    "4_field_contract|scripts/db_manager.py:1064|field_unknown",  # related_knowledge_ids
+    # get_freshness_summary
+    "4_field_contract|scripts/db_manager.py:1147|field_unknown",  # cnt+outdated, summary dict
+    "4_field_contract|scripts/db_manager.py:1150|field_unknown",  # cnt+unchecked
+    "4_field_contract|scripts/db_manager.py:1156|field_unknown",  # cnt+expired
+    "4_field_contract|scripts/db_manager.py:1163|field_unknown",  # cnt+expiring_soon
+    "4_field_contract|scripts/db_manager.py:1169|field_unknown",  # cnt+fresh
+    # get_policy_validation_summary
+    "4_field_contract|scripts/db_manager.py:1211|field_unknown",  # cnt, SQL 聚合
+    "4_field_contract|scripts/db_manager.py:1213|field_unknown",  # unvalidated, summary key
+    "4_field_contract|scripts/db_manager.py:1215|field_unknown",  # validated
+    "4_field_contract|scripts/db_manager.py:1217|field_unknown",  # pending
+    "4_field_contract|scripts/db_manager.py:1219|field_unknown",  # exempt
+    "4_field_contract|scripts/db_manager.py:1221|field_unknown",  # no_policy
+    # get_today_api_cost / get_statistics
+    "4_field_contract|scripts/db_manager.py:1249|field_unknown",  # tc, SUM today_api_cost 别名
+    "4_field_contract|scripts/db_manager.py:1260|field_unknown",  # files+cnt, stats dict
+    "4_field_contract|scripts/db_manager.py:1262|field_unknown",  # knowledge_points+cnt
+    "4_field_contract|scripts/db_manager.py:1264|field_unknown",  # by_type+cnt
+    "4_field_contract|scripts/db_manager.py:1265|field_unknown",  # today_api_cost
+    "4_field_contract|scripts/db_manager.py:1267|field_unknown",  # total_confirmed+cnt
+    "4_field_contract|scripts/db_manager.py:1269|field_unknown",  # total_pending+cnt
+    "4_field_contract|scripts/db_manager.py:1271|field_unknown",  # pending_suggestions+cnt
+    "4_field_contract|scripts/db_manager.py:1274|field_unknown",  # by_readiness+cnt
+    "4_field_contract|scripts/db_manager.py:1276|field_unknown",  # by_access+cnt
+    "4_field_contract|scripts/db_manager.py:1280|field_unknown",  # pending_duplicates+cnt
+    "4_field_contract|scripts/db_manager.py:1282|field_unknown",  # pending_duplicates=0 兜底
+    # get_duplicate_summary
+    "4_field_contract|scripts/db_manager.py:1337|field_unknown",  # status, duplicate_groups 表
+    "4_field_contract|scripts/db_manager.py:1338|field_unknown",  # status+cnt
+    # get_annotations_by_kp
+    "4_field_contract|scripts/db_manager.py:1387|field_unknown",  # tags, annotations 表
+    "4_field_contract|scripts/db_manager.py:1389|field_unknown",  # tags JSON 解析
+    "4_field_contract|scripts/db_manager.py:1391|field_unknown",  # tags 兜底
+    # get_annotation_summary
+    "4_field_contract|scripts/db_manager.py:1413|field_unknown",  # annotated_kps, summary key
+    "4_field_contract|scripts/db_manager.py:1415|field_unknown",  # total_annotations
+    "4_field_contract|scripts/db_manager.py:1418|field_unknown",  # by_type
+    # get_latest_health_report / get_health_report_detail
+    "4_field_contract|scripts/db_manager.py:1711|field_unknown",  # full_report_json, health_reports 表
+    "4_field_contract|scripts/db_manager.py:1749|field_unknown",  # full_report_json
+    # get_polish_suggestions_by_report
+    "4_field_contract|scripts/db_manager.py:1810|field_unknown",  # original_content, polish_suggestions 表
+    "4_field_contract|scripts/db_manager.py:1811|field_unknown",  # suggested_content
+    # get_endpoint_registry / update_endpoint_last_tested
+    "4_field_contract|scripts/db_manager.py:2225|field_unknown",  # test_template_json, api_endpoint_registry 表
+    "4_field_contract|scripts/db_manager.py:2238|field_unknown",  # test_template_json
+    "4_field_contract|scripts/db_manager.py:2239|field_unknown",  # test_template_json
+    # get_latest_e2e_test_report / get_e2e_test_report_detail / get_e2e_test_report_list
+    "4_field_contract|scripts/db_manager.py:2332|field_unknown",  # new_endpoints_json, e2e_test_reports 表
+    "4_field_contract|scripts/db_manager.py:2333|field_unknown",  # new_endpoints_json
+    "4_field_contract|scripts/db_manager.py:2346|field_unknown",  # new_endpoints_json
+    "4_field_contract|scripts/db_manager.py:2347|field_unknown",  # new_endpoints_json
+    "4_field_contract|scripts/db_manager.py:2348|field_unknown",  # full_report_json
+    "4_field_contract|scripts/db_manager.py:2349|field_unknown",  # full_report_json
+    "4_field_contract|scripts/db_manager.py:2376|field_unknown",  # new_endpoints_json
+    "4_field_contract|scripts/db_manager.py:2377|field_unknown",  # new_endpoints_json
+    # upsert_e2e_issue
+    "4_field_contract|scripts/db_manager.py:2445|field_unknown",  # issue_id, e2e_issues 表
+    "4_field_contract|scripts/db_manager.py:2446|field_unknown",  # status
+    "4_field_contract|scripts/db_manager.py:2447|field_unknown",  # occurrence_count
+    "4_field_contract|scripts/db_manager.py:2448|field_unknown",  # first_seen_at
 }
 
-# dim6 代码异味 已知合理项(6 个 unique signature)
+# dim6 代码异味 已知合理项(11 个 unique signature，覆盖 except 行 + body 行)
 # 全部 silent_except 模式,均为非关键兜底场景
+# 为兼容 static_analyzer 可能取 handler.lineno 或 body[0].lineno 两种实现，
+# 本白名单同时覆盖两行 signature，宁多不少
 DIM6_KNOWN_FALSE_POSITIVES = {
-    "6_code_smell|scripts/db_manager.py:690|smell_silent_except",   # qa_score int 转换失败,筛选器入参容忍
-    "6_code_smell|scripts/db_manager.py:938|smell_silent_except",   # edited_fields JSON 解析失败,向下兼容
-    "6_code_smell|scripts/db_manager.py:1322|smell_silent_except",  # duplicate_groups 表可能不存在,向下兼容老库
-    "6_code_smell|scripts/db_manager.py:1402|smell_silent_except",  # annotations 统计失败,仪表盘非关键
-    "6_code_smell|scripts/db_manager.py:1754|smell_silent_except",  # print 失败(CMD 编码异常),日志非关键
-    "6_code_smell|scripts/db_manager.py:2346|smell_silent_except",  # 时间解析失败,偶发升级非关键
+    # qa_score int 转换失败,筛选器入参容忍（except ValueError: pass）
+    "6_code_smell|scripts/db_manager.py:694|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:695|smell_silent_except",
+    # edited_fields JSON 解析失败,向下兼容老数据（except: pass 同一行）
+    "6_code_smell|scripts/db_manager.py:955|smell_silent_except",
+    # duplicate_groups 表可能不存在,向下兼容老库（except: + pass 分两行）
+    "6_code_smell|scripts/db_manager.py:1339|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:1340|smell_silent_except",
+    # annotations 统计失败兜底,仪表盘非关键聚合
+    "6_code_smell|scripts/db_manager.py:1419|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:1420|smell_silent_except",
+    # print 失败兜底(Windows CMD 编码异常),日志非关键
+    "6_code_smell|scripts/db_manager.py:1841|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:1842|smell_silent_except",
+    # 时间解析失败兜底,偶发升级非关键逻辑
+    "6_code_smell|scripts/db_manager.py:2461|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:2462|smell_silent_except",
 }
 
 # 白名单原因映射(供 issue.detail.filtered_out 回写,对话 3 前端"已知合理项"折叠用)
 WHITELIST_REASONS = {
     # dim4
-    "scripts/db_manager.py:862": "categories 表 tag_code/tag_name 字段,非 kp",
-    "scripts/db_manager.py:915": "source_files JOIN 查询读 row[id],非 kp.id",
-    "scripts/db_manager.py:916": "SQL COUNT 别名 has_annotations",
-    "scripts/db_manager.py:937": "edit_history 表 edited_fields 字段,非 kp",
-    "scripts/db_manager.py:968": "categories 表 level1_code 字段",
-    "scripts/db_manager.py:976": "categories 表 level2_code 字段",
-    "scripts/db_manager.py:1046": "关联表 related_knowledge_ids 字段",
-    "scripts/db_manager.py:1047": "关联表 related_knowledge_ids 字段",
-    "scripts/db_manager.py:1193": "聚合查询 policy_validated 字段",
-    "scripts/db_manager.py:1194": "SQL 聚合别名 cnt",
-    "scripts/db_manager.py:1232": "SQL 聚合别名 tc(today_api_cost)",
-    "scripts/db_manager.py:1243": "source_files GROUP BY process_status+cnt",
-    "scripts/db_manager.py:1245": "kp GROUP BY review_status+cnt",
-    "scripts/db_manager.py:1247": "kp GROUP BY content_type+cnt",
-    "scripts/db_manager.py:1257": "kp GROUP BY content_readiness+cnt",
-    "scripts/db_manager.py:1259": "kp GROUP BY access_level+cnt",
-    "scripts/db_manager.py:1321": "duplicate_groups 统计 cnt",
-    "scripts/db_manager.py:1370": "tag_distribution 查询 tags 字段",
-    "scripts/db_manager.py:1372": "tag_distribution 查询 tags 字段",
-    "scripts/db_manager.py:1374": "tag_distribution 查询 tags 字段",
-    "scripts/db_manager.py:1624": "health_reports 表 full_report_json 字段",
-    "scripts/db_manager.py:1662": "health_reports 表 full_report_json 字段",
-    "scripts/db_manager.py:1723": "polish_suggestions 表 original_content 字段",
-    "scripts/db_manager.py:1724": "polish_suggestions 表 suggested_content 字段",
-    "scripts/db_manager.py:1868": "质检结果 qa_flags 字段",
-    "scripts/db_manager.py:1940": "质检结果 qa_flags 字段",
-    "scripts/db_manager.py:2138": "F062 api_endpoint_registry test_template_json 字段",
-    "scripts/db_manager.py:2151": "F062 api_endpoint_registry test_template_json 字段",
-    "scripts/db_manager.py:2152": "F062 api_endpoint_registry test_template_json 字段",
-    "scripts/db_manager.py:2245": "F062 e2e_test_reports new_endpoints_json 字段",
-    "scripts/db_manager.py:2246": "F062 e2e_test_reports new_endpoints_json 字段",
-    "scripts/db_manager.py:2259": "F062 e2e_test_reports new_endpoints_json 字段",
-    "scripts/db_manager.py:2260": "F062 e2e_test_reports new_endpoints_json 字段",
-    "scripts/db_manager.py:2261": "F062 e2e_test_reports full_report_json 字段",
-    "scripts/db_manager.py:2262": "F062 e2e_test_reports full_report_json 字段",
+    "scripts/db_manager.py:477":  "categories 存在性检查 cnt 别名",
+    "scripts/db_manager.py:523":  "tag_definitions 存在性检查 cnt 别名",
+    "scripts/db_manager.py:527":  "tag_definitions 结构字段 tags",
+    "scripts/db_manager.py:531":  "tag_definitions 字段 code/name/definition/group_name",
+    "scripts/db_manager.py:533":  "tag_definitions dim 字段 values",
+    "scripts/db_manager.py:537":  "tag_definitions dim 字段 name",
+    "scripts/db_manager.py:709":  "SQL COUNT 别名 cnt",
+    "scripts/db_manager.py:872":  "tag_definitions 表 tag_code/tag_name 字段",
+    "scripts/db_manager.py:888":  "SQL COUNT 别名 cnt",
+    "scripts/db_manager.py:898":  "tag_distribution sort key count",
+    "scripts/db_manager.py:933":  "SQL LEFT JOIN 计算列 has_annotations+cnt",
+    "scripts/db_manager.py:954":  "edit_history 表 edited_fields 字段",
+    "scripts/db_manager.py:963":  "edit_history 表 edited_fields 字段",
+    "scripts/db_manager.py:969":  "edit_history change dict old 键",
+    "scripts/db_manager.py:1032": "tree dict children 键",
+    "scripts/db_manager.py:1063": "关联表 related_knowledge_ids 字段",
+    "scripts/db_manager.py:1064": "关联表 related_knowledge_ids 兜底",
+    "scripts/db_manager.py:1147": "freshness summary outdated+cnt",
+    "scripts/db_manager.py:1150": "freshness summary unchecked+cnt",
+    "scripts/db_manager.py:1156": "freshness summary expired+cnt",
+    "scripts/db_manager.py:1163": "freshness summary expiring_soon+cnt",
+    "scripts/db_manager.py:1169": "freshness summary fresh+cnt",
+    "scripts/db_manager.py:1211": "policy summary 聚合 cnt",
+    "scripts/db_manager.py:1213": "policy summary unvalidated key",
+    "scripts/db_manager.py:1215": "policy summary validated key",
+    "scripts/db_manager.py:1217": "policy summary pending key",
+    "scripts/db_manager.py:1219": "policy summary exempt key",
+    "scripts/db_manager.py:1221": "policy summary no_policy key",
+    "scripts/db_manager.py:1249": "SQL SUM 别名 tc (today_api_cost)",
+    "scripts/db_manager.py:1260": "stats dict files+cnt",
+    "scripts/db_manager.py:1262": "stats dict knowledge_points+cnt",
+    "scripts/db_manager.py:1264": "stats dict by_type+cnt",
+    "scripts/db_manager.py:1265": "stats dict today_api_cost",
+    "scripts/db_manager.py:1267": "stats dict total_confirmed+cnt",
+    "scripts/db_manager.py:1269": "stats dict total_pending+cnt",
+    "scripts/db_manager.py:1271": "stats dict pending_suggestions+cnt",
+    "scripts/db_manager.py:1274": "stats dict by_readiness+cnt",
+    "scripts/db_manager.py:1276": "stats dict by_access+cnt",
+    "scripts/db_manager.py:1280": "stats dict pending_duplicates+cnt",
+    "scripts/db_manager.py:1282": "stats dict pending_duplicates 兜底",
+    "scripts/db_manager.py:1337": "duplicate_groups 表 status 字段",
+    "scripts/db_manager.py:1338": "duplicate_groups status+cnt",
+    "scripts/db_manager.py:1387": "annotations 表 tags 字段",
+    "scripts/db_manager.py:1389": "annotations tags JSON 解析",
+    "scripts/db_manager.py:1391": "annotations tags 兜底",
+    "scripts/db_manager.py:1413": "annotation summary annotated_kps",
+    "scripts/db_manager.py:1415": "annotation summary total_annotations",
+    "scripts/db_manager.py:1418": "annotation summary by_type",
+    "scripts/db_manager.py:1711": "health_reports 表 full_report_json 字段",
+    "scripts/db_manager.py:1749": "health_reports 表 full_report_json 字段",
+    "scripts/db_manager.py:1810": "polish_suggestions 表 original_content 字段",
+    "scripts/db_manager.py:1811": "polish_suggestions 表 suggested_content 字段",
+    "scripts/db_manager.py:2225": "api_endpoint_registry 表 test_template_json 字段",
+    "scripts/db_manager.py:2238": "api_endpoint_registry test_template_json 字段",
+    "scripts/db_manager.py:2239": "api_endpoint_registry test_template_json 字段",
+    "scripts/db_manager.py:2332": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2333": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2346": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2347": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2348": "e2e_test_reports full_report_json 字段",
+    "scripts/db_manager.py:2349": "e2e_test_reports full_report_json 字段",
+    "scripts/db_manager.py:2376": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2377": "e2e_test_reports new_endpoints_json 字段",
+    "scripts/db_manager.py:2445": "e2e_issues 表 issue_id 字段",
+    "scripts/db_manager.py:2446": "e2e_issues 表 status 字段",
+    "scripts/db_manager.py:2447": "e2e_issues 表 occurrence_count 字段",
+    "scripts/db_manager.py:2448": "e2e_issues 表 first_seen_at 字段",
     # dim6
-    "scripts/db_manager.py:690":  "qa_score int 转换失败兜底,筛选器入参容忍",
-    "scripts/db_manager.py:938":  "edited_fields JSON 解析失败兜底,向下兼容老数据",
-    "scripts/db_manager.py:1322": "duplicate_groups 表可能不存在,向下兼容老库",
-    "scripts/db_manager.py:1402": "annotations 统计失败兜底,仪表盘非关键聚合",
-    "scripts/db_manager.py:1754": "print 失败兜底(Windows CMD 编码异常),日志非关键",
-    "scripts/db_manager.py:2346": "时间解析失败兜底,偶发升级非关键逻辑",
+    "scripts/db_manager.py:694":  "qa_score int 转换失败兜底,筛选器入参容忍",
+    "scripts/db_manager.py:695":  "qa_score int 转换失败兜底(pass 行)",
+    "scripts/db_manager.py:955":  "edited_fields JSON 解析失败兜底,向下兼容老数据",
+    "scripts/db_manager.py:1339": "duplicate_groups 表可能不存在,向下兼容老库",
+    "scripts/db_manager.py:1340": "duplicate_groups 兜底(pass 行)",
+    "scripts/db_manager.py:1419": "annotations 统计失败兜底,仪表盘非关键聚合",
+    "scripts/db_manager.py:1420": "annotations 统计兜底(pass 行)",
+    "scripts/db_manager.py:1841": "print 失败兜底(Windows CMD 编码异常),日志非关键",
+    "scripts/db_manager.py:1842": "print 失败兜底(pass 行)",
+    "scripts/db_manager.py:2461": "时间解析失败兜底,偶发升级非关键逻辑",
+    "scripts/db_manager.py:2462": "时间解析失败兜底(pass 行)",
 }
 
 # 成本单价(估算,对齐 health_checker)

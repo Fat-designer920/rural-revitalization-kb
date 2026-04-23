@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.0-part3</title>
+<title>乡村振兴知识库 v2.3.0-part3.3</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -646,7 +646,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part3</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part3.3</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -2028,6 +2028,11 @@ function runTool(name){
     });
   }
   else if(name==="freshness"){
+    /* v2.3.0-part3.3: 加 loading 提示框,解决"不确定在不在跑"的问题。
+     * 保鲜扫描是同步 API,扫全库 confirmed kp 通常 1-3 秒,但点击后只有
+     * 卡片变灰(opacity:.5),视觉上很难察觉。先弹一个 loading 弹窗,
+     * 请求返回后替换成结果,用户可观测。 */
+    showToolResult("保鲜扫描","<div style='padding:20px 0;text-align:center;color:var(--text-secondary);font-size:14px'><div style='margin-bottom:8px'>正在扫描保鲜状态...</div><div style='font-size:12px;color:var(--text-muted)'>遍历全部已确认知识点,通常 1-3 秒</div></div>");
     apiPost("/api/tools/freshness-scan").then(function(r){done();
       if(r.error){showToolResult("保鲜扫描","<p style='color:var(--danger)'>扫描失败: "+esc(r.error)+"</p>");return}
       var s=r.result||{};
@@ -2055,17 +2060,107 @@ function runTool(name){
     });
   }
   else if(name==="analytics"){
+    /* v2.3.0-part3.3 重写: 按 review_analytics.get_analytics_json() 返回的
+     * 6 段结构渲染(overview / field_edits / type_edit_rates / prompt_versions /
+     * qa_distribution / qa_flags)。旧代码认的是 v2.1.2 之前的扁平字段
+     * (total_reviewed/confirmed/ignored/deleted/edited/avg_qa_score/top_flags),
+     * 后端已升级 v2.1.2+ 结构化版本但前端忘更新,触发"不认识的字段 → 兜底 pre
+     * 打印原始 JSON"分支,用户看到一大坨 JSON 无法阅读。 */
     apiGet("/api/tools/review-analytics").then(function(r){done();
       if(r.error){showToolResult("审核统计","<p style='color:var(--danger)'>获取失败: "+esc(r.error)+"</p>");return}
-      var h="";
-      if(r.total_reviewed!==undefined)h+=dRow("","","已审核总数",r.total_reviewed||0);
-      if(r.confirmed!==undefined)h+=dRow("","","确认入库",r.confirmed||0);
-      if(r.ignored!==undefined)h+=dRow("","","已忽略",r.ignored||0);
-      if(r.deleted!==undefined)h+=dRow("","","已删除",r.deleted||0);
-      if(r.edited!==undefined)h+=dRow("","","编辑过",r.edited||0);
-      if(r.avg_qa_score!==undefined)h+=dRow("","","平均质检分",r.avg_qa_score||"-");
-      if(r.top_flags&&r.top_flags.length){h+='<div style="margin-top:10px;font-weight:600;font-size:13px">常见质检问题:</div>';for(var i=0;i<r.top_flags.length;i++){var tf=r.top_flags[i];h+='<div class="tr-item"><span>'+esc(QF[tf.flag]||tf.flag)+'</span><span class="dv">'+tf.count+'</span></div>'}}
-      if(!h)h='<pre style="font-size:12px;max-height:400px;overflow:auto">'+esc(JSON.stringify(r,null,2))+'</pre>';
+      var h='';
+      /* --- [1] 基础概览 --- */
+      var ov=r.overview||{};
+      h+='<div style="font-weight:600;font-size:13px;margin:4px 0 8px">[1] 基础概览</div>';
+      h+=dRow("dot","#0A9B80","知识点总数",ov.total||0);
+      h+=dRow("dot","#34C759","已确认",ov.confirmed||0);
+      h+=dRow("dot","#FF9500","待审核",ov.pending||0);
+      h+=dRow("dot","#86868B","已忽略",ov.ignored||0);
+      h+=dRow("dot","#007AFF","编辑记录",ov.edits||0);
+
+      /* --- [2] 字段修改频率(哪些字段 AI 提取不准) --- */
+      var fe=r.field_edits||{};
+      var fields=fe.fields||[];
+      h+='<div style="font-weight:600;font-size:13px;margin:14px 0 8px">[2] 字段修改频率 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(共 '+(fe.total_records||0)+' 次编辑)</span></div>';
+      if(fields.length){
+        for(var i=0;i<fields.length;i++){
+          var f=fields[i];
+          var barW=Math.min(Math.round((f.pct||0)*1.5),100);
+          h+='<div class="tr-item" style="padding:4px 0"><span style="width:130px;flex:none;font-size:12px">'+esc(f.label||f.field)+'</span>';
+          h+='<div style="flex:1;height:6px;background:var(--border-light);border-radius:3px;margin:0 8px;position:relative"><div style="width:'+barW+'%;height:100%;background:var(--primary);border-radius:3px"></div></div>';
+          h+='<span class="dv" style="font-size:12px;min-width:70px;text-align:right">'+f.count+' 次 ('+(f.pct||0)+'%)</span></div>';
+        }
+      } else {
+        h+='<div style="font-size:12px;color:var(--text-muted);padding:4px 0">(暂无字段级修改数据)</div>';
+      }
+
+      /* --- [3] 按类型修改率 --- */
+      var tr=r.type_edit_rates||[];
+      h+='<div style="font-weight:600;font-size:13px;margin:14px 0 8px">[3] 按知识类型修改率</div>';
+      if(tr.length){
+        for(var i=0;i<tr.length;i++){
+          var t=tr[i];
+          var color=(t.rate>50)?"#FF3B30":((t.rate>20)?"#FF9500":"#34C759");
+          h+='<div class="tr-item" style="padding:4px 0"><span style="width:100px;flex:none;font-size:12px">'+esc(t.label||t.type)+'</span>';
+          h+='<span style="flex:1;font-size:12px;color:var(--text-muted)">共 '+t.total+' 条 · 修改 '+t.edited+' 条</span>';
+          h+='<span class="dv" style="font-size:12px;color:'+color+';min-width:60px;text-align:right">'+(t.rate||0)+'%</span></div>';
+        }
+      } else {
+        h+='<div style="font-size:12px;color:var(--text-muted);padding:4px 0">(暂无类型修改数据)</div>';
+      }
+
+      /* --- [4] 按 Prompt 版本对比 --- */
+      var pv=r.prompt_versions||[];
+      h+='<div style="font-weight:600;font-size:13px;margin:14px 0 8px">[4] Prompt 版本对比</div>';
+      if(pv.length){
+        for(var i=0;i<pv.length;i++){
+          var v=pv[i];
+          var conf_rate=v.total>0?Math.round(v.confirmed*1000/v.total)/10:0;
+          var ign_rate=v.total>0?Math.round(v.ignored*1000/v.total)/10:0;
+          h+='<div class="tr-item" style="padding:4px 0;font-size:12px"><span style="width:120px;flex:none">'+esc(v.version||"(空)")+'</span>';
+          h+='<span style="flex:1;color:var(--text-muted)">共 '+v.total+' 条</span>';
+          h+='<span style="min-width:130px;text-align:right"><span style="color:#34C759">确认 '+v.confirmed+' ('+conf_rate+'%)</span> · <span style="color:#86868B">忽略 '+v.ignored+' ('+ign_rate+'%)</span></span></div>';
+        }
+      } else {
+        h+='<div style="font-size:12px;color:var(--text-muted);padding:4px 0">(暂无版本追踪数据)</div>';
+      }
+
+      /* --- [5] 质检分数分布 --- */
+      var qd=r.qa_distribution||{};
+      var scored=qd.scored||[];
+      var unscored=qd.unscored||0;
+      var total_scored=0, sum_score=0;
+      for(var i=0;i<scored.length;i++){total_scored+=scored[i].count||0;sum_score+=(scored[i].score||0)*(scored[i].count||0)}
+      var avg_score=total_scored>0?Math.round(sum_score*10/total_scored)/10:0;
+      h+='<div style="font-weight:600;font-size:13px;margin:14px 0 8px">[5] 质检分数分布 <span style="font-weight:400;color:var(--text-muted);font-size:11px">已质检 '+total_scored+' · 未质检 '+unscored+' · 平均 '+avg_score+'</span></div>';
+      if(scored.length){
+        var scoreColors={1:"#FF3B30",2:"#FF9500",3:"#FFCC00",4:"#34C759",5:"#0A9B80"};
+        for(var i=0;i<scored.length;i++){
+          var sc=scored[i];
+          var pct=total_scored>0?Math.round(sc.count*1000/total_scored)/10:0;
+          var barW=Math.min(Math.round(pct*1.5),100);
+          var col=scoreColors[sc.score]||"#86868B";
+          h+='<div class="tr-item" style="padding:4px 0"><span style="width:70px;flex:none;font-size:12px">'+sc.score+' 分 ('+esc(sc.label||"")+')</span>';
+          h+='<div style="flex:1;height:6px;background:var(--border-light);border-radius:3px;margin:0 8px"><div style="width:'+barW+'%;height:100%;background:'+col+';border-radius:3px"></div></div>';
+          h+='<span class="dv" style="font-size:12px;min-width:70px;text-align:right">'+sc.count+' 条 ('+pct+'%)</span></div>';
+        }
+      } else {
+        h+='<div style="font-size:12px;color:var(--text-muted);padding:4px 0">(暂无质检数据)</div>';
+      }
+
+      /* --- [6] 常见质检问题 --- */
+      var qf=r.qa_flags||[];
+      h+='<div style="font-weight:600;font-size:13px;margin:14px 0 8px">[6] 常见质检问题</div>';
+      if(qf.length){
+        for(var i=0;i<qf.length;i++){
+          var fl=qf[i];
+          h+='<div class="tr-item" style="padding:4px 0;font-size:12px"><span>'+esc(fl.label||fl.flag)+'</span><span class="dv">'+fl.count+' 次</span></div>';
+        }
+      } else {
+        h+='<div style="font-size:12px;color:var(--text-muted);padding:4px 0">(暂无质检问题标记)</div>';
+      }
+
+      h+='<div style="margin-top:14px;padding:8px 10px;background:var(--primary-light);border-radius:6px;font-size:12px;color:var(--text-secondary)">分析时间: '+esc(r.analyzed_at||"-")+'</div>';
       showToolResult("审核统计",h);
     });
   }
@@ -2655,7 +2750,25 @@ function renderHealthReport(r){
   html+=renderDimCard("结构分布",dims.dim2_structure||{score:rpt.dim2_structure_score},10);
   html+=renderDimCard("加工深度",dims.dim3_processing||{score:rpt.dim3_processing_score},20);
   html+=renderDimCard("关联密度",dims.dim4_relation||{score:rpt.dim4_relation_score},10);
-  html+=renderDimCard("低分打磨",dims.dim5_polish||{score:rpt.dim5_polish_score},20);
+  /* v2.3.0-part3.3: 低分打磨的 note 增强 —— 当 low_score_count=0 时,
+   * 用户常困惑"秒完成是否真的跑了"。明确告知"无低分候选,已跳过打磨",
+   * 区分"没跑" vs "跑了但无可打磨"两种状态。 */
+  var dim5=dims.dim5_polish||{score:rpt.dim5_polish_score};
+  var dim5Detail=dim5.detail||{};
+  var dim5Note=null;
+  if(dim5Detail.low_score_count!==undefined){
+    var lsc=dim5Detail.low_score_count||0;
+    var tk=dim5Detail.total_kp||0;
+    if(lsc===0&&tk>0){
+      dim5Note="全库无低分条目 (1-2 分共 0 条),已跳过打磨环节";
+    } else if(lsc>0){
+      var pstats=dim5Detail.polish_stats||{};
+      var atp=pstats.attempted||0;
+      dim5Note="低分 "+lsc+" 条 / 本次打磨 "+atp+" 条 (L1 "+(pstats.l1||0)+"/L2 "+(pstats.l2||0)+"/L3 "+(pstats.l3||0)+")";
+    }
+  }
+  var dim5Merged=dim5Note?{score:dim5.score,note:dim5Note,detail:dim5Detail}:dim5;
+  html+=renderDimCard("低分打磨",dim5Merged,20);
   html+=renderDimCard("变现匹配",dims.dim6_monetize||{score:rpt.dim6_monetize_score},15);
   html+='</div>';
   /* 变现场景行 */
@@ -3088,7 +3201,12 @@ function renderE2eReport(r){
     '  failed '+(r.failed_count||summary.failed_count||0);
   h+='  V3 调用 '+(r.v3_call_count||0)+' 次';
   h+='  成本 '+((r.cost_estimate||0).toFixed(6))+' 元';
-  if(fr.duration_seconds!==undefined){h+='  耗时 '+fr.duration_seconds+'s'}
+  if(fr.duration_seconds!==undefined){
+    /* v2.3.0-part3.3: duration_seconds 是 int(time.time()-start) 向下取整,
+     * 流水线秒级完成时会显示 0s,用户误以为"没跑"。改为 <1s 更明确。 */
+    var durDisp=(fr.duration_seconds<=0)?"<1s":(fr.duration_seconds+"s");
+    h+='  耗时 '+durDisp;
+  }
   h+='</div>';
 
   h+='<div class="e2e-dim-grid">';

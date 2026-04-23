@@ -1,7 +1,46 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3.1 - hotfix(F061 质检补跑签名漂移 + F062 老库自动追齐)
+版本：v2.3.0-part3.2 - hotfix(仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋)
+
+v2.3.0-part3.2 变更(hotfix,2026-04-23)：
+    Bug A 修复(仪表盘三张标签分布卡"暂无数据" / "展开全部 0 个")：
+      - db_manager.get_tag_distribution: pattern 改用 tag_name 匹配(原 tag_code 永不匹配)
+      - db_manager.get_tag_distribution: 新增 count>0 过滤,杜绝"N 个标签在使用中"虚假宣传
+      - review.html.renderTagCard.getName: 补 tag_name 字段兼容（原仅认 name/tag/label）
+      - review.html.toggleTagCardMore: 改用 data-total 属性替代 DOM 计数反推
+      - 根因：extractor._sanitize_tags 存 tag_name(中文)入 DB,但
+        get_tag_distribution 用 tag_code 做 LIKE 永远查不到;
+        旧版把 count=0 也塞入结果,靠"凑数"把假象覆盖掉;
+        一旦加 count>0 过滤真相暴露 → "暂无数据"
+    Bug B 修复(质检分数口径与"待补跑"打架:未质检 0 vs 待补跑 2043)：
+      - /api/dashboard qa_distribution: 将 qa_score=0.0 归入 unscored,与
+        get_qc_rerun_summary("待补跑=NULL 或 0.0")口径对齐
+      - review.html 删除两处硬编码版本号 span (v2.2.3 F057 / v2.3.0 F049)
+    Feature(v2.3.1 批量重算成熟度 的保守前置版本,不替代完整迭代):
+      - db_manager.promote_readiness_by_qa_score: qa>=4 且 draft → quotable
+        (只升不降,不碰 premium,editorial 轴与 qa 轴解耦)
+      - db_manager.get_readiness_promote_preview: dry-run 预览给前端确认弹窗
+      - POST /api/tools/readiness_promote + GET /preview: 独立工具触发
+      - 质检补跑 _qc_rerun_core 尾部自动调联动,result 返回 readiness_promote
+      - review.html 工具箱新增"就绪度联动"按钮(R 橙),独立 runTool 分支
+    Feature(质检补跑异步化,解决"刷新即失+无进度+不可并发"三连)：
+      - 新增 _qc_task / _qc_task_lock / _qc_task_update_progress,**独立于 _task**
+        (故意不进 _task 单例锁槽,允许与预处理/提取/体检/E2E 并发)
+      - _qc_rerun_core(progress_cb=None): 逐文件上报进度
+      - POST /api/tools/qc_rerun: 改异步,立即返回 202,后台线程执行
+      - GET /api/tools/qc_rerun/progress: 独立进度查询
+      - 新增 _qc_readiness_check(): 对齐 F048/F062 四项自检模板
+        (虽用独立锁理论不受"_task_lock 前置"字面约束,仍按精神对齐)
+      - review.html 新增独立 #qcTaskProgress 面板 + qcStartPolling 三函数,
+        admin tab 切入时 qcCheckRunningTask() 自动恢复刷新后的进度条
+    并发写兜底：
+      - db_manager.get_connection: PRAGMA busy_timeout=10000
+        (WAL 已开,补这个兜 10 秒等锁,应用层不再需要 retry)
+    关键教训(写入 01 工程手册新立规则 §二数据层第 10 条)：
+      - 新增 SQL 查询同一 JSON 字段前,必须对照存储侧的写入逻辑确认字段格式
+      - 本次:get_tag_distribution 用 tag_code,extractor._sanitize_tags 存 tag_name,
+        潜伏 2 个月(从 v2.1.0 三层标签体系上线起),靠"count=0 也塞入"掩盖
 
 v2.3.0-part3.1 变更(hotfix,2026-04-24)：
     Bug A 修复(F061 质检补跑全线崩溃)：
@@ -185,6 +224,87 @@ def _qc_task_update_progress(data):
         for k, v in data.items():
             if k in _qc_task["progress"]:
                 _qc_task["progress"][k] = v
+
+
+def _qc_readiness_check():
+    """v2.3.0-part3.2: 质检补跑启动就绪性自检（对齐 F048 / F062 模板）。
+    返回 (ok: bool, errors: list[str])。
+
+    按对话 B 立的规则"长任务启动就绪性自检必须在 _task_lock 之前"精神对齐。
+    本任务虽用独立 _qc_task_lock 不受该规则字面约束,仍按模板四项补齐,
+    保持架构整齐、避免未来迁移时遗漏。
+
+    自检 4 项：
+      [1] db 实例存在且可连(SELECT 1)
+      [2] db 有 get_qc_rerun_candidates / get_qc_rerun_summary /
+          promote_readiness_by_qa_score 三个关键方法
+      [3] scripts.extractor.Extractor 可 import 且有 _quality_check 方法;
+          签名含 filename/content_summary 两个参数(防止再次签名漂移)
+      [4] 候选表 knowledge_points 字段契约:qa_score / qa_flags /
+          content_readiness / final_category_tags / suggested_category_tags
+
+    总耗时 <100ms,失败时调用方必须在 with _qc_task_lock 之前返回 500。
+    """
+    errors = []
+
+    # ---- [1] db 可连 ----
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT 1"); c.fetchone()
+        conn.close()
+    except Exception as e:
+        errors.append("[1] db 连接失败: " + str(e))
+        return False, errors
+
+    # ---- [2] db 关键方法 ----
+    for m in ("get_qc_rerun_candidates", "get_qc_rerun_summary",
+              "promote_readiness_by_qa_score"):
+        if not hasattr(db, m):
+            errors.append("[2] db 缺方法: " + m)
+
+    # ---- [3] Extractor 可 import + _quality_check 签名正确 ----
+    try:
+        from scripts.extractor import Extractor
+        if not hasattr(Extractor, "_quality_check"):
+            errors.append("[3] Extractor 缺 _quality_check 方法")
+        else:
+            import inspect
+            try:
+                sig = inspect.signature(Extractor._quality_check)
+                params = list(sig.parameters.keys())
+                # 期望:self, filename, content_summary, kps, kps_info, source_content
+                # F058 签名漂移事故专防:检查前两个必选参数名
+                # (self 是第一个,filename 和 content_summary 应是第 2/3)
+                if len(params) < 5:
+                    errors.append(
+                        "[3] _quality_check 参数数量异常(应 ≥5,实 %d): %s"
+                        % (len(params), params))
+                elif params[1] != "filename" or params[2] != "content_summary":
+                    errors.append(
+                        "[3] _quality_check 签名漂移警告:期望 (self, filename, "
+                        "content_summary, kps, kps_info, ...),实 %s" % params)
+            except (ValueError, TypeError):
+                # 签名无法 introspect(C 扩展等边缘情形),不强阻断
+                pass
+    except Exception as e:
+        errors.append("[3] Extractor import 失败: " + str(e))
+
+    # ---- [4] knowledge_points 关键字段存在 ----
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("PRAGMA table_info(knowledge_points)")
+        cols = {r[1] for r in c.fetchall()}
+        conn.close()
+        required = {"qa_score", "qa_flags", "content_readiness",
+                    "final_category_tags", "suggested_category_tags",
+                    "review_status", "source_file_id"}
+        missing = required - cols
+        if missing:
+            errors.append("[4] knowledge_points 缺字段: " + ", ".join(sorted(missing)))
+    except Exception as e:
+        errors.append("[4] 字段契约检查失败: " + str(e))
+
+    return (len(errors) == 0), errors
 
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
@@ -1573,9 +1693,30 @@ def qc_rerun_summary_api():
 @app.route("/api/tools/qc_rerun", methods=["POST"])
 def qc_rerun_api():
     """F061 执行：走 F058 三级降级链补跑质检
-    v2.3.0-hotfix: 改异步执行（独立 _qc_task 槽，可与 _task 并发）
+    v2.3.0-part3.2 hotfix: 改异步执行（独立 _qc_task 槽，可与 _task 并发）
                    立即返回 202，前端轮询 /api/tools/qc_rerun/progress
+                   对齐 F048/F062 模板,启动就绪性自检放 _qc_task_lock 之前
     """
+    # ---- v2.3.0-part3.2: 启动就绪性自检（必须在 _qc_task_lock 之前）----
+    # 对齐对话 B 立的"长任务前置自检"规则(本任务虽用独立锁不受字面约束,
+    # 仍按模板对齐,防止未来从独立锁迁回 _task 时遗漏)
+    ok, errors = _qc_readiness_check()
+    if not ok:
+        try:
+            db.log_operation_event(
+                event_type="qc_rerun_readiness_check_failed",
+                module="api_server",
+                severity="error",
+                payload={"errors": errors}
+            )
+        except Exception:
+            pass
+        return jsonify({
+            "success": False,
+            "error": "质检补跑环境未就绪",
+            "errors": errors
+        }), 500
+
     # 抢独立的质检补跑锁
     with _qc_task_lock:
         if _qc_task["running"]:
@@ -3433,9 +3574,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3.1")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3.2")
     print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part3.1 hotfix: F061 质检补跑签名漂移 + F062 老库自动追齐")
+    print(f"  v2.3.0-part3.2 hotfix: 仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")
