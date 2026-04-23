@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**：v2.3.0-part3.3（hotfix：审核统计 UI 重写 + 保鲜 loading + 体检无低分提示 + E2E 白名单刷新 + 耗时 `<1s` 显示）
+> **当前版本**：v2.3.0-part3.4（hotfix：低分打磨允许 confirmed + E2E issue 签名漂移修复）
 
 ---
 
@@ -70,16 +70,18 @@
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
 
-**part3.3 关键升级**（v2.3.0-part3.3, 2026-04-23 hotfix）：
-- **审核统计 A 卡**从"裸喷原始 JSON"升级为 6 段结构化渲染（基础概览 / 字段修改 TopN 带横条图 / 类型修改率 / Prompt 版本对比 / 质检分数分布彩色条形图 / 常见质检问题）
-- **保鲜扫描**加 loading 弹窗（"正在扫描保鲜状态... 通常 1-3 秒"），不再"点了没反应"
-- **体检报告维度 5（低分打磨）**明确提示"全库无低分条目（1-2 分共 0 条），已跳过打磨环节" — 区分"没跑" vs "跑了但无可打磨"
-- **E2E 耗时**显示 `<1s` 而不是 `0s`（quick 档毫秒级完成的歧义清理）
-- **F062 DIM4/DIM6 白名单刷新**到 67+11 条，对齐 db_manager.py v2.3.0-part3.2 真实行号（part3.2 预告的工程债实还）
-- **立规则第 46 条"前后端契约同步升级"**诞生
+**part3.4 关键修复**：
+- **低分打磨候选池**：体检维度 5 现在能真实扫到 1-2 分的低分条目（旧版因 WHERE 子句排除了 `confirmed` 已入库条目，维度 5 永久 100 分虚假绿灯）
+- **E2E issue 列表**：Issue 现在能真实落库（旧版因 `upsert_e2e_issue` 签名漂移，报告显示 185 个 issue 但列表显示 0 条的幻觉数字）
 
-**part3.2 关键升级**（v2.3.0-part3.2, 2026-04-23 hotfix）：
-- 质检补跑改为**异步执行**，进度显示在独立面板，**可与其他长任务并发**（例如一边预处理、一边跑质检补跑）
+**part3.3 UX 清扫**：
+- 审核统计从"原始 JSON 裸喷"升级为 6 段结构化卡片（基础概览 / 字段修改频率 / 类型修改率 / Prompt 版本对比 / 质检分数分布 / 常见质检问题）
+- 保鲜扫描加 loading 弹窗（不再"静默执行让用户纠结在不在跑"）
+- 体检维度 5 无低分候选时显示"已跳过打磨"说明（区分"没跑" vs "跑了但无可打磨"）
+- E2E 耗时秒级以下显示 `<1s`（不再显示 0s）
+
+**part3.2 关键升级**：
+- 质检补跑改为**异步执行**，进度显示在独立面板，**可与其他长任务并发**
 - 进度面板**刷新后自动恢复**（F5 或切换 tab 再回来，仍能看到进度前进）
 - 仪表盘三张标签分布卡（业务领域 / 知识形态 / 客户视角）**恢复正常显示**真实使用分布
 - 仪表盘"未质检"与"待质检补跑"数字**对账一致**
@@ -92,11 +94,11 @@
 rural-revitalization-kb/
 ├── scripts/
 │   ├── prompts/             # Prompt 模板（26 个）
-│   ├── api_server.py        # 管理后台 API（v2.3.0-part3.2，含 F048 8 + F062 7 + qc_rerun 3 路由 + 启动兜底 init_tables）
+│   ├── api_server.py        # 管理后台 API（v2.3.0-part3.4，含 F048 8 + F062 7 + qc_rerun 3 路由 + 启动兜底 init_tables）
 │   ├── extractor.py         # 知识提取引擎（含 F057/F058）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
 │   ├── preprocessor.py      # 文件预处理 + .md 缓存
-│   ├── db_manager.py        # 数据库管理（21 表，F048 12 方法 + F062 9 方法 + part3.2 新增 2 方法）
+│   ├── db_manager.py        # 数据库管理（v2.3.0-part3.4，21 表，F048 12 方法 + F062 9 方法 + part3.2 新增 2 方法；part3.4 get_polish_candidates WHERE 修复）
 │   ├── experience_notes.py  # 经验速记
 │   ├── config_wizard.py     # 配置向导
 │   ├── check_system.py      # 系统检查（v2.5.2，19 项）
@@ -111,10 +113,10 @@ rural-revitalization-kb/
 │   ├── upgrade_manager.py   # 架构升级
 │   ├── health_checker.py    # F048 体检引擎（~1360 行）
 │   ├── static_analyzer.py   # F062 静态规则库（~645 行）
-│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.3，~1250 行，白名单 67+11 条对齐 db_manager v2.3.0-part3.2）
+│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.4，~1390 行，白名单 67+11 条；part3.4 _write_issues 签名修复）
 │   └── db_health_check.py   # 数据层只读体检（v1.2）
 ├── web/templates/
-│   └── review.html          # 管理后台（v2.3.0-part3.3，审核统计 6 段结构化 / 保鲜 loading / 体检无低分提示 / E2E <1s）
+│   └── review.html          # 管理后台（v2.3.0-part3.4，工具箱 12 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化）
 ├── data/                    # 数据目录
 ├── backups/                 # 备份目录
 ├── config/                  # 配置文件
@@ -158,7 +160,8 @@ rural-revitalization-kb/
 | v2.3.0-part3 | F062 端到端健康测试 Agent 全闭环 | ✅ |
 | v2.3.0-part3.1 | hotfix：F061 质检补跑签名漂移 + F062 老库自动追齐 | ✅ |
 | v2.3.0-part3.2 | hotfix：仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋 | ✅ |
-| **v2.3.0-part3.3** | **hotfix：审核统计 UI 重写 + 保鲜 loading + 体检无低分提示 + E2E 白名单刷新 + 耗时 `<1s`** | ✅ |
+| v2.3.0-part3.3 | hotfix：审核统计 UI 重写 + 保鲜 loading + 体检无低分提示 + E2E 白名单刷新 | ✅ |
+| **v2.3.0-part3.4** | **hotfix：低分打磨允许 confirmed + E2E issue 签名漂移修复** | ✅ |
 | v2.3.1 | 批量重算成熟度（完整版）+ 关联体系 | 规划 |
 | v2.3.2 | 本地问答助手 | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
@@ -209,19 +212,23 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 - **schema 单一来源**：`init_tables()` 是唯一建表真相，migrate 脚本升完即退役
 - **api_server 启动兜底 init_tables**（v2.3.0-part3.1 起）：避免老库缺新表
 - **字段真名**：kp 表外键是 `final_category_id` 不是 `category_id`
-- **存储/查询口径一致性**（v2.3.0-part3.2 起）：JSON 字段新增 SQL 查询前，必须对照存储侧写入逻辑确认存的是 name / code / 中文 / 英文 / 扁平列表 / 嵌套。本次 `get_tag_distribution` 用 `tag_code` 查 `tag_name` 存储是典型反例
-- **前后端契约同步升级**（v2.3.0-part3.3 起）：后端改 API 返回结构时前端消费点必须同步改；兜底 `<pre>JSON.stringify</pre>` 是临时救命草不是长期方案。改契约前 `grep` 所有前端消费点 → 列 checklist → 端到端手测一次
+- **存储/查询口径一致性**（v2.3.0-part3.2 起）：JSON 字段新增 SQL 查询前，必须对照存储侧写入逻辑确认存的是 name / code / 中文 / 英文 / 扁平列表 / 嵌套
+- **筛选条件边界对齐业务现状**（v2.3.0-part3.4 起）：WHERE 子句的过滤条件过段时间后可能不符业务现状，业务流程变化（如就绪度联动上线）时必须回头校对所有依赖该状态字段的查询
 
 **流程约束**：
 - **长任务启动就绪性自检必须在 `_task_lock` 之前**（独立任务槽也要对齐这个模板）
 - **6 个关键操作触发点必须先 `operation_hook(op_name)` 备份**
 - **`_task["type"]` 前后端字面锁定**：F048 用 `"health"`，F062 用 `"e2e"`；独立任务槽（如 part3.2 的 `_qc_task`）不占用 `_task["type"]` 映射
-- **跨版本调用外部模块方法前必须对照真实签名**（v2.3.0-part3.1 起铁律）：`grep -n "def <方法名>"` 查源码，不相信记忆不相信旧文档
+- **跨版本调用外部模块方法前必须对照真实签名**（v2.3.0-part3.1 起铁律）：`grep -n "def <方法名>"` 查源码，不相信记忆不相信旧文档。part3.4 第三次应验（`upsert_e2e_issue` 漂移）
 
 **AI 调用约束**：
 - **Prompt 双 key 严格**：`system_prompt` / `user_prompt_template`
 - **severity 严格三态**：`info` / `warning` / `error`（禁 `warn` 简写）
 - **禁止包级静默降级**（try/except 顶层 import + None 兜底）
+
+**前后端契约约束（v2.3.0-part3.3 起）**：
+- 后端升级 API 返回结构时，前端所有消费点必须同步升级渲染逻辑
+- 兜底 `if(!h) showToolResult(pre(JSON))` 是临时救命草不是长期方案
 
 **质检铁律（v2.2.3）**：
 - 每条知识点必须有 `qa_score + qa_source`

@@ -6,105 +6,132 @@
 
 ---
 
-## [v2.3.0-part3.3] - 2026-04-23 (hotfix)
+## [v2.3.0-part3.4] - 2026-04-23 (hotfix)
 
-**定位**：后台 UI 可信度清扫 + E2E 白名单漂移实债偿还 —— 四件 UI/UX + 一件工程债 一次交付
-
-**触发**：老唐截图反馈 5 个问题，诊断后确认：
-- 问题 1（审核统计裸喷 JSON）= 前端漏同步后端升级的结构化返回
-- 问题 2（draft 转不了 quotable）= 产品认知差（可通过编辑面板改，或等 v2.3.1 批处理）
-- 问题 3（体检秒完成不打磨）= 正常（库里真没 1-2 分条目了）但 UX 没讲清
-- 问题 4（保鲜不确定在跑）= UX 缺失 loading
-- 问题 5（E2E 秒完成、维度 4/6 大量 issue）= part3.2 遗留的白名单行号漂移
-
-本版本处理 1/4/5 + 顺手清掉 3 的 UX 缺陷 + E2E 耗时 0s 的歧义。问题 2 等 v2.3.1 批处理一起做。
-
-### Added
-
-- **`web/templates/review.html`**（+~90 行，改 4 处）：
-  - `runTool("analytics")` 分支**完全重写**：按后端 `review_analytics.get_analytics_json()` 的 6 段结构渲染（基础概览 / 字段修改频率 / 类型修改率 / Prompt 版本对比 / 质检分数分布 / 常见质检问题），每段带横条图或徽章着色，末尾显示分析时间。老的兜底 `<pre>esc(JSON.stringify(r))` 已删
-  - `runTool("freshness")` 分支加 loading 占位弹窗："正在扫描保鲜状态... 遍历全部已确认知识点,通常 1-3 秒"，请求返回后替换成结果
-  - `renderHealthReport` 维度 5（低分打磨）在渲染前判断 `dim.detail.low_score_count`：=0 时 note 改为 "全库无低分条目 (1-2 分共 0 条),已跳过打磨环节"；>0 时改为 "低分 N 条 / 本次打磨 M 条 (L1 X/L2 Y/L3 Z)"
-  - `renderE2eReport` 耗时显示：`duration_seconds <= 0` 时显示 `<1s` 而不是 `0s`（quick 档毫秒级完成的歧义）
+**定位**：质量闭环从"能跑"到"能真正指路" —— 修复两个让仪表盘数字"漂亮但是假"的 bug
 
 ### Fixed
 
-**Bug A — 审核统计裸喷原始 JSON（潜伏约 2 个月）**
-- **现象**：点击工具箱"A 审核统计"卡，弹窗里直接 dump 出一大坨 JSON 文本，普通用户完全看不懂
-- **位置**：`review.html runTool("analytics")` 分支（原 line ~2057-2071）
-- **根因（单层 bug，根因明确）**：
-  1. `review_analytics.get_analytics_json()` 从 v2.1.2 起返回 6 段结构化 dict（`overview / field_edits / type_edit_rates / prompt_versions / qa_distribution / qa_flags`）
-  2. `review.html` 前端分支还在认 v2.1.2 之前的老扁平字段（`total_reviewed / confirmed / ignored / deleted / edited / avg_qa_score / top_flags`）
-  3. 所有老字段都是 `undefined`（`if(r.total_reviewed!==undefined)` 永假），拼接的 `h` 是空串
-  4. 兜底分支 `if(!h) h='<pre>'+esc(JSON.stringify(r,null,2))+'</pre>'` 触发，直接把原始 JSON 裸喷给用户
-- **修复**：按新结构重写渲染逻辑（6 段），删除 `<pre> JSON` 兜底分支
-- **立规则**：第 46 条"前后端契约同步升级" — 改后端返回结构前必须 `grep` 所有前端消费点同步改
+**Bug 1 — 体检维度 5 低分打磨永久 100 分 + 自动跳过**
 
-**Bug B — F062 DIM4/DIM6 白名单全部失效，报告总分跌到 69.92**
-- **现象**：老唐截图 DEEP 档 E2E 报告，维度 4 字段契约 140 个 issue / 维度 6 代码异味 94 个 issue，合计 234 条几乎全是原白名单本应过滤掉的"已知合理项"；总分 69.92（健康库应 85+）
-- **位置**：`scripts/e2e_tester.py` 的 `DIM4_KNOWN_FALSE_POSITIVES` / `DIM6_KNOWN_FALSE_POSITIVES` / `WHITELIST_REASONS` 三个常量
-- **根因（可预测的工程债）**：
-  1. part3.2 在 `db_manager.py` 新增 `promote_readiness_by_qa_score` / `get_readiness_promote_preview` + 改动 `get_tag_distribution` 内部 SQL
-  2. 该文件所有后续方法行号全部下移（约 +100 行）
-  3. `DIM4_KNOWN_FALSE_POSITIVES` set 的 35 条 signature 按 `scripts/db_manager.py:LINE` 精确匹配，行号漂移后**全部打不中**
-  4. `DIM6_KNOWN_FALSE_POSITIVES` 同理 6 条全失效
-  5. part3.2 hotfix 交付时工程手册 §5.8 **预告了**此风险，但交付时忘了跑 `static_analyzer.py` 重扫，埋了 2-3 天后被老唐触发 E2E 扫描时暴露
+- **现象**：仪表盘明明显示 1 分 2 条、2 分 33 条共 35 条低分条目，全库体检报告却显示"全库无低分条目(1-2 分共 0 条),已跳过打磨环节"，维度 5 得分 100 分。
+- **位置**：`scripts/db_manager.py` `get_polish_candidates()` line ~1960
+- **根因（业务现状漂移，潜伏自 part3.2 就绪度联动上线约 1 个月）**：
+  1. 旧 WHERE 子句 `review_status NOT IN ('ignored','confirmed','merged')` 排除了 `confirmed`（已入库）条目
+  2. 这在 v2.3.0-part2（F048 上线时）是合理的——那时审核流程是"打磨完才入库"
+  3. part3.2 上线就绪度联动后，`qa>=4 AND draft → quotable` 自动升 confirmed；全库最终都会 confirmed 化
+  4. 当前库 2436 条 100% confirmed，旧过滤条件把所有低分条目一并过滤掉，维度 5 永久 100 分
+- **修复**：WHERE 排除集合收紧为 `('ignored','merged')`。允许 `confirmed` 条目进候选池。纵向边界 `qa_score>0 AND qa_score<=2` 保持不变（立规则第 40 条核心语义）
+- **立规则第 40 条补注**：加"横向边界"说明，明确 confirmed 允许进候选池
+- **立规则第 17 条（设计思想）新增**：筛选条件的边界要跟业务现状对齐，业务流程变化时 WHERE 子句必须回头校对
+
+**Bug 2 — 端到端测试 Issue 列表显示 0 条，但报告显示 185 个 issue**
+
+- **现象**：F062 端到端测试报告显示维度 3/4/6 共 185 个 issue（维度 4 字段契约 95 / 维度 6 代码异味 88 / 维度 3 Prompt 2），但点"查看 issue 列表"弹窗显示"Issue 四态列表 共 0 条 / 当前筛选无 issue"。
+- **位置**：`scripts/e2e_tester.py` `_write_issues()` line ~1013 + `_run_pipeline()` line ~462
+- **根因（签名漂移 + 调用顺序错误，潜伏自 F062 上线 part3 约 1 个月）**：
+  1. `db.upsert_e2e_issue` 真实签名是 `upsert_e2e_issue(report_id, dim_code, endpoint, severity, signature, payload=None)`
+  2. `_write_issues` 错误调用用了 `rule_id=` / `detail=` 两个**签名里不存在**的关键字参数
+  3. 且没传必填的 `report_id`（`_write_issues` 被调用时 `report_id` 还没生成）
+  4. 每条 upsert 抛 `TypeError: unexpected keyword argument 'rule_id'` 被 `_safe_log_event` 静默接住
+  5. 结果：`e2e_issues` 表实际 0 条落库，但报告摘要已经在内存算出 185 条显示给前端
 - **修复**：
-  - 用 AST 遍历 `db_manager.py v2.3.0-part3.2`（~2496 行），以 `knowledge_points` 表真实字段集 + 已知 AS 别名为白底，反向找出所有"非 kp 字段"访问点位
-  - 生成新 `DIM4_KNOWN_FALSE_POSITIVES`（67 条 unique signature）
-  - 生成新 `DIM6_KNOWN_FALSE_POSITIVES`（11 条，每个 pass 点位双覆盖 except 行 + body 行，兼容 static_analyzer 取 `handler.lineno` 或 `body[0].lineno` 两种实现）
-  - 生成新 `WHITELIST_REASONS`（78 条）
-- **立规则强化**：§5.8 白名单维护规则加"禁止改弱 static_analyzer 规则对冲 + 附 part3.3 AST 扫描思路参考"
-
-**Bug C — 保鲜扫描点击后无反馈（UX 顽疾）**
-- **现象**：点击工具箱"保鲜扫描"卡，卡片只变半透明（`opacity:.5`），全库 2400+ 条扫 1-3 秒，老唐反馈"不确定在不在跑"
-- **位置**：`review.html runTool("freshness")` 分支
-- **根因**：同步 API（不走 `_task` 长任务），无 loading UI 占位
-- **修复**：请求发起前 `showToolResult("保鲜扫描", "<div>正在扫描保鲜状态...</div>")` 先弹 loading 弹窗，请求返回后替换成结果
-
-**Bug D — 体检秒完成、维度 5 打磨 100 分但老唐以为"没跑"（UX 顽疾）**
-- **现象**：老唐截图体检报告 #7 显示"低分打磨 100 分"，他反馈"怎么跑得这么快，没打磨任何条目"
-- **位置**：`review.html renderHealthReport` 维度 5 卡片
-- **根因**：库里近期质检补跑后已无 qa_score≤2 的条目（`get_polish_candidates()` 返回空），维度 5 公式 `max(0, 100 - 低分占比×100)` = 100；维度卡片只显示数字和权重，不解释"为什么 100"
-- **修复**：渲染维度 5 卡片前，判断 `dim.detail.low_score_count`：
-  - `=0` 时 note 改为 "全库无低分条目 (1-2 分共 0 条),已跳过打磨环节"
-  - `>0` 时 note 改为 "低分 N 条 / 本次打磨 M 条 (L1/L2/L3 分布)"
-  - 解决"没跑" vs "跑了但无可打磨"的用户困惑
-
-**Bug E — E2E 报告耗时 0s 误以为"没跑"（UX 小瑕疵）**
-- **现象**：E2E quick 档扫完 1 秒以内的报告显示"耗时 0s"，误以为空跑
-- **位置**：`review.html renderE2eReport`
-- **根因**：`int(time.time()-start)` 向下取整
-- **修复**：`duration_seconds <= 0` 时显示 `<1s`，否则正常显示
+  - `_write_issues(issues)` 签名扩为 `_write_issues(issues, report_id)`
+  - 内部调用对齐真实签名：`rule_id` / `detail` 合并进 `payload` 字典，数据不丢
+  - `_run_pipeline` 调用顺序调整：旧"六维度 → write_issues → save_report"改为"六维度 → save_report(拿 report_id) → write_issues(report_id)"
+  - `upserted_count` 从 `full_report_json` 顶层移除（过去没前端消费），改为 `e2e_issue_summary` 事件日志记录
+- **立规则第 9 条第三次应验**：F058→F061(part3.1)、`upsert_e2e_issue`(part3.4) 都是"改一侧没改另一侧"的签名漂移；签名必 grep 源码对照，不能靠记忆
 
 ### Changed
 
-- **`scripts/e2e_tester.py` 版本号**：`v2.3.0-part3-alpha2` → `v2.3.0-part3.3`（docstring + 注释）
-- **`web/templates/review.html` 版本号**：`v2.3.0-part3` → `v2.3.0-part3.3`（`<title>` + header `<span>`）
-- **立规则**：新增第 46 条"前后端契约同步升级"，总数 45→46。为避免破坏已有编号，放流程层末尾而非按类别插入
-- **设计思想**：新增第 15/16 条"前后端两条腿" / "看起来完成 vs 用户能用"
+- `scripts/db_manager.py` 版本号 v2.3.0-part3.2 → **v2.3.0-part3.4**（加 part3.2 历史变更条目 + part3.4 hotfix 条目）
+- `scripts/e2e_tester.py` 版本号 v2.3.0-part3.3 → **v2.3.0-part3.4**
+- `scripts/api_server.py` 版本号注释 v2.3.0-part3.2 → **v2.3.0-part3.4**（代码无实质改动，仅同步版本号）
+- `web/templates/review.html` 版本号 v2.3.0-part3.3 → **v2.3.0-part3.4**（代码无实质改动，仅 title 和页面头版本号文本）
+- `00_项目全景.md` / `01_工程手册.md` / `CHANGELOG.md` / `README.md` 同步到 part3.4
+- `01_工程手册.md`：
+  - 代码清单 4 个文件版本号更新
+  - 立规则总数说明：46 条不变，本次无新增立规则
+  - 立规则第 9 条追加 part3.4 应验案例
+  - 立规则第 40 条追加横向边界补注
+  - 关键设计决策 §四新增"低分打磨候选池 / E2E issue 签名漂移（v2.3.0-part3.4 锁定）"9 条决策
+  - 架构速查 `get_polish_candidates` 方法签名说明加横向边界注释
+  - 退役组件表新增 2 条（confirmed 排除 / `_write_issues` 旧签名）
+  - 设计思想新增第 17 条"筛选条件的边界要跟业务现状对齐"
 
 ### Migration
 
-- **无数据库变更**（纯 UI 层 + 常量数据刷新）
-- **仅需替换两个文件**：`scripts/e2e_tester.py` + `web/templates/review.html`
-- **不需要重跑**：`首次安装.bat` / 备份 / 数据库迁移
-- **回滚方案**：两个文件替换回 part3.2 版本（e2e_tester.py 恢复 35+6 白名单 / review.html 恢复扁平字段渲染）即可。无级联影响
-
-### 交付完整性检查
-
-| 项 | 状态 |
-|----|------|
-| 代码文件 | ✅ e2e_tester.py + review.html |
-| AST 语法校验 | ✅ Python AST parse 通过 + Node --check 通过（2232 行合并 JS 无错误）|
-| ES5 严格性 | ✅ 无箭头函数/反引号/const-let/async-await |
-| 项目文件 | ✅ 00_项目全景 + 01_工程手册 + CHANGELOG + README + 02/03 保持不变（分类/Prompt 未动）|
-| 工程手册立规则 | ✅ 新增第 46 条 + 设计思想 2 条 + §5.8 白名单表重写 + §十一 退役项 5 条 |
-| schema / 数据库 | — 无变更 |
+- **无 schema 变更** / 无迁移 / 无新增路由 / 无新增立规则
+- 老唐操作：替换 4 个文件 → 推送 GitHub → 更新 Claude Projects 项目文件 → 启动后台
+- **下次体检警告**：修复后维度 5 会实打实扫到约 35 条低分候选并跑打磨降级链。API 成本估算：
+  - 快速档（30/50/100/200）：`polish_max` 会限流，≤0.5 元
+  - 完整档（不设 polish_max）：全 35 条跑，约 0.5-1.0 元 / 5-15 分钟
+- **下次 E2E 扫描警告**：修复后 deep 档会产生约 134 条 pending issue（185 - 51 白名单），需要逐条切"已修/忽略"
 
 ---
 
+## [v2.3.0-part3.3] - 2026-04-23 (hotfix)
 
+**定位**：后台 UI 可信度清扫（3 处 UX 顽疾）+ E2E 白名单漂移实债偿还
+
+### Added
+
+- **立规则第 46 条**：前后端契约同步升级。后端改 API 返回结构时前端所有消费点必须同步改；兜底 `if(!h) showToolResult(pre(JSON))` 是临时救命草不是长期方案
+- **设计思想第 15 / 16 条**：前后端是两条腿必须一起迈 / "看起来完成" vs "用户能用"
+
+### Fixed
+
+**Bug 1 — 审核统计 A 卡显示裸露的 JSON 字符串**
+
+- **现象**：点"审核统计"按钮，弹窗直接显示 `<pre>{"overview":{...},"field_edits":{...}}</pre>` 原始 JSON
+- **位置**：`web/templates/review.html` `runTool("analytics")` 分支
+- **根因（潜伏自 review_analytics v2.1.2 约 2 个月）**：
+  1. 后端 `review_analytics.get_analytics_json()` 从扁平结构（`total_reviewed / confirmed / avg_qa_score / top_flags`）升级为 6 段嵌套（overview / field_edits / type_edit_rates / prompt_versions / qa_distribution / qa_flags）
+  2. 前端 `runTool("analytics")` 仍按老扁平字段读，全部 undefined
+  3. 兜底分支 `if(!h) showToolResult("<pre>"+JSON.stringify(r)+"</pre>")` 触发
+- **修复**：前端按 6 段结构化重写，每段独立渲染卡片
+
+**Bug 2 — 保鲜扫描点击后视觉无反馈**
+
+- **现象**：点"保鲜扫描"按钮后卡片只是 `opacity:.5` 变灰，用户不确定在不在跑
+- **修复**：加 loading 弹窗（旋转图标 + "保鲜扫描中,预计 1-3 秒..." 文字），扫描完弹 confirm 跳转
+
+**Bug 3 — 体检维度 5 低分打磨得分 100 分时用户困惑**
+
+- **现象**：体检报告维度 5 显示 100 分，但用户不知道是"没跑"还是"跑了但无可打磨"
+- **修复**：`renderHealthReport` 增强：`low_score_count=0` 时显示"全库无低分条目(1-2 分共 0 条),已跳过打磨环节"（**注：此修复在 part3.4 暴露出 Bug 1 的根因—— WHERE 子句过滤把 confirmed 条目全排除了，low_score_count=0 是假的**）
+
+**Bug 4 — E2E 报告耗时 `<1 秒` 时显示 `0s`**
+
+- **现象**：quick 档秒级完成，报告显示"耗时 0s"
+- **位置**：`review.html` E2E 报告渲染
+- **根因**：`int(time.time()-start)` 向下取整，毫秒级场景误显 0s
+- **修复**：前端 `<1s` 兜底显示
+
+**Bug 5 — F062 白名单行号漂移导致 issue 暴涨**
+
+- **现象**：维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92
+- **位置**：`scripts/e2e_tester.py` `DIM4_KNOWN_FALSE_POSITIVES` / `DIM6_KNOWN_FALSE_POSITIVES`
+- **根因**：part3.2 新增 `promote_readiness_by_qa_score` / `get_readiness_promote_preview` 导致 db_manager.py 下游行号全部漂移，原 41 条白名单全部失效
+- **修复**：
+  - DIM4: 35 条 → 67 条
+  - DIM6: 6 条 → 11 条（每个 pass 点位覆盖 except 行 + body 行，兼容 handler.lineno / body[0].lineno 两种实现）
+  - WHITELIST_REASONS: 同步更新为 78 条
+- **立规则 §5.8 强化**：db_manager.py 重构后 F062 白名单行号必须重扫刷新
+
+### Changed
+
+- `web/templates/review.html` v2.3.0-part3.2 → v2.3.0-part3.3（审核统计 6 段重写 + 保鲜 loading + 体检 note + E2E 耗时兜底）
+- `scripts/e2e_tester.py` v2.3.0-part3.2 → v2.3.0-part3.3（白名单行号刷新）
+
+### Migration
+
+- 无 schema 变更 / 无迁移
+- 老唐操作：替换 2 个代码文件 → 启动后台验证 4 个 UI
+
+---
+
+## [v2.3.0-part3.2] - 2026-04-23 (hotfix)
 
 **定位**：仪表盘可信度修复 + 质检补跑异步化 + 就绪度联动预埋 —— 三件事一次交付
 

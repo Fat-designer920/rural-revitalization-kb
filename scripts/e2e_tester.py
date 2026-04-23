@@ -1,17 +1,34 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 路径：scripts/e2e_tester.py
-版本：v2.3.0-part3.3 - 白名单行号刷新（part3.2 遗漏执行的收尾）
+版本：v2.3.0-part3.4 - hotfix: _write_issues 签名漂移 + 调用顺序修正
 
-变更（v2.3.0-part3.3，2026-04-23）:
-  - DIM4_KNOWN_FALSE_POSITIVES: 35 条 → 67 条，行号对齐 db_manager.py v2.3.0-part3.2
-  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条（每个 pass 点位覆盖 except 行 + body 行，兼容
-    static_analyzer 取 handler.lineno 或 body[0].lineno 两种实现）
-  - WHITELIST_REASONS: 同步更新为 78 条（67+11）
+变更（v2.3.0-part3.4,2026-04-23）:
+  - _write_issues(issues) 签名扩为 _write_issues(issues, report_id)
+  - _write_issues 内部调用 db.upsert_e2e_issue 对齐真实签名:
+      真实签名: upsert_e2e_issue(report_id, dim_code, endpoint, severity,
+                                  signature, payload=None)
+      旧错误调用: 用了 rule_id= / detail= 两个签名里不存在的关键字参数,且没
+                  传 report_id(必填)。每条 upsert 抛 TypeError 被 _safe_log_event
+                  静默接住,导致 issue 报告显示"有 185 个 issue"但 e2e_issues
+                  表实际 0 条落库,前端"Issue 四态列表 共 0 条"。
+  - _run_pipeline 调用顺序调整:
+      旧: 六维度 → _write_issues → 汇总 → _save_report
+      新: 六维度 → 汇总 → _save_report(拿 report_id) → _write_issues(report_id)
+      说明: _save_report 幂等不依赖 issue 落库结果;顺序调整后拿到 report_id
+           才能传给 _write_issues。upserted_count 在报告落库后仅记入事件日志,
+           不再挂进 full_report_json 顶层(本来也没消费方)。
+  - 立规则第 9 条再次应验:跨模块调用前必 grep 真实签名。
+
+变更（v2.3.0-part3.3,2026-04-23）:
+  - DIM4_KNOWN_FALSE_POSITIVES: 35 条 → 67 条,行号对齐 db_manager.py v2.3.0-part3.2
+  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条(每个 pass 点位覆盖 except 行 + body 行,兼容
+    static_analyzer 取 handler.lineno 或 body[0].lineno 两种实现)
+  - WHITELIST_REASONS: 同步更新为 78 条(67+11)
   - 本文件其他逻辑完全不变
-  - 根因：part3.2 新增 promote_readiness_by_qa_score / get_readiness_promote_preview 导致
-    db_manager.py 下游行号全部漂移，旧白名单失效，DIM4/DIM6 issue 从个位数暴涨（报告截图
-    维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92）。立规则 §5.8 已预告此坑。
+  - 根因:part3.2 新增 promote_readiness_by_qa_score / get_readiness_promote_preview 导致
+    db_manager.py 下游行号全部漂移,旧白名单失效,DIM4/DIM6 issue 从个位数暴涨(报告截图
+    维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92)。立规则 §5.8 已预告此坑。
 
 定位：
   F062 六维度扫描引擎,消费对话 1 基础层（static_analyzer / db_manager / prompt_templates）,
@@ -458,14 +475,11 @@ class E2ETester(object):
         dims_result["dim6"] = dim6
         all_issues.extend(dim6.get("issues") or [])
 
-        # --- 写入 issue(批量 upsert) ---
-        upserted_count, filtered_count = self._write_issues(all_issues)
-
         # --- 汇总分数 ---
         total_score = self._compute_total_score(dims_result, scan_depth)
         summary = self._compute_summary(all_issues)
 
-        # --- 保存报告 ---
+        # --- 保存报告(先保存拿 report_id,再写 issue,part3.4 调整顺序) ---
         duration = int(time.time() - self._started_at)
         full_report = {
             "scan_depth": scan_depth,
@@ -473,8 +487,6 @@ class E2ETester(object):
             "dims": dims_result,
             "summary": summary,
             "new_endpoints": new_endpoints,
-            "upserted_issue_count": upserted_count,
-            "filtered_out_count": filtered_count,
             "v3_call_count": self._v3_call_count,
             "cost_estimate": round(self._cost_accumulator, 6),
             "duration_seconds": duration,
@@ -489,6 +501,14 @@ class E2ETester(object):
             new_endpoints=new_endpoints,
             full_report=full_report,
         )
+
+        # --- 写入 issue(批量 upsert,必须在 report_id 就绪后执行,part3.4) ---
+        upserted_count, filtered_count = self._write_issues(all_issues, report_id)
+        self._safe_log_event("e2e_issue_summary", "info", {
+            "report_id": report_id,
+            "upserted_count": upserted_count,
+            "filtered_count": filtered_count,
+        })
 
         self._safe_log_event("e2e_scan_done", "info", {
             "report_id": report_id,
@@ -1010,24 +1030,41 @@ class E2ETester(object):
     # issue 写入(批量 upsert)
     # --------------------------------------------------------
 
-    def _write_issues(self, issues):
+    def _write_issues(self, issues, report_id):
         """批量 upsert_e2e_issue。返回 (upserted_count, filtered_count)。
+
+        part3.4 修复:
+          - 签名加 report_id(db.upsert_e2e_issue 必填位置参数)
+          - 对齐真实签名 upsert_e2e_issue(report_id, dim_code, endpoint,
+            severity, signature, payload=None)
+          - 旧 rule_id / detail 合并进 payload,不丢数据
 
         filtered_count 此处是 0(过滤已在各维度内完成),保留接口对称性。
         """
         upserted = 0
+        if not report_id:
+            # report_id 异常时降级:记 warn 事件,不写 issue
+            self._safe_log_event("e2e_issue_skip_no_report_id", "warning",
+                                 {"issue_count": len(issues)})
+            return 0, 0
+
         for iss in issues:
             try:
                 sig = iss.get("signature") or ""
                 if not sig:
                     continue
+                payload = {
+                    "rule_id": iss.get("rule_id") or "",
+                    "detail": iss.get("detail") or {},
+                    "message": iss.get("message") or "",
+                }
                 self.db.upsert_e2e_issue(
-                    signature=sig,
+                    report_id=report_id,
                     dim_code=iss.get("dim_code") or "",
-                    severity=iss.get("severity") or "info",
                     endpoint=iss.get("endpoint"),
-                    rule_id=iss.get("rule_id") or "",
-                    detail=iss.get("detail") or {},
+                    severity=iss.get("severity") or "info",
+                    signature=sig,
+                    payload=payload,
                 )
                 upserted += 1
             except Exception as e:
@@ -1037,7 +1074,7 @@ class E2ETester(object):
 
         if upserted > 0:
             self._safe_log_event("e2e_issue_upserted", "info",
-                                 {"count": upserted})
+                                 {"count": upserted, "report_id": report_id})
         return upserted, 0
 
     # --------------------------------------------------------

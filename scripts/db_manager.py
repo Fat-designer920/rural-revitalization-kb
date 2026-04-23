@@ -1,7 +1,26 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part3 - F062 端到端健康测试 Agent 界面层（对话 3/3 对称补齐 get_e2e_test_report_list）
+版本：v2.3.0-part3.4 - hotfix: get_polish_candidates 允许 confirmed 条目进入打磨池
+
+v2.3.0-part3.4 修复（hotfix，2026-04-23）:
+  - get_polish_candidates WHERE 去掉 review_status NOT IN ('confirmed')
+    改为 NOT IN ('ignored','merged')。
+  - 根因：老工作流假设"confirmed=审核通过=不需要打磨"，但就绪度联动上线后，
+    qa_score>=4 且 draft 自动升 quotable（= confirmed），导致低分条目也可能
+    进入 confirmed 状态；且 confirmed 才是真正需要"卖钱前再打磨一道"的内容。
+    现象：仪表盘显示 1-2 分共 35 条低分，体检维度⑤却返回"全库无低分条目
+    已跳过打磨"。
+  - 立规则第 40 条语义保持不变（qa_score>0 保留，避免"未质检"污染打磨池）；
+    本次只调整横向 review_status 过滤条件。
+  - 不改 schema / 不改方法签名 / 无迁移。
+
+v2.3.0-part3.2 新增（hotfix，2026-04-23）:
+  - 新增 promote_readiness_by_qa_score() / get_readiness_promote_preview()
+    → v2.3.1 批量重算成熟度的保守前置版本（qa>=4 且 draft → quotable，不碰 premium）
+  - get_tag_distribution 口径修正：pattern 从 tag_code 改为 tag_name；只返 count>0
+  - get_connection 追加 PRAGMA busy_timeout=10000（并发写等锁兜底）
+  - 立规则第 10 条：存储/查询口径一致性（JSON 字段 LIKE 必对照写入格式）
 
 v2.3.0-part3-alpha1 新增（F062 基础层 / 对话 1/3）：
   - 3 张新表（init_tables 内建，对齐 v2.3.0-part2.1 立规则"schema 单一来源"）：
@@ -1961,11 +1980,18 @@ class DatabaseManager:
         """
         F048 维度⑤低分打磨数据源：
         WHERE (qa_score>0 AND qa_score<=2) OR qa_source='rule_fallback'
-          AND review_status NOT IN ('ignored','confirmed','merged')
+          AND review_status NOT IN ('ignored','merged')
           AND NOT EXISTS (pending polish_suggestion on same kp)
 
         关键：qa_score>0 过滤掉"未质检"的 kp（默认值 0.0）
-        未质检的应先走 F061 质检补跑，不应进入打磨候选池
+        未质检的应先走 F061 质检补跑，不应进入打磨候选池（立规则第 40 条）
+
+        v2.3.0-part3.4 起调整横向 review_status 过滤：
+          - 排除 'ignored'（老唐明确放弃）
+          - 排除 'merged'（已合并到其他 kp）
+          - **纳入** 'confirmed'（已入库的低分条目才是最需要打磨打磨再卖的内容）
+          - **纳入** 'pending'（待审核的低分条目也要打磨）
+          旧版排除 'confirmed' 导致全库 confirmed 化之后维度⑤永久 100 分、跳过打磨
 
         字段契约（v2.3.0-part2.2 新增）：
           LEFT JOIN categories → c.level1_name AS category / c.level2_name AS subcategory
@@ -2007,7 +2033,7 @@ class DatabaseManager:
                      (kp.qa_score > 0 AND kp.qa_score <= 2)
                      OR kp.qa_source = 'rule_fallback'
                    )
-               AND kp.review_status NOT IN ('ignored','confirmed','merged')
+               AND kp.review_status NOT IN ('ignored','merged')
                AND NOT EXISTS (
                      SELECT 1 FROM polish_suggestions ps
                       WHERE ps.kp_id = kp.id

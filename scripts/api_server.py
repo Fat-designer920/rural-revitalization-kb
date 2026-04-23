@@ -1,7 +1,17 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3.2 - hotfix(仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋)
+版本：v2.3.0-part3.4 - 本版本代码无实质改动,仅同步版本号
+
+v2.3.0-part3.4 版本号同步(2026-04-23):
+    本文件代码无改动。同版本 hotfix 集中在 db_manager.py 和 e2e_tester.py:
+      - db_manager.get_polish_candidates: WHERE 横向边界去掉 'confirmed' 排除
+        (修复体检维度⑤永久 100 分 / 跳过打磨的 bug)
+      - e2e_tester._write_issues: 签名加 report_id + 对齐 upsert_e2e_issue 真实签名
+      - e2e_tester._run_pipeline: 调用顺序调整为 save_report → write_issues
+        (修复"报告显示 185 个 issue / 列表显示 0 条"的幻觉数字 bug)
+    立规则第 9 条(签名)第三次应验 + 第 40 条(横向边界)补注。
+    详见 CHANGELOG.md v2.3.0-part3.4 条目。
 
 v2.3.0-part3.2 变更(hotfix,2026-04-23)：
     Bug A 修复(仪表盘三张标签分布卡"暂无数据" / "展开全部 0 个")：
