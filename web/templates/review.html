@@ -817,6 +817,11 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-name">质检补跑</div>
         <div class="tool-desc">未质检/异常条目(三级降级链)</div>
       </div>
+      <div class="tool-card" id="tc-readinessPromote" onclick="runTool('readinessPromote')">
+        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">R</div>
+        <div class="tool-name">就绪度联动</div>
+        <div class="tool-desc">qa≥4 的 draft 升为 quotable</div>
+      </div>
       <div class="tool-card" id="tc-analytics" onclick="runTool('analytics')">
         <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">A</div>
         <div class="tool-name">审核统计</div>
@@ -919,6 +924,19 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <span id="taskCount"></span>
       </div>
       <div class="task-message" id="taskMsg"></div>
+    </div>
+    <!-- v2.3.0-hotfix: QC Rerun Task Progress (独立面板，可与上方并发显示) -->
+    <div class="task-progress" id="qcTaskProgress" style="display:none">
+      <div class="task-progress-head">
+        <span class="task-progress-title" id="qcTaskTitle">质检补跑进行中</span>
+        <span class="task-progress-step" id="qcTaskStep"></span>
+      </div>
+      <div class="task-bar-bg"><div class="task-bar-fill" id="qcTaskBar" style="width:0%"></div></div>
+      <div class="task-info">
+        <span id="qcTaskFile"></span>
+        <span id="qcTaskCount"></span>
+      </div>
+      <div class="task-message" id="qcTaskMsg"></div>
     </div>
     <!-- Reextract Panel -->
     <div class="tool-result" id="reextractPanel">
@@ -1234,7 +1252,7 @@ function switchTab(tab){
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
-  if(tab==="admin"){loadDashboard();checkRunningTask();_renderE2eBadge()}
+  if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();_renderE2eBadge()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
@@ -1803,7 +1821,7 @@ function renderDashboard(d){
   var trAff=tr.affected_files||0;
   var trTot=tr.total_truncations||0;
   var trRec=tr.total_recovery_runs||0;
-  h+='<div class="dash-card"><div class="dash-card-head">截断补救 <span style="font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-left:6px">v2.2.3 F057</span></div>';
+  h+='<div class="dash-card"><div class="dash-card-head">截断补救</div>';
   h+='<div class="dash-big" style="color:'+(trAff>0?"#C97A2C":"var(--text)")+'">'+trAff+'</div>';
   h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:10px">个文件触发过截断补救</div>';
   h+=dRow("","","累计截断次数",trTot);
@@ -1836,12 +1854,15 @@ function renderTagCard(group,title,list,color){
   if(!Array.isArray(list))list=[];
   var total=list.length;
   var topN=Math.min(5,total);
-  /* 字段容错：name/tag 兼容，count 兼容 */
-  function getName(it){if(!it)return"";return it.name||it.tag||it.label||""}
+  /* 字段容错：name/tag/tag_name/label 兼容，count 兼容
+   * v2.3.0-hotfix: 后端 get_tag_distribution 返回的是 tag_name 字段,
+   *   旧版 getName 只认 name/tag/label，导致所有行静默跳过 → 卡片空白 + "展开全部 0 个"
+   */
+  function getName(it){if(!it)return"";return it.tag_name||it.name||it.tag||it.label||""}
   function getCount(it){if(!it)return 0;var v=it.count!==undefined?it.count:(it.n!==undefined?it.n:0);return parseInt(v)||0}
   var maxCount=0;
   for(var i=0;i<list.length;i++){var c=getCount(list[i]);if(c>maxCount)maxCount=c}
-  var h='<div class="dash-card"><div class="dash-card-head">'+esc(title)+' <span style="font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-left:6px">'+group+'组 v2.3.0 F049</span></div>';
+  var h='<div class="dash-card"><div class="dash-card-head">'+esc(title)+'</div>';
   if(!total){
     h+='<div style="font-size:12px;color:var(--text-muted);padding:16px 0;text-align:center">暂无数据</div>';
     h+='</div>';
@@ -1869,7 +1890,10 @@ function renderTagCard(group,title,list,color){
     }
     h+='</div>';
     h+='<hr class="dash-divider">';
-    h+='<div style="text-align:center;margin-top:4px"><button class="btn btn-sm" id="tagCardBtn_'+group+'" onclick="toggleTagCardMore(\''+group+'\')">展开全部 '+total+' 个</button></div>';
+    /* v2.3.0-hotfix: 把 total 写进按钮的 data 属性，折叠/展开切换直接读它，
+     *   不再用 DOM 子元素数反推（那个方案在"行 name 为空被跳过"时会崩成 0）
+     */
+    h+='<div style="text-align:center;margin-top:4px"><button class="btn btn-sm" id="tagCardBtn_'+group+'" data-total="'+total+'" onclick="toggleTagCardMore(\''+group+'\')">展开全部 '+total+' 个</button></div>';
   }
   h+='</div>';
   return h;
@@ -1878,8 +1902,10 @@ function toggleTagCardMore(group){
   var more=document.getElementById("tagCardMore_"+group);
   var btn=document.getElementById("tagCardBtn_"+group);
   if(!more||!btn)return;
+  /* v2.3.0-hotfix: 折叠状态直接用 data-total，而不是 DOM 计数 */
+  var total=parseInt(btn.getAttribute("data-total"))||0;
   if(more.style.display==="none"){more.style.display="block";btn.textContent="收起"}
-  else{more.style.display="none";var c=more.childElementCount;var top=document.getElementById("tagCardTop_"+group);var totalC=c+(top?top.childElementCount:0);btn.textContent="展开全部 "+totalC+" 个"}
+  else{more.style.display="none";btn.textContent="展开全部 "+total+" 个"}
 }
 
 function dRow(dotType,dotColor,label,val,jumpAction){
@@ -2044,44 +2070,91 @@ function runTool(name){
     });
   }
   else if(name==="qaBackfill"){
-    /* v2.2.3 F061: 先查候选数量摘要，弹窗确认后调用新降级链接口 */
+    /* v2.2.3 F061: 先查候选数量摘要，弹窗确认后调用新降级链接口
+     * v2.3.0-hotfix: 接口已改异步，POST 后立即转为轮询 /api/tools/qc_rerun/progress
+     *                任务进度展示在独立 #qcTaskProgress 面板（可与主 _task 并发）
+     */
     apiGet("/api/tools/qc_rerun/summary").then(function(s){
       if(s.error){
         showToolResult("质检补跑","<p style='color:var(--danger)'>获取摘要失败: "+esc(s.error)+"</p>");
         done();return;
       }
       var total=s.total_candidates||s.total||0;
-      var nullCnt=s.null_score||s.null_count||0;
-      var badFmt=s.format_error||s.bad_format||0;
+      var nullCnt=s.null_score||s.null_count||s.unscored||0;
+      var badFmt=s.format_error||s.bad_format||s.format_err||0;
       if(total===0){
         showToolResult("质检补跑","<p style='color:var(--success);font-weight:600'>所有知识点均已正常质检，无需补跑</p>");
         done();return;
       }
       var msg="发现待补跑条目 "+total+" 条";
       if(nullCnt||badFmt){msg+=" (未质检:"+nullCnt+" / 格式异常:"+badFmt+")"}
-      msg+="，将走三级降级链(批量15→小批3→逐条→规则兜底)补跑。预计费用几毛到一元。确认?";
+      msg+="，将走三级降级链(批量15→小批3→逐条→规则兜底)补跑。预计费用几毛到一元。\n\n任务将在后台执行，你可以继续其他操作，进度会显示在顶部面板。确认?";
       showConfirm("质检补跑(降级链)",msg,function(ok){
         if(!ok){done();return}
-        showToolResult("质检补跑",'<div class="loading">正在走三级降级链补跑，大文件可能需要几分钟，请耐心等待...</div>');
         apiPost("/api/tools/qc_rerun").then(function(r){done();
-          if(r.error){showToolResult("质检补跑","<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
-          var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">已补跑 '+(r.processed||0)+' 条 ('+(r.file_count||0)+' 个文件)</p>';
-          h+=dRow("","","候选总数",r.total||0);
-          h+=dRow("","","已处理",r.processed||0);
-          if(r.orphan_count)h+=dRow("","","孤儿条目(经验速记)",r.orphan_count);
-          var errs=r.errors||[];
-          if(errs.length){
-            h+='<div style="margin-top:10px;font-weight:600;font-size:13px;color:var(--warning)">跳过 '+errs.length+' 个分组:</div>';
-            for(var i=0;i<Math.min(errs.length,10);i++){h+='<div class="tr-item" style="color:var(--text-muted);font-size:11px">'+esc(errs[i])+'</div>'}
-            if(errs.length>10)h+='<div style="color:var(--text-muted);font-size:11px">...还有 '+(errs.length-10)+' 项</div>';
+          // 409 = 已有任务在跑（理论上不该出现，因为按钮侧没限流，给个友好提示）
+          if(r && r.running){
+            showToolResult("质检补跑","<p style='color:var(--warning)'>"+esc(r.error||"已有质检补跑任务在执行")+"</p>");
+            qcCheckRunningTask();
+            return;
           }
-          var sa=r.summary_after||{};
-          if(sa.total_candidates!==undefined){
-            h+='<hr class="dash-divider">';
-            h+=dRow("","","剩余待补跑",sa.total_candidates||0);
+          if(r.error){
+            showToolResult("质检补跑","<p style='color:var(--danger)'>启动失败: "+esc(r.error)+"</p>");
+            return;
           }
-          showToolResult("质检补跑结果",h);
-          loadDashboard();loadKnowledgePoints();
+          // 异步启动成功 → 关掉旧的 tool result，打开 qc 进度面板 + 轮询
+          closeToolResult();
+          qcShowTaskProgress("质检补跑进行中 (待补跑 "+total+" 条)");
+          qcStartPolling();
+        }).catch(function(e){
+          done();
+          showToolResult("质检补跑","<p style='color:var(--danger)'>启动失败: "+esc(String(e))+"</p>");
+        });
+      });
+    });
+  }
+  else if(name==="readinessPromote"){
+    /* v2.3.0-hotfix: 就绪度联动（qa>=4 且 draft → quotable）
+     *   单 UPDATE 操作，快，同步返回即可（不像质检补跑需要异步）
+     */
+    apiGet("/api/tools/readiness_promote/preview").then(function(p){
+      if(p.error){
+        showToolResult("就绪度联动","<p style='color:var(--danger)'>获取预览失败: "+esc(p.error)+"</p>");
+        done();return;
+      }
+      var will=p.will_promote||0;
+      if(will===0){
+        var h='<p style="color:var(--success);font-weight:600;margin-bottom:8px">目前没有需要升级的条目</p>';
+        h+='<div style="font-size:12px;color:var(--text-muted)">规则: qa≥4 且 当前=draft → quotable</div>';
+        h+='<hr class="dash-divider">';
+        h+=dRow("","","已入库中 draft 总数",p.total_draft||0);
+        h+=dRow("","","其中未质检",p.unscored_confirmed||0);
+        if((p.unscored_confirmed||0)>0){
+          h+='<div style="margin-top:8px;font-size:12px;color:var(--warning)">提示: 还有 '+p.unscored_confirmed+' 条 draft 未质检，跑一次"质检补跑"后再试联动会升更多</div>';
+        }
+        showToolResult("就绪度联动",h);
+        done();return;
+      }
+      var msg="将把 "+will+" 条知识点从 draft 升为 quotable。\n\n规则: qa≥4 且 readiness='draft'\n不会降级，不会动 premium。\n\n确认?";
+      showConfirm("就绪度联动",msg,function(ok){
+        if(!ok){done();return}
+        apiPost("/api/tools/readiness_promote").then(function(r){done();
+          if(!r.success){
+            showToolResult("就绪度联动","<p style='color:var(--danger)'>执行失败: "+esc(r.error||"未知错误")+"</p>");
+            return;
+          }
+          var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">已升级 '+(r.promoted_to_quotable||0)+' 条: draft → quotable</p>';
+          h+='<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">规则: '+esc(r.rule||"")+'</div>';
+          if(r.notes && r.notes.length){
+            for(var i=0;i<r.notes.length;i++){
+              h+='<div style="font-size:11px;color:var(--text-muted)">· '+esc(r.notes[i])+'</div>';
+            }
+          }
+          showToolResult("就绪度联动结果",h);
+          loadDashboard();
+        }).catch(function(e){
+          done();
+          showToolResult("就绪度联动","<p style='color:var(--danger)'>启动失败: "+esc(String(e))+"</p>");
         });
       });
     });
@@ -2244,6 +2317,90 @@ function startPolling(){
       }
     });
   },2000);
+}
+
+/* ================================================================
+ * v2.3.0-hotfix: 质检补跑独立进度面板（与 _task 并发）
+ * ---------------------------------------------------------------- */
+var _qcPollTimer=null;
+
+function qcShowTaskProgress(title){
+  var p=document.getElementById("qcTaskProgress");
+  p.style.display="block";p.className="task-progress";
+  document.getElementById("qcTaskTitle").textContent=title||"质检补跑进行中";
+  document.getElementById("qcTaskStep").textContent="启动中...";
+  document.getElementById("qcTaskBar").style.width="0%";
+  document.getElementById("qcTaskFile").textContent="";
+  document.getElementById("qcTaskCount").textContent="";
+  document.getElementById("qcTaskMsg").textContent="";
+  p.scrollIntoView({behavior:"smooth"});
+}
+
+function qcStartPolling(){
+  if(_qcPollTimer)clearInterval(_qcPollTimer);
+  _qcPollTimer=setInterval(function(){
+    apiGet("/api/tools/qc_rerun/progress").then(function(r){
+      if(!r||(!r.running&&!_qcPollTimer))return;
+      var pg=r.progress||{};
+      document.getElementById("qcTaskStep").textContent=pg.current_step||"";
+      var pct=0;
+      if(pg.total_files>0)pct=Math.round(pg.current_file/pg.total_files*100);
+      else if(pg.total_candidates>0)pct=Math.round((pg.processed_kps||0)/pg.total_candidates*100);
+      document.getElementById("qcTaskBar").style.width=pct+"%";
+      document.getElementById("qcTaskFile").textContent=pg.current_filename?("当前: "+pg.current_filename):"";
+      var countTxt="";
+      if(pg.total_files>0)countTxt=pg.current_file+"/"+pg.total_files+" 文件";
+      if(pg.total_candidates>0)countTxt+=(countTxt?" | ":"")+(pg.processed_kps||0)+"/"+pg.total_candidates+" 条";
+      document.getElementById("qcTaskCount").textContent=countTxt;
+      document.getElementById("qcTaskMsg").textContent=pg.message||"";
+      if(!r.running){
+        clearInterval(_qcPollTimer);_qcPollTimer=null;
+        var p=document.getElementById("qcTaskProgress");
+        if(r.error){
+          p.className="task-progress task-err";
+          document.getElementById("qcTaskTitle").textContent="质检补跑出错";
+          document.getElementById("qcTaskMsg").textContent=r.error;
+        }else{
+          p.className="task-progress task-done";
+          document.getElementById("qcTaskBar").style.width="100%";
+          var res=r.result||{};
+          document.getElementById("qcTaskTitle").textContent="质检补跑完成";
+          var msg="已补跑 "+(res.processed||0)+" 条";
+          if(res.file_count!==undefined)msg+=" ("+res.file_count+" 个文件)";
+          if(res.orphan_count)msg+=" + "+res.orphan_count+" 条孤儿";
+          var errs=res.errors||[];
+          if(errs.length)msg+="，跳过 "+errs.length+" 个分组";
+          var sa=res.summary_after||{};
+          if(sa.total!==undefined)msg+="；剩余待补跑 "+sa.total+" 条";
+          // v2.3.0-hotfix: 展示就绪度联动结果
+          var rp=res.readiness_promote||{};
+          if(rp.promoted_to_quotable!==undefined){
+            msg+="；就绪度 draft→quotable "+rp.promoted_to_quotable+" 条";
+          }
+          document.getElementById("qcTaskMsg").textContent=msg;
+        }
+        // 刷新仪表盘看新数字
+        loadDashboard();
+      }
+    }).catch(function(){});
+  },2000);
+}
+
+function qcCheckRunningTask(){
+  apiGet("/api/tools/qc_rerun/progress").then(function(r){
+    if(!r)return;
+    // 任务还在跑 → 恢复 UI 和轮询
+    if(r.running){
+      qcShowTaskProgress("质检补跑进行中");
+      qcStartPolling();
+      return;
+    }
+    // 任务已结束但结果面板还没关过 → 展示完成态快照（直到用户手动关或开下一轮）
+    // 这里只在有 result/error 且面板当前不可见时简单复用一次终态渲染
+    var panel=document.getElementById("qcTaskProgress");
+    if(panel && panel.style.display!=="none") return;
+    // 不强制把历史结果弹回来，避免刷新后一直看到上次完成态；需要时用户自己开
+  }).catch(function(){});
 }
 
 function showReextractPanel(){

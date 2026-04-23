@@ -150,6 +150,42 @@ def _task_update_progress(data):
         for k, v in data.items():
             if k in _task["progress"]:
                 _task["progress"][k] = v
+
+# ================================================================
+# v2.3.0-hotfix: 质检补跑独立任务槽（可与 _task 并发）
+# ----------------------------------------------------------------
+# 设计动机：
+#   - _task 是全局单例锁(同时只能跑一个长任务)，用于预处理/提取/重提取/批量重跑
+#     /体检/端到端测试 这几条互斥的管线
+#   - 质检补跑只改 qa_score/qa_flags/qa_source 几个字段，写面窄，和上面那些
+#     任务实际上数据不冲突，按"并发"设计
+#   - 给它单开 _qc_task，和 _task 物理隔离；两次质检补跑本身仍互斥(没意义并发)
+#   - SQLite 并发写极少数情况下可能出 "database is locked"，需要时在核心加 retry
+# ================================================================
+_qc_task_lock = threading.Lock()
+_qc_task = {
+    "running": False,
+    "started_at": None,
+    "progress": {
+        "total_files": 0,        # 候选文件分组总数（orphan 不算）
+        "current_file": 0,       # 已处理的文件分组数
+        "current_filename": "",  # 当前正在跑的文件名
+        "total_candidates": 0,   # 候选知识点总数
+        "processed_kps": 0,      # 已补跑完成的知识点数
+        "current_step": "",      # 高层步骤描述
+        "message": ""            # 最新提示消息
+    },
+    "result": None,
+    "error": None
+}
+
+def _qc_task_update_progress(data):
+    """供 _qc_rerun_core 主循环回调更新进度"""
+    with _qc_task_lock:
+        for k, v in data.items():
+            if k in _qc_task["progress"]:
+                _qc_task["progress"][k] = v
+
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
     if _p.exists():
@@ -1017,12 +1053,14 @@ def dashboard():
         data["by_readiness"] = rd_map
 
         # 质检分数分布(CAST为整数避免4.0 vs "4"不匹配)
+        # v2.3.0-hotfix: 把 qa_score=0.0 归入 unscored，和 get_qc_rerun_summary 的
+        #   "待补跑=NULL 或 0.0" 口径对齐。否则会出现"未质检:0 但待补跑:2043"的打架。
         c.execute("""SELECT CAST(qa_score AS INTEGER) as qs, COUNT(*) FROM knowledge_points
-                     WHERE qa_score IS NOT NULL GROUP BY qs ORDER BY qs""")
+                     WHERE qa_score IS NOT NULL AND qa_score > 0 GROUP BY qs ORDER BY qs""")
         qa_dist = {}
         for row in c.fetchall():
             qa_dist[str(row[0])] = row[1]
-        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL")
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL OR qa_score = 0.0")
         qa_dist["unscored"] = c.fetchone()[0]
         data["qa_distribution"] = qa_dist
 
@@ -1362,17 +1400,26 @@ def _load_source_content(sf):
                 continue
     return ""
 
-def _qc_rerun_core():
+def _qc_rerun_core(progress_cb=None):
     """F061 核心：用 Extractor._quality_check 三级降级链补跑
     候选来自 db.get_qc_rerun_candidates()（qa_score IS NULL 或 qa_flags 含"格式异常"）
     按源文件分组逐个处理（_quality_check 需要 source_content 做规则兜底反幻觉）
+
+    v2.3.0-hotfix: 新增 progress_cb 回调(接收 dict)，供异步化后主循环上报进度
+                   不传则保持原同步语义
     """
+    def _report(d):
+        if progress_cb:
+            try: progress_cb(d)
+            except: pass
+
     try:
         candidates = db.get_qc_rerun_candidates()
     except Exception as e:
         traceback.print_exc()
         return {"success": False, "error": "获取候选失败: " + str(e)}
     if not candidates:
+        _report({"current_step": "完成", "message": "无待补跑知识点"})
         return {"success": True, "total": 0, "processed": 0,
                 "file_count": 0, "errors": [], "message": "无待补跑知识点"}
     # 按源文件分组
@@ -1384,12 +1431,24 @@ def _qc_rerun_core():
             orphans.append(kp)
         else:
             by_file.setdefault(fid, []).append(kp)
+
+    _report({
+        "total_candidates": len(candidates),
+        "total_files": len(by_file),
+        "current_file": 0,
+        "processed_kps": 0,
+        "current_step": "初始化 Extractor",
+        "message": "共 %d 条候选，分布在 %d 个文件 + %d 条孤儿" % (
+            len(candidates), len(by_file), len(orphans))
+    })
+
     # 实例化 Extractor
     try:
         from scripts.extractor import Extractor
         ext = Extractor()
     except Exception as ex:
         traceback.print_exc()
+        _report({"current_step": "出错", "message": "Extractor 初始化失败"})
         return {"success": False, "error": "Extractor 初始化失败: " + str(ex)}
     total_processed = 0
     errors = []
@@ -1431,20 +1490,39 @@ def _qc_rerun_core():
             # 历史补跑场景无预分析上下文,content_summary 传空串
             filename = ((sf.get("renamed_filename") or sf.get("original_filename")
                          or ("file_%d" % fid)) if sf else ("file_%d" % fid))
+            _report({
+                "current_filename": filename,
+                "current_step": "质检补跑中",
+                "message": "[%d/%d] %s (%d 条)" % (
+                    processed_file_count + 1, len(by_file), filename, len(kps))
+            })
             ext._quality_check(filename, "", kps_list, kps_info, source_content=content)
             total_processed += len(kps)
             processed_file_count += 1
+            _report({
+                "current_file": processed_file_count,
+                "processed_kps": total_processed
+            })
         except Exception as ex:
             traceback.print_exc()
             errors.append("文件#%d: %s" % (fid, str(ex)))
+            # 即便出错也推进计数，免得进度条卡住
+            processed_file_count += 1
+            _report({"current_file": processed_file_count})
 
     # 孤儿（source_file_id 为空，通常是经验速记）单独处理
     if orphans:
         try:
+            _report({
+                "current_filename": "experience_notes",
+                "current_step": "处理孤儿条目",
+                "message": "孤儿条目 %d 条（经验速记）" % len(orphans)
+            })
             kps_list, kps_info = _build_kps_and_info(orphans)
             # v2.3.0-part3.1 (hotfix): 同上,补齐 filename/content_summary
             ext._quality_check("experience_notes", "", kps_list, kps_info, source_content="")
             total_processed += len(orphans)
+            _report({"processed_kps": total_processed})
         except Exception as ex:
             traceback.print_exc()
             errors.append("孤儿条目(无源文件): %s" % str(ex))
@@ -1454,6 +1532,23 @@ def _qc_rerun_core():
         summary_after = db.get_qc_rerun_summary()
     except:
         pass
+
+    # v2.3.0-hotfix: 补跑尾阶段顺手跑一次就绪度联动（qa>=4 且 draft → quotable）
+    # 之前单独留着 draft + qa>=4 的条目没意义；跑完补跑正好是联动最佳时机
+    readiness_promote = {}
+    try:
+        readiness_promote = db.promote_readiness_by_qa_score()
+    except Exception as _rp_e:
+        traceback.print_exc()
+        readiness_promote = {"error": str(_rp_e)}
+
+    _report({
+        "current_step": "完成",
+        "message": "已补跑 %d 条，跳过 %d 个分组，就绪度升级 %d 条" % (
+            total_processed, len(errors),
+            readiness_promote.get("promoted_to_quotable", 0) if isinstance(readiness_promote, dict) else 0
+        )
+    })
     return {
         "success": True,
         "total": len(candidates),
@@ -1461,7 +1556,8 @@ def _qc_rerun_core():
         "file_count": processed_file_count,
         "orphan_count": len(orphans),
         "errors": errors,
-        "summary_after": summary_after
+        "summary_after": summary_after,
+        "readiness_promote": readiness_promote
     }
 
 @app.route("/api/tools/qc_rerun/summary", methods=["GET"])
@@ -1476,15 +1572,91 @@ def qc_rerun_summary_api():
 
 @app.route("/api/tools/qc_rerun", methods=["POST"])
 def qc_rerun_api():
-    """F061 执行：走 F058 三级降级链补跑质检"""
+    """F061 执行：走 F058 三级降级链补跑质检
+    v2.3.0-hotfix: 改异步执行（独立 _qc_task 槽，可与 _task 并发）
+                   立即返回 202，前端轮询 /api/tools/qc_rerun/progress
+    """
+    # 抢独立的质检补跑锁
+    with _qc_task_lock:
+        if _qc_task["running"]:
+            return jsonify({
+                "error": "已有质检补跑任务在执行，请等待完成或刷新查看进度",
+                "running": True
+            }), 409
+        _qc_task["running"] = True
+        _qc_task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _qc_task["progress"] = {
+            "total_files": 0, "current_file": 0, "current_filename": "",
+            "total_candidates": 0, "processed_kps": 0,
+            "current_step": "启动中", "message": ""
+        }
+        _qc_task["result"] = None
+        _qc_task["error"] = None
+
+    def _run():
+        try:
+            result = _qc_rerun_core(progress_cb=_qc_task_update_progress)
+            with _qc_task_lock:
+                if not result.get("success"):
+                    _qc_task["error"] = result.get("error", "补跑失败")
+                    _qc_task["progress"]["current_step"] = "出错"
+                    _qc_task["progress"]["message"] = _qc_task["error"]
+                else:
+                    _qc_task["result"] = result
+        except Exception as e:
+            traceback.print_exc()
+            with _qc_task_lock:
+                _qc_task["error"] = str(e)
+                _qc_task["progress"]["current_step"] = "出错"
+                _qc_task["progress"]["message"] = str(e)
+        finally:
+            with _qc_task_lock:
+                _qc_task["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({
+        "success": True,
+        "async": True,
+        "message": "质检补跑任务已启动，请在进度面板查看"
+    }), 202
+
+@app.route("/api/tools/qc_rerun/progress", methods=["GET"])
+def qc_rerun_progress_api():
+    """v2.3.0-hotfix: 质检补跑任务进度（独立 _qc_task 槽，不走 /api/tasks/progress）"""
+    with _qc_task_lock:
+        return jsonify({
+            "running": _qc_task["running"],
+            "started_at": _qc_task["started_at"],
+            "progress": dict(_qc_task["progress"]),
+            "result": _qc_task["result"],
+            "error": _qc_task["error"]
+        })
+
+# ================================================================
+# v2.3.0-hotfix: 就绪度联动（原 v2.3.1 单开批量按钮需求）
+# ----------------------------------------------------------------
+# 规则：qa_score>=4 AND readiness='draft' → 'quotable' （只升不降）
+# - 质检补跑完成后会自动触发一次（见 _qc_rerun_core 尾部）
+# - 也可以用下面两个端点独立触发（preview 先看要升多少，promote 真升）
+# ================================================================
+@app.route("/api/tools/readiness_promote/preview", methods=["GET"])
+def readiness_promote_preview_api():
+    """预览：如果现在跑联动，会升多少条"""
     try:
-        result = _qc_rerun_core()
-        if not result.get("success"):
-            return jsonify(result), 500
-        return jsonify(result)
+        return jsonify(db.get_readiness_promote_preview())
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "will_promote": 0}), 500
+
+@app.route("/api/tools/readiness_promote", methods=["POST"])
+def readiness_promote_api():
+    """执行：按规则批量升 draft→quotable。操作快(单 UPDATE)，直接同步。"""
+    try:
+        result = db.promote_readiness_by_qa_score()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # ================================================================
 # 旧 /api/tools/qa-backfill 接口（v2.2.2 F054）

@@ -121,6 +121,10 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # v2.3.0-hotfix: 并发写兜底。WAL 下并发读写通常够，但两个长任务
+        # 同时写 knowledge_points 极少数情况下还是会撞 "database is locked"。
+        # busy_timeout 让 SQLite 内部等锁 10 秒再放弃，比应用层 retry 干净。
+        conn.execute("PRAGMA busy_timeout=10000")
         return conn
 
     # ================================================================
@@ -851,8 +855,14 @@ class DatabaseManager:
         统计口径：
           - 只统计已确认知识点（pending/ignored 不计入）
           - 同时扫描 final_category_tags 和 suggested_category_tags（final 优先，为空时回退 suggested）
-          - 用 LIKE '%"CODE"%' 避免子串误匹配
+          - 用 LIKE '%"NAME"%' 避免子串误匹配
         返回 [{tag_code, tag_name, count}] 按 count 降序。
+
+        v2.3.0-hotfix2: 修复存储/查询口径不一致
+          - extractor._sanitize_tags 存入 DB 的是 **tag_name**(中文名)，
+            JSON 形如 ["业务领域","政策解读"]
+          - 旧版用 tag_code 做 LIKE 永远查不到，导致所有 count=0 → 仪表盘"N 个在用"全是谎言
+          - 现在改用 tag_name 匹配
         """
         conn = self.get_connection(); c = conn.cursor()
         # 1. 从 tag_definitions 取该组的所有一层标签
@@ -862,7 +872,8 @@ class DatabaseManager:
         tags = [(r["tag_code"], r["tag_name"]) for r in c.fetchall()]
         result = []
         for tag_code, tag_name in tags:
-            pattern = f'%"{tag_code}"%'
+            # v2.3.0-hotfix2: 用 tag_name 做 LIKE 匹配，和存储口径对齐
+            pattern = f'%"{tag_name}"%'
             c.execute("""SELECT COUNT(*) AS cnt FROM knowledge_points
                          WHERE review_status='confirmed'
                            AND (
@@ -875,7 +886,13 @@ class DatabaseManager:
                              )
                            )""", (pattern, pattern))
             cnt = c.fetchone()["cnt"]
-            result.append({"tag_code": tag_code, "tag_name": tag_name, "count": cnt})
+            # v2.3.0-hotfix: 只返回确实有知识点在使用的标签
+            # 旧版会把所有 active 标签都返回（含 count=0），导致仪表盘卡片:
+            #   1) "N 个标签在使用中" 数字虚高（实际是 group 定义数而非使用数）
+            #   2) Top5 区块出现空占位行，展开后也都是 0 的死行
+            # 现在口径：有使用才进结果。
+            if cnt > 0:
+                result.append({"tag_code": tag_code, "tag_name": tag_name, "count": cnt})
         conn.close()
         # 按 count 降序返回（便于前端直接渲染排序后的卡片）
         result.sort(key=lambda x: x["count"], reverse=True)
@@ -1513,6 +1530,76 @@ class DatabaseManager:
             "total": r[0] or 0,
             "unscored": r[1] or 0,
             "format_err": r[2] or 0
+        }
+
+    # ================================================================
+    # v2.3.0-hotfix: 就绪度与质检分数联动（原 v2.3.1 单开批量按钮需求）
+    # ----------------------------------------------------------------
+    # 规则（保守、只升不降）:
+    #   qa_score >= 4 AND content_readiness = 'draft'  →  'quotable'
+    #
+    # 不做的事:
+    #   - NOT ('quotable' → 'premium')：premium 是 AI 提取时按"内容价值"判的
+    #     editorial 轴，与 qa_score 的"提取准确度"轴正交；强行联动会把两轴混淆
+    #   - NOT 降级：用户手动设的 premium 一律保留，哪怕新分数低
+    #
+    # 要放宽/收紧规则，改下方的 SQL WHERE / SET 即可。
+    # ================================================================
+    def promote_readiness_by_qa_score(self):
+        """按质检分数批量提升就绪度。只跑 review_status='confirmed' 的已入库条目。
+        返回 dict: {promoted_to_quotable: N, skipped_reason_counts: {...}, dry_run: False}
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        # 先算一下"在规则命中范围内、但会被跳过"的分类计数，用于透明化
+        c.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed'
+              AND qa_score >= 4
+              AND content_readiness='draft'
+        """)
+        will_promote = c.fetchone()[0] or 0
+
+        # 实际升级
+        c.execute("""
+            UPDATE knowledge_points
+               SET content_readiness='quotable'
+             WHERE review_status='confirmed'
+               AND qa_score >= 4
+               AND content_readiness='draft'
+        """)
+        promoted = c.rowcount if c.rowcount is not None else will_promote
+        conn.commit()
+        conn.close()
+        return {
+            "promoted_to_quotable": int(promoted),
+            "rule": "qa_score>=4 AND readiness='draft' → 'quotable'",
+            "notes": [
+                "premium 条目不受影响（editorial 轴与 qa 轴正交）",
+                "不降级（用户手动设的 premium 一律保留）"
+            ]
+        }
+
+    def get_readiness_promote_preview(self):
+        """就绪度联动的 dry-run 预览，给前端按钮在点之前弹个确认框用。"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT COUNT(*) FROM knowledge_points
+            WHERE review_status='confirmed'
+              AND qa_score >= 4
+              AND content_readiness='draft'
+        """)
+        will_promote = c.fetchone()[0] or 0
+        # 顺带给点上下文数字
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND content_readiness='draft'")
+        total_draft = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND qa_score IS NULL")
+        draft_unscored = c.fetchone()[0] or 0
+        conn.close()
+        return {
+            "will_promote": int(will_promote),
+            "total_draft": int(total_draft),
+            "unscored_confirmed": int(draft_unscored),
+            "rule": "qa_score>=4 AND readiness='draft' → 'quotable'",
         }
 
     # ================================================================
