@@ -1,7 +1,13 @@
 """
 duplicate_checker.py - 重复知识点检测模块
 路径：scripts/duplicate_checker.py
-版本：v2.3.0-part1 - 新增 scan_recent 方法（对话1/2 交付）
+版本：v2.3.0-part3.8 - 删除 main 冗余 migrate import（立规则 52 条）
+
+v2.3.0-part3.8 变更：
+  - 删除 main 内 migrate_v211_dup import 整段（5 行）
+    根因：api_server.py 启动 Step 2 已统一调过此迁移，duplicate_checker
+    作为 CLI 独立运行时走 DatabaseManager 初始化亦已覆盖，再调是重复
+  - 对应 E2E 诊断包 v2.3.0-part3.7 报告的 duplicate_checker.py:512 warning 消失
 
 v2.3.0-part1 变更：
   - 新增 scan_recent(days=7) 方法：扫最近 N 天 created_at 的知识点 → 转调 scan_incremental
@@ -500,16 +506,7 @@ def main():
     print(f"  检测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
-    # 自动执行迁移
-    try:
-        from scripts.migrate_v211_dup import migrate
-        migrate()
-    except ImportError:
-        try:
-            from migrate_v211_dup import migrate
-            migrate()
-        except ImportError:
-            pass
+    # 自动执行迁移（由 api_server.py 启动兜底统一处理，此处不再重复调用）
 
     try:
         from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded

@@ -1,7 +1,22 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3.5 - 新增 E2E 诊断包导出路由
+版本：v2.3.0-part3.8 - 6 批量路由 errors 收集改造(E2 方案)
+
+v2.3.0-part3.8 变更(hotfix,2026-04-24):
+    F062 白名单大扩展配套——6 批量路由改代码收集错误原因(立规则 A 禁止裸 except+pass 模式)
+      - batch-confirm (行 ~541) 改为 except Exception as e: errors.append({id, error})
+      - batch-ignore (行 ~558) 同上
+      - batch-delete (行 ~570) 同上
+      - batch-renew-freshness (行 ~620) 同上
+      - batch-mark-outdated (行 ~646) 同上
+      - batch-restore-to-pending (行 ~970) 同上
+    返回 JSON 新增 2 字段:
+      - errors: [{"id": ..., "error": ...}] 失败条目列表(error 限 200 字符)
+      - failed_count: len(errors)
+    保留兼容:n (confirmed/ignored/deleted/renewed/marked/restored) 仍为成功计数
+    前端:review.html v2.3.0-part3.8 同步改造 6 个批量按钮的 fetch 回调,
+          失败列表通过新增 #batchResultModal 展示(复用既有 batch_resolve_duplicates 模式)
 
 v2.3.0-part3.5 变更(新功能,2026-04-24):
     Feature: F062 配套——E2E 端到端测试诊断包导出
@@ -533,13 +548,15 @@ def batch_confirm():
     try:
         ids = (request.get_json() or {}).get("ids",[])
         n = 0
+        errors = []
         for kid in ids:
             try:
                 kp = db.get_knowledge_point(kid)
                 if kp and kp["review_status"]=="pending":
                     db.confirm_knowledge_point(kid, kp.get("suggested_category_id")); n+=1
-            except: pass
-        return jsonify({"success":True,"confirmed":n})
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"confirmed":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # v2.0.0 新增
@@ -548,6 +565,7 @@ def batch_ignore():
     try:
         ids = (request.get_json() or {}).get("ids",[])
         n = 0
+        errors = []
         for kid in ids:
             try:
                 kp = db.get_knowledge_point(kid)
@@ -555,8 +573,9 @@ def batch_ignore():
                     if kp["review_status"] == "confirmed":
                         db.add_edit_history(kid, {"review_status":{"old":"confirmed","new":"ignored"}}, "批量移除")
                     db.ignore_knowledge_point(kid, "批量忽略"); n+=1
-            except: pass
-        return jsonify({"success":True,"ignored":n})
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"ignored":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # v2.0.0 新增
@@ -565,10 +584,13 @@ def batch_delete():
     try:
         ids = (request.get_json() or {}).get("ids",[])
         n = 0
+        errors = []
         for kid in ids:
-            try: db.delete_knowledge_point(kid); n+=1
-            except: pass
-        return jsonify({"success":True,"deleted":n})
+            try:
+                db.delete_knowledge_point(kid); n+=1
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"deleted":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 @app.route("/api/knowledge-points/<int:kid>/restore-to-pending", methods=["POST"])
@@ -613,12 +635,14 @@ def batch_renew_freshness():
         ids = d.get("ids", [])
         note = d.get("freshness_note", "")
         n = 0
+        errors = []
         for kid in ids:
             try:
                 db.renew_freshness(kid, note)
                 n += 1
-            except: pass
-        return jsonify({"success":True,"renewed":n})
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"renewed":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 @app.route("/api/knowledge-points/<int:kid>/mark-outdated", methods=["POST"])
@@ -639,12 +663,14 @@ def batch_mark_outdated():
         ids = d.get("ids", [])
         reason = d.get("reason", "")
         n = 0
+        errors = []
         for kid in ids:
             try:
                 db.mark_knowledge_outdated(kid, reason)
                 n += 1
-            except: pass
-        return jsonify({"success":True,"marked":n})
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"marked":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # ================================================================
@@ -961,14 +987,16 @@ def batch_restore_to_pending():
         d = request.get_json() or {}
         ids = d.get("ids", [])
         n = 0
+        errors = []
         for kid in ids:
             try:
                 kp = db.get_knowledge_point(kid)
                 if kp and kp["review_status"] == "ignored":
                     db.restore_to_pending(kid)
                     n += 1
-            except: pass
-        return jsonify({"success":True,"restored":n})
+            except Exception as e:
+                errors.append({"id": kid, "error": str(e)[:200]})
+        return jsonify({"success":True,"restored":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
 # ================================================================

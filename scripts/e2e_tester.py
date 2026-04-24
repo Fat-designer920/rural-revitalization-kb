@@ -1,7 +1,25 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 路径：scripts/e2e_tester.py
-版本：v2.3.0-part3.6 - hotfix: full_report 补写 dim_weights 字段
+版本：v2.3.0-part3.8 - hotfix: 白名单大扩展 + 文件覆盖范围常量
+
+变更（v2.3.0-part3.8,2026-04-24）:
+  - DIM4_KNOWN_FALSE_POSITIVES: 67 条 → 75 条
+      新增 8 条跨文件真·合理兜底:
+      · api_server.py:830    - get_knowledge_point 的 LEFT JOIN 合成字段
+      · extractor.py:595/598/1744 - AI 返回 JSON dict(非 DB kp 对象)
+      · health_checker.py:805/832/1231/1232 - 新老字段兼容 + AI 返回 excerpt
+  - DIM6_KNOWN_FALSE_POSITIVES: 11 条 → 约 75 条
+      · db_manager.py 漂移对齐(part3.4 → 真实行号):
+          694/695 → 714  /  955 → 974  /  1339/1340 → 1359  /
+          1419/1420 → 1439  /  1841/1842 → 1861  /  2461/2462 → 2488
+      · part3.7 规则改用 body[0].lineno,旧"except 行+body 行双覆盖"简化为单行
+      · 新增 5 文件 silent_except warning + info 条目约 64 条
+  - 新增 WHITELIST_COVERAGE 常量(文件维度覆盖范围集合):
+      供 e2e_diagnosis_exporter.py 第三段按文件分类展示"白名单覆盖内 vs 覆盖外"
+      未来新文件引入 E2E 扫描时,诊断包能一眼看出"该文件未在白名单覆盖范围内"
+  - 本次不动:static_analyzer 规则 / 任何扫描逻辑 / 其他函数签名
+  - 立规则第 38 条补注再次应验:白名单扩覆盖属"规则前提与业务现实对齐",合规
 
 变更（v2.3.0-part3.6,2026-04-24）:
   - full_report 字典新增 "dim_weights": dict(DIM_WEIGHTS_DEEP/QUICK) 字段
@@ -13,30 +31,14 @@ e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 
 变更（v2.3.0-part3.4,2026-04-23）:
   - _write_issues(issues) 签名扩为 _write_issues(issues, report_id)
-  - _write_issues 内部调用 db.upsert_e2e_issue 对齐真实签名:
-      真实签名: upsert_e2e_issue(report_id, dim_code, endpoint, severity,
-                                  signature, payload=None)
-      旧错误调用: 用了 rule_id= / detail= 两个签名里不存在的关键字参数,且没
-                  传 report_id(必填)。每条 upsert 抛 TypeError 被 _safe_log_event
-                  静默接住,导致 issue 报告显示"有 185 个 issue"但 e2e_issues
-                  表实际 0 条落库,前端"Issue 四态列表 共 0 条"。
-  - _run_pipeline 调用顺序调整:
-      旧: 六维度 → _write_issues → 汇总 → _save_report
-      新: 六维度 → 汇总 → _save_report(拿 report_id) → _write_issues(report_id)
-      说明: _save_report 幂等不依赖 issue 落库结果;顺序调整后拿到 report_id
-           才能传给 _write_issues。upserted_count 在报告落库后仅记入事件日志,
-           不再挂进 full_report_json 顶层(本来也没消费方)。
+  - _write_issues 内部调用 db.upsert_e2e_issue 对齐真实签名
+  - _run_pipeline 调用顺序调整:六维度 → 汇总 → _save_report → _write_issues
   - 立规则第 9 条再次应验:跨模块调用前必 grep 真实签名。
 
 变更（v2.3.0-part3.3,2026-04-23）:
   - DIM4_KNOWN_FALSE_POSITIVES: 35 条 → 67 条,行号对齐 db_manager.py v2.3.0-part3.2
-  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条(每个 pass 点位覆盖 except 行 + body 行,兼容
-    static_analyzer 取 handler.lineno 或 body[0].lineno 两种实现)
+  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条(每个 pass 点位覆盖 except 行 + body 行)
   - WHITELIST_REASONS: 同步更新为 78 条(67+11)
-  - 本文件其他逻辑完全不变
-  - 根因:part3.2 新增 promote_readiness_by_qa_score / get_readiness_promote_preview 导致
-    db_manager.py 下游行号全部漂移,旧白名单失效,DIM4/DIM6 issue 从个位数暴涨(报告截图
-    维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92)。立规则 §5.8 已预告此坑。
 
 定位：
   F062 六维度扫描引擎,消费对话 1 基础层（static_analyzer / db_manager / prompt_templates）,
@@ -258,30 +260,159 @@ DIM4_KNOWN_FALSE_POSITIVES = {
     "4_field_contract|scripts/db_manager.py:2446|field_unknown",  # status
     "4_field_contract|scripts/db_manager.py:2447|field_unknown",  # occurrence_count
     "4_field_contract|scripts/db_manager.py:2448|field_unknown",  # first_seen_at
+    # ===== part3.8 跨文件扩展 =====
+    # api_server.py - get_knowledge_point 已通过 LEFT JOIN source_files 把
+    # renamed_filename/original_filename 带进 kp dict,规则前提不知此事
+    "4_field_contract|scripts/api_server.py:830|field_unknown",
+    # extractor.py - kp 此处是 AI 返回的 JSON dict,不是 DB kp 对象
+    # (_sanitize_tags 里的 suggested_readiness/suggested_authority/suggested_category_code)
+    "4_field_contract|scripts/extractor.py:595|field_unknown",
+    "4_field_contract|scripts/extractor.py:598|field_unknown",
+    "4_field_contract|scripts/extractor.py:1744|field_unknown",
+    # health_checker.py - source_file_name/source_file 新老字段兼容,
+    # excerpt 来自 AI 返回结构
+    "4_field_contract|scripts/health_checker.py:805|field_unknown",
+    "4_field_contract|scripts/health_checker.py:832|field_unknown",
+    "4_field_contract|scripts/health_checker.py:1231|field_unknown",
+    "4_field_contract|scripts/health_checker.py:1232|field_unknown",
 }
 
-# dim6 代码异味 已知合理项(11 个 unique signature，覆盖 except 行 + body 行)
-# 全部 silent_except 模式,均为非关键兜底场景
-# 为兼容 static_analyzer 可能取 handler.lineno 或 body[0].lineno 两种实现，
-# 本白名单同时覆盖两行 signature，宁多不少
+# dim6 代码异味 已知合理项
+# part3.8 升级说明:
+#   · static_analyzer 在 part3.7 统一改用 body[0].lineno 作为 signature 锚点,
+#     以前 "except 行 + body 行双覆盖" 简化为仅 body 行(pass / print 行)
+#   · 白名单从 db_manager 单文件扩展到 7 个文件,覆盖批量路由外的所有合理兜底
+#   · 6 处批量路由 (api_server.py 541/558/570/620/646/970) 不进白名单,
+#     走代码改造路径(except Exception as e: errors.append),E2 方案
 DIM6_KNOWN_FALSE_POSITIVES = {
-    # qa_score int 转换失败,筛选器入参容忍（except ValueError: pass）
-    "6_code_smell|scripts/db_manager.py:694|smell_silent_except",
-    "6_code_smell|scripts/db_manager.py:695|smell_silent_except",
-    # edited_fields JSON 解析失败,向下兼容老数据（except: pass 同一行）
-    "6_code_smell|scripts/db_manager.py:955|smell_silent_except",
-    # duplicate_groups 表可能不存在,向下兼容老库（except: + pass 分两行）
-    "6_code_smell|scripts/db_manager.py:1339|smell_silent_except",
-    "6_code_smell|scripts/db_manager.py:1340|smell_silent_except",
+    # -----------------------------------------------------------------
+    # db_manager.py(漂移对齐 v2.3.0-part3.4 真实行号)
+    # -----------------------------------------------------------------
+    # qa_score int 转换失败,筛选器入参容忍
+    "6_code_smell|scripts/db_manager.py:714|smell_silent_except",
+    # edited_fields JSON 解析失败,向下兼容老数据
+    "6_code_smell|scripts/db_manager.py:974|smell_silent_except",
+    # duplicate_groups 表可能不存在,向下兼容老库
+    "6_code_smell|scripts/db_manager.py:1359|smell_silent_except",
     # annotations 统计失败兜底,仪表盘非关键聚合
-    "6_code_smell|scripts/db_manager.py:1419|smell_silent_except",
-    "6_code_smell|scripts/db_manager.py:1420|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:1439|smell_silent_except",
     # print 失败兜底(Windows CMD 编码异常),日志非关键
-    "6_code_smell|scripts/db_manager.py:1841|smell_silent_except",
-    "6_code_smell|scripts/db_manager.py:1842|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:1861|smell_silent_except",
     # 时间解析失败兜底,偶发升级非关键逻辑
-    "6_code_smell|scripts/db_manager.py:2461|smell_silent_except",
-    "6_code_smell|scripts/db_manager.py:2462|smell_silent_except",
+    "6_code_smell|scripts/db_manager.py:2488|smell_silent_except",
+    # -----------------------------------------------------------------
+    # api_server.py 非批量 silent_except (22 条 warning)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/api_server.py:312|smell_silent_except",   # signature introspect 失败
+    "6_code_smell|scripts/api_server.py:693|smell_silent_except",   # ai_extracted_content JSON 解析
+    "6_code_smell|scripts/api_server.py:1089|smell_silent_except",  # tags JSON 解析
+    "6_code_smell|scripts/api_server.py:1275|smell_silent_except",  # config 读取兜底
+    "6_code_smell|scripts/api_server.py:1523|smell_silent_except",  # config 读取兜底
+    "6_code_smell|scripts/api_server.py:1558|smell_silent_except",  # progress_cb 回调失败
+    "6_code_smell|scripts/api_server.py:1678|smell_silent_except",  # qc_rerun_summary 失败
+    "6_code_smell|scripts/api_server.py:1737|smell_silent_except",  # log_event 失败
+    "6_code_smell|scripts/api_server.py:1954|smell_silent_except",  # config 读取兜底
+    "6_code_smell|scripts/api_server.py:2006|smell_silent_except",  # daily_cost_limit 读取兜底
+    "6_code_smell|scripts/api_server.py:2313|smell_silent_except",  # 迁移模块可选 ImportError
+    "6_code_smell|scripts/api_server.py:2485|smell_silent_except",  # JSON 非标准保留原字符串
+    "6_code_smell|scripts/api_server.py:2597|smell_silent_except",  # int 转换兜底
+    "6_code_smell|scripts/api_server.py:2741|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3024|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3126|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3179|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3320|smell_silent_except",  # full_report 解析失败
+    "6_code_smell|scripts/api_server.py:3360|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3510|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3526|smell_silent_except",  # log_event 埋点失败
+    "6_code_smell|scripts/api_server.py:3642|smell_silent_except",  # log_event 埋点失败
+    # -----------------------------------------------------------------
+    # api_server.py info 级 except_print_only (6 条)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/api_server.py:188|smell_except_print_only",   # init_tables 启动兜底 print WARN
+    "6_code_smell|scripts/api_server.py:2315|smell_except_print_only",  # 迁移失败 print WARN
+    "6_code_smell|scripts/api_server.py:2322|smell_except_print_only",  # set_model 失败 print WARN
+    "6_code_smell|scripts/api_server.py:2359|smell_except_print_only",  # 重置源文件状态 print WARN
+    "6_code_smell|scripts/api_server.py:2397|smell_except_print_only",  # 分类建议检查 print WARN
+    "6_code_smell|scripts/api_server.py:3672|smell_except_print_only",  # DB 健康检查 print WARN
+    # -----------------------------------------------------------------
+    # extractor.py silent_except (4 条 warning,冗余 10 条已在 part3.8 删除)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/extractor.py:176|smell_silent_except",   # progress_callback 失败
+    "6_code_smell|scripts/extractor.py:450|smell_silent_except",   # truncation_count 增量失败
+    "6_code_smell|scripts/extractor.py:709|smell_silent_except",   # segment_plan 保存失败
+    "6_code_smell|scripts/extractor.py:1451|smell_silent_except",  # float 转换失败
+    # -----------------------------------------------------------------
+    # extractor.py info 级 except_print_only (17 条,其中 2033/2035 在 main 内漂到 2012/2014)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/extractor.py:228|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:520|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:538|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:554|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:635|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:675|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:972|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:974|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1561|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1563|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1791|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1816|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1818|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1830|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:1832|smell_except_print_only",
+    "6_code_smell|scripts/extractor.py:2012|smell_except_print_only",  # KeyboardInterrupt 取消
+    "6_code_smell|scripts/extractor.py:2014|smell_except_print_only",  # main Exception print
+    # -----------------------------------------------------------------
+    # health_checker.py silent_except (6 条 warning)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/health_checker.py:244|smell_silent_except",   # 体检失败日志兜底
+    "6_code_smell|scripts/health_checker.py:498|smell_silent_except",   # int 转换兜底
+    "6_code_smell|scripts/health_checker.py:1201|smell_silent_except",  # 成本累计兜底
+    "6_code_smell|scripts/health_checker.py:1257|smell_silent_except",  # JSON 解析兜底
+    "6_code_smell|scripts/health_checker.py:1288|smell_silent_except",  # log_event fallback 的 fallback
+    "6_code_smell|scripts/health_checker.py:1301|smell_silent_except",  # progress emit 失败
+    # -----------------------------------------------------------------
+    # duplicate_checker.py silent_except 4 条 + client=None 1 条 + info 2 条
+    # part3.8 原 512 的 migrate ImportError 已删除;原 522 client=None 漂到 519;
+    # 原 543/545 info 漂到 540/542
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/duplicate_checker.py:183|smell_silent_except",   # JSON 解析 keywords
+    "6_code_smell|scripts/duplicate_checker.py:203|smell_silent_except",   # JSON obj 提取
+    "6_code_smell|scripts/duplicate_checker.py:258|smell_silent_except",   # 历史配对解析
+    "6_code_smell|scripts/duplicate_checker.py:466|smell_silent_except",   # ai_judgment JSON 解析
+    "6_code_smell|scripts/duplicate_checker.py:519|smell_try_except_none_import",  # client=None 降级(AI 客户端初始化失败降本地粗筛)
+    "6_code_smell|scripts/duplicate_checker.py:540|smell_except_print_only",  # KeyboardInterrupt 取消
+    "6_code_smell|scripts/duplicate_checker.py:542|smell_except_print_only",  # main Exception print
+    # -----------------------------------------------------------------
+    # preprocessor.py info 级 except_print_only (6 条)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/preprocessor.py:44|smell_except_print_only",   # 清理旧文件失败
+    "6_code_smell|scripts/preprocessor.py:52|smell_except_print_only",   # 清理旧缓存失败
+    "6_code_smell|scripts/preprocessor.py:95|smell_except_print_only",   # 清理 source_files 失败
+    "6_code_smell|scripts/preprocessor.py:117|smell_except_print_only",  # 清理旧记录失败
+    "6_code_smell|scripts/preprocessor.py:127|smell_except_print_only",  # 清理旧记录失败
+    "6_code_smell|scripts/preprocessor.py:202|smell_except_print_only",  # main Exception print
+    # -----------------------------------------------------------------
+    # backup_manager.py info 级 except_print_only (5 条)
+    # -----------------------------------------------------------------
+    "6_code_smell|scripts/backup_manager.py:302|smell_except_print_only",  # 清理策略异常
+    "6_code_smell|scripts/backup_manager.py:327|smell_except_print_only",  # cleanup_by_op_name 失败
+    "6_code_smell|scripts/backup_manager.py:369|smell_except_print_only",  # enforce_size_limit 失败
+    "6_code_smell|scripts/backup_manager.py:399|smell_except_print_only",  # _log_backup_event 失败
+    "6_code_smell|scripts/backup_manager.py:526|smell_except_print_only",  # 数字格式错误提示
+}
+
+# part3.8 新增:白名单覆盖范围(文件维度)
+# 用途:供 e2e_diagnosis_exporter.py 第三段按文件分类展示
+# "✅ 白名单覆盖内但漂移 X 条" vs "⚪ 未覆盖范围(需要独立治理)"
+# 维护纪律:新文件首次进入 E2E 扫描时,**先加入本集合**再逐条判断白名单条目
+WHITELIST_COVERAGE = {
+    "scripts/db_manager.py",
+    "scripts/api_server.py",
+    "scripts/extractor.py",
+    "scripts/health_checker.py",
+    "scripts/duplicate_checker.py",
+    "scripts/preprocessor.py",
+    "scripts/backup_manager.py",
 }
 
 # 白名单原因映射(供 issue.detail.filtered_out 回写,对话 3 前端"已知合理项"折叠用)
@@ -354,18 +485,115 @@ WHITELIST_REASONS = {
     "scripts/db_manager.py:2446": "e2e_issues 表 status 字段",
     "scripts/db_manager.py:2447": "e2e_issues 表 occurrence_count 字段",
     "scripts/db_manager.py:2448": "e2e_issues 表 first_seen_at 字段",
-    # dim6
-    "scripts/db_manager.py:694":  "qa_score int 转换失败兜底,筛选器入参容忍",
-    "scripts/db_manager.py:695":  "qa_score int 转换失败兜底(pass 行)",
-    "scripts/db_manager.py:955":  "edited_fields JSON 解析失败兜底,向下兼容老数据",
-    "scripts/db_manager.py:1339": "duplicate_groups 表可能不存在,向下兼容老库",
-    "scripts/db_manager.py:1340": "duplicate_groups 兜底(pass 行)",
-    "scripts/db_manager.py:1419": "annotations 统计失败兜底,仪表盘非关键聚合",
-    "scripts/db_manager.py:1420": "annotations 统计兜底(pass 行)",
-    "scripts/db_manager.py:1841": "print 失败兜底(Windows CMD 编码异常),日志非关键",
-    "scripts/db_manager.py:1842": "print 失败兜底(pass 行)",
-    "scripts/db_manager.py:2461": "时间解析失败兜底,偶发升级非关键逻辑",
-    "scripts/db_manager.py:2462": "时间解析失败兜底(pass 行)",
+    # part3.8 dim4 新增(跨文件扩展)
+    "scripts/api_server.py:830":       "get_knowledge_point LEFT JOIN source_files 合成字段",
+    "scripts/extractor.py:595":        "AI 返回 JSON dict 的 suggested_readiness 字段",
+    "scripts/extractor.py:598":        "AI 返回 JSON dict 的 suggested_authority 字段",
+    "scripts/extractor.py:1744":       "AI 返回 JSON dict 的 suggested_category_code 字段",
+    "scripts/health_checker.py:805":   "source_file_name/source_file 新老字段兼容(unknown 兜底)",
+    "scripts/health_checker.py:832":   "source_file_name/source_file 新老字段兼容(unknown 兜底)",
+    "scripts/health_checker.py:1231":  "source_file_name/source_file 新老字段兼容",
+    "scripts/health_checker.py:1232":  "AI 返回 excerpt 字段",
+    # -----------------------------------------------------------------
+    # dim6 db_manager 漂移对齐 v2.3.0-part3.4(part3.8 更新)
+    # -----------------------------------------------------------------
+    "scripts/db_manager.py:714":  "qa_score int 转换失败兜底,筛选器入参容忍",
+    "scripts/db_manager.py:974":  "edited_fields JSON 解析失败,向下兼容老数据",
+    "scripts/db_manager.py:1359": "duplicate_groups 表可能不存在,向下兼容老库",
+    "scripts/db_manager.py:1439": "annotations 统计失败兜底,仪表盘非关键聚合",
+    "scripts/db_manager.py:1861": "print 失败兜底(Windows CMD 编码异常),日志非关键",
+    "scripts/db_manager.py:2488": "时间解析失败兜底,偶发升级非关键逻辑",
+    # -----------------------------------------------------------------
+    # dim6 api_server.py 非批量(22 warning + 6 info)
+    # -----------------------------------------------------------------
+    "scripts/api_server.py:312":  "_quality_check 签名 introspect 失败(C 扩展等)降级",
+    "scripts/api_server.py:693":  "ai_extracted_content JSON 解析失败,保留原字符串",
+    "scripts/api_server.py:1089": "tags JSON 解析失败兜底",
+    "scripts/api_server.py:1275": "config.json 读取失败,默认路径兜底",
+    "scripts/api_server.py:1523": "config.json 读取失败,默认路径兜底",
+    "scripts/api_server.py:1558": "progress_cb 回调失败,异步化场景非关键",
+    "scripts/api_server.py:1678": "get_qc_rerun_summary 查询失败兜底",
+    "scripts/api_server.py:1737": "log_operation_event 埋点失败,非关键",
+    "scripts/api_server.py:1954": "config.json 读取失败,默认路径兜底",
+    "scripts/api_server.py:2006": "daily_cost_limit 读取失败,默认 0",
+    "scripts/api_server.py:2313": "迁移脚本可选 ImportError 降级",
+    "scripts/api_server.py:2485": "JSON 字段非标准保留原字符串",
+    "scripts/api_server.py:2597": "int 转换失败兜底,进度显示非关键",
+    "scripts/api_server.py:2741": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3024": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3126": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3179": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3320": "full_report_json 解析失败兜底",
+    "scripts/api_server.py:3360": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3510": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3526": "log_operation_event 埋点失败",
+    "scripts/api_server.py:3642": "log_operation_event 埋点失败",
+    "scripts/api_server.py:188":  "init_tables 启动兜底失败 WARN print",
+    "scripts/api_server.py:2315": "迁移失败 WARN print",
+    "scripts/api_server.py:2322": "set_model 失败 WARN print",
+    "scripts/api_server.py:2359": "重置源文件状态失败 WARN print",
+    "scripts/api_server.py:2397": "分类建议检查失败 WARN print",
+    "scripts/api_server.py:3672": "DB 健康检查失败 WARN print",
+    # -----------------------------------------------------------------
+    # dim6 extractor.py (4 warning + 17 info)
+    # -----------------------------------------------------------------
+    "scripts/extractor.py:176":  "progress_callback 失败兜底",
+    "scripts/extractor.py:450":  "truncation_count 增量失败兜底",
+    "scripts/extractor.py:709":  "segment_plan 保存失败兜底",
+    "scripts/extractor.py:1451": "float 转换失败兜底",
+    "scripts/extractor.py:228":  "pending 文件清理失败 print",
+    "scripts/extractor.py:520":  "事件日志失败 print",
+    "scripts/extractor.py:538":  "文件归档失败 print",
+    "scripts/extractor.py:554":  "文件隔离失败 print",
+    "scripts/extractor.py:635":  "预分析出错 print",
+    "scripts/extractor.py:675":  "结构摘要失败 print",
+    "scripts/extractor.py:972":  "费用达上限跳过补漏 print",
+    "scripts/extractor.py:974":  "补漏检查失败 print",
+    "scripts/extractor.py:1561": "AI 分类建议费用上限 print",
+    "scripts/extractor.py:1563": "AI 分类建议出错 print",
+    "scripts/extractor.py:1791": "知识点入库失败 print",
+    "scripts/extractor.py:1816": "政策校验费用上限 print",
+    "scripts/extractor.py:1818": "政策校验出错 print",
+    "scripts/extractor.py:1830": "重复检测费用上限 print",
+    "scripts/extractor.py:1832": "重复检测出错 print",
+    "scripts/extractor.py:2012": "main KeyboardInterrupt 取消 print",
+    "scripts/extractor.py:2014": "main Exception print",
+    # -----------------------------------------------------------------
+    # dim6 health_checker.py (6 warning)
+    # -----------------------------------------------------------------
+    "scripts/health_checker.py:244":  "体检失败日志兜底",
+    "scripts/health_checker.py:498":  "int 转换失败兜底",
+    "scripts/health_checker.py:1201": "成本累计兜底",
+    "scripts/health_checker.py:1257": "JSON 解析兜底",
+    "scripts/health_checker.py:1288": "log_event fallback 的 fallback (print 失败)",
+    "scripts/health_checker.py:1301": "progress emit 失败",
+    # -----------------------------------------------------------------
+    # dim6 duplicate_checker.py (4 warning + client=None + 2 info)
+    # -----------------------------------------------------------------
+    "scripts/duplicate_checker.py:183": "JSON 解析 keywords 失败",
+    "scripts/duplicate_checker.py:203": "JSON obj 提取失败",
+    "scripts/duplicate_checker.py:258": "历史配对解析失败",
+    "scripts/duplicate_checker.py:466": "ai_judgment JSON 解析失败",
+    "scripts/duplicate_checker.py:519": "AI 客户端初始化失败降本地粗筛(规则前提误报)",
+    "scripts/duplicate_checker.py:540": "main KeyboardInterrupt 取消 print",
+    "scripts/duplicate_checker.py:542": "main Exception print",
+    # -----------------------------------------------------------------
+    # dim6 preprocessor.py (6 info)
+    # -----------------------------------------------------------------
+    "scripts/preprocessor.py:44":  "清理旧文件失败 print",
+    "scripts/preprocessor.py:52":  "清理旧缓存失败 print",
+    "scripts/preprocessor.py:95":  "清理 source_files 记录失败 print",
+    "scripts/preprocessor.py:117": "清理旧记录失败 print",
+    "scripts/preprocessor.py:127": "清理旧记录失败 print",
+    "scripts/preprocessor.py:202": "main Exception print",
+    # -----------------------------------------------------------------
+    # dim6 backup_manager.py (5 info)
+    # -----------------------------------------------------------------
+    "scripts/backup_manager.py:302": "清理策略异常 print (不影响主操作)",
+    "scripts/backup_manager.py:327": "cleanup_by_op_name 删除失败 print",
+    "scripts/backup_manager.py:369": "enforce_size_limit 删除失败 print",
+    "scripts/backup_manager.py:399": "_log_backup_event 失败 print",
+    "scripts/backup_manager.py:526": "数字格式错误提示 print",
 }
 
 # 成本单价(估算,对齐 health_checker)

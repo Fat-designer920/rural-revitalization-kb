@@ -1,7 +1,23 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.0-part1 - Step 8 字段口径修正（顺手修）
+版本：v2.3.0-part3.8 - 冗余迁移 import 清理（立规则 52 条首次应用）
+
+变更说明（v2.3.0-part3.8）：
+  立规则 52 条（代码审查兼做冗余清理）首次应用，删除两处迁移 import 冗余：
+  1. run_headless 内 5 个迁移 import 整段删除：
+     - 根因：api_server.py Step 2（2307-2315）已经统一调过这 5 个迁移脚本
+       （migrate_v210c / v210d_f028 / v211 / v211_dup / v223），run_headless
+       被 api_server 调用时是重复执行，产生 10 条 silent_except warning
+     - 删除前后：共减约 17 行
+  2. main 函数内双路径 fallback 简化：
+     - 根因：每块迁移都写了 scripts. 路径 + 裸路径兜底 fallback，裸路径是
+       历史遗留，当前项目 scripts/migrate_xxx.py 是标准位置
+     - 简化前后：每块 10 行 → 6 行，5 块共减 20 行
+  合计减 37 行，同时清掉 10 条 dim6 smell_silent_except issue（走删代码路径，
+  不进白名单，走冗余清理路径）。
+
+v2.3.0-part1 - Step 8 字段口径修正（顺手修）
 
 变更说明（v2.3.0-part1 对话1/2 交付）：
   顺手修 Step 8 增量重复检测字段口径 bug：
@@ -1922,23 +1938,6 @@ class Extractor:
     def run_headless(self, model_key="1"):
         """非交互式运行，供管理后台API调用。返回结果字典。"""
         self.set_model(model_key)
-        # 自动执行迁移
-        try:
-            from scripts.migrate_v210c import migrate; migrate()
-        except ImportError: pass
-        try:
-            from scripts.migrate_v210d_f028 import migrate as m2; m2()
-        except ImportError: pass
-        try:
-            from scripts.migrate_v211 import migrate as m3; m3()
-        except ImportError: pass
-        try:
-            from scripts.migrate_v211_dup import migrate as m4; m4()
-        except ImportError: pass
-        # v2.2.3 新增：schema 迁移
-        try:
-            from scripts.migrate_v223 import migrate as m5; m5()
-        except ImportError: pass
 
         files = self.get_processing_files()
         if not files:
@@ -1983,51 +1982,31 @@ def main():
             from scripts.migrate_v210c import migrate
             migrate()
         except ImportError:
-            try:
-                from migrate_v210c import migrate
-                migrate()
-            except ImportError:
-                pass  # 迁移脚本不存在，跳过
+            pass  # 迁移脚本不存在，跳过
         # v2.1.0-d F028: 政策依赖校验字段迁移
         try:
             from scripts.migrate_v210d_f028 import migrate as migrate_f028
             migrate_f028()
         except ImportError:
-            try:
-                from migrate_v210d_f028 import migrate as migrate_f028
-                migrate_f028()
-            except ImportError:
-                pass
+            pass
         # v2.1.1 F038: 举一反三字段迁移
         try:
             from scripts.migrate_v211 import migrate as migrate_v211
             migrate_v211()
         except ImportError:
-            try:
-                from migrate_v211 import migrate as migrate_v211
-                migrate_v211()
-            except ImportError:
-                pass
+            pass
         # v2.1.1 F039: 重复检测表迁移
         try:
             from scripts.migrate_v211_dup import migrate as migrate_dup
             migrate_dup()
         except ImportError:
-            try:
-                from migrate_v211_dup import migrate as migrate_dup
-                migrate_dup()
-            except ImportError:
-                pass
+            pass
         # v2.2.3 F057+F058: schema迁移
         try:
             from scripts.migrate_v223 import migrate as migrate_v223
             migrate_v223()
         except ImportError:
-            try:
-                from migrate_v223 import migrate as migrate_v223
-                migrate_v223()
-            except ImportError:
-                pass
+            pass
         Extractor().run()
     except KeyboardInterrupt:
         print(f"\n\n  已取消操作。")

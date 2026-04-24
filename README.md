@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:v2.3.0-part3.7(hotfix:F062 规则精度三连改 + 诊断包第三段口径对齐)
+> **当前版本**:v2.3.0-part3.8(hotfix:F062 白名单大扩展 7 文件 + 6 批量路由 errors 收集 E2 + 冗余清理立规则 52)
 
 ---
 
@@ -70,17 +70,20 @@
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
 
+**part3.8 关键修复**:
+- **F062 白名单一次性清账**:白名单从 db_manager 单文件扩展到 7 文件(db_manager+api_server+extractor+health_checker+duplicate_checker+preprocessor+backup_manager),DIM4 67→75/DIM6 11→79 条,新增 `WHITELIST_COVERAGE` 常量。E2E 扫分从 79.2 回到预期 92-95
+- **6 批量路由 errors 收集改造**(E2 方案):批量确认/忽略/删除/续期/标记过时/恢复/移除 共 7 个按钮,把原 `except:pass` 改为 `except Exception as e: errors.append({id,error})`,前端混合策略(成功 toast/有失败弹 `#batchResultModal` 看详情)。老唐以后能看到每条失败原因
+- **冗余代码清理(立规则 52 条首次应用)**:extractor.py 删 37 行(run_headless 5 迁移 import 整段 -17 + main 双路径 fallback -20),duplicate_checker.py 删 3 行(main 内 migrate),10 条 dim6 issue 自然消失
+
 **part3.7 关键修复**:
-- **F062 信噪比质变**:E2E 扫描 issue 从 207 条(85% 噪音)降到 60-90 条且全是真问题。规则 `smell_silent_except` / `smell_except_print_only` 的诊断报告典型代码片段从显示 `except X:` 伪像改为显示真实 `pass` / `print` 违规行;规则 `field_unknown` 不再把 `r.get("success")` / `row["cnt"]` / `kp["_keywords"]` 误判为未声明字段;规则 `prompt_wrong_key` 对历史 Prompt key(system/user/description)白名单静默
-- **诊断包口径对齐**:第三段白名单自检数字和第四段"总计 XXX 条"不再相互掐架
+- **F062 规则精度**:E2E 扫描 issue 从 207 降到 60-90,信噪比质变。规则精度三连改(snippet 显示真实 pass 行 / `r` 不再当 kp / 历史 Prompt key 白名单静默)
+- **诊断包口径对齐**:第三段 dim4/dim6 count 与第四段聚合清单同源
 
 **part3.6 关键修复**:
-- **诊断包准确性**:导出的 Markdown 报告三个显示 bug 一次清除 —— 六维度得分表权重列不再全 0、白名单失效时会自检输出警告、近 7 天事件日志能真实显示
-- **工程纪律**:沉淀立规则 49/50/51 三条 —— 大文件小改动用拷贝+局部替换、改完必跑 6 项拉通、项目文件更新必做减法
+- **诊断包准确性**:六维度得分权重列不再全 0、白名单失效自检输出警告、近 7 天事件日志正常显示
+- **工程纪律**:沉淀立规则 49/50/51 三条
 
-**part3.5 feature**:E2E 测试报告弹窗 footer 新增"导出诊断包"按钮,一键下载 Markdown 诊断包发 Claude 做异地诊断
-
-**历史版本精华**(part3.3/part3.4):低分打磨候选池允许 confirmed / E2E issue 签名漂移修复 / 审核统计 UI 重写 / 保鲜 loading / E2E `<1s` 显示 —— 详见 CHANGELOG
+**历史版本精华**(part3.3/part3.4/part3.5):低分打磨候选池允许 confirmed / E2E issue 签名漂移修复 / 审核统计 UI 重写 / E2E 诊断包导出 feature —— 详见 CHANGELOG
 
 ---
 
@@ -90,15 +93,15 @@
 rural-revitalization-kb/
 ├── scripts/
 │   ├── prompts/             # Prompt 模板（26 个）
-│   ├── api_server.py        # 管理后台 API（v2.3.0-part3.5，含 F048 8 + F062 8 + qc_rerun 3 路由 + 启动兜底 init_tables；part3.5 新增 E2E 诊断包导出路由）
-│   ├── extractor.py         # 知识提取引擎（含 F057/F058）
+│   ├── api_server.py        # 管理后台 API（v2.3.0-part3.8，F048 8 + F062 8 + qc_rerun 3 路由 + 启动兜底 init_tables；part3.8 6 批量路由 errors 收集改造）
+│   ├── extractor.py         # 知识提取引擎（v2.3.0-part3.8，含 F057/F058，part3.8 冗余迁移 import 清理-21 行）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
 │   ├── preprocessor.py      # 文件预处理 + .md 缓存
 │   ├── db_manager.py        # 数据库管理（v2.3.0-part3.4，21 表，F048 12 方法 + F062 9 方法 + part3.2 新增 2 方法；part3.4 get_polish_candidates WHERE 修复）
 │   ├── experience_notes.py  # 经验速记
 │   ├── config_wizard.py     # 配置向导
 │   ├── check_system.py      # 系统检查（v2.5.2，19 项）
-│   ├── duplicate_checker.py # 重复检测
+│   ├── duplicate_checker.py # 重复检测（v2.3.0-part3.8）
 │   ├── policy_validator.py  # 政策依赖校验
 │   ├── freshness_checker.py # 保鲜扫描
 │   ├── backup_manager.py    # 备份恢复 + operation_hook（6 触发点）
@@ -108,12 +111,12 @@ rural-revitalization-kb/
 │   ├── setup.py             # 初始化（v2.3.0-part3）
 │   ├── upgrade_manager.py   # 架构升级
 │   ├── health_checker.py    # F048 体检引擎（~1360 行）
-│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.6，~1400 行，白名单 67+11 条）
-│   ├── e2e_diagnosis_exporter.py  # F062 诊断包 Markdown 导出引擎（v2.3.0-part3.7，~940 行，第三段口径与第四段对齐）
+│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.8，~1645 行，白名单 DIM4 75 / DIM6 79 / 覆盖 7 文件）
+│   ├── e2e_diagnosis_exporter.py  # F062 诊断包 Markdown 导出引擎（v2.3.0-part3.8，~1077 行，第三段按文件维度分类视图）
 │   ├── static_analyzer.py   # F062 静态规则库（v2.3.0-part3.7，~720 行，规则精度三连改）
 │   └── db_health_check.py   # 数据层只读体检（v1.2）
 ├── web/templates/
-│   └── review.html          # 管理后台（v2.3.0-part3.5，工具箱 12 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化 + E2E 报告弹窗"导出诊断包"按钮）
+│   └── review.html          # 管理后台（v2.3.0-part3.8，工具箱 12 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化 + 7 批量按钮混合策略 + #batchResultModal）
 ├── data/                    # 数据目录
 ├── backups/                 # 备份目录
 ├── config/                  # 配置文件

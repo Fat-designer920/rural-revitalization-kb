@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.0-part3.5</title>
+<title>乡村振兴知识库 v2.3.0-part3.8</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -646,7 +646,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part3.4</span></div>
+  <div class="header-title">乡村振兴知识库 <span>v2.3.0-part3.8</span></div>
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
@@ -1175,6 +1175,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <div class="modal-footer"><button class="btn" onclick="closeModal('e2eIssueDlg')">关闭</button></div>
 </div></div>
 
+<!-- v2.3.0-part3.8: 批量操作结果弹窗（6 批量按钮失败列表展示） -->
+<div class="modal-overlay" id="batchResultModal"><div class="modal" style="width:640px">
+  <div class="modal-header" id="batchResultTitle">批量操作结果</div>
+  <div class="modal-body" id="batchResultContent"></div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('batchResultModal')">关闭</button></div>
+</div></div>
+
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -1225,6 +1232,35 @@ function showToast(m,t){var e=document.getElementById("toast");e.textContent=m;e
 function parseTags(v){if(!v)return[];if(typeof v==="string"){try{v=JSON.parse(v)}catch(e){return[]}}if(Array.isArray(v)){var r=[];for(var i=0;i<v.length;i++){var t=String(v[i]).trim();if(t)r.push(t)}return r}return[]}
 function parseObj(v){if(!v)return{};if(typeof v==="string"){try{return JSON.parse(v)}catch(e){return{}}}if(typeof v==="object"&&!Array.isArray(v))return v;return{}}
 function closeModal(id){document.getElementById(id).classList.remove("open")}
+
+/* v2.3.0-part3.8: 批量操作结果展示(复用现有 modal 体系,ES5 兼容) */
+/* 参数: title 弹窗标题, successText 成功摘要, errors 失败条目数组[{id, error}] */
+function showBatchResult(title, successText, errors){
+  document.getElementById("batchResultTitle").textContent = title;
+  var html = '<div style="padding:12px 16px;background:#F0F9F4;border-radius:6px;margin-bottom:12px;color:#2B8A3E">'
+           + '<strong>'+successText+'</strong></div>';
+  if(errors && errors.length){
+    html += '<div style="padding:12px 16px;background:#FFF4F4;border-radius:6px;margin-bottom:8px;color:#C92A2A">'
+         +  '<strong>失败 '+errors.length+' 条</strong>,详情如下:</div>';
+    html += '<div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">'
+         +  '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+         +  '<thead><tr style="background:#FAFAFA"><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">知识点 ID</th><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">错误原因</th></tr></thead>'
+         +  '<tbody>';
+    for(var i=0;i<errors.length;i++){
+      var e = errors[i];
+      var eid = (e && e.id) ? String(e.id) : "-";
+      var emsg = (e && e.error) ? String(e.error) : "(未知错误)";
+      /* HTML escape 防 XSS */
+      eid = eid.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      emsg = emsg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      html += '<tr><td style="padding:6px 12px;border-bottom:1px solid #F0F0F0;color:#555">#'+eid+'</td>'
+           +  '<td style="padding:6px 12px;border-bottom:1px solid #F0F0F0;color:#C92A2A;word-break:break-all">'+emsg+'</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  document.getElementById("batchResultContent").innerHTML = html;
+  document.getElementById("batchResultModal").classList.add("open");
+}
 
 function showConfirm(title,msg,cb){document.getElementById("confirmTitle").textContent=title;document.getElementById("confirmMsg").textContent=msg;confirmCallback=cb;document.getElementById("confirmDlg").classList.add("open")}
 function closeConfirm(ok){document.getElementById("confirmDlg").classList.remove("open");if(confirmCallback)confirmCallback(ok);confirmCallback=null}
@@ -1571,17 +1607,17 @@ function clearQuickNote(){
 
 function renewFreshness(id){var note=prompt("保鲜备注（可留空）:");if(note===null)return;apiPost("/api/knowledge-points/"+id+"/renew-freshness",{freshness_note:note}).then(function(r){if(r.success){showToast("已续期","success");refreshData();loadFreshnessSummary()}})}
 function markOutdated(id){showConfirm("标记已过时","此知识点将标记为已过时，不再参与保鲜循环。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（可留空）:");apiPost("/api/knowledge-points/"+id+"/mark-outdated",{reason:reason||""}).then(function(r){if(r.success){showToast("已标记过时","info");refreshData();loadFreshnessSummary()}})})}
-function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){showToast("已续期"+r.renewed+"条","success");selectedIds={};refreshData();loadFreshnessSummary()}})}
-function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){showToast("已标记"+r.marked+"条过时","info");selectedIds={};refreshData();loadFreshnessSummary()}})})}
-function batchRestoreToPending(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量恢复","将"+ids.length+"条知识点恢复到待审核状态?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-restore-to-pending",{ids:ids}).then(function(r){if(r.success){showToast("已恢复"+r.restored+"条","success");selectedIds={};refreshData()}})})}
+function batchRenewFreshness(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;var note=prompt("批量续期备注（共用）:");if(note===null)return;apiPost("/api/knowledge-points/batch-renew-freshness",{ids:ids,freshness_note:note}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量保鲜续期结果","已续期 "+r.renewed+" 条",r.errors||[])}else{showToast("已续期"+r.renewed+"条","success")}selectedIds={};refreshData();loadFreshnessSummary()}})}
+function batchMarkOutdated(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量标记过时","将"+ids.length+"条知识点标记为已过时。确认?",function(ok){if(!ok)return;var reason=prompt("过时原因（共用，可留空）:");apiPost("/api/knowledge-points/batch-mark-outdated",{ids:ids,reason:reason||""}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量标记过时结果","已标记 "+r.marked+" 条过时",r.errors||[])}else{showToast("已标记"+r.marked+"条过时","info")}selectedIds={};refreshData();loadFreshnessSummary()}})})}
+function batchRestoreToPending(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量恢复","将"+ids.length+"条知识点恢复到待审核状态?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-restore-to-pending",{ids:ids}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量恢复结果","已恢复 "+r.restored+" 条",r.errors||[])}else{showToast("已恢复"+r.restored+"条","success")}selectedIds={};refreshData()}})})}
 function exemptPolicy(id){showConfirm("豁免政策校验","此知识点将标记为不需要政策校验(人工豁免)。确认?",function(ok){if(!ok)return;var reason=prompt("豁免原因(可留空):");if(reason===null)return;apiPost("/api/knowledge-points/"+id+"/exempt-policy",{reason:reason||""}).then(function(r){if(r.success){showToast("已豁免","info");refreshData()}else{showToast("操作失败: "+(r.error||""),"error")}})})}
 function revalidatePolicy(id){showConfirm("重新校验","将重新调用AI扫描此知识点的政策引用并匹配知识库。确认?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/"+id+"/revalidate-policy").then(function(r){if(r.success){showToast("重新校验完成","success");refreshData()}else{showToast("校验失败: "+(r.error||""),"error")}})})}
 
 /* === Batch === */
-function batchRemoveConfirmed(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量移除","将"+ids.length+"条已确认知识点移除出库?",function(ok){if(!ok)return;var reason=prompt("移除原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids,reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){showToast("已移除"+r.ignored+"条","info");selectedIds={};refreshData()}})})}
-function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){showToast("已确认"+r.confirmed+"个","success");selectedIds={};refreshData()}})})}
-function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){showToast("已忽略"+r.ignored+"个","info");selectedIds={};refreshData()}})})}
-function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){showToast("已删除"+r.deleted+"个","info");selectedIds={};refreshData()}})})}
+function batchRemoveConfirmed(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量移除","将"+ids.length+"条已确认知识点移除出库?",function(ok){if(!ok)return;var reason=prompt("移除原因（可留空）:");if(reason===null)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids,reason:"[移除] "+(reason||"")}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量移除结果","已移除 "+r.ignored+" 条",r.errors||[])}else{showToast("已移除"+r.ignored+"条","info")}selectedIds={};refreshData()}})})}
+function batchConfirm(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量确认","确认将"+ids.length+"个知识点入库?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-confirm",{ids:ids}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量确认结果","已确认 "+r.confirmed+" 个",r.errors||[])}else{showToast("已确认"+r.confirmed+"个","success")}selectedIds={};refreshData()}})})}
+function batchIgnore(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量忽略","确认忽略"+ids.length+"个知识点?",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-ignore",{ids:ids}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量忽略结果","已忽略 "+r.ignored+" 个",r.errors||[])}else{showToast("已忽略"+r.ignored+"个","info")}selectedIds={};refreshData()}})})}
+function batchDelete(){var ids=Object.keys(selectedIds).map(Number);if(!ids.length)return;showConfirm("批量永久删除","将永久删除"+ids.length+"个知识点，此操作不可恢复!",function(ok){if(!ok)return;apiPost("/api/knowledge-points/batch-delete",{ids:ids}).then(function(r){if(r.success){var fc=r.failed_count||0;if(fc>0){showBatchResult("批量删除结果","已删除 "+r.deleted+" 个",r.errors||[])}else{showToast("已删除"+r.deleted+"个","info")}selectedIds={};refreshData()}})})}
 function toggleSelect(id){if(selectedIds[id])delete selectedIds[id];else selectedIds[id]=true;var c=document.getElementById("card-"+id);if(c)c.classList.toggle("selected",!!selectedIds[id]);batchAllMode=false;hideBatchAllBanner();updateBatch()}
 function toggleSelectAll(){var ck=document.getElementById("selectAll").checked;var cbs=document.querySelectorAll(".kp-cb:not(:disabled)");for(var i=0;i<cbs.length;i++){var card=cbs[i].closest(".kp-card");var id=parseInt(card.id.replace("card-",""));cbs[i].checked=ck;if(ck)selectedIds[id]=true;else delete selectedIds[id];card.classList.toggle("selected",ck)}batchAllMode=false;if(ck&&lastLoadTotal>cbs.length){var banner=document.getElementById("batchAllBanner");banner.innerHTML="已选当前页 "+cbs.length+" 条。<a onclick=\"selectAllMatching()\">选择本次筛选的全部 "+lastLoadTotal+" 条</a>";banner.style.display="block"}else{hideBatchAllBanner()}updateBatch()}
 function selectAllMatching(){var u="/api/knowledge-points/ids?";if(currentStatus)u+="status="+currentStatus+"&";if(currentType)u+="type="+currentType+"&";if(currentCategory)u+="category="+currentCategory+"&";else if(currentLevel1)u+="level1="+currentLevel1+"&";if(currentSearch)u+="search="+encodeURIComponent(currentSearch)+"&";if(currentReadiness)u+="readiness="+currentReadiness+"&";if(currentFreshness)u+="freshness="+currentFreshness+"&";if(currentPolicyFilter)u+="policy="+currentPolicyFilter+"&";if(currentSourceType)u+="source_type="+currentSourceType+"&";if(currentQaScore)u+="qa_score="+currentQaScore+"&";apiGet(u).then(function(r){var ids=r.ids||[];selectedIds={};for(var i=0;i<ids.length;i++)selectedIds[ids[i]]=true;batchAllMode=true;var cbs=document.querySelectorAll(".kp-cb");for(var i=0;i<cbs.length;i++){cbs[i].checked=true;var card=cbs[i].closest(".kp-card");if(card)card.classList.add("selected")}var banner=document.getElementById("batchAllBanner");banner.innerHTML="已选择全部 "+ids.length+" 条知识点（跨所有页面）。<a onclick=\"clearBatchAll()\">取消全选</a>";banner.style.display="block";updateBatch()})}

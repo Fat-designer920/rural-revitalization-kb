@@ -2,6 +2,16 @@
 """
 e2e_diagnosis_exporter.py — F062 端到端测试诊断包导出引擎
 
+v2.3.0-part3.8(2026-04-24) - 第三段按文件维度可视化白名单覆盖范围
+  配套 e2e_tester.py v2.3.0-part3.8 新增的 WHITELIST_COVERAGE 常量,
+  第三段从"单一的失效自检警告"升级为"按文件分类展示":
+    ✅ 白名单覆盖内但命中 X 条(可能漂移)  — 需要重扫对齐
+    ⚪ 未覆盖范围(需独立治理)           — 需要扩展白名单或治理代码
+  好处: 老唐看报告时能一眼看出"这个文件之前就没在白名单",不会再被"白
+        名单已失效"笼统警告误导(part3.6 的警告机制是真漂移 + 死角都说漂移,
+        part3.8 把两者区分开)。
+  版本号同步: _render_section_version_context 里的版本表对齐 part3.8
+
 v2.3.0-part3.7(2026-04-24) - hotfix: 第三段白名单自检口径与第四段对齐
   Bug 4 - 第三段 dim4 140 vs 第四段 dim4 109 口径错配:
     根因: 第三段取 dims["dim4"]["issues"] 的 len(白名单过滤后 raw,但
@@ -57,6 +67,17 @@ v2.3.0-part3.5(2026-04-24) - feature 首版:
 import json
 from collections import OrderedDict
 from datetime import datetime, timedelta
+
+# part3.8: 尝试引入 e2e_tester 的 WHITELIST_COVERAGE 常量(按文件维度覆盖范围)
+# 兜底: 若 e2e_tester 升级前老版本跑这个 exporter,fallback 到空 set(第三段
+# 按文件维度分类逻辑自动降级为不区分 "覆盖内 vs 覆盖外")
+try:
+    from scripts.e2e_tester import WHITELIST_COVERAGE as _WHITELIST_COVERAGE
+except Exception:
+    try:
+        from e2e_tester import WHITELIST_COVERAGE as _WHITELIST_COVERAGE
+    except Exception:
+        _WHITELIST_COVERAGE = set()
 
 
 # ============================================================
@@ -577,6 +598,8 @@ def _render_section_whitelist(lines, report, issues=None):
                 )
             )
         lines.append("")
+        # part3.8: 失效警告后也要按文件维度展示(区分"漂移" vs "未覆盖")
+        _render_whitelist_coverage_breakdown(lines, issues)
         return
 
     lines.append(
@@ -600,6 +623,109 @@ def _render_section_whitelist(lines, report, issues=None):
             reason = it.get("_filter_reason") or ""
             suffix = "  -- {}".format(reason) if reason else ""
             lines.append("- `{}`{}".format(sig, suffix))
+        lines.append("")
+
+    # ==========================================================
+    # part3.8: 按文件维度分类展示(覆盖内 vs 覆盖外)
+    # ==========================================================
+    _render_whitelist_coverage_breakdown(lines, issues)
+
+
+def _render_whitelist_coverage_breakdown(lines, issues):
+    """part3.8 新增:按文件维度展示"白名单覆盖内 vs 覆盖外"。
+
+    输入: 入库 issues 列表(dim4 + dim6 的真正 pending)
+    逻辑:
+      - 从 WHITELIST_COVERAGE 常量拿覆盖文件集合
+      - 对每个 dim4/dim6 issue 抽取 file,按是否在覆盖内分两栏:
+        ✅ 覆盖内但命中 X 条 → 提示"行号可能已漂移,建议重扫白名单"
+        ⚪ 覆盖外有 X 条 → 提示"新文件未进白名单,需要独立治理"
+      - 老版本 e2e_tester(没有 WHITELIST_COVERAGE 常量)时 _WHITELIST_COVERAGE 为空,
+        降级为单一列表展示,不分"覆盖内/外"
+
+    为什么加这个视图:
+      part3.6 加的"白名单已失效"警告是笼统的 —— 真正漂移 vs 文件从未进白名单
+      两种情况混在一起。part3.8 WHITELIST_COVERAGE 把两者区分开,让老唐看报告时
+      不再被"失效"笼统警告误导。
+    """
+    if not issues:
+        return
+    # 从 issues 里分 dim4/dim6 并按 file 聚合
+    file_stats = {}  # file -> {"dim4": count, "dim6": count}
+    for iss in issues:
+        dim = iss.get("dim_code") or ""
+        if not (dim.startswith("4_") or dim.startswith("6_")):
+            continue
+        detail = iss.get("detail") or {}
+        if isinstance(detail, str):
+            try:
+                detail = json.loads(detail)
+            except Exception:
+                detail = {}
+        file_path = detail.get("file") or ""
+        if not file_path:
+            # 从 signature 反解: dim|file:line|rule_id
+            sig = iss.get("signature") or ""
+            parts = sig.split("|")
+            if len(parts) >= 2 and ":" in parts[1]:
+                file_path = parts[1].rsplit(":", 1)[0]
+        if not file_path:
+            continue
+        if file_path not in file_stats:
+            file_stats[file_path] = {"dim4": 0, "dim6": 0}
+        if dim.startswith("4_"):
+            file_stats[file_path]["dim4"] += 1
+        else:
+            file_stats[file_path]["dim6"] += 1
+
+    if not file_stats:
+        return
+
+    lines.append("### 3.1 白名单覆盖范围分布(按文件维度,part3.8 视图)")
+    lines.append("")
+    lines.append("**说明**:")
+    lines.append(
+        "- ✅ 覆盖内但命中 X 条 = 该文件在白名单范围内,但仍有 X 条漏网。"
+        "通常是 db_manager 等文件重构后行号漂移,**建议重扫对齐**"
+    )
+    lines.append(
+        "- ⚪ 未覆盖范围 = 该文件从未进白名单。通常是新文件首次被 E2E 扫到,"
+        "**需要独立治理**(加入 WHITELIST_COVERAGE 并逐条判断新白名单)"
+    )
+    lines.append("")
+
+    covered = []
+    uncovered = []
+    for file_path, st in sorted(file_stats.items()):
+        total_file = st["dim4"] + st["dim6"]
+        if file_path in _WHITELIST_COVERAGE:
+            covered.append((file_path, st, total_file))
+        else:
+            uncovered.append((file_path, st, total_file))
+
+    if covered:
+        lines.append("**✅ 覆盖内命中(可能行号漂移)**:")
+        lines.append("")
+        lines.append("| 文件 | dim4 | dim6 | 合计 |")
+        lines.append("|---|---|---|---|")
+        for file_path, st, total_file in covered:
+            lines.append("| `{}` | {} | {} | {} |".format(
+                file_path, st["dim4"], st["dim6"], total_file))
+        lines.append("")
+
+    if uncovered:
+        lines.append("**⚪ 未覆盖范围(需独立治理)**:")
+        lines.append("")
+        lines.append("| 文件 | dim4 | dim6 | 合计 |")
+        lines.append("|---|---|---|---|")
+        for file_path, st, total_file in uncovered:
+            lines.append("| `{}` | {} | {} | {} |".format(
+                file_path, st["dim4"], st["dim6"], total_file))
+        lines.append("")
+        lines.append(
+            "**处置建议**:把上述文件加入 `scripts/e2e_tester.py` 的 "
+            "`WHITELIST_COVERAGE` 常量,然后逐条判断新白名单 signature。"
+        )
         lines.append("")
 
 
@@ -810,22 +936,24 @@ def _render_section_version_context(lines):
     lines.append("")
     lines.append("| 模块 | 最新版本 |")
     lines.append("|---|---|")
-    lines.append("| api_server.py | v2.3.0-part3.5(+ E2E 诊断包导出路由) |")
-    lines.append("| e2e_tester.py | v2.3.0-part3.6(full_report 补写 dim_weights) |")
+    lines.append("| api_server.py | v2.3.0-part3.8(+ 6 批量路由 errors 收集改造) |")
+    lines.append("| e2e_tester.py | v2.3.0-part3.8(白名单大扩展 DIM4 75/DIM6 79 + WHITELIST_COVERAGE) |")
     lines.append("| db_manager.py | v2.3.0-part3.4(get_polish_candidates 候选池修复) |")
-    lines.append("| static_analyzer.py | v2.3.0-part3-alpha1 |")
-    lines.append("| review.html | v2.3.0-part3.5(+ 导出诊断包按钮) |")
-    lines.append("| e2e_diagnosis_exporter.py | v2.3.0-part3.6(三个显示 bug 修复) |")
+    lines.append("| static_analyzer.py | v2.3.0-part3.7(规则精度三连改) |")
+    lines.append("| review.html | v2.3.0-part3.8(6 批量按钮 + batchResultModal) |")
+    lines.append("| e2e_diagnosis_exporter.py | v2.3.0-part3.8(按文件维度覆盖范围视图) |")
+    lines.append("| extractor.py | v2.3.0-part3.8(冗余迁移 import 清理 -21 行) |")
+    lines.append("| duplicate_checker.py | v2.3.0-part3.8(冗余迁移 import 清理 -3 行) |")
     lines.append("")
     lines.append("**近期关键 hotfix**:")
+    lines.append("- v2.3.0-part3.8:F062 白名单大扩展(7 文件 DIM6 79 条) + 6 批量路由走 errors 收集 E2 改造 + 冗余代码清理(立规则 52)")
+    lines.append("- v2.3.0-part3.7:static_analyzer 规则精度三连改 + 诊断包第三段口径对齐")
     lines.append("- v2.3.0-part3.6:诊断包六维度权重/白名单自检/事件日志 SQL 三 bug 修复")
     lines.append("- v2.3.0-part3.5:E2E 诊断包 Markdown 导出 feature 首版")
     lines.append("- v2.3.0-part3.4:低分打磨候选池允许 confirmed + E2E issue 签名漂移修复")
     lines.append("- v2.3.0-part3.3:审核统计 UI 重写 + 保鲜 loading + E2E 白名单刷新")
-    lines.append("- v2.3.0-part3.2:仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋")
-    lines.append("- v2.3.0-part3.1:F061 质检补跑签名漂移 + F062 老库自动追齐 init_tables")
     lines.append("")
-    lines.append("**立规则**:共 49 条(数据层 10 / 代码层 12 / 交互层 8 / 流程层 19,part3.6 新增 3 条),详见 `01_工程手册.md §二`。")
+    lines.append("**立规则**:共 52 条(数据层 10 / 代码层 13 / 交互层 8 / 流程层 21,part3.8 新增 1 条「代码审查兼做冗余清理」),详见 `01_工程手册.md §二`。")
     lines.append("")
 
 

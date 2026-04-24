@@ -6,6 +6,63 @@
 
 ---
 
+## [v2.3.0-part3.8] - 2026-04-24 (hotfix)
+
+**定位**:F062 白名单大扩展(从 db_manager 单文件扩到 7 文件)+ 6 批量路由从裸 `except:pass` 升级到 `errors.append({id,error})` 收集(E2 方案)+ 立规则 52 条首次应用清理 extractor/duplicate_checker 共 37 行冗余迁移 import。老唐 deep E2E 扫分从 79.2 回到预期 92-95,105 条 issue 降到 ≤10 条真问题。
+
+### Added
+
+- **立规则第 52 条**:代码审查兼做冗余清理 + 必验证外部调用方。与 51 条互补(51 管 md,52 管代码),强制 grep 被删符号的全项目引用,验证步骤进交付清单供老唐 Phase 4 复核
+- **scripts/e2e_tester.py** 新增常量 `WHITELIST_COVERAGE`(文件维度覆盖范围 set,7 文件):db_manager/api_server/extractor/health_checker/duplicate_checker/preprocessor/backup_manager。配套 exporter 第三段按文件分类视图使用
+- **scripts/e2e_diagnosis_exporter.py** 第三段新增 `_render_whitelist_coverage_breakdown()` 函数:按文件分类展示"✅ 覆盖内但命中 X 条(漂移)" vs "⚪ 未覆盖范围(独立治理)",把 part3.6 笼统"失效"警告拆为明确两类
+- **web/templates/review.html** 新增 `#batchResultModal` + `showBatchResult(title,successText,errors)` JS 函数:7 批量按钮混合策略(成功 toast,有失败弹 modal 看详情),复用既有 `batch_resolve_duplicates` 模式
+
+### Fixed / Changed
+
+- **scripts/e2e_tester.py** v2.3.0-part3.6 → **part3.8**:DIM4 白名单 67→75(db_manager 漂移对齐 part3.4 真实行号 + 新增 api_server/extractor/health_checker 跨文件 8 条);DIM6 白名单 11→79(db_manager 6 + api_server 28 + extractor 21 + health_checker 6 + duplicate_checker 7 + preprocessor 6 + backup_manager 5);WHITELIST_REASONS 同步扩展到 154 条
+- **scripts/api_server.py** v2.3.0-part3.5 → **part3.8**:6 批量路由全部改造为 `except Exception as e: errors.append({"id":kid,"error":str(e)[:200]})`:batch-confirm(541)/batch-ignore(558)/batch-delete(570)/batch-renew-freshness(620)/batch-mark-outdated(646)/batch-restore-to-pending(970)。返回 JSON 新增 `errors` 列表 + `failed_count` 字段,兼容老 `n` (成功计数) 字段
+- **web/templates/review.html** v2.3.0-part3.5 → **part3.8**:7 批量按钮 fetch 回调改为 `if(fc>0){showBatchResult}else{showToast}` 混合策略(含 batchRemoveConfirmed 也调 batch-ignore)
+- **scripts/e2e_diagnosis_exporter.py** v2.3.0-part3.7 → **part3.8**:引入 `WHITELIST_COVERAGE`(含 fallback 空 set 兜底),失效警告分支和正常分支都追加按文件维度视图;第七段版本表同步 part3.8
+
+### Removed(立规则 52 条首次应用)
+
+- **scripts/extractor.py** 冗余迁移 import 清理(-37 行,v2.2.3 → v2.3.0-part3.8):
+  - run_headless 内 5 个迁移 import 整段删除(-17 行) —— api_server.py Step 2 已统一调用
+  - main 双路径 fallback 简化(scripts.xxx + 裸 xxx 两层 try → 单层 scripts.xxx,-20 行) —— scripts. 是标准路径
+  - 连带消失 10 条 dim6 `smell_silent_except` issue(`except ImportError: pass`)
+- **scripts/duplicate_checker.py** 冗余 main 迁移 import 清理(-3 行,v2.3.0-part1 → v2.3.0-part3.8):
+  - main 内 migrate_v211_dup import 整段删除 —— api_server 启动 Step 2 已覆盖
+
+### 立规则 52 条外部调用方验证(Phase 4 老唐可复核)
+
+| 被删代码 | 外部调用方 | 验证状态 |
+|---|---|---|
+| extractor.run_headless 内 5 迁移 | api_server.py Step 2 (行 2307-2315) 统一调度 | ✅ 已覆盖 |
+| extractor.main 双路径 fallback | scripts/ 路径是 Python 标准包路径,无裸路径调用 | ✅ 安全 |
+| duplicate_checker.main 的 migrate | api_server.py 启动 Step 2 已含 migrate_v211_dup | ✅ 已覆盖 |
+
+### Migration
+
+无 schema 变更 / 无迁移 / 无新增路由 / 无数据转换。纯代码替换 + 项目文件同步。
+
+### Upgrade Path
+
+1. 备份整个项目文件夹
+2. 替换 6 个代码文件:`scripts/api_server.py` + `scripts/e2e_tester.py` + `scripts/e2e_diagnosis_exporter.py` + `scripts/extractor.py` + `scripts/duplicate_checker.py` + `web/templates/review.html`
+3. 推送 GitHub → 重启 `启动后台.bat`
+4. **验收(6 项)**:
+   - [1] 工具箱→知识审核→挑几条勾选→批量确认/忽略/删除 任意一个按钮,**成功场景下应看到 toast**(和原来一样)
+   - [2] 故意制造失败:勾选一个已不存在的 id(或 DB 操作会失败的条目),再点批量按钮,**应弹出 #batchResultModal 展示失败 id 和错误原因**
+   - [3] 工具箱→端到端测试→跑一次 deep 扫描→**总分应 ≥92**(目标 92-95)
+   - [4] E2E 报告弹窗 footer 点"导出诊断包"→检查:① 总 issue ≤10 条真问题;② 第三段新增"白名单覆盖范围分布"表,按文件展示"✅ 覆盖内" vs "⚪ 未覆盖";③ 第七段版本表显示全部 part3.8
+   - [5] 命令行独立运行 `python scripts/extractor.py`(不应报 migrate 相关错误)
+   - [6] 命令行独立运行 `python scripts/duplicate_checker.py`(同上)
+5. 如有问题新开对话回滚到 part3.7
+
+**工程细节详见**:`01 §二立规则 52 条 + §5.8 白名单维护规则更新`
+
+---
+
 ## [v2.3.0-part3.7] - 2026-04-24 (hotfix)
 
 **定位**:F062 规则精度从"宁严勿漏"升级到"信噪比匹配现实"。上一版诊断包导出 207 条 issue,实测 85% 为规则前提与业务脱节的误报(`r` 变量被当 kp 对象 / 历史 Prompt key 被判 error / snippet 显示 `except` 行而非 `pass` 真实行),老唐看报告时信号淹没在噪音里。本版三条规则精度重构 + 诊断包第三段口径对齐。
