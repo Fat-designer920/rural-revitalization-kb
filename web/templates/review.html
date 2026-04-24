@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.0-part3.4</title>
+<title>乡村振兴知识库 v2.3.0-part3.5</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -1161,6 +1161,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   </div>
   <div class="modal-footer">
     <button class="btn btn-primary" onclick="openE2eIssues('all')">查看 issue 列表</button>
+    <button class="btn" onclick="doE2eExportDiagnosis()">导出诊断包</button>
     <button class="btn" onclick="closeModal('e2eReportDlg')">关闭</button>
   </div>
 </div></div>
@@ -3416,6 +3417,31 @@ function doE2eIssueSetStatus(iid,newStatus){
     showToast("已切换为 "+newStatus,"success");
     _loadE2eIssues();
   });
+}
+
+/* v2.3.0-part3.5: E2E 诊断包导出
+ * 读当前打开的报告 _e2eReportId,触发浏览器下载 Markdown 文件。
+ * 纯前端:生成 <a download> 锚点并 click,由后端 Response 的
+ * Content-Disposition 让浏览器直接存盘。
+ * 不用 window.open 避免新建空白页;不用 fetch+blob 保持 ES5 兼容。
+ */
+function doE2eExportDiagnosis(){
+  if(!_e2eReportId){
+    showToast("当前无打开的报告","error");
+    return;
+  }
+  var url="/api/tools/e2e/export/"+_e2eReportId;
+  var a=document.createElement("a");
+  a.href=url;
+  /* download 属性在同源场景下触发保存;后端 Content-Disposition 兜底 */
+  a.setAttribute("download","");
+  a.style.display="none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){
+    try{document.body.removeChild(a)}catch(e){}
+  },200);
+  showToast("诊断包下载中...","success");
 }
 
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}

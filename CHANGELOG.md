@@ -6,6 +6,36 @@
 
 ---
 
+## [v2.3.0-part3.5] - 2026-04-24 (feature)
+
+**定位**:F062 配套 —— E2E 诊断包 Markdown 导出。跑完 E2E 一键打包发 Claude 做异地诊断,把 issue 审查从"网页逐条切四态"前置为"整包批量诊断"。
+
+### Added
+
+- **新模块 `scripts/e2e_diagnosis_exporter.py`**(~574 行,纯读格式化):唯一对外入口 `build_e2e_diagnosis_markdown(db, report_id) -> (md_text, filename)`。7 段 Markdown:元数据 / 六维分 / 白名单 / issue 聚合清单(按 `rule_id+file+dim_code` 三元组合并,含命中行号列表 + 典型代码片段) / 近 7 天事件日志摘要 / 使用说明 / 版本上下文
+- **`scripts/api_server.py`** 新增路由 `GET /api/tools/e2e/export/<rid>`,Response 带 `Content-Disposition: attachment`,浏览器直接下载
+- **`web/templates/review.html`** E2E 报告弹窗 footer 加"导出诊断包"按钮 + `doE2eExportDiagnosis()` JS 函数
+- **立规则第 47 条**:项目文件精简够用(详见 `01 §二立规则`)
+
+### Fixed / Changed
+
+- 无 bug 修复。版本号:api_server.py / review.html / 新 exporter 模块 均 v2.3.0-part3.5。项目文件全量更新(00/01/CHANGELOG/README)
+
+### Migration
+
+无 schema / 无迁移 / 无新增路由冲突 / 纯读零副作用。
+
+### Upgrade Path
+
+1. 新增 `scripts/e2e_diagnosis_exporter.py`
+2. 替换 `scripts/api_server.py` + `web/templates/review.html`
+3. 推送 GitHub → 重启 `启动后台.bat`
+4. 验证:工具箱→端到端测试→查看最近报告→弹窗 footer 应有三个按钮(查看 issue / 导出诊断包 / 关闭)→点导出得到 `e2e_diagnosis_<rid>_<ts>.md`
+
+**工程细节/设计决策详见**:`01 §四关键设计决策` + `01 §6.5 模块结构速查` + `01 §5.3 API 路由速查-F062`
+
+---
+
 ## [v2.3.0-part3.4] - 2026-04-23 (hotfix)
 
 **定位**：质量闭环从"能跑"到"能真正指路" —— 修复两个让仪表盘数字"漂亮但是假"的 bug
@@ -131,106 +161,6 @@
 
 ---
 
-## [v2.3.0-part3.2] - 2026-04-23 (hotfix)
-
-**定位**：仪表盘可信度修复 + 质检补跑异步化 + 就绪度联动预埋 —— 三件事一次交付
-
-### Added
-
-- **`scripts/db_manager.py`**（+~90 行）：
-  - `promote_readiness_by_qa_score()` —— v2.3.1 批量重算成熟度的**保守前置**。规则 `qa_score >= 4 AND content_readiness='draft' → 'quotable'`，只升不降，不碰 `premium`（editorial 轴与 qa 轴解耦）
-  - `get_readiness_promote_preview()` —— dry-run 预览，供前端确认弹窗使用
-  - `get_connection()` 追加 `PRAGMA busy_timeout=10000` —— 并发写等锁兜底（WAL 已开，补这个就够）
-- **`scripts/api_server.py`**（+~200 行）：
-  - `_qc_task / _qc_task_lock / _qc_task_update_progress` —— **独立于 `_task` 的质检补跑任务槽**。故意不进单例锁，允许质检补跑与预处理/提取/体检/E2E 并发
-  - `_qc_readiness_check()` —— 对齐 F048/F062 四项自检模板（db 可连 / 关键方法存在 / Extractor 签名正确 / 字段契约）。放 `_qc_task_lock` 之前，对齐对话 B 立规则精神
-  - `_qc_rerun_core(progress_cb=None)` —— 接受进度回调，逐文件上报；尾部自动调联动
-  - 新增 3 路由：
-    - `POST /api/tools/qc_rerun` **（行为变更）**：改异步，立即 202
-    - `GET  /api/tools/qc_rerun/progress`
-    - `POST /api/tools/readiness_promote` + `GET /api/tools/readiness_promote/preview`
-- **`web/templates/review.html`**（+~180 行）：
-  - 独立 `#qcTaskProgress` 进度面板（与 `#taskProgress` 并列，支持两者同时显示 → 真并发）
-  - `qcShowTaskProgress / qcStartPolling / qcCheckRunningTask` 三 JS 函数，结构对齐已有 `showTaskProgress / startPolling / checkRunningTask` 模式
-  - admin tab 切入时 `qcCheckRunningTask()` —— **刷新后自动恢复质检补跑进度条**
-  - 工具箱第 12 卡 `tc-readinessPromote`（R 橙 #FFF4E6/#C97A2C）+ 独立 `runTool("readinessPromote")` 分支（预览 → 确认 → 执行 → 刷仪表盘）
-
-### Fixed
-
-**Bug A — 仪表盘三张标签分布卡全部显示"暂无数据"(潜伏最久的一个)**
-- **现象**：业务领域 / 知识形态 / 客户视角 三张卡原本显示"13/9/5 个标签在使用中"，part3.2 hotfix 加 `count>0` 过滤后变成"暂无数据"
-- **位置**：`db_manager.get_tag_distribution()` line ~866
-- **根因（双层嵌套 bug，潜伏自 v2.1.0 三层标签体系上线，约 3 个月）**：
-  1. `extractor._sanitize_tags` 存入 DB 的 `final_category_tags / suggested_category_tags` 是 **`tag_name`**（中文名），JSON 形如 `["全域土地综合整治","增减挂钩"]`
-  2. `get_tag_distribution` 旧代码用 **`tag_code`**（如 `A01`）做 `LIKE '%"A01"%'`，**永远匹配不到**
-  3. 所有 `count=0`，但旧版**不过滤 `count=0`**，全部塞入返回列表；前端 `list.length=13/9/5` 就是"N 个标签在使用中"的来源 —— **这个数字从一开始就是假的**，真实含义是"该组定义了 N 个 active 标签"
-  4. 本轮 hotfix 加 `count>0` 过滤，真相暴露 → "暂无数据"
-- **修复**：`pattern = f'%"{tag_name}"%'`（从 `tag_code` 改为 `tag_name`）。同步保留 `count>0` 过滤
-
-**Bug B — 前端字段兼容失配，Top 5 行静默跳过**
-- **现象**：即便后端改好了，前端 `renderTagCard.getName()` 仍可能返回空串，整行被 `if(!nm)continue` 吞掉
-- **位置**：`review.html` line ~1840
-- **根因**：后端返回 `{tag_code, tag_name, count}`，前端 `getName` 只认 `name / tag / label`，`tag_name` 未兼容
-- **修复**：`getName` 首选 `tag_name`，保留旧 key 向下兼容
-
-**Bug C — 展开按钮"展开全部 0 个"**
-- **现象**：展开后收起，按钮文字变成"展开全部 0 个"
-- **位置**：`review.html toggleTagCardMore()` 折叠分支
-- **根因**：折叠分支用 `DOM.childElementCount` 反推总数；一旦 Bug B 导致部分行被跳过，DOM 里真的 0 个元素，文字就炸成 0
-- **修复**：按钮写 `data-total="N"` 属性，折叠时直接读属性，不依赖 DOM 计数
-
-**Bug D — "未质检 0" 与 "待质检补跑 2043" 打架**
-- **现象**：截图里仪表盘"未质检 0"，但同一屏"待质检补跑 2043"
-- **位置**：`api_server.py` dashboard 的 `qa_distribution` 查询 line ~1020
-- **根因**：
-  - `/api/dashboard qa_distribution`：`WHERE qa_score IS NULL` 统计未质检 → 0
-  - `get_qc_rerun_summary`：`WHERE qa_score IS NULL OR qa_score=0.0` 统计候选 → 2043
-  - 两处口径不一致，`qa_score=0.0` 的 2043 条归属无人认领
-- **修复**：dashboard 查询改为 `WHERE qa_score IS NULL OR qa_score = 0.0` 归入 `unscored`；"1/2/3/4/5 分"桶加 `qa_score > 0` 避免 0.0 被 CAST 成 `"0"` 后前端丢桶
-
-**Bug E — 质检补跑刷新页面即失 + 无进度条 + 不可并发**
-- **现象**：点击质检补跑后，`showToolResult` 显示一条 loading 文字，刷新页面消失；后端其实还在跑但前端无法观测；不能同时启动其他长任务
-- **位置**：`qc_rerun_api` + `review.html runTool("qaBackfill")`
-- **根因**：F061 的 `_qc_rerun_core` 是同步阻塞调用，在 Flask 请求线程里一口气跑 2043 条；前端只有一条死 loading DOM，无任务状态持久化
-- **修复**：见 Added —— 独立 `_qc_task` 槽 + 异步化 + 独立进度面板 + 刷新恢复
-
-**Bug F — 卡片标题泄露内部版本号**
-- **现象**：仪表盘"截断补救 v2.2.3 F057"、"业务领域分布 A组 v2.3.0 F049"等版本标签裸露
-- **位置**：`review.html` line ~1806 / ~1844
-- **根因**：开发时临时对话标签，上线前忘清
-- **修复**：删除两处硬编码 span
-
-### Changed
-
-- **版本号**：`api_server.py` 顶部 docstring + main banner 同步升 `v2.3.0-part3.2`
-- **`_task["type"]` 口径保持**：`preprocess / extract / reextract / batch_rerun / health / e2e`。**新任务槽用 `_qc_task`，不占用 `_task["type"]`**，故不扩容既有 titles 映射
-- **立规则新增 1 条**（写入 01 工程手册 §二数据层，编号第 10 条）：
-  - **第 10 条 — 存储/查询口径一致性**：新增/修改针对 JSON 字段的 SQL 查询前，必须对照**存储侧写入逻辑**确认字段格式（存 name 还是 code？存中文还是英文？存扁平列表还是嵌套？）。本次 `get_tag_distribution` 用 `tag_code` 查 `tag_name` 存储，潜伏 3 个月靠"count=0 也塞入"掩盖，是典型反例
-- **立规则编号顺延**：原代码层/交互层/流程层编号 +1
-- **项目文件全量更新**：00 / 01 / CHANGELOG / README（02 / 03 无改动）
-
-### Migration
-
-**无 schema 变更**。老库无需 migration 脚本。
-
-### Upgrade Path
-
-1. 备份数据库（可选，本次无 schema 变更，风险极低）
-2. 替换 3 个代码文件：
-   - `scripts/api_server.py`
-   - `scripts/db_manager.py`
-   - `web/templates/review.html`（按原有实际路径）
-3. 推送 GitHub（Summary: `v2.3.0-part3.2: hotfix 仪表盘标签卡 + 质检补跑异步 + 就绪度联动预埋`）
-4. 重启 `启动后台.bat`（启动日志应看到 `v2.3.0-part3.2 hotfix` + `数据库正常` 两行）
-5. 验证 Bug A/B/C：仪表盘三张标签分布卡有数字有标签行，"展开全部 N 个"按钮文字切换正常
-6. 验证 Bug D：仪表盘"未质检"数字 ≈ "待质检补跑"数字
-7. 验证 Bug E：
-   - 点击工具箱"质检补跑" → 独立 `#qcTaskProgress` 面板出现，显示 `[i/N] filename` 实时消息
-   - 补跑进行中按 F5 刷新 → 切回"系统管理" tab → 进度条自动恢复
-   - 补跑中同时启动"预处理"→ 两个进度面板并排前进（并发验收）
-8. 验证 Feature：点击工具箱"就绪度联动"（R 橙） → 预览 → 确认 → 完成消息显示升级条数 → 仪表盘"草稿级"数字下降、"可引用级"数字上升
-
----
 
 ## [v2.3.0-part3.1] - 2026-04-24 (hotfix)
 
@@ -304,6 +234,10 @@
 ---
 
 ## 早期版本精简摘要
+
+### v2.3.0-part3.2 — 2026-04-23 (hotfix)
+
+仪表盘可信度修复 + 质检补跑异步化 + 就绪度联动预埋,一次三件事交付。**Bugs**:(A)三张标签分布卡"暂无数据"—— `get_tag_distribution` 用 `tag_code` 查 `tag_name` 存储,潜伏 3 个月,旧版靠"count=0 也塞入"掩盖;(B)前端 `renderTagCard.getName` 未兼容 `tag_name` 字段;(C)折叠按钮用 DOM.childElementCount 反推总数错位;(D)仪表盘"未质检 0"vs"待补跑 2043"口径打架;(E)质检补跑同步阻塞刷新即失;(F)卡片标题泄露内部版本号。**Added**:独立 `_qc_task` 任务槽支持与主槽并发 + 独立 `#qcTaskProgress` 进度面板 + 刷新自动恢复 + 工具箱"就绪度联动"按钮(R 橙,保守前置版本:qa≥4 且 draft→quotable 只升不降,不碰 premium)。**立规则第 10 条**:存储/查询口径一致性(针对 JSON 字段的 SQL 查询前必须对照存储侧写入逻辑确认格式)。
 
 ### v2.3.0-part2.2 — 2026-04-22 (hotfix)
 

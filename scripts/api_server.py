@@ -1,7 +1,19 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3.4 - 本版本代码无实质改动,仅同步版本号
+版本：v2.3.0-part3.5 - 新增 E2E 诊断包导出路由
+
+v2.3.0-part3.5 变更(新功能,2026-04-24):
+    Feature: F062 配套——E2E 端到端测试诊断包导出
+      - 新增路由 GET /api/tools/e2e/export/<rid>
+        返回 Markdown 格式的完整诊断包(元数据+六维分+白名单+issue 聚合清单+
+        近 7 天 warn/error 事件日志摘要+诊断说明+版本上下文),供发给 Claude 做异地诊断
+      - 路由内部委托 scripts/e2e_diagnosis_exporter.build_e2e_diagnosis_markdown
+      - Response 带 Content-Disposition: attachment,浏览器直接下载
+      - 纯读功能,不写 DB、不调 AI、不占 _task 锁槽
+    配套:
+      - 新模块 scripts/e2e_diagnosis_exporter.py(~500 行,聚合+渲染 Markdown)
+      - review.html E2E 报告弹窗 footer 新增"导出诊断包"按钮 + 1 个 JS 函数
 
 v2.3.0-part3.4 版本号同步(2026-04-23):
     本文件代码无改动。同版本 hotfix 集中在 db_manager.py 和 e2e_tester.py:
@@ -159,6 +171,8 @@ from flask_cors import CORS
 from scripts.db_manager import DatabaseManager
 # v2.2.3 F060: 关键操作备份钩子 + 备份失败异常
 from scripts.backup_manager import operation_hook, BackupFailedError
+# v2.3.0-part3.5: E2E 诊断包 Markdown 导出(纯读格式化)
+from scripts.e2e_diagnosis_exporter import build_e2e_diagnosis_markdown
 
 app = Flask(__name__)
 CORS(app)
@@ -3461,6 +3475,66 @@ def e2e_report_detail(rid):
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# F062 路由 4.5(v2.3.0-part3.5 新增)：E2E 诊断包 Markdown 导出
+# ================================================================
+# 设计思路:
+#   - 纯读功能,直接委托 e2e_diagnosis_exporter 格式化
+#   - Response 带 Content-Disposition: attachment 让浏览器触发下载
+#   - 失败返回 404(报告不存在) 或 500(格式化异常),不污染任何 _task 槽
+#   - 事件日志:打 export_success / export_failed 便于审计
+# ================================================================
+@app.route("/api/tools/e2e/export/<int:rid>", methods=["GET"])
+def e2e_export_diagnosis(rid):
+    """导出 E2E 诊断包为 Markdown 文件(浏览器下载)。
+
+    纯读 + 零副作用:不写 DB、不调 AI、不抢 _task 锁。
+    """
+    try:
+        md, filename = build_e2e_diagnosis_markdown(db, rid)
+    except ValueError as ve:
+        # report_id 不存在
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            db.log_operation_event(
+                event_type="e2e_export_failed",
+                module="api_server",
+                severity="error",
+                payload={"report_id": rid, "error": str(e)},
+            )
+        except Exception:
+            pass
+        return jsonify({"error": str(e)}), 500
+
+    # 成功埋点(非关键操作,失败不阻塞下载)
+    try:
+        db.log_operation_event(
+            event_type="e2e_export_success",
+            module="api_server",
+            severity="info",
+            payload={
+                "report_id": rid,
+                "filename": filename,
+                "bytes": len(md.encode("utf-8")),
+            },
+        )
+    except Exception:
+        pass
+
+    # 浏览器下载:Content-Disposition attachment + UTF-8
+    # 兼容旧浏览器用 filename*=,新浏览器也认
+    headers = {
+        "Content-Disposition": (
+            "attachment; filename=\"" + filename + "\"; "
+            "filename*=UTF-8''" + filename
+        ),
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+    }
+    return Response(md, mimetype="text/markdown; charset=utf-8", headers=headers)
 
 
 # ================================================================
