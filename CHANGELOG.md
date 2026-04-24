@@ -15,7 +15,7 @@
 - **新模块 `scripts/e2e_diagnosis_exporter.py`**(~574 行,纯读格式化):唯一对外入口 `build_e2e_diagnosis_markdown(db, report_id) -> (md_text, filename)`。7 段 Markdown:元数据 / 六维分 / 白名单 / issue 聚合清单(按 `rule_id+file+dim_code` 三元组合并,含命中行号列表 + 典型代码片段) / 近 7 天事件日志摘要 / 使用说明 / 版本上下文
 - **`scripts/api_server.py`** 新增路由 `GET /api/tools/e2e/export/<rid>`,Response 带 `Content-Disposition: attachment`,浏览器直接下载
 - **`web/templates/review.html`** E2E 报告弹窗 footer 加"导出诊断包"按钮 + `doE2eExportDiagnosis()` JS 函数
-- **立规则第 47 条**:项目文件精简够用(详见 `01 §二立规则`)
+- **立规则第 47 条 + 第 48 条**:项目文件精简够用(防文档工程师陷阱)+ 工程手册只记"代码里读不出的信息"(与 47 条互补,利用"每次修改都上传最新代码"这个事实)。详见 `01 §二立规则` + `§十二设计思想第 18 条`。本轮倒回头把工程手册从 1267 行压到 809 行(-36%)
 
 ### Fixed / Changed
 
