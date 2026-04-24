@@ -2,7 +2,20 @@
 """
 e2e_diagnosis_exporter.py — F062 端到端测试诊断包导出引擎
 
-v2.3.0-part3.5(2026-04-24):
+v2.3.0-part3.6(2026-04-24) - hotfix: 修复 part3.5 首版诊断包三个显示 bug
+  Bug 1 - 六维度权重全 0(读取侧兜底):
+    根因: full_report 漏写 dim_weights 字段(part3.6 e2e_tester 已补写)
+    兜底: 新报告从 fr["dim_weights"] 读;历史报告按 fr["scan_depth"] fallback 到常量
+    好处: 老唐已存在的历史报告(比如 report_id=9)不用重跑也能正确渲染
+  Bug 2 - 白名单过滤显示"无过滤项":
+    根因: e2e_tester.py DIM4/DIM6 白名单行号跟 db_manager.py v2.3.0-part3.4 完全对不上
+    修复: 第三段改为显式自检输出,告诉 Claude"可能白名单已失效"而不是装没事
+    长期: 白名单重扫对齐 v2.3.0-part3.4 真实行号留待单独 hotfix
+  Bug 3 - 近 7 天事件日志永远显示"无事件":
+    根因: SQL 字段名拼错 created_at/payload 应为 event_time/payload_json
+    修复: 查询 SQL + 渲染读取两处字段名全部修正
+
+v2.3.0-part3.5(2026-04-24) - feature 首版:
   F062 配套功能:把 E2E 测试报告和 issue 列表格式化为 Markdown 诊断包,
   用于发给 Claude/工程师做异地诊断。
 
@@ -20,11 +33,14 @@ v2.3.0-part3.5(2026-04-24):
   - 事件日志抽样:按 event_type 分桶,每类最多 5 条,总上限 150 条
   - 时间锚点:事件日志以报告 created_at 为锚点往前 7 天,反映报告那一刻的系统状态
   - 文本截断:snippet 最多 6 行,msg/payload 最多 300 字符,防单条爆炸
+  - 权重双源(part3.6):新版 full_report 写 dim_weights;读不到时按 scan_depth
+    fallback 到 e2e_tester.DIM_WEIGHTS_DEEP/QUICK 常量,历史报告不丢信息
 
 立规则对齐:
   - 第 5 条 JSON 字段自动反序列化(payload_json → dict)
   - 第 14 条 severity 严格三态(info/warning/error)
   - 第 20 条 业务逻辑放独立模块,api_server 只做路由
+  - 第 49 条(part3.6 新立) 大文件修改用拷贝+局部替换,别重出整文件
 """
 
 import json
@@ -157,13 +173,16 @@ def _load_recent_events(db, anchor_time):
     try:
         conn = db.get_connection()
         c = conn.cursor()
+        # part3.6 修复: operation_events 真实字段名是 event_time / payload_json,
+        # 不是 created_at / payload。老 SQL 抛 no such column 被 except 静默接住,
+        # 导致诊断包"近 7 天事件"永远空。详见 db_manager.py 第 363-376 行表定义。
         c.execute(
-            """SELECT event_type, module, severity, created_at, payload
+            """SELECT event_type, module, severity, event_time, payload_json
                FROM operation_events
                WHERE severity IN ('warning', 'error')
-                 AND datetime(created_at) >= datetime(?)
-                 AND datetime(created_at) <= datetime(?)
-               ORDER BY created_at DESC""",
+                 AND datetime(event_time) >= datetime(?)
+                 AND datetime(event_time) <= datetime(?)
+               ORDER BY event_time DESC""",
             (
                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                 anchor.strftime("%Y-%m-%d %H:%M:%S"),
@@ -415,13 +434,35 @@ def _render_section_metadata(lines, report):
     lines.append("")
 
 
+def _resolve_dim_weights(fr):
+    """part3.6 新增:读取侧权重兜底。
+
+    新报告从 fr["dim_weights"] 读(e2e_tester.py v2.3.0-part3.6 起已落库);
+    历史报告 fr 里没这个字段,按 fr["scan_depth"] fallback 到 e2e_tester 常量。
+    import 失败也不崩,返回空字典让上层渲染"--"。
+    """
+    weights = fr.get("dim_weights")
+    if isinstance(weights, dict) and weights:
+        return weights
+    # fallback: 历史报告走这里
+    scan_depth = (fr.get("scan_depth") or "deep").lower()
+    try:
+        from scripts.e2e_tester import DIM_WEIGHTS_DEEP, DIM_WEIGHTS_QUICK
+    except Exception:
+        try:
+            from e2e_tester import DIM_WEIGHTS_DEEP, DIM_WEIGHTS_QUICK
+        except Exception:
+            return {}
+    return dict(DIM_WEIGHTS_DEEP) if scan_depth == "deep" else dict(DIM_WEIGHTS_QUICK)
+
+
 def _render_section_dimensions(lines, report):
     lines.append("## 二、六维度得分")
     lines.append("")
 
     fr = _get_full_report(report)
     dims = fr.get("dims") or {}
-    weights = fr.get("dim_weights") or {}
+    weights = _resolve_dim_weights(fr)
 
     lines.append("| 维度 | 得分 | 权重 | 加权贡献 | 状态 |")
     lines.append("|---|---|---|---|---|")
@@ -475,7 +516,36 @@ def _render_section_whitelist(lines, report):
     total = len(f4) + len(f6)
 
     if total == 0:
-        lines.append("无白名单过滤项。")
+        # part3.6 修复: 不再一句"无白名单过滤项"就收工,加失效自检。
+        # 白名单一条都没命中通常意味着行号已漂移(db_manager.py 改动后没重扫)。
+        # 诊断包自己告诉 Claude 自己可能在骗他,避免 Claude 照单全收"0 条过滤"。
+        dim4_issue_count = len((dims.get("dim4") or {}).get("issues") or [])
+        dim6_issue_count = len((dims.get("dim6") or {}).get("issues") or [])
+        lines.append("**⚠️ 本次扫描未过滤任何已知合理项**。两种可能:")
+        lines.append("")
+        lines.append("- **(a) 白名单确无命中**:dim4/dim6 真的干净,本库当前状态无\"已知合理项\"")
+        lines.append(
+            "- **(b) 白名单已失效**(行号漂移):`e2e_tester.py` 的 "
+            "DIM4/DIM6_KNOWN_FALSE_POSITIVES 基准行号跟当前 `db_manager.py` 对不上"
+        )
+        lines.append("")
+        if dim4_issue_count + dim6_issue_count >= 20:
+            lines.append(
+                "**当前 dim4/dim6 共命中 {} 条 issue(dim4 {} / dim6 {})**,"
+                "若远高于历史基线,**99% 是情况 (b) 白名单已失效**,"
+                "建议对照附录 issue 清单二次人工判断已知合理项。".format(
+                    dim4_issue_count + dim6_issue_count,
+                    dim4_issue_count,
+                    dim6_issue_count,
+                )
+            )
+        else:
+            lines.append(
+                "当前 dim4/dim6 共命中 {} 条 issue,数量不高,"
+                "情况 (a) 或 (b) 都可能,建议扫 issue 清单粗判。".format(
+                    dim4_issue_count + dim6_issue_count
+                )
+            )
         lines.append("")
         return
 
@@ -671,11 +741,12 @@ def _render_section_events(lines, events_by_type):
             etype, info["total"], len(info["samples"])))
         lines.append("")
         for ev in info["samples"]:
-            ts = ev.get("created_at") or "-"
+            # part3.6 修复: 真实字段 event_time / payload_json,不是 created_at / payload
+            ts = ev.get("event_time") or "-"
             module = ev.get("module") or "-"
             sev = ev.get("severity") or "-"
             payload_disp = _truncate(
-                _flatten_payload(ev.get("payload") or ""),
+                _flatten_payload(ev.get("payload_json") or ""),
                 _PAYLOAD_MAX_CHARS,
             )
             lines.append("- **{}** [{} · {}] {}".format(
@@ -690,7 +761,8 @@ def _render_section_instructions(lines):
     lines.append("2. **聚合语义**:本报告按 `(dim_code + rule_id + 文件)` 三元组聚合")
     lines.append("   - 某组命中行号多(如 ×47)通常是**模块级模式问题**,建议给整体重构建议而非逐行修")
     lines.append("   - 某组命中行号少(1-3 条)通常是**个别点位**,针对性修")
-    lines.append("3. **白名单**:第三段已列出的 signature 已在 `scripts/e2e_tester.py` 白名单内,**不要重复诊断**")
+    lines.append("3. **白名单**:第三段已列出的 signature 已在 `scripts/e2e_tester.py` 白名单内,**不要重复诊断**;"
+                 "若第三段显示**\"白名单已失效\"**警告,请对全部 issue 二次判断是否为已知合理项")
     lines.append("4. **状态语义**:")
     lines.append("   - `pending`:待修,本次重点")
     lines.append("   - `intermittent`:7 天内 >5 次触发的偶发问题,值得重视")
@@ -709,19 +781,21 @@ def _render_section_version_context(lines):
     lines.append("| 模块 | 最新版本 |")
     lines.append("|---|---|")
     lines.append("| api_server.py | v2.3.0-part3.5(+ E2E 诊断包导出路由) |")
-    lines.append("| e2e_tester.py | v2.3.0-part3.4(_write_issues 签名修复) |")
+    lines.append("| e2e_tester.py | v2.3.0-part3.6(full_report 补写 dim_weights) |")
     lines.append("| db_manager.py | v2.3.0-part3.4(get_polish_candidates 候选池修复) |")
     lines.append("| static_analyzer.py | v2.3.0-part3-alpha1 |")
     lines.append("| review.html | v2.3.0-part3.5(+ 导出诊断包按钮) |")
-    lines.append("| e2e_diagnosis_exporter.py | v2.3.0-part3.5(新模块) |")
+    lines.append("| e2e_diagnosis_exporter.py | v2.3.0-part3.6(三个显示 bug 修复) |")
     lines.append("")
     lines.append("**近期关键 hotfix**:")
+    lines.append("- v2.3.0-part3.6:诊断包六维度权重/白名单自检/事件日志 SQL 三 bug 修复")
+    lines.append("- v2.3.0-part3.5:E2E 诊断包 Markdown 导出 feature 首版")
     lines.append("- v2.3.0-part3.4:低分打磨候选池允许 confirmed + E2E issue 签名漂移修复")
     lines.append("- v2.3.0-part3.3:审核统计 UI 重写 + 保鲜 loading + E2E 白名单刷新")
     lines.append("- v2.3.0-part3.2:仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋")
     lines.append("- v2.3.0-part3.1:F061 质检补跑签名漂移 + F062 老库自动追齐 init_tables")
     lines.append("")
-    lines.append("**立规则**:共 46 条(数据层 10 / 代码层 12 / 交互层 8 / 流程层 16),详见 `01_工程手册.md §二`。")
+    lines.append("**立规则**:共 49 条(数据层 10 / 代码层 12 / 交互层 8 / 流程层 19,part3.6 新增 3 条),详见 `01_工程手册.md §二`。")
     lines.append("")
 
 

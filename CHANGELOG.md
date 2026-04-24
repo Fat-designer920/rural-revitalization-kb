@@ -6,6 +6,45 @@
 
 ---
 
+## [v2.3.0-part3.6] - 2026-04-24 (hotfix)
+
+**定位**:诊断包首版三 bug 一次清除 + 沉淀三条工程纪律。从"导出看得到文件"升级为"导出拿到手的报告是准的"。
+
+### Fixed
+
+- **Bug 1 — 六维度得分表权重列全 0**:`e2e_tester._run_pipeline` 构造 `full_report` 时漏写 `dim_weights` 字段,权重常量 `DIM_WEIGHTS_DEEP/QUICK` 在 `_compute_total_score` 里用完就扔。exporter 读 `fr.get("dim_weights")` 永远拿空字典。**修复**:tester 写入侧补 `"dim_weights": dict(weights)` + exporter 读取侧加历史报告兜底(按 `scan_depth` fallback 到常量)。老报告不用重跑
+- **Bug 2 — 白名单过滤永远显示"无过滤项"**:白名单行号仍停在 db_manager.py v2.3.0-part3.2 基准,对齐不上 part3.4 真实行号,67+11 条零命中。**修复**:exporter 加失效自检 —— `filtered_out` 空 + dim4/dim6 命中 ≥20 条 → 输出"⚠️ 白名单可能已失效"警告(不再静默说"无过滤")。重扫白名单对齐 part3.4 行号是独立体力活,留单独 hotfix
+- **Bug 3 — 近 7 天事件日志永远空**:exporter SQL 字段名拼错 `created_at` / `payload`,真实字段是 `event_time` / `payload_json`,运行时 `no such column` 被 except 静默接住。**修复**:查询 SQL + 渲染读取两处字段名全修正
+- 所有修复按**立规则第 50 条 6 项拉通验证**跑过:语法 + 字段名 grep + 调用点 + 新旧数据兼容 + 写入/读取契约对齐 + import 双路径
+
+### Added
+
+- **立规则第 49 条**:大文件小改动(≥300 行 且 ≤5 处)用"拷贝 + 局部替换"工作流,不重出整文件。md 项目文件同样适用
+- **立规则第 50 条**:局部修改后必跑 **6 项拉通验证**再 `present_files` —— 语法 / 字段名漏网 / 调用点 / 新旧数据 / 跨文件契约 / import 路径。与第 49 条配套,防"单点写对但没回头拉通"
+- **立规则第 51 条(元规则)**:项目文件改完也要"拉通 + 做减法"。核心法则 —— 凡老唐每次会发源码给 Claude 的内容,不在 md 里展开细节;立规则/踩坑/决策"为什么"要留,论证过程/长篇举例要删。与 47/48 条三位一体,分别管"写什么"/"不写什么"/"每次更新做减法"。**自证**:part3.6 首版第 49/50 条各 500 字,按第 51 条压到 200 字
+
+### Changed
+
+- `scripts/e2e_tester.py` v2.3.0-part3.4 → **v2.3.0-part3.6**(+11 行)
+- `scripts/e2e_diagnosis_exporter.py` v2.3.0-part3.5 → **v2.3.0-part3.6**(+74 行)
+- `00 / 01 / CHANGELOG / README` 全量同步,立规则总数 48 → 51
+- 立规则第 9 条追加 part3.6 第 4 次应验案例
+
+### Migration
+
+无 schema / 无迁移 / 无新增路由 / 无数据转换。纯代码替换 + 项目文件同步。
+
+### Upgrade Path
+
+1. 替换 `scripts/e2e_tester.py` + `scripts/e2e_diagnosis_exporter.py`
+2. 推送 GitHub → 重启 `启动后台.bat`
+3. 验证:工具箱→端到端测试→跑一次 deep 扫描→弹窗 footer 点"导出诊断包"→检查新报告三项:① 六维度得分表"权重"列显示 0.12/0.20 等真实数字(不全 0);② 第三段显示"⚠️ 白名单可能已失效"警告(或有真实过滤条目);③ 第五段显示近 7 天的 warn/error 事件(不是"无事件")
+4. 老诊断包(part3.5 导出的 9 号报告)不受影响,exporter 读取侧有 fallback
+
+**工程细节详见**:`01 §四 诊断包三 bug 修复 v2.3.0-part3.6 锁定` + `01 立规则 49/50/51 条`
+
+---
+
 ## [v2.3.0-part3.5] - 2026-04-24 (feature)
 
 **定位**:F062 配套 —— E2E 诊断包 Markdown 导出。跑完 E2E 一键打包发 Claude 做异地诊断,把 issue 审查从"网页逐条切四态"前置为"整包批量诊断"。

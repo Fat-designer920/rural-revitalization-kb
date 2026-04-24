@@ -1,7 +1,15 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 路径：scripts/e2e_tester.py
-版本：v2.3.0-part3.4 - hotfix: _write_issues 签名漂移 + 调用顺序修正
+版本：v2.3.0-part3.6 - hotfix: full_report 补写 dim_weights 字段
+
+变更（v2.3.0-part3.6,2026-04-24）:
+  - full_report 字典新增 "dim_weights": dict(DIM_WEIGHTS_DEEP/QUICK) 字段
+  - 根因:老版本权重常量只在 _compute_total_score 里用完就扔,没落进 full_report_json。
+    exporter 读 fr.get("dim_weights") 永远拿空字典,导致诊断包"六维度得分表"权重
+    列全 0、加权贡献列全 0(总分 69.32 算对但明细看起来是"0 × 95 = 0")。
+  - 修复 part3.5 诊断包显示的 Bug 1(权重全 0)。
+  - 立规则第 9 条第 4 次应验:读取侧字段必须在写入侧存在,不能靠常量默认。
 
 变更（v2.3.0-part3.4,2026-04-23）:
   - _write_issues(issues) 签名扩为 _write_issues(issues, report_id)
@@ -481,10 +489,13 @@ class E2ETester(object):
 
         # --- 保存报告(先保存拿 report_id,再写 issue,part3.4 调整顺序) ---
         duration = int(time.time() - self._started_at)
+        # part3.6: 把计算总分用的权重字典写进 full_report,供 exporter 渲染加权贡献列
+        dim_weights = DIM_WEIGHTS_DEEP if scan_depth == "deep" else DIM_WEIGHTS_QUICK
         full_report = {
             "scan_depth": scan_depth,
             "total_score": total_score,
             "dims": dims_result,
+            "dim_weights": dict(dim_weights),
             "summary": summary,
             "new_endpoints": new_endpoints,
             "v3_call_count": self._v3_call_count,
