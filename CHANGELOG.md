@@ -6,6 +6,52 @@
 
 ---
 
+## [v2.3.1] - 2026-04-24 (feature)
+
+**定位**:**精品资产生产线首版** —— 老唐的 2400+ quotable kp 有了"AI 双视角筛 + 批量封神 + Markdown/JSON 导出"的完整流水线。200/300/500 条精品级知识的商业化里程碑路径从"靠肉眼逐条扫"进化为"一个下午过完一轮"。
+
+### Added
+
+- **F2 精品候选队列**(7 路由 + 1 新表 + 7 字段):`premium_judge.py` AI 双视角判定引擎(客户型/投标型独立 Prompt,N=1 单条 V3 调用,三级降级:主链 → L1 重试 1 次 → L2 本地规则兜底 `source='rule_fallback'`);`knowledge_points` 表 7 新字段(`premium_client/premium_rfp` 两档精品双标 + `premium_tier` 三级成色 verified/trusted/candidate + `used_count/last_used_at/used_for` 使用埋点预埋 + `premium_freshness_status` 保鲜预埋);`premium_ai_cache` 新表缓存 AI 判定结果(`UNIQUE(kp_id, view)`)
+- **F6 精品导出**(1 路由):`premium_exporter.py` Markdown(按分类分组,成色翻译为"铁货/硬货/候选")+ JSON(v2.3.2 F056 发布标准预埋)双格式,4 种 scope(all_premium / client_only / rfp_only / by_category)
+- **review.html 前端 14 卡工具箱 + 3 新模态 + Tab 1 精品属性区**:精品候选队列模态(双 tab 视角切换 + 强推/可选筛选 + 批量浏览+封神 + 今日计数)、批量浏览确认模态、精品导出配置模态;卡渲染新增精品徽章(客户型绿/投标型蓝/成色红)+ 撤销按钮 + 成色升降按钮;独立轮询 `premiumCheckRunningTask()`(对齐 qcCheckRunningTask 模式)
+- **新 Prompt 2 条**:`PREMIUM_JUDGE_CLIENT_PROMPT`(实用性优先) + `PREMIUM_JUDGE_RFP_PROMPT`(权威性优先);PROMPT_VERSION 升级到 `v2.3.1`
+- **11 条新 event_type**:`premium_refresh_start/done/failed/canceled` / `premium_readiness_check_failed` / `premium_ai_call_failed` / `premium_blessed/unblessed/skipped` / `premium_export_success/failed`
+- **立规则 53-56**(四条元规则一次立):53 Phase 2 完成后必须压缩上下文防跨对话 / 54 项目文件更新放 Phase 3 最后一轮不提前预告 / 55 工具脚本优先合并进既有设施不新建一次性脚本 / 56 目录路径约定以"读方"为准不以"写方"为准
+- 独立 `_premium_task` 任务槽 + 10 分钟冷却期 + `_premium_readiness_check` 4 层自检(对齐 _qc_task 模式,立规则 31 的第三次落地)
+
+### Fixed / Changed
+
+- `setup.py` 大改(立规则 55/56 落地):新增 `_upgrade_schema_to_current()` 幂等追齐函数(新库空跑、老库 ALTER TABLE ADD COLUMN),原 `migrate_v2_3_1.py` **已删除**,scripts 目录不再堆积一次性迁移脚本
+- `setup.py` dirs 列表修正:移除 `backups/`(根目录孤岛) + `backups/snapshots/`(零代码引用);新增 `data/backups/`(对齐 backup_manager.py 第 54 行硬编码);删除 `data/pending/请将待处理文件放在此文件夹中.txt` 占位文档创建
+- `db_manager.py` 新增 7 个 F2 方法:`get_premium_judge_candidates` / `upsert_premium_ai_cache` / `get_premium_ai_cache_by_kp` / `get_premium_pool_list` / `bless_premium` / `unbless_premium` / `get_premium_export_data`
+- `db_manager.py` `update_knowledge_point` 白名单扩 7 字段(防 F2 字段注入失败)
+- 工程手册 §5.7 字段真名方向翻转修正(立规则 9 第 5 次应验):`source_authority` / `access_level` 才是 schema 真名,`authority_level` / `monetize_tier` 是 SQL 对外别名。历史文档反写潜伏至本版
+
+### Migration
+
+- `setup.py` 已合并迁移职责。**老库升级路径**:备份 → 替换代码 → 跑 `首次安装.bat` → 看 Step [6/6] 输出"追加 7 字段 / 1 新表 / 3 新索引"
+- **新库安装路径**:无需任何额外步骤,`init_tables()` 已含全部 v2.3.1 schema
+
+### Upgrade Path
+
+1. 备份 `data/database/knowledge_base.db`
+2. 清理过时文件:`rmdir /s /q backups`(根目录无用) + `del data\pending\请将待处理文件放在此文件夹中.txt` + 如果 scripts 下还有 `migrate_v2_3_1.py` 也删除
+3. 替换 7 文件:`db_manager.py` / `prompt_templates.py` / `api_server.py` / `premium_judge.py`(新) / `premium_exporter.py`(新) / `setup.py` / `review.html`
+4. 跑 `首次安装.bat`,验证 Step [6/6] 追齐 7 字段 + 1 新表 + 3 索引
+5. 强刷浏览器 Ctrl+Shift+R,打开 Tab 2 系统管理,点"精品候选队列"卡,应看到空态(尚未刷新)
+6. 可选:点"刷新 AI 推荐",确认弹窗预估 7-10 元 / 40-60 分钟,等完成查看 Top 15% 强推条目
+7. 异常回滚到 v2.3.0-part3.8
+
+### 教训段(立规则 9 扩至第 7 次应验)
+
+- **第 5 次**:工程手册 §5.7 字段真名与 SQL 别名方向写反,照文档记忆反写,Phase 3 第 1 轮对照 db_manager 源码才发现
+- **第 6 次**:`migrate_v2_3_1.py` 默认 db 路径凭经验猜(`data/rural_revitalization.db`),真实是 `data/database/knowledge_base.db`。老唐跑首次安装失败才暴露。Hotfix 改为复用 `DatabaseManager` 的路径解析逻辑
+- **第 7 次**:setup.py 目录 dirs 与 backup_manager 真实路径分叉三四个版本(`backups/` 孤岛 + `snapshots/` 纯独创),老唐跑首次安装发现根目录多出无用目录才暴露。立规则 56 固化"读方为准"约束
+- **产品心理 vs 工程师心理**(立规则 54 血训):Claude Phase 3 第 1 轮怕"跨对话丢记忆"提前改工程手册 §5.12 章节,老唐纠正后回滚。正确做法是 Phase 3 最后一轮回查式更新项目文件,不提前预告
+
+---
+
 ## [v2.3.0-part3.8] - 2026-04-24 (hotfix)
 
 **定位**:F062 白名单一次性清账(从 db_manager 单文件扩到 7 文件)+ 6 批量路由从裸 `except:pass` 升级到 `errors.append` 收集(E2 方案)+ 立规则 52 条首次应用清理 extractor/duplicate_checker 冗余迁移 import。E2E 扫分预期从 79.2 回到 92-95。

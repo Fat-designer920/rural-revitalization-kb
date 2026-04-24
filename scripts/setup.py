@@ -1,18 +1,33 @@
 """
-setup.py - 系统初始化（完整建库）
+setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.0-part3
+版本：v2.3.1
 
 功能：
   1. 创建目录结构（9个目录）
-  2. 初始化数据库（18张表，全部字段，一次建成）
+  2. 初始化数据库（19张表,全部字段,一次建成）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. 创建桌面快捷方式
-  6. 验证核心文件完整性（v2.3.0-part3 新增 health_checker.py / db_health_check.py）
+  5. [v2.3.1 新增] 追齐存量库 schema（幂等,新库空跑）
+  6. 创建桌面快捷方式
+  7. 验证核心文件完整性
 
 注意：本脚本替代了所有 migrate_*.py 迁移脚本。
-      新用户首次安装直接获得最新完整表结构，无需逐版本迁移。
+      新用户首次安装 → init_tables() 一步到位拿最新 schema。
+      存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
+      同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
+
+v2.3.1 变更：
+  - 合并 migrate_v2_3_1.py 核心逻辑为 _upgrade_schema_to_current() 函数
+    (立规则第 9 条应验 + 老唐立规则"scripts 不留一次性脚本")
+  - knowledge_points 表 7 字段新增: premium_client / premium_rfp /
+    premium_tier / used_count / last_used_at / used_for /
+    premium_freshness_status
+  - 新表 premium_ai_cache(v2.3.1 F2 AI 双视角判定缓存)
+  - 3 个新索引: idx_kp_premium_client / idx_kp_premium_rfp /
+    idx_premium_cache_kp_view
+  - 核心文件校验清单追加 2 项: premium_judge.py / premium_exporter.py
+  - 数据库表数量: 18 → 19 张
 
 v2.3.0-part3 变更（对话 B 防护层）：
   - get_version() 兜底字符串 "2.3.0-part2.1" → "2.3.0-part3"
@@ -26,7 +41,7 @@ v2.3.0-part2.1 变更：
   - scripts/migrate_v223.py 和 scripts/migrate_v230_part2.py 已退役（删除）
   - 数据库表数量：15张 → 18张（新增 operation_events / health_reports / polish_suggestions）
 """
-import os, sys, json
+import os, sys, json, sqlite3
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -45,7 +60,98 @@ def get_config():
 
 def get_version():
     p = PROJECT_ROOT / "VERSION"
-    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.0-part2.2"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.1"
+
+
+# ================================================================
+# v2.3.1 追齐存量库 schema(合并自原 migrate_v2_3_1.py,老唐立规则)
+# ----------------------------------------------------------------
+# 设计原则:
+#   - 新库:init_tables() 已建全,本函数全跳过(PRAGMA table_info 检查)
+#   - 老库:ALTER TABLE ADD COLUMN / CREATE TABLE IF NOT EXISTS /
+#          CREATE INDEX IF NOT EXISTS 幂等追加
+#   - 任意次数运行无副作用(立规则第 8 条)
+# ================================================================
+_V231_NEW_COLUMNS = [
+    ("premium_client", "INTEGER DEFAULT 0"),
+    ("premium_rfp", "INTEGER DEFAULT 0"),
+    ("premium_tier", "TEXT DEFAULT NULL"),
+    ("used_count", "INTEGER DEFAULT 0"),
+    ("last_used_at", "TEXT DEFAULT NULL"),
+    ("used_for", "TEXT DEFAULT NULL"),
+    ("premium_freshness_status", "TEXT DEFAULT NULL"),
+]
+
+_V231_NEW_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS premium_ai_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kp_id INTEGER NOT NULL,
+    view TEXT NOT NULL CHECK(view IN ('client','rfp')),
+    recommendation TEXT CHECK(recommendation IN ('strong','optional','not')),
+    reason TEXT,
+    score REAL DEFAULT 0.0,
+    source TEXT DEFAULT 'ai' CHECK(source IN ('ai','rule_fallback')),
+    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(kp_id, view)
+)
+"""
+
+_V231_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_kp_premium_client ON knowledge_points(premium_client)",
+    "CREATE INDEX IF NOT EXISTS idx_kp_premium_rfp ON knowledge_points(premium_rfp)",
+    "CREATE INDEX IF NOT EXISTS idx_premium_cache_kp_view ON premium_ai_cache(kp_id, view)",
+]
+
+
+def _upgrade_schema_to_current(db_path):
+    """追齐存量库 schema 到 v2.3.1.
+
+    返回 dict 描述本次实际追加的内容(供 setup 主流程打印汇总).
+    新库场景下会全部跳过,返回全零值.
+    """
+    summary = {
+        "columns_added": [], "columns_skipped": [],
+        "tables_created": [], "tables_skipped": [],
+        "indexes_created": [], "indexes_skipped": [],
+    }
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    try:
+        # Step 1: knowledge_points 7 字段幂等追加
+        c.execute("PRAGMA table_info(knowledge_points)")
+        existing_cols = {r[1] for r in c.fetchall()}
+        for col_name, col_def in _V231_NEW_COLUMNS:
+            if col_name in existing_cols:
+                summary["columns_skipped"].append(col_name)
+            else:
+                c.execute("ALTER TABLE knowledge_points ADD COLUMN %s %s"
+                          % (col_name, col_def))
+                summary["columns_added"].append(col_name)
+
+        # Step 2: premium_ai_cache 新表(CREATE TABLE IF NOT EXISTS)
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                  "AND name='premium_ai_cache'")
+        if c.fetchone():
+            summary["tables_skipped"].append("premium_ai_cache")
+        else:
+            c.execute(_V231_NEW_TABLE_SQL)
+            summary["tables_created"].append("premium_ai_cache")
+
+        # Step 3: 3 个新索引(CREATE INDEX IF NOT EXISTS)
+        for idx_sql in _V231_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        conn.commit()
+    finally:
+        conn.close()
+    return summary
 
 
 def main():
@@ -60,48 +166,48 @@ def main():
 
     base = Path(config.get("knowledge_base_path", str(PROJECT_ROOT)))
 
-    # ── [1/5] 创建目录结构 ──────────────────────────
-    print("\n[1/5] 创建文件夹...")
+    # ── [1/6] 创建目录结构 ──────────────────────────
+    # v2.3.1 立规则 9 应验修复:
+    #   backup_manager.py 第 54 行硬编码 '<base>/data/backups',
+    #   历史 setup.py 曾误创建根目录 'backups/' 和 'backups/snapshots/',
+    #   实际无任何代码引用,纯冗余。本版已修正为真实备份路径。
+    print("\n[1/6] 创建文件夹...")
     dirs = [
         "data/pending", "data/processing", "data/completed",
         "data/database", "data/exports",
+        "data/backups",         # 真实备份目录(与 backup_manager.py 对齐)
         "config", "logs",
-        "backups", "backups/snapshots"
     ]
     for d in dirs:
         (base / d).mkdir(parents=True, exist_ok=True)
         print("    OK %s/" % d)
 
-    readme = base / "data" / "pending" / "请将待处理文件放在此文件夹中.txt"
-    if not readme.exists():
-        with open(readme, "w", encoding="utf-8") as f:
-            f.write("请将需要AI处理的文件放在此文件夹中。\n"
-                    "支持: PDF, Word(.docx), Excel(.xlsx/.csv), "
-                    "图片(JPG/PNG), 纯文本(.txt/.md)\n")
+    # v2.3.1 去除 pending 占位说明文档:目录名 "pending" 已说明用途,
+    #   文档对用户无增量价值,反而让"文件夹为空"的正常判断变复杂
 
-    # ── [2/5] 初始化数据库 ──────────────────────────
-    print("\n[2/5] 初始化数据库...")
+    # ── [2/6] 初始化数据库 ──────────────────────────
+    print("\n[2/6] 初始化数据库...")
     db_path = config.get("database_path",
                          str(base / "data" / "database" / "knowledge_base.db"))
     db = DatabaseManager(db_path)
     db.init_tables()
-    print("    OK 18张表已创建（全部字段，无需迁移）")
+    print("    OK 19张表已创建（全部字段，无需迁移）")
 
-    # ── [3/5] 写入默认分类 ──────────────────────────
-    print("\n[3/5] 写入默认分类...")
+    # ── [3/6] 写入默认分类 ──────────────────────────
+    print("\n[3/6] 写入默认分类...")
     db.init_default_categories()
     print("    OK 27条分类已写入")
 
-    # ── [4/5] 写入标签定义 ──────────────────────────
-    print("\n[4/5] 写入标签定义...")
+    # ── [4/6] 写入标签定义 ──────────────────────────
+    print("\n[4/6] 写入标签定义...")
     try:
         db.init_tag_definitions()
         print("    OK 标签定义已写入")
     except Exception as e:
         print("    跳过 (%s)" % e)
 
-    # ── [5/5] 插入虚拟source_file(id=0) ─────────────
-    print("\n[5/5] 初始化系统记录...")
+    # ── [5/6] 插入虚拟source_file(id=0) ─────────────
+    print("\n[5/6] 初始化系统记录...")
     conn = db.get_connection()
     c = conn.cursor()
     c.execute("SELECT id FROM source_files WHERE id=0")
@@ -116,6 +222,32 @@ def main():
     else:
         print("    OK 虚拟source_file(id=0)已存在")
     conn.close()
+
+    # ── [6/6] 追齐存量库 schema (v2.3.1) ─────────────
+    # 新库场景下本步骤全部跳过(init_tables 已建全)
+    # 老库场景下本步骤会 ALTER TABLE ADD COLUMN / CREATE TABLE IF NOT EXISTS
+    # 本函数合并自原 scripts/migrate_v2_3_1.py,v2.3.1 起不再单独提供 migrate 脚本
+    print("\n[6/6] 追齐存量库 schema (v2.3.1)...")
+    try:
+        up = _upgrade_schema_to_current(db_path)
+        ca = len(up["columns_added"]); cs = len(up["columns_skipped"])
+        ta = len(up["tables_created"]); ts = len(up["tables_skipped"])
+        ia = len(up["indexes_created"]); is_ = len(up["indexes_skipped"])
+        if ca == 0 and ta == 0 and ia == 0:
+            print("    OK 存量 schema 已是最新,无需追齐(跳过 %d 字段 / %d 表 / %d 索引)"
+                  % (cs, ts, is_))
+        else:
+            print("    OK 存量库升级:追加 %d 字段 / %d 新表 / %d 新索引"
+                  % (ca, ta, ia))
+            if up["columns_added"]:
+                print("       字段: " + ", ".join(up["columns_added"]))
+            if up["tables_created"]:
+                print("       新表: " + ", ".join(up["tables_created"]))
+            if up["indexes_created"]:
+                print("       索引: " + ", ".join(up["indexes_created"]))
+    except Exception as e:
+        print("    !! 追齐 schema 失败: %s" % e)
+        print("       可用 sqlite3 手动查 knowledge_points 和 premium_ai_cache 表")
 
     db.log_operation("system_init", details={"version": get_version()})
 
@@ -158,6 +290,8 @@ def main():
         "scripts/db_health_check.py",    # v2.3.0-part2.2（数据层只读体检脚本）
         "scripts/static_analyzer.py",    # v2.3.0-part3-alpha1 新增（F062 维度③④⑥ AST 规则库）
         "scripts/e2e_tester.py",         # v2.3.0-part3-alpha2 新增（F062 六维度扫描引擎层）
+        "scripts/premium_judge.py",      # v2.3.1 新增（F2 精品候选 AI 双视角判定引擎）
+        "scripts/premium_exporter.py",   # v2.3.1 新增（F6 精品导出 Markdown/JSON 格式化）
         "scripts/prompts/prompt_templates.py",
         "web/templates/review.html",
     ]
