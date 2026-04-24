@@ -640,6 +640,65 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .e2e-whitelist-details{margin-top:12px;padding:8px 12px;background:var(--bg);border-radius:8px}
 .e2e-whitelist-details summary{cursor:pointer;font-size:12px;color:var(--text-muted);font-weight:600}
 .e2e-whitelist-details .ewd-item{padding:6px 0;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-secondary);font-family:Menlo,Consolas,monospace}
+
+/* ===== v2.3.1 F2/F6 精品候选模块样式 ===== */
+.prem-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
+.prem-badge-client{background:#E8F5F2;color:#0A9B80;border:1px solid #0A9B80}
+.prem-badge-rfp{background:#E6F3FB;color:#1F7AAC;border:1px solid #1F7AAC}
+.prem-badge-tier{background:#FFF4E6;color:#C97A2C;border:1px solid #E4A85A}
+.prem-badge-tier.tier-verified{background:#FDE8EC;color:#C93D60;border-color:#C93D60}
+.prem-badge-tier.tier-candidate{background:#F5F5F5;color:#888;border-color:#BBB}
+.prem-status-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg);border-radius:var(--radius);margin-bottom:12px;font-size:12px;flex-wrap:wrap}
+.prem-status-bar .psb-refresh-info{flex:1;color:var(--text-secondary)}
+.prem-status-bar .psb-cost{color:var(--warning);font-weight:600}
+.prem-status-bar button{padding:6px 16px;font-size:12px}
+.prem-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:12px}
+.prem-tab{padding:10px 22px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);border-bottom:2px solid transparent;margin-bottom:-2px;transition:var(--transition)}
+.prem-tab.active{color:var(--primary);border-color:var(--primary);font-weight:600}
+.prem-tab .tab-count{margin-left:6px;padding:1px 8px;border-radius:10px;background:var(--primary-light);color:var(--primary);font-size:11px;font-weight:600}
+.prem-level-filter{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.prem-level-filter .plf-btn{padding:6px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;cursor:pointer;background:#fff;transition:var(--transition)}
+.prem-level-filter .plf-btn:hover{border-color:var(--primary)}
+.prem-level-filter .plf-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.prem-level-filter .plf-spacer{flex:1}
+.prem-level-filter .plf-action{padding:6px 14px;font-size:12px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--success);color:var(--success);background:#fff}
+.prem-level-filter .plf-action:hover{background:var(--success);color:#fff}
+.prem-list{max-height:60vh;overflow-y:auto;padding-right:4px}
+.prem-item{padding:14px;border:1px solid var(--border-light);border-radius:var(--radius);margin-bottom:10px;background:#fff}
+.prem-item.level-strong{border-left:4px solid var(--success)}
+.prem-item.level-optional{border-left:4px solid var(--warning)}
+.prem-item .pi-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.prem-item .pi-level{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.prem-item .pi-level.level-strong{background:var(--success);color:#fff}
+.prem-item .pi-level.level-optional{background:var(--warning);color:#fff}
+.prem-item .pi-score{font-size:11px;color:var(--text-muted);margin-left:8px}
+.prem-item .pi-title{flex:1;font-weight:600;font-size:14px;color:var(--text)}
+.prem-item .pi-other-blessed{font-size:11px;color:var(--warning);margin-left:8px}
+.prem-item .pi-meta{font-size:11px;color:var(--text-secondary);margin:6px 0;display:flex;gap:12px;flex-wrap:wrap}
+.prem-item .pi-meta span{white-space:nowrap}
+.prem-item .pi-reason{background:#FFF9E6;padding:6px 10px;border-radius:4px;font-size:12px;color:#7A5A10;margin:8px 0}
+.prem-item .pi-excerpt{font-size:12px;color:var(--text-secondary);line-height:1.5;margin:6px 0;max-height:4em;overflow:hidden}
+.prem-item .pi-actions{margin-top:10px;display:flex;gap:6px;justify-content:flex-end}
+.prem-item .pi-actions button{padding:4px 12px;font-size:12px}
+.prem-batch-list{max-height:55vh;overflow-y:auto;border:1px solid var(--border-light);border-radius:var(--radius);padding:4px}
+.prem-batch-item{display:flex;align-items:flex-start;gap:10px;padding:10px;border-bottom:1px solid var(--border-light);font-size:12px}
+.prem-batch-item:last-child{border-bottom:none}
+.prem-batch-item input[type=checkbox]{margin-top:3px}
+.prem-batch-item .pbi-body{flex:1}
+.prem-batch-item .pbi-title{font-weight:600;font-size:13px;margin-bottom:4px}
+.prem-batch-item .pbi-meta{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+.prem-batch-item .pbi-reason{font-size:11px;color:#7A5A10;background:#FFF9E6;padding:3px 8px;border-radius:3px}
+.prem-batch-toolbar{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border-light);font-size:12px}
+.prem-batch-toolbar .pbt-info{flex:1;font-weight:600}
+.prem-export-form{padding:4px}
+.prem-export-form .pef-section{margin-bottom:14px}
+.prem-export-form .pef-label{font-weight:600;font-size:12px;margin-bottom:6px;color:var(--text)}
+.prem-export-form .pef-options label{display:inline-block;margin-right:14px;font-size:12px;cursor:pointer}
+.prem-task-progress{margin:10px 0;padding:14px;background:var(--primary-light);border-radius:var(--radius)}
+.prem-task-progress .ptp-title{font-weight:600;font-size:13px;margin-bottom:8px;color:var(--primary)}
+.prem-task-progress .ptp-bar{height:8px;background:#fff;border-radius:4px;overflow:hidden;margin-bottom:8px}
+.prem-task-progress .ptp-fill{height:100%;background:var(--primary);transition:width .5s}
+.prem-task-progress .ptp-stats{display:flex;gap:16px;font-size:11px;color:var(--text-secondary);flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -842,6 +901,16 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-name">端到端测试</div>
         <div class="tool-desc">六维扫描 + issue 四态跟踪</div>
         <span class="e2e-badge" id="e2eBadge" style="display:none"></span>
+      </div>
+      <div class="tool-card" id="tc-premiumPool" onclick="runTool('premiumPool')">
+        <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">&#9733;</div>
+        <div class="tool-name">精品候选队列</div>
+        <div class="tool-desc">AI 双视角推荐 + 批量封神</div>
+      </div>
+      <div class="tool-card" id="tc-premiumExport" onclick="runTool('premiumExport')">
+        <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">&#8615;</div>
+        <div class="tool-name">精品导出</div>
+        <div class="tool-desc">Markdown / JSON 打包下载</div>
       </div>
     </div>
     <div class="tool-result" id="toolResult">
@@ -1182,6 +1251,103 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <div class="modal-footer"><button class="btn" onclick="closeModal('batchResultModal')">关闭</button></div>
 </div></div>
 
+<!-- v2.3.1 F2 精品候选队列模态 -->
+<div class="modal-overlay" id="premiumPoolModal"><div class="modal" style="width:940px;max-height:90vh">
+  <div class="modal-header">精品候选队列 <small style="color:var(--text-muted);font-weight:400">-- AI 双视角推荐,老唐亲自封神</small></div>
+  <div class="modal-body" id="premiumPoolBody" style="padding:14px">
+    <div class="prem-status-bar">
+      <div class="psb-refresh-info" id="premStatusInfo">加载中...</div>
+      <button class="btn" id="premRefreshBtn" onclick="premiumRefreshAI()">刷新 AI 推荐</button>
+    </div>
+    <div class="prem-task-progress" id="premTaskProgress" style="display:none">
+      <div class="ptp-title" id="premTaskTitle">AI 刷新中...</div>
+      <div class="ptp-bar"><div class="ptp-fill" id="premTaskFill" style="width:0%"></div></div>
+      <div class="ptp-stats">
+        <span id="premTaskProgressText">0/0</span>
+        <span id="premTaskCalls">AI 调用: 0</span>
+        <span id="premTaskCost">花费: 0.00 元</span>
+        <span id="premTaskMsg"></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sm" style="padding:2px 8px;font-size:11px" onclick="premiumCancelRefresh()">取消</button>
+      </div>
+    </div>
+    <div class="prem-tabs">
+      <div class="prem-tab active" id="premTab-client" onclick="premiumSwitchView('client')">
+        客户视角 <span class="tab-count" id="premCount-client">-</span>
+      </div>
+      <div class="prem-tab" id="premTab-rfp" onclick="premiumSwitchView('rfp')">
+        投标视角 <span class="tab-count" id="premCount-rfp">-</span>
+      </div>
+    </div>
+    <div class="prem-level-filter">
+      <button class="plf-btn active" id="premLvl-all" onclick="premiumFilterLevel('all')">全部</button>
+      <button class="plf-btn" id="premLvl-strong" onclick="premiumFilterLevel('strong')">&#9733; 强推 <span id="premLvlCount-strong">0</span></button>
+      <button class="plf-btn" id="premLvl-optional" onclick="premiumFilterLevel('optional')">可选 <span id="premLvlCount-optional">0</span></button>
+      <span class="plf-spacer"></span>
+      <button class="plf-action" onclick="premiumShowBatchBrowse()">一键浏览强推</button>
+      <span style="font-size:11px;color:var(--text-muted)">今日已封:<span id="premBlessedToday">0</span></span>
+    </div>
+    <div class="prem-list" id="premList">
+      <div style="text-align:center;color:var(--text-muted);padding:40px">加载中...</div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal('premiumPoolModal')">关闭</button></div>
+</div></div>
+
+<!-- v2.3.1 F2 批量浏览确认模态(快速浏览 + 确认封神) -->
+<div class="modal-overlay" id="premiumBatchModal"><div class="modal" style="width:780px;max-height:88vh">
+  <div class="modal-header" id="premBatchTitle">批量封神确认</div>
+  <div class="modal-body" style="padding:14px">
+    <p style="margin:0 0 10px 0;color:var(--text-secondary);font-size:12px">AI 强推的条目已勾选,请快速浏览后取消任何不确定的条目。</p>
+    <div class="prem-batch-toolbar">
+      <div class="pbt-info" id="premBatchInfo">已选 0 / 0</div>
+      <button class="btn btn-sm" onclick="premiumBatchToggleAll(true)">全选</button>
+      <button class="btn btn-sm" onclick="premiumBatchToggleAll(false)">全不选</button>
+    </div>
+    <div class="prem-batch-list" id="premBatchList">
+      <div style="text-align:center;color:var(--text-muted);padding:20px">加载中...</div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal('premiumBatchModal')">取消</button>
+    <button class="btn btn-success" id="premBatchExec" onclick="premiumBatchExecute()">确认封神</button>
+  </div>
+</div></div>
+
+<!-- v2.3.1 F6 精品导出模态 -->
+<div class="modal-overlay" id="premiumExportModal"><div class="modal" style="width:560px">
+  <div class="modal-header">精品导出</div>
+  <div class="modal-body prem-export-form">
+    <div class="pef-section">
+      <div class="pef-label">导出范围</div>
+      <div class="pef-options">
+        <label><input type="radio" name="premExportScope" value="all_premium" checked> 全部精品(客户型 + 投标型)</label><br>
+        <label><input type="radio" name="premExportScope" value="client_only"> 仅客户型精品</label><br>
+        <label><input type="radio" name="premExportScope" value="rfp_only"> 仅投标型精品</label>
+      </div>
+    </div>
+    <div class="pef-section">
+      <div class="pef-label">成色筛选(至少选一档)</div>
+      <div class="pef-options">
+        <label><input type="checkbox" name="premExportTier" value="verified" checked> 铁货级</label>
+        <label><input type="checkbox" name="premExportTier" value="trusted" checked> 硬货级</label>
+        <label><input type="checkbox" name="premExportTier" value="candidate"> 候选级</label>
+      </div>
+    </div>
+    <div class="pef-section">
+      <div class="pef-label">输出格式</div>
+      <div class="pef-options">
+        <label><input type="radio" name="premExportFormat" value="markdown" checked> Markdown(人工阅读)</label><br>
+        <label><input type="radio" name="premExportFormat" value="json"> JSON(结构化,v2.3.2 问答助手用)</label>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal('premiumExportModal')">取消</button>
+    <button class="btn btn-success" onclick="premiumExportExecute()">开始导出</button>
+  </div>
+</div></div>
+
 <div class="confirm-overlay" id="confirmDlg">
   <div class="confirm-box">
     <h3 id="confirmTitle">确认操作</h3>
@@ -1289,7 +1455,7 @@ function switchTab(tab){
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
-  if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();_renderE2eBadge()}
+  if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();premiumCheckRunningTask();_renderE2eBadge()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
@@ -1413,6 +1579,14 @@ var qaH="";
 if(qaScore!==null&&qaScore!==undefined){var qc=qaScore>=4?"qa-high":qaScore===3?"qa-mid":"qa-low";qaH='<span class="qa-badge '+qc+'">'+qaScore+'/5</span>';if(qaFlags.length){qaH+='<span class="qa-flags">';for(var fi=0;fi<qaFlags.length;fi++){qaH+='<span class="qa-flag">'+esc(QF[qaFlags[fi]]||qaFlags[fi])+'</span>'}qaH+='</span>'}}else{qaH='<span class="qa-badge qa-none">未质检</span>'}
 var qaSrc=kp.qa_source||"";
 if(qaSrc&&QSN[qaSrc]){qaH+='<span class="qa-src-badge qa-src-'+qaSrc+'" title="质检来源: '+esc(QSN[qaSrc])+'">'+esc(QSN[qaSrc])+'</span>'}
+/* v2.3.1 F3 精品徽章:premium_client/rfp + premium_tier */
+var premH="";
+if(kp.premium_client){premH+='<span class="prem-badge prem-badge-client">客户型精品</span>'}
+if(kp.premium_rfp){premH+='<span class="prem-badge prem-badge-rfp">投标型精品</span>'}
+if(kp.premium_tier&&(kp.premium_client||kp.premium_rfp)){
+  var tierName={verified:"铁货",trusted:"硬货",candidate:"候选"}[kp.premium_tier]||kp.premium_tier;
+  premH+='<span class="prem-badge prem-badge-tier tier-'+kp.premium_tier+'">'+esc(tierName)+'</span>';
+}
 var frSt=getFreshnessStatus(kp);
 var frH='<span class="fr-badge fr-'+frSt+'">'+esc(FRN[frSt]||frSt)+'</span>';
 if(kp.freshness_note&&(frSt==="fresh"||frSt==="expiring")){frH+='<span class="fr-note">'+esc(kp.freshness_note)+'</span>'}
@@ -1456,13 +1630,21 @@ if(!ex)ex={};
 var kf=getKeyFields(tp,ex);
 var ah="";
 if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
-else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
+else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}
+/* v2.3.1 F3 精品撤销按钮:条目已封某视角时显示对应撤销 */
+if(kp.premium_client){ah+='<button class="btn btn-sm" style="color:#0A9B80;border-color:#0A9B80" onclick="premiumUnblessFromCard('+kp.id+',\'client\')">撤销客户型</button>'}
+if(kp.premium_rfp){ah+='<button class="btn btn-sm" style="color:#1F7AAC;border-color:#1F7AAC" onclick="premiumUnblessFromCard('+kp.id+',\'rfp\')">撤销投标型</button>'}
+/* 精品成色升降:硬货 ↔ 铁货 / 硬货 ↔ 候选(只在已是精品时显示) */
+if(kp.premium_tier==="trusted"){ah+='<button class="btn btn-sm" style="color:#C93D60;border-color:#C93D60" onclick="premiumSetTier('+kp.id+',\'verified\')">升铁货</button><button class="btn btn-sm" style="color:#888;border-color:#888" onclick="premiumSetTier('+kp.id+',\'candidate\')">降候选</button>'}
+else if(kp.premium_tier==="verified"){ah+='<button class="btn btn-sm" style="color:#C97A2C;border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">降硬货</button>'}
+else if(kp.premium_tier==="candidate"){ah+='<button class="btn btn-sm" style="color:#C97A2C;border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">升硬货</button>'}
+ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+(qaSrc==="rule_fallback"?" qa-rule-fallback":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
 +(tagH?'<div class="tags-row">'+tagH+'</div>':"")
 +(attrH?'<div class="attr-row">'+attrH+'</div>':"")
 +(kwH?'<div class="tags-row">'+kwH+'</div>':"")
-+'<div class="meta-badges"><span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+irH+'</div>'
++'<div class="meta-badges">'+premH+'<span class="rd-badge rd-'+rd+'">'+esc(RN[rd]||rd)+'</span><span class="auth-badge auth-'+au+'">'+esc(AN[au]||au)+'</span>'+qaH+frH+pvH+irH+'</div>'
 +pdH+insightsH
 +'<div class="ann-section" id="annSec-'+kp.id+'"><div class="ann-toggle" onclick="toggleAnnotations('+kp.id+')"><span id="annArr-'+kp.id+'">&#9654;</span> 专家注解 <span class="ann-count" id="annCnt-'+kp.id+'">0</span></div><div class="ann-body" id="annBody-'+kp.id+'"><div style="text-align:center;color:var(--text-muted);font-size:12px;padding:6px">点击展开加载</div></div></div>'
 +(kp.original_excerpt?'<div class="kp-excerpt" id="excerpt-'+kp.id+'" onclick="toggleExcerpt('+kp.id+')">'+esc(kp.original_excerpt)+'<span class="kp-excerpt-toggle" id="excerptToggle-'+kp.id+'">展开全文</span></div>':"")
@@ -2342,7 +2524,431 @@ function runTool(name){
       }
     });
   }
+  else if(name==="premiumPool"){
+    done();  // runTool 的 running 状态关掉(模态自行管理进度)
+    openPremiumPool();
+  }
+  else if(name==="premiumExport"){
+    done();
+    openPremiumExport();
+  }
   else{done()}
+}
+
+/* ================================================================ */
+/* === v2.3.1 F2/F6 精品候选队列 + 精品导出 JS === */
+/* 依赖既有工具:apiGet / apiPost / showConfirm / showToast / */
+/*            closeModal / esc / refreshData                      */
+/* ES5 严格(立规则 24):无箭头/const/let/async&await/模板字符串 */
+/* ================================================================ */
+var _premState={
+  currentView:"client",
+  currentLevel:"all",
+  lastPollingTimer:null,
+  cache:{client:null,rfp:null},
+  batchSelection:{},
+  batchItems:[],
+  batchView:"client"
+};
+
+/* --- 独立轮询(对齐 qcCheckRunningTask) --- */
+function premiumCheckRunningTask(){
+  apiGet("/api/tools/premium_pool/refresh/progress").then(function(r){
+    if(!r)return;
+    if(r.running){
+      _premShowProgress(r);
+      if(_premState.lastPollingTimer){clearTimeout(_premState.lastPollingTimer)}
+      _premState.lastPollingTimer=setTimeout(premiumCheckRunningTask,2000);
+    }else{
+      _premHideProgress();
+      if(_premState.lastPollingTimer){
+        clearTimeout(_premState.lastPollingTimer);
+        _premState.lastPollingTimer=null;
+        if(r.result&&r.result.ok){
+          showToast("AI 刷新完成,成功 "+(r.result.ai_success||0)+" 条,兜底 "+(r.result.rule_fallback_count||0)+" 条","success");
+          if(document.getElementById("premiumPoolModal").classList.contains("open")){
+            premiumLoadStatus();
+            premiumLoadList();
+          }
+        }
+      }
+    }
+  });
+}
+
+function _premShowProgress(r){
+  var p=r.progress||{};
+  var total=p.total_kps||0,done=p.processed_kps||0;
+  var pct=total>0?Math.round(done*100/total):0;
+  var pc=document.getElementById("premTaskProgress");
+  if(!pc)return;
+  pc.style.display="block";
+  document.getElementById("premTaskFill").style.width=pct+"%";
+  document.getElementById("premTaskProgressText").textContent=done+"/"+total+" ("+pct+"%)";
+  document.getElementById("premTaskCalls").textContent="AI 调用: "+(p.ai_calls_count||0);
+  document.getElementById("premTaskCost").textContent="花费: "+((p.cost_estimate_cny||0).toFixed(4))+" 元";
+  document.getElementById("premTaskMsg").textContent=p.message||"";
+}
+
+function _premHideProgress(){
+  var el=document.getElementById("premTaskProgress");
+  if(el)el.style.display="none";
+}
+
+/* --- 打开精品候选队列模态 --- */
+function openPremiumPool(){
+  document.getElementById("premiumPoolModal").classList.add("open");
+  _premState.currentView="client";
+  _premState.currentLevel="all";
+  var oldTab=document.querySelector(".prem-tab.active");
+  if(oldTab)oldTab.classList.remove("active");
+  document.getElementById("premTab-client").classList.add("active");
+  var oldLvl=document.querySelector(".plf-btn.active");
+  if(oldLvl)oldLvl.classList.remove("active");
+  document.getElementById("premLvl-all").classList.add("active");
+  document.getElementById("premBlessedToday").textContent="0";
+  premiumLoadStatus();
+  premiumLoadList();
+  premiumCheckRunningTask();
+}
+
+function premiumLoadStatus(){
+  apiGet("/api/tools/premium_pool/refresh/progress").then(function(r){
+    var info=document.getElementById("premStatusInfo");
+    var btn=document.getElementById("premRefreshBtn");
+    if(!info||!btn)return;
+    if(!r){info.textContent="状态查询失败";return}
+    if(r.running){
+      info.textContent="AI 刷新中...";
+      btn.disabled=true;btn.textContent="刷新中...";
+    }else{
+      var last=r.last_completed_at||"(从未刷新)";
+      var cool=r.cooldown_remaining_seconds||0;
+      info.textContent="上次刷新: "+last;
+      if(cool>0){
+        btn.disabled=true;
+        var mm=Math.floor(cool/60),ss=cool%60;
+        btn.textContent="冷却中("+mm+"分"+ss+"秒)";
+      }else{
+        btn.disabled=false;
+        btn.textContent="刷新 AI 推荐";
+      }
+    }
+  });
+}
+
+/* --- 启动刷新(带 C 保护确认框) --- */
+function premiumRefreshAI(){
+  showConfirm(
+    "确认刷新 AI 推荐",
+    "本次刷新将对全部 quotable+premium 条目跑两视角 AI 判定。预估成本 7-10 元,耗时 40-60 分钟。确定开始吗?",
+    function(ok){
+      if(!ok)return;
+      apiPost("/api/tools/premium_pool/refresh",{}).then(function(r){
+        if(r&&r.success){
+          showToast("AI 刷新已启动","info");
+          premiumLoadStatus();
+          premiumCheckRunningTask();
+        }else if(r&&r.cooldown_remaining_seconds){
+          showToast("冷却期未结束,还需 "+r.cooldown_remaining_seconds+" 秒","warn");
+          premiumLoadStatus();
+        }else{
+          showToast("启动失败: "+((r&&r.error)||"未知错误"),"error");
+        }
+      });
+    }
+  );
+}
+
+function premiumCancelRefresh(){
+  showConfirm(
+    "确认取消刷新",
+    "已处理的条目结果会保留在缓存中,下次刷新会覆盖。确认取消?",
+    function(ok){
+      if(!ok)return;
+      apiPost("/api/tools/premium_pool/refresh/cancel",{}).then(function(r){
+        if(r&&r.success){showToast("已发送取消请求","info")}
+        else{showToast("取消失败: "+((r&&r.error)||""),"error")}
+      });
+    }
+  );
+}
+
+/* --- 切换视角(客户/投标) --- */
+function premiumSwitchView(view){
+  if(view!=="client"&&view!=="rfp")return;
+  _premState.currentView=view;
+  document.getElementById("premTab-client").classList.remove("active");
+  document.getElementById("premTab-rfp").classList.remove("active");
+  document.getElementById("premTab-"+view).classList.add("active");
+  premiumLoadList();
+}
+
+/* --- 筛选等级(全部/强推/可选) --- */
+function premiumFilterLevel(level){
+  _premState.currentLevel=level;
+  var btns=["all","strong","optional"];
+  for(var i=0;i<btns.length;i++){
+    var el=document.getElementById("premLvl-"+btns[i]);
+    if(el){
+      if(btns[i]===level){el.classList.add("active")}
+      else{el.classList.remove("active")}
+    }
+  }
+  premiumLoadList();
+}
+
+/* --- 加载列表 --- */
+function premiumLoadList(){
+  var view=_premState.currentView;
+  var level=_premState.currentLevel;
+  var url="/api/tools/premium_pool/list?view="+view;
+  if(level==="strong"||level==="optional"){url+="&status="+level}
+  var listEl=document.getElementById("premList");
+  if(listEl){listEl.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:40px">加载中...</div>'}
+  apiGet(url).then(function(r){
+    if(!listEl)return;
+    if(!r||!r.success){
+      listEl.innerHTML='<div style="color:var(--danger);padding:20px">加载失败: '+esc((r&&r.error)||"未知错误")+'</div>';
+      return;
+    }
+    _premState.cache[view]=r;
+    var totalStrong=r.strong_count||0,totalOptional=r.optional_count||0;
+    document.getElementById("premCount-"+view).textContent=totalStrong+totalOptional;
+    document.getElementById("premLvlCount-strong").textContent=totalStrong;
+    document.getElementById("premLvlCount-optional").textContent=totalOptional;
+    premiumRenderList(r.items||[]);
+  });
+}
+
+function premiumRenderList(items){
+  var c=document.getElementById("premList");
+  if(!c)return;
+  if(!items.length){
+    c.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:40px">'
+      +'当前视角下无候选条目。<br><br>'
+      +'如果从未刷新过,请点击"刷新 AI 推荐"(预估 7-10 元 / 40-60 分钟)。'
+      +'</div>';
+    return;
+  }
+  var h="";
+  for(var i=0;i<items.length;i++){h+=_renderPremiumItem(items[i])}
+  c.innerHTML=h;
+}
+
+function _renderPremiumItem(it){
+  var level=it.level||"optional";
+  var levelLabel=level==="strong"?"\u2605 \u5f3a\u63a8":(level==="optional"?"\u53ef\u9009":"\u4f4e\u5206");
+  var otherBlessed=it.blessed_in_other_view?'<span class="pi-other-blessed">(\u5bf9\u65b9\u89c6\u89d2\u5df2\u5c01\u795e)</span>':"";
+  var authMap={official:"\u5b98\u65b9",authoritative:"\u6743\u5a01",firsthand:"\u4e00\u624b",informal:"\u975e\u6b63\u5f0f"};
+  var freshMap={fresh:"\u65b0\u9c9c",warning:"\u63d0\u793a",expired:"\u8fc7\u671f"};
+  var metaPieces=[];
+  metaPieces.push("权威: "+(authMap[it.source_authority]||it.source_authority||"-"));
+  metaPieces.push("质检: "+(it.qa_score||0)+"/5");
+  metaPieces.push(it.has_annotation?"\u2713 有注解":"· 无注解");
+  if(it.premium_freshness_status){metaPieces.push("保鲜: "+(freshMap[it.premium_freshness_status]||it.premium_freshness_status))}
+  var metaH="";
+  for(var i=0;i<metaPieces.length;i++){metaH+='<span>'+esc(metaPieces[i])+'</span>'}
+  var cat=it.category||"";
+  if(it.subcategory){cat+=" / "+it.subcategory}
+  var excerpt=(it.original_excerpt||"").substring(0,180);
+  var view=_premState.currentView;
+  var cScore=(typeof it.composite_score==="number")?it.composite_score.toFixed(1):"-";
+  return '<div class="prem-item level-'+level+'" id="premItem-'+it.kp_id+'">'
+    +'<div class="pi-head">'
+      +'<span class="pi-level level-'+level+'">'+esc(levelLabel)+'</span>'
+      +'<span class="pi-score">综合分 '+cScore+'</span>'
+      +'<span class="pi-title">'+esc(it.title||"(无标题)")+'</span>'
+      +otherBlessed
+    +'</div>'
+    +(cat?'<div class="pi-meta"><span>'+esc(cat)+'</span></div>':"")
+    +'<div class="pi-meta">'+metaH+'</div>'
+    +(it.ai_reason?'<div class="pi-reason">AI 理由: '+esc(it.ai_reason)+'</div>':"")
+    +(excerpt?'<div class="pi-excerpt">'+esc(excerpt)+'...</div>':"")
+    +'<div class="pi-actions">'
+      +'<button class="btn btn-success btn-sm" onclick="premiumBless('+it.kp_id+',\''+view+'\')">\u5c01\u795e</button>'
+      +'<button class="btn btn-sm" onclick="premiumSkip('+it.kp_id+',\''+view+'\')">\u8df3\u8fc7</button>'
+    +'</div>'
+    +'</div>';
+}
+
+/* --- 单条封神 / 跳过 --- */
+function premiumBless(kpId,view){
+  apiPost("/api/tools/premium_pool/bless",{kp_ids:[kpId],view:view}).then(function(r){
+    if(r&&r.success&&r.blessed_count>0){
+      showToast("已封神","success");
+      var el=document.getElementById("premItem-"+kpId);
+      if(el&&el.parentNode){el.parentNode.removeChild(el)}
+      var bt=document.getElementById("premBlessedToday");
+      if(bt){bt.textContent=(parseInt(bt.textContent,10)||0)+1}
+    }else if(r&&r.failed&&r.failed.length){
+      showToast("封神失败: "+esc(r.failed[0].error||""),"error");
+    }else{
+      showToast("封神失败","error");
+    }
+  });
+}
+
+function premiumSkip(kpId,view){
+  apiPost("/api/tools/premium_pool/skip",{kp_id:kpId,view:view}).then(function(r){
+    showToast("已跳过","info");
+    var el=document.getElementById("premItem-"+kpId);
+    if(el&&el.parentNode){el.parentNode.removeChild(el)}
+  });
+}
+
+/* --- 批量浏览确认模态 --- */
+function premiumShowBatchBrowse(){
+  var view=_premState.currentView;
+  apiGet("/api/tools/premium_pool/list?view="+view+"&status=strong").then(function(r){
+    if(!r||!r.success){showToast("加载强推列表失败","error");return}
+    var items=r.items||[];
+    if(!items.length){showToast("当前视角下无强推条目","info");return}
+    _premState.batchSelection={};
+    for(var i=0;i<items.length;i++){_premState.batchSelection[items[i].kp_id]=true}
+    _premState.batchItems=items;
+    _premState.batchView=view;
+    var title=(view==="client"?"客户视角":"投标视角")+" - 批量封神确认 ("+items.length+" 条)";
+    document.getElementById("premBatchTitle").textContent=title;
+    _renderBatchList(items);
+    _updateBatchInfo();
+    document.getElementById("premiumBatchModal").classList.add("open");
+  });
+}
+
+function _renderBatchList(items){
+  var authMap={official:"官方",authoritative:"权威",firsthand:"一手",informal:"非正式"};
+  var h="";
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    h+='<div class="prem-batch-item">'
+      +'<input type="checkbox" id="pbicb-'+it.kp_id+'" checked onchange="premiumBatchToggle('+it.kp_id+')">'
+      +'<div class="pbi-body">'
+        +'<div class="pbi-title">'+esc(it.title||"(无标题)")+'</div>'
+        +'<div class="pbi-meta">质检 '+(it.qa_score||0)+'/5 · 权威: '+esc(authMap[it.source_authority]||"-")+(it.has_annotation?' · \u2713 有注解':"")+'</div>'
+        +(it.ai_reason?'<div class="pbi-reason">'+esc(it.ai_reason)+'</div>':"")
+      +'</div>'
+    +'</div>';
+  }
+  document.getElementById("premBatchList").innerHTML=h;
+}
+
+function premiumBatchToggle(kpId){
+  var el=document.getElementById("pbicb-"+kpId);
+  _premState.batchSelection[kpId]=el&&el.checked;
+  _updateBatchInfo();
+}
+
+function premiumBatchToggleAll(checked){
+  var items=_premState.batchItems||[];
+  for(var i=0;i<items.length;i++){
+    var kid=items[i].kp_id;
+    var cb=document.getElementById("pbicb-"+kid);
+    if(cb){cb.checked=checked}
+    _premState.batchSelection[kid]=checked;
+  }
+  _updateBatchInfo();
+}
+
+function _updateBatchInfo(){
+  var items=_premState.batchItems||[];
+  var selected=0;
+  for(var i=0;i<items.length;i++){
+    if(_premState.batchSelection[items[i].kp_id])selected++;
+  }
+  document.getElementById("premBatchInfo").textContent="已选 "+selected+" / "+items.length;
+  var btn=document.getElementById("premBatchExec");
+  if(btn){
+    btn.textContent="确认封神 "+selected+" 条";
+    btn.disabled=selected===0;
+  }
+}
+
+function premiumBatchExecute(){
+  var view=_premState.batchView;
+  var items=_premState.batchItems||[];
+  var kpIds=[];
+  for(var i=0;i<items.length;i++){
+    if(_premState.batchSelection[items[i].kp_id]){kpIds.push(items[i].kp_id)}
+  }
+  if(!kpIds.length){showToast("请至少勾选一条","warn");return}
+  var msg=kpIds.length>=10
+    ? "即将批量封神 "+kpIds.length+" 条,系统将先执行一次自动备份。确认?"
+    : "即将封神 "+kpIds.length+" 条。确认?";
+  showConfirm("批量封神确认",msg,function(ok){
+    if(!ok)return;
+    apiPost("/api/tools/premium_pool/bless",{kp_ids:kpIds,view:view}).then(function(r){
+      if(r&&r.success){
+        var failMsg=(r.failed&&r.failed.length)?(", "+r.failed.length+" 条失败"):"";
+        showToast("已封神 "+(r.blessed_count||0)+" 条"+failMsg,"success");
+        closeModal("premiumBatchModal");
+        var bt=document.getElementById("premBlessedToday");
+        if(bt){bt.textContent=(parseInt(bt.textContent,10)||0)+(r.blessed_count||0)}
+        premiumLoadList();
+      }else{
+        showToast("批量封神失败: "+esc((r&&r.error)||""),"error");
+      }
+    });
+  });
+}
+
+/* --- Tab 1 卡片撤销/成色升降(从条目动作按钮调用) --- */
+function premiumUnblessFromCard(kpId,view){
+  var viewName=view==="client"?"客户型":"投标型";
+  showConfirm("撤销精品","将撤销本条的"+viewName+"精品标。确认?",function(ok){
+    if(!ok)return;
+    apiPost("/api/tools/premium_pool/unbless",{kp_id:kpId,view:view}).then(function(r){
+      if(r&&r.success){
+        var extra=r.downgraded_to_quotable?"(回 quotable)":"";
+        showToast("已撤销"+extra,"success");
+        if(typeof refreshData==="function"){refreshData()}
+      }else{
+        showToast("撤销失败: "+esc((r&&r.error)||""),"error");
+      }
+    });
+  });
+}
+
+function premiumSetTier(kpId,tier){
+  var tierName={verified:"铁货",trusted:"硬货",candidate:"候选"}[tier]||tier;
+  showConfirm("调整精品成色","将精品成色改为: "+tierName+"。确认?",function(ok){
+    if(!ok)return;
+    apiPost("/api/kp/"+kpId+"/update",{premium_tier:tier}).then(function(r){
+      if(r&&r.success){
+        showToast("已调整为 "+tierName,"success");
+        if(typeof refreshData==="function"){refreshData()}
+      }else{
+        showToast("调整失败: "+esc((r&&r.error)||""),"error");
+      }
+    });
+  });
+}
+
+/* --- 精品导出 --- */
+function openPremiumExport(){
+  document.getElementById("premiumExportModal").classList.add("open");
+}
+
+function premiumExportExecute(){
+  var scopeEl=document.querySelector('input[name="premExportScope"]:checked');
+  var fmtEl=document.querySelector('input[name="premExportFormat"]:checked');
+  if(!scopeEl||!fmtEl){showToast("请选择导出范围和格式","warn");return}
+  var scope=scopeEl.value;
+  var fmt=fmtEl.value;
+  var tierInputs=document.querySelectorAll('input[name="premExportTier"]:checked');
+  var tiers=[];
+  for(var i=0;i<tierInputs.length;i++){tiers.push(tierInputs[i].value)}
+  if(!tiers.length){showToast("至少选一档成色","warn");return}
+  var url="/api/tools/premium_export?scope="+encodeURIComponent(scope)
+         +"&format="+encodeURIComponent(fmt)
+         +"&tier_filter="+encodeURIComponent(tiers.join(","));
+  var a=document.createElement("a");
+  a.href=url;a.download="";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast("正在下载...","info");
+  closeModal("premiumExportModal");
 }
 
 function doRestore(filename){

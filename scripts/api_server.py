@@ -188,6 +188,13 @@ from scripts.db_manager import DatabaseManager
 from scripts.backup_manager import operation_hook, BackupFailedError
 # v2.3.0-part3.5: E2E 诊断包 Markdown 导出(纯读格式化)
 from scripts.e2e_diagnosis_exporter import build_e2e_diagnosis_markdown
+# v2.3.1 F2/F6: 精品候选 AI 判定 + 精品导出(立规则 50 第 6 项:跨模块 import 双路径兜底)
+try:
+    from scripts.premium_judge import run_premium_refresh
+    from scripts.premium_exporter import build_premium_export
+except ImportError:
+    from premium_judge import run_premium_refresh
+    from premium_exporter import build_premium_export
 
 app = Flask(__name__)
 CORS(app)
@@ -340,6 +347,126 @@ def _qc_readiness_check():
         missing = required - cols
         if missing:
             errors.append("[4] knowledge_points 缺字段: " + ", ".join(sorted(missing)))
+    except Exception as e:
+        errors.append("[4] 字段契约检查失败: " + str(e))
+
+    return (len(errors) == 0), errors
+
+
+# ================================================================
+# v2.3.1 F2 精品候选 AI 判定独立任务槽(对齐 _qc_task 模式)
+# ----------------------------------------------------------------
+# 设计动机:
+#   - F2 AI 刷新是长任务(40-60 分钟),必须异步
+#   - 只写 premium_ai_cache 表,与其他任务数据不冲突,允许并发
+#   - 独立于 _task 单例锁和 _qc_task(对齐 part3.2 多任务槽设计)
+#   - A+C 双保险频率保护:
+#       A. last_completed_at 冷却期 10 分钟
+#       C. 前端弹确认框"预估 7-10 元"(前端实现)
+#   - cancel_requested 标志供引擎 cancel_check 协作式退出
+# ================================================================
+PREMIUM_COOLDOWN_SECONDS = 600  # A 保护:10 分钟冷却
+
+_premium_task_lock = threading.Lock()
+_premium_task = {
+    "running": False,
+    "started_at": None,
+    "last_completed_at": None,    # 用于冷却期判断
+    "cancel_requested": False,
+    "progress": {
+        "total_kps": 0,
+        "processed_kps": 0,
+        "current_view": "",         # client / rfp / client+rfp
+        "ai_calls_count": 0,
+        "cost_estimate_cny": 0.0,
+        "current_step": "",
+        "message": "",
+    },
+    "result": None,
+    "error": None,
+}
+
+def _premium_task_update_progress(data):
+    """供 premium_judge 主循环回调更新进度."""
+    with _premium_task_lock:
+        for k, v in data.items():
+            if k in _premium_task["progress"]:
+                _premium_task["progress"][k] = v
+
+
+def _premium_cancel_check():
+    """供 premium_judge 引擎查询取消标志."""
+    with _premium_task_lock:
+        return bool(_premium_task.get("cancel_requested"))
+
+
+def _premium_readiness_check():
+    """v2.3.1 F2 精品 AI 刷新启动就绪性自检(对齐 F048/F062/part3.2 模板).
+
+    自检 4 项(§5.4):
+      [1] db 可连 SELECT 1
+      [2] db 有 get_premium_judge_candidates / upsert_premium_ai_cache /
+          bless_premium / unbless_premium / get_premium_export_data 关键方法
+      [3] Prompt 可 import:PREMIUM_JUDGE_CLIENT_PROMPT + PREMIUM_JUDGE_RFP_PROMPT
+          均有 system_prompt 和 user_prompt_template 两 key(立规则 13)
+      [4] knowledge_points 含 premium_client/premium_rfp/premium_tier 字段
+          (防止老库未跑 migrate_v2_3_1.py 就点刷新)
+
+    总耗时 <100ms,失败时调用方必须在 _premium_task_lock 之前返回 400.
+    """
+    errors = []
+
+    # [1] db 可连
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT 1"); c.fetchone()
+        conn.close()
+    except Exception as e:
+        errors.append("[1] db 连接失败: " + str(e))
+        return False, errors
+
+    # [2] db 关键方法
+    for m in ("get_premium_judge_candidates", "upsert_premium_ai_cache",
+              "get_premium_ai_cache_by_kp", "get_premium_pool_list",
+              "bless_premium", "unbless_premium", "get_premium_export_data"):
+        if not hasattr(db, m):
+            errors.append("[2] db 缺方法: " + m)
+
+    # [3] Prompt 可 import + 双 key 规范
+    try:
+        try:
+            from scripts.prompts.prompt_templates import (
+                PREMIUM_JUDGE_CLIENT_PROMPT as _CP,
+                PREMIUM_JUDGE_RFP_PROMPT as _RP,
+            )
+        except ImportError:
+            from prompts.prompt_templates import (
+                PREMIUM_JUDGE_CLIENT_PROMPT as _CP,
+                PREMIUM_JUDGE_RFP_PROMPT as _RP,
+            )
+        for name, pr in (("PREMIUM_JUDGE_CLIENT_PROMPT", _CP),
+                          ("PREMIUM_JUDGE_RFP_PROMPT", _RP)):
+            if not isinstance(pr, dict):
+                errors.append("[3] %s 不是 dict" % name)
+                continue
+            if "system_prompt" not in pr:
+                errors.append("[3] %s 缺 system_prompt key" % name)
+            if "user_prompt_template" not in pr:
+                errors.append("[3] %s 缺 user_prompt_template key" % name)
+    except Exception as e:
+        errors.append("[3] Prompt import 失败: " + str(e)[:200])
+
+    # [4] 字段契约
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("PRAGMA table_info(knowledge_points)")
+        cols = {r[1] for r in c.fetchall()}
+        conn.close()
+        for f in ("premium_client", "premium_rfp", "premium_tier",
+                  "used_count", "last_used_at", "used_for",
+                  "premium_freshness_status"):
+            if f not in cols:
+                errors.append("[4] kp 缺字段 " + f + "(可能老库未跑 migrate_v2_3_1.py)")
     except Exception as e:
         errors.append("[4] 字段契约检查失败: " + str(e))
 
@@ -1850,6 +1977,381 @@ def readiness_promote_api():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ================================================================
+# v2.3.1 F2 精品候选 AI 判定路由(7 条)
+# ----------------------------------------------------------------
+# 设计对齐 Phase 2 冻结档案 §5.1/5.2:
+#   POST   /api/tools/premium_pool/refresh          启动 AI 刷新(异步 202)
+#   POST   /api/tools/premium_pool/refresh/cancel   取消刷新
+#   GET    /api/tools/premium_pool/refresh/progress 刷新进度(2 秒轮询)
+#   GET    /api/tools/premium_pool/list             候选队列(view/status 过滤)
+#   POST   /api/tools/premium_pool/bless            封神(单条或批量)
+#   POST   /api/tools/premium_pool/unbless          撤销(单条)
+#   POST   /api/tools/premium_pool/skip             跳过(仅埋点)
+# ================================================================
+
+@app.route("/api/tools/premium_pool/refresh", methods=["POST"])
+def premium_pool_refresh():
+    """启动一次两视角 AI 刷新(异步 202).
+
+    A+C 双保险:
+      A. 10 分钟冷却期(return 429 + 剩余秒数)
+      C. 前端弹确认框(前端实现,本路由不再弹)
+    """
+    # [A] 冷却期检查
+    with _premium_task_lock:
+        if _premium_task["running"]:
+            return jsonify({"success": False, "error": "精品 AI 刷新已在执行中"}), 409
+        last_done = _premium_task.get("last_completed_at")
+    if last_done:
+        try:
+            elapsed = (datetime.now() - datetime.strptime(last_done, "%Y-%m-%d %H:%M:%S")).total_seconds()
+            if elapsed < PREMIUM_COOLDOWN_SECONDS:
+                remain = int(PREMIUM_COOLDOWN_SECONDS - elapsed)
+                return jsonify({
+                    "success": False,
+                    "error": "冷却期未结束,还需 %d 秒" % remain,
+                    "cooldown_remaining_seconds": remain,
+                }), 429
+        except Exception:
+            pass  # 时间解析失败不阻断
+
+    # 启动就绪性自检(立规则 31:必须在 _premium_task_lock 之前)
+    ok, errors = _premium_readiness_check()
+    if not ok:
+        try:
+            db.log_operation_event(
+                event_type="premium_readiness_check_failed",
+                module="api_server", severity="error",
+                payload={"errors": errors},
+            )
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": "启动自检失败",
+                        "details": errors}), 400
+
+    # 抢锁并启动后台线程
+    with _premium_task_lock:
+        if _premium_task["running"]:  # double check
+            return jsonify({"success": False, "error": "精品 AI 刷新已在执行中"}), 409
+        _premium_task["running"] = True
+        _premium_task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _premium_task["cancel_requested"] = False
+        _premium_task["result"] = None
+        _premium_task["error"] = None
+        # 重置进度
+        for k in _premium_task["progress"]:
+            _premium_task["progress"][k] = 0 if isinstance(
+                _premium_task["progress"][k], (int, float)) else ""
+
+    def _worker():
+        try:
+            # 取 AI 客户端(与 extractor / health_checker 用同一个)
+            from scripts.deepseek_client import DeepSeekClient
+            client = DeepSeekClient()
+            result = run_premium_refresh(
+                db, client,
+                progress_callback=_premium_task_update_progress,
+                cancel_check=_premium_cancel_check,
+            )
+            with _premium_task_lock:
+                _premium_task["result"] = result
+                _premium_task["error"] = None
+                _premium_task["last_completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            traceback.print_exc()
+            with _premium_task_lock:
+                _premium_task["error"] = str(e)
+                _premium_task["result"] = None
+            try:
+                db.log_operation_event(
+                    event_type="premium_refresh_failed", module="api_server",
+                    severity="error", payload={"error": str(e)[:500]},
+                )
+            except Exception:
+                pass
+        finally:
+            with _premium_task_lock:
+                _premium_task["running"] = False
+                _premium_task["cancel_requested"] = False
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({
+        "success": True,
+        "status": "started",
+        "message": "精品 AI 刷新已启动,预估 40-60 分钟,请通过 /progress 轮询",
+    }), 202
+
+
+@app.route("/api/tools/premium_pool/refresh/cancel", methods=["POST"])
+def premium_pool_refresh_cancel():
+    """请求取消正在执行的刷新(协作式,引擎下一次判定条目时检查)."""
+    with _premium_task_lock:
+        if not _premium_task["running"]:
+            return jsonify({"success": False, "error": "当前无刷新任务"}), 409
+        _premium_task["cancel_requested"] = True
+    return jsonify({"success": True, "message": "已发送取消请求,引擎将在下一次循环退出"})
+
+
+@app.route("/api/tools/premium_pool/refresh/progress", methods=["GET"])
+def premium_pool_refresh_progress():
+    """获取当前刷新进度(前端 2 秒轮询)."""
+    with _premium_task_lock:
+        snap = {
+            "running": _premium_task["running"],
+            "started_at": _premium_task["started_at"],
+            "last_completed_at": _premium_task["last_completed_at"],
+            "cancel_requested": _premium_task["cancel_requested"],
+            "progress": dict(_premium_task["progress"]),
+            "result": _premium_task["result"],
+            "error": _premium_task["error"],
+        }
+    # 附带冷却剩余
+    if snap["last_completed_at"] and not snap["running"]:
+        try:
+            elapsed = (datetime.now() - datetime.strptime(snap["last_completed_at"], "%Y-%m-%d %H:%M:%S")).total_seconds()
+            snap["cooldown_remaining_seconds"] = max(0, int(PREMIUM_COOLDOWN_SECONDS - elapsed))
+        except Exception:
+            snap["cooldown_remaining_seconds"] = 0
+    else:
+        snap["cooldown_remaining_seconds"] = 0
+    return jsonify(snap)
+
+
+@app.route("/api/tools/premium_pool/list", methods=["GET"])
+def premium_pool_list():
+    """精品候选队列(按视角 + 状态过滤 + composite_score 排序).
+
+    Query:
+      view=client|rfp       (必填)
+      status=strong|optional (选填,不填返回全部 strong+optional)
+      exclude_blessed=1|0   (选填,默认 1:本视角已封神的不返回)
+    """
+    view = (request.args.get("view") or "").strip()
+    if view not in ("client", "rfp"):
+        return jsonify({"success": False, "error": "view 必须是 client 或 rfp"}), 400
+    status_filter = request.args.get("status")
+    if status_filter and status_filter not in ("strong", "optional"):
+        status_filter = None
+    exclude_blessed = request.args.get("exclude_blessed", "1") != "0"
+
+    try:
+        items = db.get_premium_pool_list(
+            view=view, status_filter=status_filter,
+            exclude_blessed_in_view=exclude_blessed,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # 强推门槛(冻结档案 §6.4):Top 10-15% 标 strong,中段 40% 标 optional
+    # 不做剔除,只在返回体上标注 level(前端按 level 分 tab 显示)
+    total = len(items)
+    if total > 0:
+        # composite_score 已降序,直接按位置划档
+        strong_cutoff = max(1, int(total * 0.15))
+        optional_cutoff = max(strong_cutoff, int(total * 0.55))
+        for idx, it in enumerate(items):
+            if idx < strong_cutoff:
+                it["level"] = "strong"
+            elif idx < optional_cutoff:
+                it["level"] = "optional"
+            else:
+                it["level"] = "low"
+        # 如果传了 status_filter,返回前过滤一遍 level
+        # (AI 的 recommendation 字段仍保留,供 UI 展示 AI 的原始推荐)
+        if status_filter == "strong":
+            items = [it for it in items if it["level"] == "strong"]
+        elif status_filter == "optional":
+            items = [it for it in items if it["level"] == "optional"]
+        else:
+            items = [it for it in items if it["level"] in ("strong", "optional")]
+
+    # 总量统计(不受 status_filter 影响)
+    with _premium_task_lock:
+        last_refresh = _premium_task.get("last_completed_at")
+
+    # 重新拿一次 strong/optional 总数(原 items 基础上)
+    strong_count = sum(1 for it in items if it.get("level") == "strong")
+    optional_count = sum(1 for it in items if it.get("level") == "optional")
+
+    return jsonify({
+        "success": True,
+        "view": view,
+        "items": items,
+        "total_returned": len(items),
+        "strong_count": strong_count,
+        "optional_count": optional_count,
+        "last_refreshed_at": last_refresh,
+    })
+
+
+@app.route("/api/tools/premium_pool/bless", methods=["POST"])
+def premium_pool_bless():
+    """封神一条或多条.
+
+    Body JSON:
+      kp_ids: [int, ...]  (至少 1 条)
+      view:   'client' | 'rfp'
+
+    批量 (len(kp_ids) >= 10) 强制备份 operation_hook('premium_blessed').
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    kp_ids = data.get("kp_ids") or []
+    view = (data.get("view") or "").strip()
+    if not isinstance(kp_ids, list) or not kp_ids:
+        return jsonify({"success": False, "error": "kp_ids 必须是非空数组"}), 400
+    if view not in ("client", "rfp"):
+        return jsonify({"success": False, "error": "view 必须是 client 或 rfp"}), 400
+
+    # 批量门槛:≥10 条强制备份
+    if len(kp_ids) >= 10:
+        try:
+            operation_hook("premium_blessed")
+        except BackupFailedError as e:
+            return jsonify({"success": False,
+                            "error": "批量封神前置备份失败: " + str(e)}), 500
+        except Exception as e:
+            # 其他备份异常也阻断(保守)
+            traceback.print_exc()
+            return jsonify({"success": False,
+                            "error": "批量封神前置备份异常: " + str(e)}), 500
+
+    blessed_ok = []
+    failed = []
+    for kid in kp_ids:
+        try:
+            r = db.bless_premium(int(kid), view)
+            if r.get("ok"):
+                blessed_ok.append(int(kid))
+            else:
+                failed.append({"kp_id": kid, "error": r.get("error", "unknown")})
+        except Exception as e:
+            failed.append({"kp_id": kid, "error": str(e)[:200]})
+
+    return jsonify({
+        "success": True,
+        "blessed_count": len(blessed_ok),
+        "blessed_kp_ids": blessed_ok,
+        "failed": failed,
+        "view": view,
+    })
+
+
+@app.route("/api/tools/premium_pool/unbless", methods=["POST"])
+def premium_pool_unbless():
+    """撤销一条(单条,不支持批量——批量撤销风险过大).
+
+    Body JSON:
+      kp_id: int
+      view:  'client' | 'rfp'
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    kp_id = data.get("kp_id")
+    view = (data.get("view") or "").strip()
+    if not isinstance(kp_id, int) and not (isinstance(kp_id, str) and kp_id.isdigit()):
+        return jsonify({"success": False, "error": "kp_id 必须是整数"}), 400
+    if view not in ("client", "rfp"):
+        return jsonify({"success": False, "error": "view 必须是 client 或 rfp"}), 400
+    try:
+        r = db.unbless_premium(int(kp_id), view)
+        return jsonify({"success": True, **r})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/tools/premium_pool/skip", methods=["POST"])
+def premium_pool_skip():
+    """跳过一条(仅埋点,不改 kp 状态).
+
+    Body JSON: kp_id / view
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    kp_id = data.get("kp_id")
+    view = (data.get("view") or "").strip()
+    if view not in ("client", "rfp"):
+        return jsonify({"success": False, "error": "view 必须是 client 或 rfp"}), 400
+    try:
+        db.log_operation_event(
+            event_type="premium_skipped", module="api_server",
+            severity="info", related_kp_id=int(kp_id) if kp_id else None,
+            payload={"view": view},
+        )
+    except Exception:
+        pass
+    return jsonify({"success": True, "kp_id": kp_id, "view": view})
+
+
+# ================================================================
+# v2.3.1 F6 精品导出路由(1 条)
+# ================================================================
+@app.route("/api/tools/premium_export", methods=["GET"])
+def premium_export():
+    """精品导出(Markdown 或 JSON, 直接下载).
+
+    Query:
+      scope:        all_premium | client_only | rfp_only | by_category
+      format:       markdown | json (默认 markdown)
+      tier_filter:  逗号分隔 verified,trusted,candidate (选填)
+      category_id:  int (scope=by_category 时必填)
+    """
+    scope = (request.args.get("scope") or "all_premium").strip()
+    fmt = (request.args.get("format") or "markdown").strip()
+    tier_filter_raw = request.args.get("tier_filter")
+    tier_filter = None
+    if tier_filter_raw:
+        tier_filter = [t.strip() for t in tier_filter_raw.split(",") if t.strip()]
+    category_id = None
+    if scope == "by_category":
+        try:
+            category_id = int(request.args.get("category_id"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False,
+                            "error": "scope=by_category 时 category_id 必填且为整数"}), 400
+
+    try:
+        content, filename, mime = build_premium_export(
+            db, scope=scope, format=fmt,
+            tier_filter=tier_filter, category_id=category_id,
+        )
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            db.log_operation_event(
+                event_type="premium_export_failed", module="api_server",
+                severity="error",
+                payload={"scope": scope, "format": fmt, "error": str(e)[:300]},
+            )
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    # 埋点:成功
+    try:
+        db.log_operation_event(
+            event_type="premium_export_success", module="api_server",
+            severity="info",
+            payload={"scope": scope, "format": fmt,
+                     "tier_filter": tier_filter,
+                     "category_id": category_id, "filename": filename},
+        )
+    except Exception:
+        pass
+
+    # URL-encode 中文文件名(兼容老浏览器 + RFC 5987)
+    from urllib.parse import quote
+    resp = Response(content, mimetype=mime)
+    resp.headers["Content-Disposition"] = (
+        "attachment; filename=\"%s\"; filename*=UTF-8''%s"
+        % (quote(filename), quote(filename))
+    )
+    return resp
+
 
 # ================================================================
 # 旧 /api/tools/qa-backfill 接口（v2.2.2 F054）
