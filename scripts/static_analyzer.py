@@ -1,7 +1,21 @@
 """
 static_analyzer.py - F062 端到端测试 Agent 静态分析模块
 路径：scripts/static_analyzer.py
-版本：v2.3.0-part3-alpha1 - F062 基础层（对话 1/3）
+版本：v2.3.0-part3.7 - F062 规则精度三连改
+
+变更历史:
+  v2.3.0-part3-alpha1  初版(宁严勿漏姿态),signal-to-noise 偏低
+  v2.3.0-part3.7       规则精度重构,四项改动(part3.7):
+    - 规则 ① smell_silent_except:signature + snippet 行号从 h.lineno
+      改为 body[0].lineno(pass 真实行),诊断报告不再显示 `except X:`
+      伪像,老 pending issue 会洗牌一次
+    - 规则 ② smell_except_print_only:同上,snippet 显示 print(...) 真实行
+    - 规则 ③ field_unknown:_KP_LIKE_VARS 从 {kp,k,row,r,first} 收窄
+      到 {kp};下划线前缀字段跳过(_keywords/_summary 等临时挂字段);
+      OR 兼容写法识别(`kp.get('a') or kp.get('b')` 两个 key 至少一个
+      在白名单就不报);白名单扩 8 条 kp 相关字段
+    - 规则 ④ prompt_wrong_key:error → warning;历史 key 白名单静默
+      (system/user/description 兼容对话 A 之前的老 Prompt dict 定义)
 
 定位：
   F062 六维度中 ③ Prompt 调用一致性 / ④ 字段契约 / ⑥ 代码异味
@@ -51,13 +65,22 @@ from pathlib import Path
 # Prompt dict 合法 key 白名单（对话 A 立规则严格口径）
 _VALID_PROMPT_KEYS = {"system_prompt", "user_prompt_template"}
 
+# 历史 Prompt dict 允许的 key(对话 A 之前的老 Prompt 定义遗留)
+# 规则 ④ prompt_wrong_key 对这些 key 静默不报,只对"既不在新规范也不在
+# 历史白名单"的 key 报 warning。长期清理(Prompt key 统一)单独 hotfix。
+# part3.7 引入。
+_LEGACY_PROMPT_KEYS = {"system", "user", "description"}
+
 # 已知 Prompt 变量后缀（用于识别 HEALTH_*_PROMPT / E2E_*_PROMPT 等 dict 引用）
 _PROMPT_VAR_SUFFIXES = ("_PROMPT",)
 
 # kp dict 合法字段白名单（对齐 db_manager 三个扫描查询 AS 别名 + 主表字段）
-# 维度④字段契约扫描时用：代码里读 kp.get('xxx') / kp['xxx'] / row['xxx']
+# 维度④字段契约扫描时用：代码里读 kp.get('xxx') / kp['xxx']
 # 如果不在本白名单 + 不在 db_schema_snapshot 的列名集合,就告警
-# 注：这份白名单由 health_checker 存量实战沉淀,对话 2 可按需扩展
+# 注：e2e_tester._build_schema_snapshot 会把 DB 真实 kp 字段动态注入,
+#     这里只列 AS 别名和从代码里看到的业务上确认是 kp 属性的字段。
+# part3.7 扩充:加 related_knowledge_ids / layer*_tags / tags_layer* /
+#              content / description 共 8 条确认是 kp 上下文的别名。
 _KP_AS_ALIAS_WHITELIST = {
     # db_manager AS 别名（对话 B 修复后）
     "kp_id", "status", "authority_level", "monetize_tier",
@@ -68,6 +91,11 @@ _KP_AS_ALIAS_WHITELIST = {
     "practical_insights", "ai_extracted_content",
     # 计数字段（扫描查询聚合）
     "tags_total_count", "annotations_count",
+    # part3.7 扩充:代码里明确在 kp 上下文使用的别名字段
+    "related_knowledge_ids",  # practical_annotations 的,但常和 kp 一起读
+    "content", "description",  # kp 表正式字段名(db_manager 里 SELECT)
+    "layer1_tags", "layer2_tags", "layer3_tags",  # health_checker 用
+    "tags_layer1", "tags_layer2", "tags_layer3",  # health_checker 兼容别名
 }
 
 # 扫描默认的 scripts 子目录清单（对话 2 可覆盖）
@@ -201,7 +229,17 @@ class _PromptCallVisitor(ast.NodeVisitor):
 
     # --- B: 错误 key 读取 ---
     def visit_Subscript(self, node):
-        """匹配 PROMPT[...] 取值,若 key 字符串不在白名单 → 告警"""
+        """匹配 PROMPT[...] 取值,若 key 字符串不在白名单 → 告警
+
+        part3.7:
+          - 严重级从 error 降为 warning(立规则第 13 条本意是"新增 Prompt
+            必须用 system_prompt / user_prompt_template",不是强制历史 Prompt
+            改名。历史 key 一刀切报 error 会把合法读取判成 bug。)
+          - 历史 key 白名单(_LEGACY_PROMPT_KEYS = system/user/description)
+            静默不报(兼容对话 A 之前的 DUPLICATE_JUDGE_PROMPT 等遗留 Prompt
+            定义)。长期清理走单独 hotfix。
+          - 其他任意 key → warning(仍然值得关注,可能是 typo)
+        """
         # node.value 应是 Name(id='HEALTH_*_PROMPT') 之类
         val = node.value
         var_name = getattr(val, "id", None)
@@ -209,18 +247,20 @@ class _PromptCallVisitor(ast.NodeVisitor):
             # 提取 slice 的字符串常量
             key_str = self._extract_str_key(node)
             if key_str is not None:
-                if key_str not in _VALID_PROMPT_KEYS:
-                    severity = "error"
-                    # 对话 A 实测挖出的两个典型: 'system' / 'user'
+                # 新规范 key → 合法,不报
+                if key_str in _VALID_PROMPT_KEYS:
+                    pass
+                # 历史 key → 白名单静默(part3.7)
+                elif key_str in _LEGACY_PROMPT_KEYS:
+                    pass
+                # 其他 key → warning(降级自 error,part3.7)
+                else:
                     rule_id = "prompt_wrong_key"
-                    hint = ""
-                    if key_str == "system":
-                        hint = "（应为 'system_prompt',对话 A 缺陷 4）"
-                    elif key_str == "user":
-                        hint = "（应为 'user_prompt_template',对话 A 缺陷 4）"
-                    self._add("3_prompt_call", rule_id, severity, node.lineno,
-                              "Prompt 读错误 key: {}[{}]{}".format(var_name,
-                                                                    repr(key_str), hint))
+                    self._add("3_prompt_call", rule_id, "warning", node.lineno,
+                              "Prompt 读可疑 key: {}[{}](不在新规范 system_prompt/"
+                              "user_prompt_template,也不在历史兼容 key system/user/"
+                              "description,可能是 typo)".format(
+                                  var_name, repr(key_str)))
         self.generic_visit(node)
 
     @staticmethod
@@ -301,22 +341,26 @@ class _PromptCallVisitor(ast.NodeVisitor):
 class _FieldContractVisitor(ast.NodeVisitor):
     """扫描规则:
       匹配形如:
-        kp.get('xxx') / kp['xxx'] / row.get('xxx') / row['xxx']
-        k.get('xxx') / k['xxx']
-        r.get('xxx') / r['xxx']
+        kp.get('xxx') / kp['xxx']
       如果字段名不在:
         1) _KP_AS_ALIAS_WHITELIST（AS 别名白名单）
         2) db_schema_snapshot 的 knowledge_points 列名集合
       两者之一,则告警 field_unknown（warning）
 
-      特别地,对话 B 已修复的 'category' / 'subcategory' 两个 AS 别名
-      在白名单内,不再告警（对话 A 缺陷 3 回归检测）
-
-    注: 本规则容忍度较高,因为代码里可能读许多运行时动态字段。
-        这里采用"保守告警"而非"严格拦截"——只对明显看起来像 kp 字段的访问做提示。
+    part3.7 精度重构:
+      - _KP_LIKE_VARS 从 {kp,k,row,r,first} 收窄到 {kp}。r / row / first
+        是 Python 里通用变量名(不同表的 row / Flask 返回 dict / 工具
+        函数返回),用 kp 字段白名单校验是误报来源。改后只检查明确名为
+        kp 的变量。
+      - 下划线前缀字段跳过:kp["_keywords"] / kp["_summary"] 等是业务
+        代码自己挂的临时字段,不是 DB schema 字段,跳过不报。
+      - OR 兼容写法识别:`kp.get('a') or kp.get('b')` 这种两个 key 中
+        至少一个在白名单的写法,不报(_or_compatible_keys 里记录)。
+        典型场景:`kp.get('layer1_tags') or kp.get('tags_layer1')`。
     """
 
-    _KP_LIKE_VARS = {"kp", "k", "row", "r", "first"}
+    # part3.7:从 {"kp", "k", "row", "r", "first"} 收窄到 {"kp"}
+    _KP_LIKE_VARS = {"kp"}
 
     def __init__(self, rel_path, src_lines, known_fields):
         self.rel_path = rel_path
@@ -324,32 +368,87 @@ class _FieldContractVisitor(ast.NodeVisitor):
         # known_fields = _KP_AS_ALIAS_WHITELIST ∪ db_schema kp 列名
         self.known_fields = set(known_fields)
         self.issues = []
+        # part3.7:记录同一 BoolOp(Or) 表达式内的 kp.get(...) 字段集合
+        # 用于 OR 兼容写法识别
+        self._or_compatible_keys = set()
+
+    def visit_BoolOp(self, node):
+        """识别 `kp.get('a') or kp.get('b')` 兼容写法。
+        进入 Or 节点时,收集 kp.get 的所有字段;如果其中至少一个在
+        known_fields,整组都不报。
+        part3.7 新增。
+        """
+        if isinstance(node.op, ast.Or):
+            collected = self._collect_kp_keys_in_boolop(node)
+            if collected and any(k in self.known_fields for k in collected):
+                # 至少有一个 key 在白名单,整组 OR 写法视为容错模式,不报
+                # 用 _or_compatible_keys 标记,visit_Call/Subscript 会跳过
+                self._or_compatible_keys.update(collected)
+        self.generic_visit(node)
+
+    def _collect_kp_keys_in_boolop(self, node):
+        """递归收集 BoolOp 子表达式里 kp.get('x') / kp['x'] 的 key 字符串。"""
+        keys = set()
+        for child in ast.walk(node):
+            # kp.get('x')
+            if isinstance(child, ast.Call):
+                f = child.func
+                if (isinstance(f, ast.Attribute) and f.attr == "get"
+                        and getattr(f.value, "id", None) in self._KP_LIKE_VARS
+                        and child.args):
+                    k = self._extract_first_str_arg(child.args[0])
+                    if k:
+                        keys.add(k)
+            # kp['x']
+            elif isinstance(child, ast.Subscript):
+                if getattr(child.value, "id", None) in self._KP_LIKE_VARS:
+                    k = _PromptCallVisitor._extract_str_key(child)
+                    if k:
+                        keys.add(k)
+        return keys
 
     def visit_Call(self, node):
-        """匹配 xxx.get('field'[, default])"""
+        """匹配 kp.get('field'[, default])"""
         f = node.func
         if isinstance(f, ast.Attribute) and f.attr == "get":
             var = getattr(f.value, "id", None)
             if var in self._KP_LIKE_VARS and node.args:
                 key_str = self._extract_first_str_arg(node.args[0])
-                if key_str and key_str not in self.known_fields:
+                if key_str and self._should_report(key_str):
                     self._add("4_field_contract", "field_unknown", "warning",
                               node.lineno,
-                              "代码读取未声明字段 {}.get({})（维度④字段契约,对话 A 缺陷 3 类型）".format(
+                              "代码读取未声明字段 {}.get({})（维度④字段契约）".format(
                                   var, repr(key_str)))
         self.generic_visit(node)
 
     def visit_Subscript(self, node):
-        """匹配 xxx['field']"""
+        """匹配 kp['field']"""
         var_name = getattr(node.value, "id", None)
         if var_name in self._KP_LIKE_VARS:
             key_str = _PromptCallVisitor._extract_str_key(node)
-            if key_str and key_str not in self.known_fields:
+            if key_str and self._should_report(key_str):
                 self._add("4_field_contract", "field_unknown", "warning",
                           node.lineno,
                           "代码读取未声明字段 {}[{}]（维度④字段契约）".format(
                               var_name, repr(key_str)))
         self.generic_visit(node)
+
+    def _should_report(self, key_str):
+        """part3.7 新增:综合判断是否要报 field_unknown。
+          - 在 known_fields 白名单 → 不报
+          - 下划线前缀(_xxx)临时字段 → 不报
+          - 在 _or_compatible_keys(OR 兼容写法)→ 不报
+          - 其他 → 报
+        """
+        if not key_str:
+            return False
+        if key_str in self.known_fields:
+            return False
+        if key_str.startswith("_"):
+            return False
+        if key_str in self._or_compatible_keys:
+            return False
+        return True
 
     @staticmethod
     def _extract_first_str_arg(node):
@@ -419,12 +518,16 @@ class _CodeSmellVisitor(ast.NodeVisitor):
                                               "检测到 try: import ... except: {} = None 模式（对话 A 禁止模式）".format(name))
 
             # 模式 B: except: pass / except Exception: pass
+            # part3.7:signature + snippet 锚点从 h.lineno(except 行)改为
+            # body[0].lineno(pass 真实行)。老 pending issue 会洗牌一次,
+            # 换诊断报告典型代码片段显示真实违规行而不是 `except X:` 伪像。
             if len(body) == 1 and isinstance(body[0], ast.Pass):
                 self._add("6_code_smell", "smell_silent_except",
-                          "warning", h.lineno,
+                          "warning", body[0].lineno,
                           "检测到 except: pass 静默吞异常（对话 A 禁止模式）")
 
             # 模式 C: except 只有一句 print(),没有日志/raise
+            # part3.7:行号锚点同上,改为 body[0].lineno(print 真实行)。
             if len(body) == 1 and isinstance(body[0], ast.Expr):
                 expr = body[0].value
                 if isinstance(expr, ast.Call):
@@ -432,7 +535,7 @@ class _CodeSmellVisitor(ast.NodeVisitor):
                     fn_name = getattr(fn, "id", None)
                     if fn_name == "print":
                         self._add("6_code_smell", "smell_except_print_only",
-                                  "info", h.lineno,
+                                  "info", body[0].lineno,
                                   "检测到 except: print(...) 只打印不落日志/不抛（建议改用 log_operation_event）")
         self.generic_visit(node)
 

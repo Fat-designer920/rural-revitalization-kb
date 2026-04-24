@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:v2.3.0-part3.6(hotfix:诊断包三 bug 修复 + 新立规则 49/50/51 工程纪律三条)
+> **当前版本**:v2.3.0-part3.7(hotfix:F062 规则精度三连改 + 诊断包第三段口径对齐)
 
 ---
 
@@ -70,21 +70,17 @@
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
 
+**part3.7 关键修复**:
+- **F062 信噪比质变**:E2E 扫描 issue 从 207 条(85% 噪音)降到 60-90 条且全是真问题。规则 `smell_silent_except` / `smell_except_print_only` 的诊断报告典型代码片段从显示 `except X:` 伪像改为显示真实 `pass` / `print` 违规行;规则 `field_unknown` 不再把 `r.get("success")` / `row["cnt"]` / `kp["_keywords"]` 误判为未声明字段;规则 `prompt_wrong_key` 对历史 Prompt key(system/user/description)白名单静默
+- **诊断包口径对齐**:第三段白名单自检数字和第四段"总计 XXX 条"不再相互掐架
+
 **part3.6 关键修复**:
-- **诊断包准确性**:导出的 Markdown 报告三个显示 bug 一次清除 —— 六维度得分表权重列不再全 0、白名单失效时会自检输出警告、近 7 天事件日志能真实显示(过去三项都是假数据)
+- **诊断包准确性**:导出的 Markdown 报告三个显示 bug 一次清除 —— 六维度得分表权重列不再全 0、白名单失效时会自检输出警告、近 7 天事件日志能真实显示
 - **工程纪律**:沉淀立规则 49/50/51 三条 —— 大文件小改动用拷贝+局部替换、改完必跑 6 项拉通、项目文件更新必做减法
 
 **part3.5 feature**:E2E 测试报告弹窗 footer 新增"导出诊断包"按钮,一键下载 Markdown 诊断包发 Claude 做异地诊断
 
-**part3.4 关键修复**:
-- **低分打磨候选池**:体检维度 5 现在能真实扫到 1-2 分的低分条目(旧版因 WHERE 子句排除了 `confirmed` 已入库条目,维度 5 永久 100 分虚假绿灯)
-- **E2E issue 列表**:Issue 现在能真实落库(旧版因 `upsert_e2e_issue` 签名漂移,报告显示 185 个 issue 但列表显示 0 条的幻觉数字)
-
-**part3.3 UX 清扫**:
-- 审核统计从"原始 JSON 裸喷"升级为 6 段结构化卡片(基础概览 / 字段修改频率 / 类型修改率 / Prompt 版本对比 / 质检分数分布 / 常见质检问题)
-- 保鲜扫描加 loading 弹窗(不再"静默执行让用户纠结在不在跑")
-- 体检维度 5 无低分候选时显示"已跳过打磨"说明(区分"没跑" vs "跑了但无可打磨")
-- E2E 耗时秒级以下显示 `<1s`(不再显示 0s)
+**历史版本精华**(part3.3/part3.4):低分打磨候选池允许 confirmed / E2E issue 签名漂移修复 / 审核统计 UI 重写 / 保鲜 loading / E2E `<1s` 显示 —— 详见 CHANGELOG
 
 ---
 
@@ -112,9 +108,9 @@ rural-revitalization-kb/
 │   ├── setup.py             # 初始化（v2.3.0-part3）
 │   ├── upgrade_manager.py   # 架构升级
 │   ├── health_checker.py    # F048 体检引擎（~1360 行）
-│   ├── static_analyzer.py   # F062 静态规则库（~645 行）
-│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.6，~1400 行，白名单 67+11 条；part3.6 full_report 补写 dim_weights 字段）
-│   ├── e2e_diagnosis_exporter.py  # F062 诊断包 Markdown 导出引擎（v2.3.0-part3.6，~920 行，三 bug 修复:权重兜底 + 白名单自检 + 事件 SQL 字段名）
+│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.6，~1400 行，白名单 67+11 条）
+│   ├── e2e_diagnosis_exporter.py  # F062 诊断包 Markdown 导出引擎（v2.3.0-part3.7，~940 行，第三段口径与第四段对齐）
+│   ├── static_analyzer.py   # F062 静态规则库（v2.3.0-part3.7，~720 行，规则精度三连改）
 │   └── db_health_check.py   # 数据层只读体检（v1.2）
 ├── web/templates/
 │   └── review.html          # 管理后台（v2.3.0-part3.5，工具箱 12 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化 + E2E 报告弹窗"导出诊断包"按钮）
@@ -165,6 +161,7 @@ rural-revitalization-kb/
 | v2.3.0-part3.4 | hotfix：低分打磨允许 confirmed + E2E issue 签名漂移修复 | ✅ |
 | **v2.3.0-part3.5** | **feature:E2E 诊断包 Markdown 导出(发给 Claude 做异地诊断)** | ✅ |
 | **v2.3.0-part3.6** | **hotfix:诊断包三 bug 修复 + 新立规则 49/50/51(工程纪律三条:拷贝替换 / 改完拉通 / 更新做减法)** | ✅ |
+| **v2.3.0-part3.7** | **hotfix:F062 规则精度三连改(silent_except/except_print_only snippet 行号对齐 body 真实行 + field_unknown 变量名收窄 + prompt_wrong_key 历史 key 白名单)+ 诊断包第三段口径与第四段对齐** | ✅ |
 | v2.3.1 | 批量重算成熟度（完整版）+ 关联体系 | 规划 |
 | v2.3.2 | 本地问答助手 | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |

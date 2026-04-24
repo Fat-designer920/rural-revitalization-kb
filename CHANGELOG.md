@@ -6,6 +6,51 @@
 
 ---
 
+## [v2.3.0-part3.7] - 2026-04-24 (hotfix)
+
+**定位**:F062 规则精度从"宁严勿漏"升级到"信噪比匹配现实"。上一版诊断包导出 207 条 issue,实测 85% 为规则前提与业务脱节的误报(`r` 变量被当 kp 对象 / 历史 Prompt key 被判 error / snippet 显示 `except` 行而非 `pass` 真实行),老唐看报告时信号淹没在噪音里。本版三条规则精度重构 + 诊断包第三段口径对齐。
+
+### Fixed
+
+- **Bug 1 — `smell_silent_except` / `smell_except_print_only` snippet 显示伪像**:规则匹配逻辑本身正确(严格只抓 `body == [Pass]` / `body == [Call(print)]`),但 `_add` 用 `h.lineno`(except 行),导致典型代码片段显示 `except Exception:` / `except CostLimitExceeded:`,让人以为"带类型的 except 也被误报"。修复:signature 和 snippet 锚点改用 `body[0].lineno`(pass/print 真实行)。**代价**:老 pending issue 因 signature 变化洗牌一次,老唐已确认接受
+- **Bug 2 — `field_unknown` 规则 109 条 warning 里 ~95 条是误报**:根因 `_KP_LIKE_VARS = {kp,k,row,r,first}` 把 `r` 和 `row` 当成 kp 对象,但现实里 `r` 在 db_manager 是 categories 表的 row / 在 api_server 是 Flask 返回 dict / 在工具函数是 return dict。修复:(a) `_KP_LIKE_VARS` 收窄到 `{kp}`;(b) 下划线前缀字段跳过(`kp["_keywords"]` 等业务代码挂临时字段);(c) OR 兼容写法识别(`kp.get('layer1_tags') or kp.get('tags_layer1')` 两个 key 至少一个在白名单就整组不报);(d) `_KP_AS_ALIAS_WHITELIST` 扩 8 条(related_knowledge_ids / content / description / layer[123]_tags / tags_layer[123])
+- **Bug 3 — `prompt_wrong_key` 对历史 Prompt 一刀切判 error**:立规则第 13 条本意是新增 Prompt 用 `system_prompt` / `user_prompt_template`,不是强制 v2.2.0 之前的历史 Prompt(DUPLICATE_JUDGE_PROMPT 用 `{"system":...,"description":...}`)改名。读历史 key 被判 error 是假阳性。修复:error → warning + 历史 key `{system,user,description}` 白名单静默
+- **Bug 4 — 诊断包第三段 dim4/dim6 count 与第四段口径错配**:第三段取 `dims["dim4"]["issues"]` 的 len(白名单过滤后 raw,upsert 去重前,140 条),第四段从 `e2e_issues` 表读(upsert 后入库,109 条),导致"第三段 dim4=140 / 第四段合计 109"自相矛盾。修复:`_render_section_whitelist` 加 `issues` 参数,count 从传入的入库 issues 按 dim_code 前缀 filter,与第四段同源
+
+### Added
+
+- **立规则第 9 条第 5 次应验**:追加 part3.7 案例(规则的"变量名判定口径"和"Prompt key 白名单"写在记忆里不会报错,跟业务现实脱节才暴露)
+- **立规则第 13 条补注**:历史 Prompt 兼容例外(新规范只约束新增 Prompt,不强制历史迁移;要迁移走单独 hotfix)
+- **立规则第 38 条补注**:"宁可多告警"指**已知真问题模式不放弃检测**,不指**规则前提可以永久不跟业务同步**。判别法则:规则改动是**收紧误报** → 合规;**放弃抓某种已知错误模式** → 违规
+
+### Changed
+
+- `scripts/static_analyzer.py` v2.3.0-part3-alpha1 → **v2.3.0-part3.7**(+约 75 行)
+- `scripts/e2e_diagnosis_exporter.py` v2.3.0-part3.6 → **v2.3.0-part3.7**(+约 20 行)
+- `00 / 01 / CHANGELOG / README` 全量同步
+- 立规则总数保持 51 条(无新增立规则,只对第 9/13/38 条追加补注和案例)
+
+### Migration
+
+无 schema 变更 / 无迁移 / 无新增路由 / 无数据转换。纯代码替换 + 项目文件同步。
+
+### Upgrade Path
+
+1. 替换 `scripts/static_analyzer.py` + `scripts/e2e_diagnosis_exporter.py`
+2. 推送 GitHub → 重启 `启动后台.bat`
+3. 验证:工具箱→端到端测试→跑一次 deep 扫描→查看最近报告→点"导出诊断包"→检查:
+   - 总 issue 数从约 207 → 约 60-90 条(降噪 55-70%)
+   - 典型代码片段里 `smell_silent_except` / `smell_except_print_only` 显示真实 `pass` 行或 `print(...)` 行,**不再显示 `except X:` 伪像**
+   - `field_unknown` 不再报 `r.get("success")` / `row["cnt"]` / `kp["_keywords"]` 这类误报
+   - `prompt_wrong_key` 不再对 duplicate_checker.py 行 392 的 `DUPLICATE_JUDGE_PROMPT["system"]` 报 error
+   - 第三段白名单自检的 dim4/dim6 数字和第四段"总计 XXX 条"能相互印证(raw vs 入库不再打架)
+4. **老 pending issue 洗牌警告**:signature 从 h.lineno 改到 body[0].lineno,所有 v2.3.0-part3.6 及之前的 `smell_silent_except` / `smell_except_print_only` pending issue 都会变成"孤儿态"(signature 不匹配 → 不出现在新扫描);新扫描产生的新 signature issue 是全新的 pending。老唐无需手工处理,继续按新 issue 跑正常流程即可
+5. 下一版**强制回到知识生产**(v2.3.1 批量重算成熟度 + 关联体系),不再动 F062
+
+**工程细节**:`01 立规则第 9 条第 5 次应验 + 第 13 条补注 + 第 38 条补注`
+
+---
+
 ## [v2.3.0-part3.6] - 2026-04-24 (hotfix)
 
 **定位**:诊断包首版三 bug 一次清除 + 沉淀三条工程纪律。从"导出看得到文件"升级为"导出拿到手的报告是准的"。
@@ -74,205 +119,23 @@
 **工程细节/设计决策详见**:`01 §四关键设计决策` + `01 §6.5 模块结构速查` + `01 §5.3 API 路由速查-F062`
 
 ---
-
-## [v2.3.0-part3.4] - 2026-04-23 (hotfix)
-
-**定位**：质量闭环从"能跑"到"能真正指路" —— 修复两个让仪表盘数字"漂亮但是假"的 bug
-
-### Fixed
-
-**Bug 1 — 体检维度 5 低分打磨永久 100 分 + 自动跳过**
-
-- **现象**：仪表盘明明显示 1 分 2 条、2 分 33 条共 35 条低分条目，全库体检报告却显示"全库无低分条目(1-2 分共 0 条),已跳过打磨环节"，维度 5 得分 100 分。
-- **位置**：`scripts/db_manager.py` `get_polish_candidates()` line ~1960
-- **根因（业务现状漂移，潜伏自 part3.2 就绪度联动上线约 1 个月）**：
-  1. 旧 WHERE 子句 `review_status NOT IN ('ignored','confirmed','merged')` 排除了 `confirmed`（已入库）条目
-  2. 这在 v2.3.0-part2（F048 上线时）是合理的——那时审核流程是"打磨完才入库"
-  3. part3.2 上线就绪度联动后，`qa>=4 AND draft → quotable` 自动升 confirmed；全库最终都会 confirmed 化
-  4. 当前库 2436 条 100% confirmed，旧过滤条件把所有低分条目一并过滤掉，维度 5 永久 100 分
-- **修复**：WHERE 排除集合收紧为 `('ignored','merged')`。允许 `confirmed` 条目进候选池。纵向边界 `qa_score>0 AND qa_score<=2` 保持不变（立规则第 40 条核心语义）
-- **立规则第 40 条补注**：加"横向边界"说明，明确 confirmed 允许进候选池
-- **立规则第 17 条（设计思想）新增**：筛选条件的边界要跟业务现状对齐，业务流程变化时 WHERE 子句必须回头校对
-
-**Bug 2 — 端到端测试 Issue 列表显示 0 条，但报告显示 185 个 issue**
-
-- **现象**：F062 端到端测试报告显示维度 3/4/6 共 185 个 issue（维度 4 字段契约 95 / 维度 6 代码异味 88 / 维度 3 Prompt 2），但点"查看 issue 列表"弹窗显示"Issue 四态列表 共 0 条 / 当前筛选无 issue"。
-- **位置**：`scripts/e2e_tester.py` `_write_issues()` line ~1013 + `_run_pipeline()` line ~462
-- **根因（签名漂移 + 调用顺序错误，潜伏自 F062 上线 part3 约 1 个月）**：
-  1. `db.upsert_e2e_issue` 真实签名是 `upsert_e2e_issue(report_id, dim_code, endpoint, severity, signature, payload=None)`
-  2. `_write_issues` 错误调用用了 `rule_id=` / `detail=` 两个**签名里不存在**的关键字参数
-  3. 且没传必填的 `report_id`（`_write_issues` 被调用时 `report_id` 还没生成）
-  4. 每条 upsert 抛 `TypeError: unexpected keyword argument 'rule_id'` 被 `_safe_log_event` 静默接住
-  5. 结果：`e2e_issues` 表实际 0 条落库，但报告摘要已经在内存算出 185 条显示给前端
-- **修复**：
-  - `_write_issues(issues)` 签名扩为 `_write_issues(issues, report_id)`
-  - 内部调用对齐真实签名：`rule_id` / `detail` 合并进 `payload` 字典，数据不丢
-  - `_run_pipeline` 调用顺序调整：旧"六维度 → write_issues → save_report"改为"六维度 → save_report(拿 report_id) → write_issues(report_id)"
-  - `upserted_count` 从 `full_report_json` 顶层移除（过去没前端消费），改为 `e2e_issue_summary` 事件日志记录
-- **立规则第 9 条第三次应验**：F058→F061(part3.1)、`upsert_e2e_issue`(part3.4) 都是"改一侧没改另一侧"的签名漂移；签名必 grep 源码对照，不能靠记忆
-
-### Changed
-
-- `scripts/db_manager.py` 版本号 v2.3.0-part3.2 → **v2.3.0-part3.4**（加 part3.2 历史变更条目 + part3.4 hotfix 条目）
-- `scripts/e2e_tester.py` 版本号 v2.3.0-part3.3 → **v2.3.0-part3.4**
-- `scripts/api_server.py` 版本号注释 v2.3.0-part3.2 → **v2.3.0-part3.4**（代码无实质改动，仅同步版本号）
-- `web/templates/review.html` 版本号 v2.3.0-part3.3 → **v2.3.0-part3.4**（代码无实质改动，仅 title 和页面头版本号文本）
-- `00_项目全景.md` / `01_工程手册.md` / `CHANGELOG.md` / `README.md` 同步到 part3.4
-- `01_工程手册.md`：
-  - 代码清单 4 个文件版本号更新
-  - 立规则总数说明：46 条不变，本次无新增立规则
-  - 立规则第 9 条追加 part3.4 应验案例
-  - 立规则第 40 条追加横向边界补注
-  - 关键设计决策 §四新增"低分打磨候选池 / E2E issue 签名漂移（v2.3.0-part3.4 锁定）"9 条决策
-  - 架构速查 `get_polish_candidates` 方法签名说明加横向边界注释
-  - 退役组件表新增 2 条（confirmed 排除 / `_write_issues` 旧签名）
-  - 设计思想新增第 17 条"筛选条件的边界要跟业务现状对齐"
-
-### Migration
-
-- **无 schema 变更** / 无迁移 / 无新增路由 / 无新增立规则
-- 老唐操作：替换 4 个文件 → 推送 GitHub → 更新 Claude Projects 项目文件 → 启动后台
-- **下次体检警告**：修复后维度 5 会实打实扫到约 35 条低分候选并跑打磨降级链。API 成本估算：
-  - 快速档（30/50/100/200）：`polish_max` 会限流，≤0.5 元
-  - 完整档（不设 polish_max）：全 35 条跑，约 0.5-1.0 元 / 5-15 分钟
-- **下次 E2E 扫描警告**：修复后 deep 档会产生约 134 条 pending issue（185 - 51 白名单），需要逐条切"已修/忽略"
-
----
-
-## [v2.3.0-part3.3] - 2026-04-23 (hotfix)
-
-**定位**：后台 UI 可信度清扫（3 处 UX 顽疾）+ E2E 白名单漂移实债偿还
-
-### Added
-
-- **立规则第 46 条**：前后端契约同步升级。后端改 API 返回结构时前端所有消费点必须同步改；兜底 `if(!h) showToolResult(pre(JSON))` 是临时救命草不是长期方案
-- **设计思想第 15 / 16 条**：前后端是两条腿必须一起迈 / "看起来完成" vs "用户能用"
-
-### Fixed
-
-**Bug 1 — 审核统计 A 卡显示裸露的 JSON 字符串**
-
-- **现象**：点"审核统计"按钮，弹窗直接显示 `<pre>{"overview":{...},"field_edits":{...}}</pre>` 原始 JSON
-- **位置**：`web/templates/review.html` `runTool("analytics")` 分支
-- **根因（潜伏自 review_analytics v2.1.2 约 2 个月）**：
-  1. 后端 `review_analytics.get_analytics_json()` 从扁平结构（`total_reviewed / confirmed / avg_qa_score / top_flags`）升级为 6 段嵌套（overview / field_edits / type_edit_rates / prompt_versions / qa_distribution / qa_flags）
-  2. 前端 `runTool("analytics")` 仍按老扁平字段读，全部 undefined
-  3. 兜底分支 `if(!h) showToolResult("<pre>"+JSON.stringify(r)+"</pre>")` 触发
-- **修复**：前端按 6 段结构化重写，每段独立渲染卡片
-
-**Bug 2 — 保鲜扫描点击后视觉无反馈**
-
-- **现象**：点"保鲜扫描"按钮后卡片只是 `opacity:.5` 变灰，用户不确定在不在跑
-- **修复**：加 loading 弹窗（旋转图标 + "保鲜扫描中,预计 1-3 秒..." 文字），扫描完弹 confirm 跳转
-
-**Bug 3 — 体检维度 5 低分打磨得分 100 分时用户困惑**
-
-- **现象**：体检报告维度 5 显示 100 分，但用户不知道是"没跑"还是"跑了但无可打磨"
-- **修复**：`renderHealthReport` 增强：`low_score_count=0` 时显示"全库无低分条目(1-2 分共 0 条),已跳过打磨环节"（**注：此修复在 part3.4 暴露出 Bug 1 的根因—— WHERE 子句过滤把 confirmed 条目全排除了，low_score_count=0 是假的**）
-
-**Bug 4 — E2E 报告耗时 `<1 秒` 时显示 `0s`**
-
-- **现象**：quick 档秒级完成，报告显示"耗时 0s"
-- **位置**：`review.html` E2E 报告渲染
-- **根因**：`int(time.time()-start)` 向下取整，毫秒级场景误显 0s
-- **修复**：前端 `<1s` 兜底显示
-
-**Bug 5 — F062 白名单行号漂移导致 issue 暴涨**
-
-- **现象**：维度 4 issue 140 / 维度 6 issue 94 / 总分跌到 69.92
-- **位置**：`scripts/e2e_tester.py` `DIM4_KNOWN_FALSE_POSITIVES` / `DIM6_KNOWN_FALSE_POSITIVES`
-- **根因**：part3.2 新增 `promote_readiness_by_qa_score` / `get_readiness_promote_preview` 导致 db_manager.py 下游行号全部漂移，原 41 条白名单全部失效
-- **修复**：
-  - DIM4: 35 条 → 67 条
-  - DIM6: 6 条 → 11 条（每个 pass 点位覆盖 except 行 + body 行，兼容 handler.lineno / body[0].lineno 两种实现）
-  - WHITELIST_REASONS: 同步更新为 78 条
-- **立规则 §5.8 强化**：db_manager.py 重构后 F062 白名单行号必须重扫刷新
-
-### Changed
-
-- `web/templates/review.html` v2.3.0-part3.2 → v2.3.0-part3.3（审核统计 6 段重写 + 保鲜 loading + 体检 note + E2E 耗时兜底）
-- `scripts/e2e_tester.py` v2.3.0-part3.2 → v2.3.0-part3.3（白名单行号刷新）
-
-### Migration
-
-- 无 schema 变更 / 无迁移
-- 老唐操作：替换 2 个代码文件 → 启动后台验证 4 个 UI
-
----
-
-
-## [v2.3.0-part3.1] - 2026-04-24 (hotfix)
-
-**定位**：F061 质检补跑签名漂移 + F062 老库自动追齐 init_tables —— 两个系统性风险一次根治
-
-### Added
-
-- **`scripts/api_server.py`**（+16 行）：模块顶层 `DatabaseManager()` 实例化后追加 `db.init_tables()` 兜底（`CREATE TABLE IF NOT EXISTS` 无副作用，失败打 WARN 不阻塞启动）
-
-### Fixed
-
-**Bug A — F061 质检补跑全线崩溃**
-- **现象**：工具箱"质检补跑"点击后 45 个分组全部跳过，0 条成功，候选 2043 条全部卡住，前端"质检补跑结果"弹窗显示"跳过 45 个分组: 文件#2: Extractor._quality_check() missing 2 required positional arguments: 'kps' and 'kps_info'"
-- **位置**：`api_server.py` line 1410 + 1421（共 2 处）
-- **根因**：F058（v2.2.3）重构 `_quality_check` 把签名从 3 参强制扩成 5 参：`_quality_check(self, filename, content_summary, kps, kps_info, source_content="")`；F061 的 `_qc_rerun_core` 保留旧 2 参调用 `ext._quality_check(kps_list, kps_info, source_content=content)`，Python 把 `kps_list` 当成 `filename`、`kps_info` 当成 `content_summary`，然后 `kps` 和 `kps_info` 真的缺了 → TypeError
-- **为什么潜伏 2 个月**：v2.2.3 发布以来老唐从未触发质检补跑，首次触发立刻全线崩
-- **修复**：两处调用补齐 `filename`（正常分支用 `renamed_filename`/`original_filename`/`"file_<fid>"` 三级兜底，孤儿分支固定 `"experience_notes"`）和 `content_summary=""`（历史补跑场景无预分析上下文）
-
-**Bug B — F062 三表老库未建，`/api/tools/e2e/latest` 返 500**
-- **现象**：后台日志 `sqlite3.OperationalError: no such table: e2e_test_reports`
-- **位置**：`api_server.py` line 106 模块顶层 `db = DatabaseManager()` 后从未调用 `init_tables()`
-- **根因**：v2.3.0-part3 升级时老唐只替换代码未重跑 `首次安装.bat`，F062 三张新表（`api_endpoint_registry` / `e2e_test_reports` / `e2e_issues`）在 init_tables 里定义好却没机会执行
-- **修复**：实例化后 silent 重入 `db.init_tables()`，`CREATE TABLE IF NOT EXISTS` 幂等无副作用
-
-### Changed
-
-- **版本号**：api_server.py 顶部 docstring + main banner 同步升 `v2.3.0-part3.1`
-- **立规则新增 2 条**（写入 01 工程手册 §二数据层）：
-  - **第 8 条 — api_server 启动兜底 init_tables**：`DatabaseManager()` 实例化后必须 silent 调用一次 `db.init_tables()`。避免"只替换代码不重跑首次安装"导致的老库 schema 漂移
-  - **第 9 条 — 跨版本调用外部模块方法前必须对照真实签名**：改动前 `grep -n "def <方法名>"` 查真实签名、对照参数个数和关键字/位置参数区分。这是跨版本开发的强制纪律
-- **立规则编号全局顺延**：原数据层 1-7 条后插入新 8、9 条，后续代码层（原 8-19→新 10-21）/ 交互层（原 20-27→新 22-29）/ 流程层（原 28-42→新 30-44）全部 +2
-- **项目文件全量更新**：00 / 01 / CHANGELOG / README（02 / 03 无改动）
-
-### Migration
-
-**无 schema 变更**。本次修复纯代码层，老库无需 migration 脚本。升级后首次启动 `启动后台.bat` 时 `db.init_tables()` 自动追齐 F062 三张表（如已存在则幂等跳过）。
-
----
-
-## [v2.3.0-part3] - 2026-04-24
-
-**定位**：F062 端到端健康测试 Agent 三对话拆分 —— 对话 3/3 界面层正式版（全闭环）
-
-### Added
-
-- **`scripts/api_server.py`**（+422 行，2834 → 3256）：F062 界面后端
-  - 7 个路由：`/e2e/latest` / `/start` / `/history` / `/report/<rid>` / `/issues` / `/issues/<iid>/status`
-  - 2 个辅助函数：`_e2e_readiness_check` 启动 4 项自检（放 `_task_lock` 之前）+ `_e2e_progress_adapter` 9 stage 映射
-  - `_task["type"]="e2e"` 前后端锁定
-- **`web/templates/review.html`**（+458 行，2692 → 3150）：F062 界面前端
-  - 工具箱第 11 张卡 `tc-e2e`（青蓝 E #E6F3FB/#1F7AAC）+ 软提醒徽章（≤7 天无 / 7-14 天淡黄 / >14 天红）
-  - 3 个模态框：档位二选一 / 报告详情（六维度 2×3 卡）/ issue 左右分栏（五 tab + 四态按钮）
-  - 新增 9 JS 函数（严格 ES5）+ 2 状态变量 + CSS ~70 行
-- **`scripts/db_manager.py`**（+26 行）：破例补齐 `get_e2e_test_report_list`（对称 F048 `get_health_report_list`），F062 方法从 8 → 9
-- **`scripts/setup.py`**：核心文件清单追加 `static_analyzer.py` + `e2e_tester.py`
-- **`scripts/check_system.py`**（v2.5.1 → v2.5.2）：[4] 表清单扩到 12 张 + 新增 [19] F062 就绪度（4 小项）
-- **`scripts/db_health_check.py`**（v1.1 → v1.2）：EXPECTED_TABLES +3 + 新增 [12/12] F062 代码层契约（6 小项）
-
-### Fixed
-
-无 bug 修复。本次为对话 3/3 正常交付。
-
-### Changed
-
-- 项目文件全量更新：00 / 01 / 03 / README / CHANGELOG
-
-### Migration
-
-**无 schema 变更**。对话 1 已落地的 3 张 F062 表在本次被界面层消费，零改动。
-
----
-
 ## 早期版本精简摘要
+
+### v2.3.0-part3.4 — 2026-04-23 (hotfix)
+
+质量闭环从"能跑"到"能真正指路":(a) F048 维度⑤ `get_polish_candidates` WHERE 排除集合从 `('ignored','confirmed','merged')` 收紧为 `('ignored','merged')`,允许 confirmed 条目进候选池 —— 修复全库 confirmed 化后维度⑤永久 100 分虚假绿灯;(b) F062 `_write_issues` 签名扩为 `(issues, report_id)`,`rule_id/detail` 合并进 `payload`,`_run_pipeline` 调用顺序改"save_report 拿 rid → write_issues(rid)" —— 修复报告显示 185 issue 但列表显示 0 条的幻觉数字。立规则第 9 条第 3 次应验 + 第 40 条横向边界补注 + 设计思想第 17 条"筛选边界对齐业务现状"。
+
+### v2.3.0-part3.3 — 2026-04-23 (hotfix)
+
+后台 UI 可信度清扫(3 处 UX 顽疾)+ E2E 白名单漂移偿债:审核统计从"裸 JSON 喷"升级为 6 段结构化卡片(overview/field_edits/type_edit_rates/prompt_versions/qa_distribution/qa_flags);保鲜扫描加 loading 弹窗;F048 维度⑤无候选时显式"已跳过打磨"提示;E2E 耗时秒级以下显示 `<1s`;E2E 白名单 35+6 条行号重扫对齐 db_manager.py v2.3.0-part3.2(实际 67+11 条 unique signature)。立规则第 46 条(前后端契约同步升级) + 设计思想第 15/16 条(前后端是两条腿 / "看起来完成" vs "用户能用")。
+
+### v2.3.0-part3.1 — 2026-04-24 (hotfix)
+
+两个系统性风险一次根治:(a) F061 质检补跑调旧 2 参 `_quality_check` 被 F058 扩成 5 参后崩(候选 2043 条跳过),两处调用补齐 filename + content_summary;(b) api_server 启动后追加 `db.init_tables()` 兜底(CREATE TABLE IF NOT EXISTS 幂等),解决老用户升级只替换代码不重跑 `首次安装.bat` 导致 F062 三表未建的 500 错。立规则新增 2 条:第 8 条(api_server 启动兜底 init_tables) + 第 9 条(跨版本调用外部模块前必须 grep 真实签名)。
+
+### v2.3.0-part3 — 2026-04-24
+
+F062 端到端健康测试 Agent 三对话拆分全闭环:api_server +422 行 7 路由 + `_e2e_readiness_check` / `_e2e_progress_adapter` 辅助函数 + review.html +770 行工具箱第 12 卡 + issue 四态切换 UI + 软提醒逻辑(>7 天淡黄 / >14 天红)。对话 1/3(part3-alpha1)基础层 + 对话 2/3(part3-alpha2)引擎层已先期落地,本版为界面层收尾。3 张 F062 表被消费,零 schema 改动。
 
 ### v2.3.0-part3.2 — 2026-04-23 (hotfix)
 

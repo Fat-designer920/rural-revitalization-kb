@@ -2,6 +2,17 @@
 """
 e2e_diagnosis_exporter.py — F062 端到端测试诊断包导出引擎
 
+v2.3.0-part3.7(2026-04-24) - hotfix: 第三段白名单自检口径与第四段对齐
+  Bug 4 - 第三段 dim4 140 vs 第四段 dim4 109 口径错配:
+    根因: 第三段取 dims["dim4"]["issues"] 的 len(白名单过滤后 raw,但
+          upsert_e2e_issue signature 去重前);第四段从 e2e_issues 表读
+          (upsert 后入库)。两边分别是 raw 口径和入库口径,raw 会因同
+          signature 重复实例多出 20-30%。
+    修复: _render_section_whitelist 签名加 issues 参数,dim4/dim6 count
+          从传入的入库 issues 按 dim_code 前缀 filter 数,和第四段同源。
+    影响: 第三段警告里的数字不再和第四段"总计 XXX 条"相互掐架。老签名
+          (lines, report) 仍兼容(issues 参数默认 None 退化到旧口径)。
+
 v2.3.0-part3.6(2026-04-24) - hotfix: 修复 part3.5 首版诊断包三个显示 bug
   Bug 1 - 六维度权重全 0(读取侧兜底):
     根因: full_report 漏写 dim_weights 字段(part3.6 e2e_tester 已补写)
@@ -390,7 +401,7 @@ def _render_markdown(report, issues, groups, events_by_type):
 
     _render_section_metadata(lines, report)
     _render_section_dimensions(lines, report)
-    _render_section_whitelist(lines, report)
+    _render_section_whitelist(lines, report, issues)
     _render_section_issues(lines, groups, issues)
     _render_section_events(lines, events_by_type)
     _render_section_instructions(lines)
@@ -505,7 +516,10 @@ def _render_section_dimensions(lines, report):
     lines.append("")
 
 
-def _render_section_whitelist(lines, report):
+def _render_section_whitelist(lines, report, issues=None):
+    """part3.7:新增 issues 参数,用于第三段 dim4/dim6 count 与第四段聚合
+    清单(=入库 e2e_issues 口径)对齐。老签名 (lines, report) 仍兼容。
+    """
     lines.append("## 三、白名单过滤统计")
     lines.append("")
 
@@ -519,8 +533,24 @@ def _render_section_whitelist(lines, report):
         # part3.6 修复: 不再一句"无白名单过滤项"就收工,加失效自检。
         # 白名单一条都没命中通常意味着行号已漂移(db_manager.py 改动后没重扫)。
         # 诊断包自己告诉 Claude 自己可能在骗他,避免 Claude 照单全收"0 条过滤"。
-        dim4_issue_count = len((dims.get("dim4") or {}).get("issues") or [])
-        dim6_issue_count = len((dims.get("dim6") or {}).get("issues") or [])
+        #
+        # part3.7 口径修复: 原本取 dims["dim4"]["issues"] 的 len(过滤后 raw,
+        # upsert 前),与第四段聚合清单(e2e_issues 表 upsert 后入库)口径不一致,
+        # 导致第三段说"dim4 140"、第四段合计只有 109 条。改为从传入的 issues
+        # (入库后,与第四段同源)按 dim_code 前缀 filter 数。
+        if issues is not None:
+            dim4_issue_count = sum(
+                1 for iss in issues
+                if (iss.get("dim_code") or "").startswith("4_")
+            )
+            dim6_issue_count = sum(
+                1 for iss in issues
+                if (iss.get("dim_code") or "").startswith("6_")
+            )
+        else:
+            # 兼容老签名(不传 issues 时退回到 dims.issues 的 raw 口径)
+            dim4_issue_count = len((dims.get("dim4") or {}).get("issues") or [])
+            dim6_issue_count = len((dims.get("dim6") or {}).get("issues") or [])
         lines.append("**⚠️ 本次扫描未过滤任何已知合理项**。两种可能:")
         lines.append("")
         lines.append("- **(a) 白名单确无命中**:dim4/dim6 真的干净,本库当前状态无\"已知合理项\"")
