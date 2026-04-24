@@ -240,6 +240,16 @@ class DatabaseManager:
             insight_reliability TEXT DEFAULT NULL,
             -- v2.2.0: 来源类型
             source_type TEXT DEFAULT 'extracted',
+            -- v2.3.1: 精品资产生产线（双标独立 + 三级成色 + 使用埋点 + 保鲜预埋）
+            premium_client INTEGER DEFAULT 0,
+            premium_rfp INTEGER DEFAULT 0,
+            premium_tier TEXT DEFAULT NULL
+                CHECK(premium_tier IS NULL OR premium_tier IN ('verified','trusted','candidate')),
+            used_count INTEGER DEFAULT 0,
+            last_used_at TEXT DEFAULT NULL,
+            used_for TEXT DEFAULT NULL,
+            premium_freshness_status TEXT DEFAULT NULL
+                CHECK(premium_freshness_status IS NULL OR premium_freshness_status IN ('fresh','warning','expired')),
             -- 时间戳
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
@@ -454,6 +464,24 @@ class DatabaseManager:
             payload_json TEXT DEFAULT '{}',
             FOREIGN KEY (report_id) REFERENCES e2e_test_reports(report_id)
         )""")
+        # --- v2.3.1 F2 精品候选 AI 判定缓存 ---
+        # UNIQUE(kp_id, view): 同一条 kp 每视角只保留最新一次判定, INSERT OR REPLACE 覆盖旧值
+        # 与 knowledge_points.premium_client/premium_rfp 是两个生命周期:
+        #   AI cache 每次刷新覆盖, 用户封神状态永久保留
+        c.execute("""CREATE TABLE IF NOT EXISTS premium_ai_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kp_id INTEGER NOT NULL,
+            view TEXT NOT NULL CHECK(view IN ('client','rfp')),
+            recommendation TEXT NOT NULL
+                CHECK(recommendation IN ('strong','optional','not')),
+            reason TEXT DEFAULT '',
+            score REAL DEFAULT 0.0,
+            source TEXT DEFAULT 'ai'
+                CHECK(source IN ('ai','rule_fallback')),
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (kp_id) REFERENCES knowledge_points(id),
+            UNIQUE(kp_id, view)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -483,6 +511,10 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_e2e_report_created ON e2e_test_reports(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_e2e_issue_status ON e2e_issues(status, dim_code)",
             "CREATE INDEX IF NOT EXISTS idx_e2e_issue_signature ON e2e_issues(signature)",
+            # v2.3.1 F2 精品候选索引(筛选客户型/投标型精品时加速)
+            "CREATE INDEX IF NOT EXISTS idx_kp_premium_client ON knowledge_points(premium_client)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_premium_rfp ON knowledge_points(premium_rfp)",
+            "CREATE INDEX IF NOT EXISTS idx_premium_cache_kp_view ON premium_ai_cache(kp_id, view)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -755,14 +787,19 @@ class DatabaseManager:
                     "freshness_checked_at","freshness_interval_days","freshness_note",
                     "prompt_version","qa_score","qa_flags","qa_source",
                     "policy_dependencies","policy_validated",
-                    "practical_insights","insight_reliability"]
+                    "practical_insights","insight_reliability",
+                    # v2.3.1 精品资产生产线 7 字段
+                    "premium_client","premium_rfp","premium_tier",
+                    "used_count","last_used_at","used_for",
+                    "premium_freshness_status"]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
                 if k in ("ai_extracted_content","final_tags","final_category_tags",
                           "final_attribute_tags","final_keywords","qa_flags",
-                          "policy_dependencies","practical_insights") and isinstance(v, (dict, list)):
+                          "policy_dependencies","practical_insights",
+                          "used_for") and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
                 else: vals.append(v)
         if sets:
@@ -2520,3 +2557,372 @@ class DatabaseManager:
         conn.commit(); conn.close()
         return affected > 0
 
+
+    # ================================================================
+    # v2.3.1 F2 精品候选 — 6 个新方法
+    # ----------------------------------------------------------------
+    # 职责划分:
+    #   get_premium_judge_candidates() : AI 刷新时取候选 kp 全量(quotable + confirmed + 非重复)
+    #   upsert_premium_ai_cache()      : 写入/覆盖 AI 判定结果
+    #   get_premium_ai_cache_by_kp()   : 读一条 kp 两视角缓存(Tab 1 详情页用)
+    #   get_premium_pool_list()        : 前端队列页查询(带 composite_score + view 过滤)
+    #   bless_premium()                : 封神(单条,字段联动)
+    #   unbless_premium()              : 撤销(单条,双视角归零时回 quotable)
+    #   get_premium_export_data()      : F6 精品导出查询
+    # ================================================================
+
+    def get_premium_judge_candidates(self):
+        """F2 AI 判定刷新候选池:
+        条件: confirmed + quotable + 非重复(不在 duplicate_groups pending 中)
+
+        不过滤已封神的(premium_client/rfp=1 的也要重判,除非用户特意排除)
+        因为 AI 判定是"推荐参考",不是"授权封神",老用户状态不冲突
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""
+            SELECT kp.id AS kp_id,
+                   kp.title,
+                   kp.content_type,
+                   kp.original_excerpt,
+                   kp.ai_extracted_content,
+                   kp.final_category_id,
+                   kp.final_category_tags,
+                   kp.final_attribute_tags,
+                   kp.final_keywords,
+                   kp.practical_insights,
+                   kp.qa_score,
+                   kp.qa_flags,
+                   kp.source_authority,
+                   kp.access_level,
+                   kp.content_readiness,
+                   kp.premium_client,
+                   kp.premium_rfp,
+                   kp.premium_freshness_status,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
+                   sf.original_filename,
+                   sf.renamed_filename,
+                   (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id) AS annotation_count
+              FROM knowledge_points kp
+              LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+              LEFT JOIN categories cat ON cat.id=kp.final_category_id
+             WHERE kp.review_status='confirmed'
+               AND kp.content_readiness IN ('quotable','premium')
+               AND NOT EXISTS (
+                     SELECT 1 FROM duplicate_groups dg
+                      WHERE dg.status='pending'
+                        AND (',' || dg.member_ids || ',') LIKE ('%,' || kp.id || ',%')
+                   )
+             ORDER BY kp.id ASC
+        """)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
+            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
+            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["has_annotation"] = (r.get("annotation_count") or 0) > 0
+        return rows
+
+    def upsert_premium_ai_cache(self, kp_id, view, recommendation, reason="", score=0.0, source="ai"):
+        """写入/覆盖 AI 判定结果. INSERT OR REPLACE 保证 UNIQUE(kp_id,view)."""
+        if view not in ("client", "rfp"):
+            raise ValueError("view must be 'client' or 'rfp', got: " + str(view))
+        if recommendation not in ("strong", "optional", "not"):
+            raise ValueError("recommendation must be strong/optional/not, got: " + str(recommendation))
+        if source not in ("ai", "rule_fallback"):
+            source = "ai"
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT OR REPLACE INTO premium_ai_cache
+                     (kp_id, view, recommendation, reason, score, source, created_at)
+                     VALUES (?,?,?,?,?,?, datetime('now','localtime'))""",
+                  (int(kp_id), view, recommendation, reason or "", float(score or 0.0), source))
+        conn.commit(); conn.close()
+        return True
+
+    def get_premium_ai_cache_by_kp(self, kp_id):
+        """读一条 kp 的两视角缓存. 返回 dict {'client': {...} | None, 'rfp': {...} | None}"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT view, recommendation, reason, score, source, created_at
+                       FROM premium_ai_cache WHERE kp_id=?""", (int(kp_id),))
+        out = {"client": None, "rfp": None}
+        for r in c.fetchall():
+            rd = dict(r)
+            v = rd.pop("view")
+            out[v] = rd
+        conn.close()
+        return out
+
+    def get_premium_pool_list(self, view, status_filter=None, exclude_blessed_in_view=True):
+        """精品候选队列查询.
+
+        view: 'client' 或 'rfp'
+        status_filter: None(全部) | 'strong' | 'optional'
+        exclude_blessed_in_view: True 时,该视角已封神(premium_{view}=1)的不返回
+                                 (对方视角已封神的仍返回,Phase 1 连带决策 3 锁定)
+
+        返回带 composite_score(前端排序用)与 AI 推荐(reason/score)的合并结构.
+        composite_score 在前端计算或本方法内计算均可,此处统一在查询侧算好.
+        """
+        if view not in ("client", "rfp"):
+            raise ValueError("view must be 'client' or 'rfp'")
+        if status_filter and status_filter not in ("strong", "optional"):
+            status_filter = None
+
+        conn = self.get_connection(); c = conn.cursor()
+        blessed_col = "premium_client" if view == "client" else "premium_rfp"
+        other_blessed_col = "premium_rfp" if view == "client" else "premium_client"
+
+        where_parts = [
+            "kp.review_status='confirmed'",
+            "kp.content_readiness IN ('quotable','premium')",
+            "pac.view = ?",
+        ]
+        params = [view]
+        if exclude_blessed_in_view:
+            where_parts.append(f"kp.{blessed_col} = 0")
+        if status_filter:
+            where_parts.append("pac.recommendation = ?")
+            params.append(status_filter)
+
+        where_sql = " AND ".join(where_parts)
+        c.execute(f"""
+            SELECT kp.id AS kp_id,
+                   kp.title,
+                   kp.content_type,
+                   kp.original_excerpt,
+                   kp.source_authority,
+                   kp.access_level,
+                   kp.qa_score,
+                   kp.content_readiness,
+                   kp.{blessed_col} AS blessed_in_this_view,
+                   kp.{other_blessed_col} AS blessed_in_other_view,
+                   kp.premium_tier,
+                   kp.premium_freshness_status,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
+                   pac.recommendation AS ai_recommendation,
+                   pac.reason AS ai_reason,
+                   pac.score AS ai_score,
+                   pac.source AS ai_source,
+                   pac.created_at AS ai_cached_at,
+                   (SELECT COUNT(*) FROM annotations a WHERE a.knowledge_point_id=kp.id) AS annotation_count
+              FROM knowledge_points kp
+              INNER JOIN premium_ai_cache pac ON pac.kp_id = kp.id
+              LEFT JOIN categories cat ON cat.id = kp.final_category_id
+             WHERE {where_sql}
+             ORDER BY pac.score DESC, kp.id ASC
+        """, params)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        # 计算 composite_score(§5.9 公式)
+        authority_map = {"official": 100, "authoritative": 75, "firsthand": 50, "informal": 25}
+        freshness_map = {"fresh": 100, "warning": 50, "expired": 25}
+        for r in rows:
+            auth_score = authority_map.get(r.get("source_authority"), 50)
+            annot_score = 100 if (r.get("annotation_count") or 0) > 0 else 0
+            qa_score = (r.get("qa_score") or 0.0) * 20
+            fresh_status = r.get("premium_freshness_status")
+            fresh_score = freshness_map.get(fresh_status, 75)  # NULL → 75
+            r["composite_score"] = round(
+                auth_score * 0.25 + annot_score * 0.25 + qa_score * 0.25 + fresh_score * 0.25, 2
+            )
+            r["has_annotation"] = (r.get("annotation_count") or 0) > 0
+        # composite_score 降序
+        rows.sort(key=lambda x: (-x["composite_score"], x["kp_id"]))
+        return rows
+
+    def bless_premium(self, kp_id, view):
+        """封神一条 kp.
+
+        字段联动(§5.6):
+          - 设 premium_{view}=1
+          - 首次封神(content_readiness != 'premium')时升到 'premium' + premium_tier='trusted'
+          - 记 edit_history + operation_events
+
+        返回: dict {'ok': True, 'first_blessing': bool, 'kp_id': ..., 'view': ...}
+        """
+        if view not in ("client", "rfp"):
+            raise ValueError("view must be 'client' or 'rfp'")
+        col = "premium_client" if view == "client" else "premium_rfp"
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT id, content_readiness, premium_client, premium_rfp, premium_tier "
+                  "FROM knowledge_points WHERE id=?", (int(kp_id),))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return {"ok": False, "error": "kp not found"}
+        row = dict(row)
+        old_readiness = row.get("content_readiness")
+        first_blessing = (old_readiness != "premium")
+
+        sets = [f"{col}=1", "updated_at=datetime('now','localtime')"]
+        if first_blessing:
+            sets.append("content_readiness='premium'")
+            if not row.get("premium_tier"):
+                sets.append("premium_tier='trusted'")
+
+        c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),))
+        conn.commit(); conn.close()
+
+        # 日志: edit_history + operation_events
+        try:
+            self.log_operation("premium_bless_" + view, "knowledge_points", int(kp_id))
+        except Exception:
+            pass
+        try:
+            self.log_operation_event(
+                event_type="premium_blessed", module="db_manager",
+                severity="info", related_kp_id=int(kp_id),
+                payload={"view": view, "first_blessing": first_blessing,
+                         "old_readiness": old_readiness}
+            )
+        except Exception:
+            pass
+        return {"ok": True, "first_blessing": first_blessing, "kp_id": int(kp_id), "view": view}
+
+    def unbless_premium(self, kp_id, view):
+        """撤销一条 kp 的某视角精品标.
+
+        字段联动(§5.7):
+          - 设 premium_{view}=0
+          - 双视角都为 0 时: content_readiness 回 'quotable' + premium_tier 清空
+          - 另一视角仍 1 时: content_readiness 保持 premium
+
+        返回: dict {'ok': True, 'downgraded_to_quotable': bool, ...}
+        """
+        if view not in ("client", "rfp"):
+            raise ValueError("view must be 'client' or 'rfp'")
+        col = "premium_client" if view == "client" else "premium_rfp"
+        other_col = "premium_rfp" if view == "client" else "premium_client"
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(f"SELECT id, content_readiness, {col} AS this_blessed, "
+                  f"{other_col} AS other_blessed, premium_tier "
+                  f"FROM knowledge_points WHERE id=?", (int(kp_id),))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return {"ok": False, "error": "kp not found"}
+        row = dict(row)
+        if not row.get("this_blessed"):
+            conn.close()
+            return {"ok": True, "noop": True, "msg": "not blessed in this view"}
+
+        sets = [f"{col}=0", "updated_at=datetime('now','localtime')"]
+        downgraded = False
+        if not row.get("other_blessed"):  # 双视角都将为 0
+            sets.append("content_readiness='quotable'")
+            sets.append("premium_tier=NULL")
+            downgraded = True
+
+        c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),))
+        conn.commit(); conn.close()
+
+        try:
+            self.log_operation("premium_unbless_" + view, "knowledge_points", int(kp_id))
+        except Exception:
+            pass
+        try:
+            self.log_operation_event(
+                event_type="premium_unblessed", module="db_manager",
+                severity="info", related_kp_id=int(kp_id),
+                payload={"view": view, "downgraded_to_quotable": downgraded}
+            )
+        except Exception:
+            pass
+        return {"ok": True, "downgraded_to_quotable": downgraded,
+                "kp_id": int(kp_id), "view": view}
+
+    def get_premium_export_data(self, scope="all_premium", tier_filter=None, category_id=None):
+        """F6 精品导出查询.
+
+        scope: 'all_premium' | 'client_only' | 'rfp_only' | 'by_category'(需 category_id)
+        tier_filter: list,如 ['verified','trusted'],None 表示不过滤
+        category_id: scope='by_category' 时必填
+
+        返回完整 kp 数据 + annotations 聚合,供 exporter 格式化.
+        """
+        where_parts = ["kp.review_status='confirmed'", "kp.content_readiness='premium'"]
+        params = []
+
+        if scope == "client_only":
+            where_parts.append("kp.premium_client=1")
+        elif scope == "rfp_only":
+            where_parts.append("kp.premium_rfp=1")
+        elif scope == "by_category":
+            if category_id is None:
+                raise ValueError("category_id required when scope='by_category'")
+            where_parts.append("kp.final_category_id=?")
+            params.append(int(category_id))
+        # 'all_premium' 不追加额外过滤
+
+        if tier_filter:
+            placeholders = ",".join("?" for _ in tier_filter)
+            where_parts.append(f"(kp.premium_tier IN ({placeholders}) OR kp.premium_tier IS NULL)")
+            params.extend(tier_filter)
+
+        where_sql = " AND ".join(where_parts)
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(f"""
+            SELECT kp.id AS kp_id,
+                   kp.title,
+                   kp.content_type,
+                   kp.original_excerpt,
+                   kp.ai_extracted_content,
+                   kp.final_category_tags,
+                   kp.final_attribute_tags,
+                   kp.final_keywords,
+                   kp.practical_insights,
+                   kp.qa_score,
+                   kp.source_authority,
+                   kp.access_level,
+                   kp.premium_client,
+                   kp.premium_rfp,
+                   kp.premium_tier,
+                   kp.freshness_checked_at,
+                   kp.premium_freshness_status,
+                   kp.created_at,
+                   kp.confirmed_at,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
+                   sf.original_filename,
+                   sf.renamed_filename
+              FROM knowledge_points kp
+              LEFT JOIN categories cat ON cat.id=kp.final_category_id
+              LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+             WHERE {where_sql}
+             ORDER BY cat.level1_code, cat.level2_code, kp.id
+        """, params)
+        rows = [dict(r) for r in c.fetchall()]
+
+        # 聚合 annotations
+        kp_ids = [r["kp_id"] for r in rows]
+        annotations_map = {}
+        if kp_ids:
+            placeholders = ",".join("?" for _ in kp_ids)
+            c.execute(f"""SELECT knowledge_point_id AS kp_id, annotation_type,
+                                 title, content, created_at
+                            FROM annotations
+                           WHERE knowledge_point_id IN ({placeholders})
+                           ORDER BY created_at ASC""", kp_ids)
+            for a in c.fetchall():
+                ad = dict(a)
+                kpid = ad.pop("kp_id")
+                annotations_map.setdefault(kpid, []).append(ad)
+
+        conn.close()
+
+        for r in rows:
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
+            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
+            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["annotations"] = annotations_map.get(r["kp_id"], [])
+        return rows
