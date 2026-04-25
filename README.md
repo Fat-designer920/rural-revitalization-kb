@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:v2.3.1(feature:精品资产生产线 — F2 AI 双视角判定 + F6 精品 Markdown/JSON 导出 + 立规则 53-56;setup.py 合并 migrate 并修复 backups 路径分叉)
+> **当前版本**:v2.3.1-hotfix1(hotfix:annotations.title 潜伏 bug 修复 + premium_exporter JSON 升级到 F056 v1.0 标准 + validate_publish_json 校验函数;立规则 9 第 8 次应验)
 
 ---
 

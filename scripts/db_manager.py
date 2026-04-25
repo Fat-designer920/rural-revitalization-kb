@@ -2906,8 +2906,10 @@ class DatabaseManager:
         annotations_map = {}
         if kp_ids:
             placeholders = ",".join("?" for _ in kp_ids)
+            # v2.3.1-hotfix1: 删除 title 字段 — annotations 表 init_tables 真无此字段
+            # 立规则 9 第 8 次应验。修法对齐 premium_exporter._format_one_kp_md
             c.execute(f"""SELECT knowledge_point_id AS kp_id, annotation_type,
-                                 title, content, created_at
+                                 content, tags, created_at
                             FROM annotations
                            WHERE knowledge_point_id IN ({placeholders})
                            ORDER BY created_at ASC""", kp_ids)

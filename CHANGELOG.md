@@ -6,6 +6,50 @@
 
 ---
 
+## [v2.3.1-hotfix1] - 2026-04-25 (hotfix + feature)
+
+**定位**:**F056 v1.0 发布标准首次冻结 + annotations.title 潜伏 bug 清除**。F056 第 2 轮 5 轮论证后(决策冻结档案 §第 1 轮已锁 5 件 + 9 字段砍到 v1.1 路线图),premium_exporter 的 JSON 输出从"v2.3.1 临时预埋雏形"升级为正式 v1.0;同步追加 `validate_publish_json` 校验函数(立规则 55 第 2 次落地,合并进 premium_exporter 末尾不开新文件)。**立规则 9 第 8 次应验**(annotations.title)只改 2 文件 + 3 行核心删除,影响面零(api_server / 前端 / db schema 全部不动)。
+
+### Added
+
+- **F056 v1.0 发布 JSON 标准首次落地**:`premium_exporter._build_json` 整段重写为顶层 6 字段(`schema_version` const="f056-v1.0" / `publish_id` `pub-{16hex}` 幂等 key / `published_at` ISO 8601 UTC / `scope` / `count` / `items`)+ KP 13 字段嵌套(`category`/`quality`/`premium`/`source`/`timestamps` 全部归为子对象);excerpt 按句号截断 1200/2000 字(冻结 §1);`kp-{id}` 字符串前缀(冻结 §2);`source.document_id` 从 `ai_extracted_content` 多 key 模式提取(B 端投标 + C 端学生/自学者法律闭环必需)
+- **`validate_publish_json(json_str) -> (ok, errors)` 校验函数**(~250 行,合并进 premium_exporter.py 末尾):15+ 错误码 E001-E027 分四段(L0 结构 / L1 顶层必填 / L2 顶层值约束 / L3 KP 逐条 + 嵌套 8 子校验);纯文本入纯 list 出,不调 V3 不调 db;阻断 vs 可降级双策略(E014 excerpt 超长由调用方决定截断或拒发)
+- **03 手册新增 §九 发布 JSON 标准 F056**:9.1 设计原则(5 件已锁) / 9.2 顶层结构 + 关键字段语义 / 9.3 v1.1 路线图(9 字段启用条件) / 9.4 校验函数错误码表 / 9.5 法律闭环 4 类 / 9.6 客户视角覆盖 8 类 / 9.7 演进通用动作
+
+### Fixed
+
+- **db_manager.get_premium_export_data 行 2910 SQL 删除 `annotations.title` 字段引用**:annotations 表 init_tables(行 348-356)真无 title 字段,只有 annotation_type/content/tags/created_at;旧 SQL 触发 `no such column: title` 抛 500,任何带注解的精品导出全炸。**立规则 9 第 8 次应验**,潜伏自 v2.3.1 上线
+- **premium_exporter._format_one_kp_md 删除 `a.get("title")` 渲染**(行 188 附近):配合 db 改动,Markdown header 退化为纯 type 行(原 header 拼装 `- **type** title` → 现在 `- **type**`),信息无损
+
+### Changed
+
+- **premium_exporter.py 文件规模**:295 行 → 768 行(+473 行;其中 `_build_json` 重写 +180 / 5 个 F056 v1.0 辅助函数 +180 / 校验函数 +250)
+- **JSON 老格式直接替换**(无外部消费方,影响面零):顶层老字段 `export_version` / `generated_at` / `tier_filter` / `category_id` 退役;KP 平铺老字段 `qa_score`/`source_authority`/`access_level` 收纳进 `quality` 子对象;`premium_meta` 改名 `premium`(去 _meta 后缀);`source_file` 改名 `source` 并新增承重墙 `document_id`;`tags.category_tags`/`attribute_tags` 改名 `tags.category`/`attributes`(对齐 02 知识体系);`annotations[].annotation_type` 改名 `type` 且去掉不存在的 title;`timestamps.created_at` 删除(本地时间云端无意义)
+- **立规则 9 应验扩至第 8 次**:01 工程手册 §二第 9 条文档增加新案例;§11 退役组件表追加 hotfix1 修复行 + 老 JSON 格式退役行;§6.7 premium_exporter 模块速查升级到 v2.3.1-hotfix1 + 加 F056 v1.0 关键约束 + 校验函数说明
+
+### Migration
+
+- **零迁移**:本版不动数据库 schema、不动 api_server、不动 review.html、不动 prompts、不动 setup.py。只替换 2 个代码文件(db_manager.py + premium_exporter.py)即生效
+- **接口兼容**:`build_premium_export(db, scope, format, tier_filter, category_id) -> (content, filename, mime)` 签名未变,api_server 现有调用零联动
+- **JSON 格式不兼容老版本消费方**:F056 v1.0 与 v2.3.1 临时格式字段名/嵌套均有差异。但截至 hotfix1 上线,**精品 JSON 导出无任何外部消费方**(老唐手动下载查看为主),直接替换无影响。云端 v3.x 上线时按 v1.0 标准对接即可
+
+### Upgrade Path
+
+1. 备份 `data/database/knowledge_base.db`(或一键备份按钮)
+2. 替换 2 文件:`scripts/db_manager.py` + `scripts/premium_exporter.py`
+3. 重启 `启动后台.bat`
+4. 验证:打开 Tab 2 系统管理 → 工具箱 → 精品导出 → 选 JSON 格式下载;打开下载的 JSON,顶层应有 `"schema_version": "f056-v1.0"` 和 `"publish_id": "pub-..."` 字段
+5. 验证 annotations bug 修复:导出含注解的精品(如带 disagree/correction 的 kp),应正常下载不报 500
+6. 异常回滚到 v2.3.1
+
+### 教训段(立规则 9 扩至第 8 次应验)
+
+- **第 8 次**:annotations 表 init_tables 行 348-356 真无 title 字段,但 v2.3.1 db_manager.get_premium_export_data 行 2910 SELECT 了 title + premium_exporter 渲染层 a.get("title")。Claude 当时写 v2.3.1 SQL 时**没对照 init_tables 真字段**,凭经验加了 title 列(可能是看到其他系统的 annotation 表有标题字段)。潜伏直到老唐 F056 第 1 轮 5 轮论证审 schema 才发现。修法 3 行删除即可,信息无损(老 annotations 数据本来就没 title 字段值)
+- **死循环教训(立规则 53 自证)**:Claude 在 hotfix1 Phase 3 第 1 轮代码完成后,主动提议"工具调用配额用完新开对话"。老唐立刻指正:"打开新对话必然陷入不停打开新对话的死循环"——立规则 53 的字面意思就是**Phase 3 同对话内闭环**,新开对话本身就是违规。Claude 误判工具配额状态(实际可继续),修正后在本对话内完成所有项目文件更新。**这是立规则 53 的元自证**:每次想跳到新对话时,先问"是真的没法继续了,还是怕 token 不够?",绝大多数时候是后者
+- **协议自证**:版本号选 hotfix1 而非 v2.3.2-part0 是老唐拍板,Claude 提出建议(part0 有"上路 v2.3.2"仪式感)但**不替老唐选**(协作原则 §5 客观分析不迎合 + §6 不替老唐做产品决策)。老唐"继续+改 hotfix1"一句话定调,理由:F056 v1.0 schema 是预埋升级 + annotations.title 是 v2.3.1 漏的 bug,留给问答助手开局更有仪式感
+
+---
+
 ## [v2.3.1] - 2026-04-24 (feature)
 
 **定位**:**精品资产生产线首版** —— 老唐的 2400+ quotable kp 有了"AI 双视角筛 + 批量封神 + Markdown/JSON 导出"的完整流水线。200/300/500 条精品级知识的商业化里程碑路径从"靠肉眼逐条扫"进化为"一个下午过完一轮"。
