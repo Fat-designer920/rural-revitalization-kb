@@ -482,6 +482,33 @@ class DatabaseManager:
             FOREIGN KEY (kp_id) REFERENCES knowledge_points(id),
             UNIQUE(kp_id, view)
         )""")
+        # --- v2.3.2 F055 本地问答助手 ---
+        # qa_history: 全部问答留痕, 既是审计也是改进数据源
+        # qa_feedback: 朋友试用反馈闭环(👍 有用 / 👎 没用 / 💬 评论)
+        # mode='self|friend': URL 参数 ?mode=friend 区分老唐自用 vs 朋友试用
+        # source: main 主链成功 / l1_retry V3 重试成功 / r1_fallback R1 兜底 / rule_fallback 规则兜底
+        # is_test_query: 老唐自测标记(仅老唐自用模式时由前端勾选), 后续埋点排序时过滤
+        c.execute("""CREATE TABLE IF NOT EXISTS qa_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query TEXT NOT NULL,
+            answer_json TEXT,
+            retrieved_kp_ids TEXT,
+            mode TEXT DEFAULT 'self' CHECK(mode IN ('self','friend')),
+            source TEXT DEFAULT 'main'
+                CHECK(source IN ('main','l1_retry','r1_fallback','rule_fallback')),
+            is_test_query INTEGER DEFAULT 0,
+            latency_ms INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS qa_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            qa_history_id INTEGER NOT NULL,
+            feedback_type TEXT NOT NULL
+                CHECK(feedback_type IN ('helpful','not_helpful','comment')),
+            comment TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (qa_history_id) REFERENCES qa_history(id)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -515,6 +542,11 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_kp_premium_client ON knowledge_points(premium_client)",
             "CREATE INDEX IF NOT EXISTS idx_kp_premium_rfp ON knowledge_points(premium_rfp)",
             "CREATE INDEX IF NOT EXISTS idx_premium_cache_kp_view ON premium_ai_cache(kp_id, view)",
+            # v2.3.2 F055 问答助手索引
+            "CREATE INDEX IF NOT EXISTS idx_qa_history_created ON qa_history(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_qa_history_mode ON qa_history(mode, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_qa_history_test ON qa_history(is_test_query, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_qa_feedback_history ON qa_feedback(qa_history_id)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -2928,3 +2960,324 @@ class DatabaseManager:
             r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
             r["annotations"] = annotations_map.get(r["kp_id"], [])
         return rows
+
+    # ================================================================
+    # v2.3.2 F055 本地问答助手 — 6 个新方法
+    #   get_qa_retrieval_candidates(): 关键词 LIKE 召回(精品优先 + quotable 兜底)
+    #                                  composite_score 由 qa_assistant 上层算,
+    #                                  本方法只返回 kp 全字段供上层打分
+    #   save_qa_history()            : 问答留痕,返回 history_id
+    #   save_qa_feedback()           : 反馈写入,返回 feedback_id
+    #   record_kp_used()             : 批量更新 used_count/last_used_at/used_for
+    #                                  used_for JSON 数组追加 qa_history_id
+    #   get_qa_history_list()        : 历史列表(分页+模式筛选+老唐自测过滤)
+    #   get_qa_stats()               : 反馈聚合统计
+    # 设计要点(立规则 5/9/10):
+    #   - JSON 字段自动 dumps/parse,与全库一致
+    #   - mode/source/feedback_type 写前枚举校验,不依赖 schema CHECK 兜底
+    #   - record_kp_used 用单连接事务批量更新,失败时整体回滚
+    # ================================================================
+
+    def get_qa_retrieval_candidates(self, keywords, limit=30):
+        """F055 问答检索:关键词 LIKE 召回.
+
+        检索池:
+          review_status='confirmed' AND (
+            premium_client=1 OR premium_rfp=1
+            OR content_readiness IN ('quotable','premium')
+          )
+        — 精品优先 + quotable/premium 兜底, draft 不进入检索
+
+        keywords: List[str]  关键词列表(由 qa_assistant 分词产出)
+        limit: int           候选上限(默认 30, 上层会再裁到 Top 10)
+
+        返回 List[dict], 含 composite_score 计算所需的全部字段:
+          kp_id / title / original_excerpt / ai_extracted_content /
+          final_category_id / final_category_tags / qa_score / source_authority /
+          content_readiness / access_level / premium_client / premium_rfp /
+          premium_freshness_status / used_count / category / subcategory /
+          original_filename / renamed_filename / annotation_count
+        """
+        conn = self.get_connection(); c = conn.cursor()
+
+        # 关键词清洗:去空、去重、长度 ≥1
+        kws = [k.strip() for k in (keywords or []) if k and str(k).strip()]
+        kws = list(dict.fromkeys(kws))  # 保序去重
+        if not kws:
+            # 无关键词时, 按 composite_score 近似排序返回精品池前 N 条
+            # (上层会进一步处理"零关键词"边界, 这里给个空安全返回)
+            conn.close()
+            return []
+
+        # 多关键词 OR 拼接, 跨 3 个字段
+        # 每个关键词三处 LIKE = OR 三个条件
+        like_clauses = []
+        like_params = []
+        for kw in kws:
+            like_pattern = "%" + kw.replace("%", "\\%").replace("_", "\\_") + "%"
+            like_clauses.append(
+                "(kp.title LIKE ? ESCAPE '\\' "
+                "OR kp.original_excerpt LIKE ? ESCAPE '\\' "
+                "OR kp.ai_extracted_content LIKE ? ESCAPE '\\')"
+            )
+            like_params.extend([like_pattern, like_pattern, like_pattern])
+
+        sql = """
+            SELECT kp.id AS kp_id,
+                   kp.title,
+                   kp.original_excerpt,
+                   kp.ai_extracted_content,
+                   kp.final_category_id,
+                   kp.final_category_tags,
+                   kp.final_keywords,
+                   kp.practical_insights,
+                   kp.qa_score,
+                   kp.source_authority,
+                   kp.content_readiness,
+                   kp.access_level,
+                   kp.premium_client,
+                   kp.premium_rfp,
+                   kp.premium_tier,
+                   kp.premium_freshness_status,
+                   kp.used_count,
+                   kp.last_used_at,
+                   cat.level1_name AS category,
+                   cat.level2_name AS subcategory,
+                   sf.original_filename,
+                   sf.renamed_filename,
+                   (SELECT COUNT(*) FROM annotations a
+                     WHERE a.knowledge_point_id=kp.id) AS annotation_count
+              FROM knowledge_points kp
+              LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+              LEFT JOIN categories cat ON cat.id=kp.final_category_id
+             WHERE kp.review_status='confirmed'
+               AND (kp.premium_client=1
+                    OR kp.premium_rfp=1
+                    OR kp.content_readiness IN ('quotable','premium'))
+               AND (""" + " OR ".join(like_clauses) + """)
+             ORDER BY (kp.premium_client + kp.premium_rfp) DESC,
+                      kp.qa_score DESC,
+                      kp.id DESC
+             LIMIT ?
+        """
+        c.execute(sql, like_params + [int(limit)])
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        for r in rows:
+            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
+            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["has_annotation"] = (r.get("annotation_count") or 0) > 0
+        return rows
+
+    def save_qa_history(self, query, answer_json, retrieved_kp_ids,
+                         mode="self", source="main",
+                         latency_ms=0, is_test_query=0):
+        """问答留痕. 返回 history_id (int).
+
+        query: str            用户原始问题
+        answer_json: dict|str 4 板块完整回答(dict 自动 dumps)
+        retrieved_kp_ids: list|str  本次引用的 KP IDs(list 自动 dumps)
+        mode: 'self' | 'friend'
+        source: 'main' | 'l1_retry' | 'r1_fallback' | 'rule_fallback'
+        latency_ms: int       端到端耗时
+        is_test_query: 0 | 1  老唐自测标记
+        """
+        if mode not in ("self", "friend"):
+            mode = "self"
+        if source not in ("main", "l1_retry", "r1_fallback", "rule_fallback"):
+            source = "main"
+
+        # 自动序列化(立规则第 5 条)
+        if isinstance(answer_json, (dict, list)):
+            answer_json_str = json.dumps(answer_json, ensure_ascii=False)
+        else:
+            answer_json_str = str(answer_json or "")
+
+        if isinstance(retrieved_kp_ids, (list, tuple)):
+            kp_ids_str = json.dumps(
+                [int(x) for x in retrieved_kp_ids if x is not None],
+                ensure_ascii=False
+            )
+        elif isinstance(retrieved_kp_ids, str):
+            kp_ids_str = retrieved_kp_ids
+        else:
+            kp_ids_str = "[]"
+
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO qa_history
+                     (query, answer_json, retrieved_kp_ids,
+                      mode, source, latency_ms, is_test_query, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
+                  (str(query or ""), answer_json_str, kp_ids_str,
+                   mode, source, int(latency_ms or 0), 1 if is_test_query else 0))
+        history_id = c.lastrowid
+        conn.commit(); conn.close()
+        return int(history_id)
+
+    def save_qa_feedback(self, qa_history_id, feedback_type, comment=None):
+        """反馈写入. 返回 feedback_id (int).
+
+        feedback_type: 'helpful' | 'not_helpful' | 'comment'
+        comment: str | None  自由文字反馈(comment 类型时建议非空)
+        """
+        if feedback_type not in ("helpful", "not_helpful", "comment"):
+            raise ValueError("feedback_type must be helpful/not_helpful/comment, got: "
+                             + str(feedback_type))
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO qa_feedback
+                     (qa_history_id, feedback_type, comment, created_at)
+                     VALUES (?, ?, ?, datetime('now','localtime'))""",
+                  (int(qa_history_id), feedback_type, str(comment or "")))
+        feedback_id = c.lastrowid
+        conn.commit(); conn.close()
+        return int(feedback_id)
+
+    def record_kp_used(self, kp_ids, qa_history_id):
+        """批量更新 KP 使用埋点:
+          - used_count += 1
+          - last_used_at = now
+          - used_for JSON 数组追加 qa_history_id
+
+        kp_ids: list[int]
+        qa_history_id: int
+
+        返回 dict {updated: N, errors: [{kp_id, msg}...]}
+        单事务执行, 单条失败不影响其他.
+        """
+        if not kp_ids:
+            return {"updated": 0, "errors": []}
+
+        result = {"updated": 0, "errors": []}
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            for kp_id in kp_ids:
+                try:
+                    kp_id_int = int(kp_id)
+                except Exception as e:
+                    result["errors"].append({"kp_id": kp_id, "msg": "invalid id: " + str(e)})
+                    continue
+                # 读旧 used_for, append 新 qa_history_id
+                c.execute("SELECT used_for FROM knowledge_points WHERE id=?", (kp_id_int,))
+                row = c.fetchone()
+                if not row:
+                    result["errors"].append({"kp_id": kp_id_int, "msg": "kp not found"})
+                    continue
+                old_used_for = self._safe_json_parse(row[0], default=[]) or []
+                if not isinstance(old_used_for, list):
+                    old_used_for = []
+                new_used_for = old_used_for + [int(qa_history_id)]
+                # 防爆裂:超过 100 条历史只保留最近 100 条
+                if len(new_used_for) > 100:
+                    new_used_for = new_used_for[-100:]
+
+                c.execute("""UPDATE knowledge_points
+                             SET used_count = COALESCE(used_count, 0) + 1,
+                                 last_used_at = datetime('now','localtime'),
+                                 used_for = ?
+                             WHERE id=?""",
+                          (json.dumps(new_used_for, ensure_ascii=False), kp_id_int))
+                if c.rowcount > 0:
+                    result["updated"] += 1
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            result["errors"].append({"kp_id": None, "msg": "transaction failed: " + str(e)})
+        finally:
+            conn.close()
+        return result
+
+    def get_qa_history_list(self, limit=20, offset=0, mode=None, exclude_test=False):
+        """问答历史列表. 返回 List[dict], 按 created_at DESC.
+
+        limit/offset: 分页
+        mode: None / 'self' / 'friend'
+        exclude_test: True 时过滤掉 is_test_query=1 的记录
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        wheres = []
+        params = []
+        if mode in ("self", "friend"):
+            wheres.append("mode=?")
+            params.append(mode)
+        if exclude_test:
+            wheres.append("is_test_query=0")
+        where_sql = ("WHERE " + " AND ".join(wheres)) if wheres else ""
+
+        c.execute("""SELECT id, query, answer_json, retrieved_kp_ids,
+                            mode, source, is_test_query, latency_ms, created_at
+                       FROM qa_history
+                       """ + where_sql + """
+                      ORDER BY created_at DESC
+                      LIMIT ? OFFSET ?""",
+                  params + [int(limit), int(offset)])
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            r["answer_json"] = self._safe_json_parse(r.get("answer_json"), default={})
+            r["retrieved_kp_ids"] = self._safe_json_parse(r.get("retrieved_kp_ids"), default=[])
+        return rows
+
+    def get_qa_stats(self):
+        """问答 + 反馈聚合统计. 返回 dict.
+
+        包含:
+          total_questions: 总问数(含/不含 test 各一)
+          by_mode: {self: N, friend: N}
+          by_source: {main: N, l1_retry: N, r1_fallback: N, rule_fallback: N}
+          feedback_counts: {helpful: N, not_helpful: N, comment: N}
+          recent_comments: 最近 10 条 comment 类型反馈(qa_history_id + comment + created_at)
+          avg_latency_ms: 主链(source=main) 平均耗时
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        out = {
+            "total_questions": 0,
+            "total_questions_excl_test": 0,
+            "by_mode": {"self": 0, "friend": 0},
+            "by_source": {"main": 0, "l1_retry": 0, "r1_fallback": 0, "rule_fallback": 0},
+            "feedback_counts": {"helpful": 0, "not_helpful": 0, "comment": 0},
+            "recent_comments": [],
+            "avg_latency_ms": 0,
+        }
+
+        # total_questions
+        c.execute("SELECT COUNT(*) FROM qa_history")
+        out["total_questions"] = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM qa_history WHERE is_test_query=0")
+        out["total_questions_excl_test"] = c.fetchone()[0] or 0
+
+        # by_mode
+        c.execute("SELECT mode, COUNT(*) FROM qa_history GROUP BY mode")
+        for m, n in c.fetchall():
+            if m in out["by_mode"]:
+                out["by_mode"][m] = n or 0
+
+        # by_source
+        c.execute("SELECT source, COUNT(*) FROM qa_history GROUP BY source")
+        for s, n in c.fetchall():
+            if s in out["by_source"]:
+                out["by_source"][s] = n or 0
+
+        # feedback_counts
+        c.execute("SELECT feedback_type, COUNT(*) FROM qa_feedback GROUP BY feedback_type")
+        for ft, n in c.fetchall():
+            if ft in out["feedback_counts"]:
+                out["feedback_counts"][ft] = n or 0
+
+        # recent_comments
+        c.execute("""SELECT id, qa_history_id, comment, created_at
+                       FROM qa_feedback
+                      WHERE feedback_type='comment' AND comment != ''
+                      ORDER BY created_at DESC LIMIT 10""")
+        out["recent_comments"] = [dict(r) for r in c.fetchall()]
+
+        # avg_latency_ms (只算主链, 排除 0)
+        c.execute("""SELECT AVG(latency_ms) FROM qa_history
+                      WHERE source='main' AND latency_ms > 0""")
+        avg = c.fetchone()[0]
+        out["avg_latency_ms"] = int(avg) if avg else 0
+
+        conn.close()
+        return out

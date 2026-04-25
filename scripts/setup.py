@@ -1,14 +1,14 @@
 """
 setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.1
+版本：v2.3.2
 
 功能：
   1. 创建目录结构（9个目录）
-  2. 初始化数据库（19张表,全部字段,一次建成）
+  2. 初始化数据库（24张表,全部字段,一次建成）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. [v2.3.1 新增] 追齐存量库 schema（幂等,新库空跑）
+  5. [v2.3.1/v2.3.2 新增] 追齐存量库 schema（幂等,新库空跑）
   6. 创建桌面快捷方式
   7. 验证核心文件完整性
 
@@ -16,6 +16,20 @@ setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
       新用户首次安装 → init_tables() 一步到位拿最新 schema。
       存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
       同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
+
+v2.3.2 变更：
+  - F055 本地问答助手 schema 加入(立规则 55 第 3 次落地,继续合并入本脚本)
+  - 新表 qa_history(问答留痕 + 4 板块审计)
+  - 新表 qa_feedback(朋友试用 👍/👎/💬 反馈闭环)
+  - 4 个新索引: idx_qa_history_created / idx_qa_history_mode /
+    idx_qa_history_test / idx_qa_feedback_history
+  - knowledge_points 7 字段无新增(v2.3.1 已预埋 used_count/last_used_at/used_for)
+  - 核心文件校验清单追加 1 项: qa_assistant.py
+  - 数据库表数量: 22 → 24 张
+  - 立规则 9 第 9 次应验:Claude 在 setup.py 写表数量"19→21"靠记忆,
+    实际 grep init_tables 真相是 22→24。每次写数字都必须 grep 源代码,不靠记。
+  - _V232_NEW_TABLES_SQL_LIST + _V232_NEW_INDEXES 独立常量(保留 v2.3.1 常量不动,
+    版本可追溯)
 
 v2.3.1 变更：
   - 合并 migrate_v2_3_1.py 核心逻辑为 _upgrade_schema_to_current() 函数
@@ -60,7 +74,7 @@ def get_config():
 
 def get_version():
     p = PROJECT_ROOT / "VERSION"
-    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.1"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.2"
 
 
 # ================================================================
@@ -103,11 +117,54 @@ _V231_NEW_INDEXES = [
 ]
 
 
+# ----------------------------------------------------------------
+# v2.3.2 追齐存量库 schema(F055 本地问答助手)
+# 与 v2.3.1 常量并列, 不合并不重命名(立规则 55: 版本可追溯)
+# ----------------------------------------------------------------
+_V232_NEW_TABLES_SQL_LIST = [
+    ("qa_history", """
+CREATE TABLE IF NOT EXISTS qa_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    answer_json TEXT,
+    retrieved_kp_ids TEXT,
+    mode TEXT DEFAULT 'self' CHECK(mode IN ('self','friend')),
+    source TEXT DEFAULT 'main'
+        CHECK(source IN ('main','l1_retry','r1_fallback','rule_fallback')),
+    is_test_query INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+)
+"""),
+    ("qa_feedback", """
+CREATE TABLE IF NOT EXISTS qa_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    qa_history_id INTEGER NOT NULL,
+    feedback_type TEXT NOT NULL
+        CHECK(feedback_type IN ('helpful','not_helpful','comment')),
+    comment TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (qa_history_id) REFERENCES qa_history(id)
+)
+"""),
+]
+
+_V232_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_qa_history_created ON qa_history(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_qa_history_mode ON qa_history(mode, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_qa_history_test ON qa_history(is_test_query, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_qa_feedback_history ON qa_feedback(qa_history_id)",
+]
+
+
 def _upgrade_schema_to_current(db_path):
-    """追齐存量库 schema 到 v2.3.1.
+    """追齐存量库 schema 到 v2.3.2.
 
     返回 dict 描述本次实际追加的内容(供 setup 主流程打印汇总).
     新库场景下会全部跳过,返回全零值.
+
+    本函数同时处理 v2.3.1 (premium 系列) 和 v2.3.2 (qa 系列) 两批 schema,
+    版本常量分两组保留, 升级时只看"做了几件"不看"哪个版本做的".
     """
     summary = {
         "columns_added": [], "columns_skipped": [],
@@ -117,7 +174,7 @@ def _upgrade_schema_to_current(db_path):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     try:
-        # Step 1: knowledge_points 7 字段幂等追加
+        # Step 1: knowledge_points 7 字段幂等追加 (v2.3.1)
         c.execute("PRAGMA table_info(knowledge_points)")
         existing_cols = {r[1] for r in c.fetchall()}
         for col_name, col_def in _V231_NEW_COLUMNS:
@@ -128,7 +185,7 @@ def _upgrade_schema_to_current(db_path):
                           % (col_name, col_def))
                 summary["columns_added"].append(col_name)
 
-        # Step 2: premium_ai_cache 新表(CREATE TABLE IF NOT EXISTS)
+        # Step 2: premium_ai_cache 新表 (v2.3.1, CREATE TABLE IF NOT EXISTS)
         c.execute("SELECT name FROM sqlite_master WHERE type='table' "
                   "AND name='premium_ai_cache'")
         if c.fetchone():
@@ -137,8 +194,29 @@ def _upgrade_schema_to_current(db_path):
             c.execute(_V231_NEW_TABLE_SQL)
             summary["tables_created"].append("premium_ai_cache")
 
-        # Step 3: 3 个新索引(CREATE INDEX IF NOT EXISTS)
+        # Step 3: 3 个新索引 (v2.3.1, CREATE INDEX IF NOT EXISTS)
         for idx_sql in _V231_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 4: qa_history / qa_feedback 新表 (v2.3.2)
+        for tbl_name, tbl_sql in _V232_NEW_TABLES_SQL_LIST:
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                      "AND name=?", (tbl_name,))
+            if c.fetchone():
+                summary["tables_skipped"].append(tbl_name)
+            else:
+                c.execute(tbl_sql)
+                summary["tables_created"].append(tbl_name)
+
+        # Step 5: 4 个新索引 (v2.3.2, CREATE INDEX IF NOT EXISTS)
+        for idx_sql in _V232_NEW_INDEXES:
             idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
             c.execute("SELECT name FROM sqlite_master WHERE type='index' "
                       "AND name=?", (idx_name,))
@@ -191,7 +269,7 @@ def main():
                          str(base / "data" / "database" / "knowledge_base.db"))
     db = DatabaseManager(db_path)
     db.init_tables()
-    print("    OK 19张表已创建（全部字段，无需迁移）")
+    print("    OK 24张表已创建（全部字段，无需迁移）")
 
     # ── [3/6] 写入默认分类 ──────────────────────────
     print("\n[3/6] 写入默认分类...")
@@ -223,11 +301,12 @@ def main():
         print("    OK 虚拟source_file(id=0)已存在")
     conn.close()
 
-    # ── [6/6] 追齐存量库 schema (v2.3.1) ─────────────
+    # ── [6/6] 追齐存量库 schema (v2.3.1 + v2.3.2) ────
     # 新库场景下本步骤全部跳过(init_tables 已建全)
     # 老库场景下本步骤会 ALTER TABLE ADD COLUMN / CREATE TABLE IF NOT EXISTS
-    # 本函数合并自原 scripts/migrate_v2_3_1.py,v2.3.1 起不再单独提供 migrate 脚本
-    print("\n[6/6] 追齐存量库 schema (v2.3.1)...")
+    # 本函数合并自原 scripts/migrate_v2_3_1.py + v2.3.2 schema,
+    # 立规则 55 第 3 次落地:不再单独提供 migrate 脚本
+    print("\n[6/6] 追齐存量库 schema (v2.3.1 + v2.3.2)...")
     try:
         up = _upgrade_schema_to_current(db_path)
         ca = len(up["columns_added"]); cs = len(up["columns_skipped"])
@@ -247,7 +326,8 @@ def main():
                 print("       索引: " + ", ".join(up["indexes_created"]))
     except Exception as e:
         print("    !! 追齐 schema 失败: %s" % e)
-        print("       可用 sqlite3 手动查 knowledge_points 和 premium_ai_cache 表")
+        print("       可用 sqlite3 手动查 knowledge_points / premium_ai_cache /"
+              " qa_history / qa_feedback 表")
 
     db.log_operation("system_init", details={"version": get_version()})
 
