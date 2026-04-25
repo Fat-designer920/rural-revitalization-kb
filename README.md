@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:v2.3.1-hotfix1(hotfix:annotations.title 潜伏 bug 修复 + premium_exporter JSON 升级到 F056 v1.0 标准 + validate_publish_json 校验函数;立规则 9 第 8 次应验)
+> **当前版本**:**v2.3.2**(feature:F055 本地问答助手首版上线 + F056 客户端单 HTML 查看器;商业化路径从"自用"过渡到"朋友试用";立规则 9 第 10/11 次应验 + 立规则 57 首次正式应用)
 
 ---
 
@@ -16,8 +16,7 @@
 
 | 阶段 | 做什么 | 验证什么 |
 |------|--------|---------|
-| 当前 | 自用知识库做咨询 + 定期体检打磨 + 定期 E2E 扫描 | 效率提升 + 系统稳定性 |
-| v2.3.2 后 | 本地问答助手自用 + 分享朋友试用 | 回答质量 / 付费意愿 |
+| 当前(v2.3.2 后) | **本地问答助手自用 + 分享朋友试用** | 回答质量 / 付费意愿 |
 | 200 条精品+ | 政策解读文章发行业圈子 | 内容付费 |
 | 300 条精品+ | 云端问答助手产品化 | C 端订阅 |
 | 500 条精品+ | 投标辅助 / 培训 / 合规自检 | B 端高客单价 |
@@ -29,10 +28,10 @@
 | 组件 | 技术 |
 |------|------|
 | 运行环境 | Windows + Python 3.8+（便携版，绿色免安装） |
-| AI 引擎 | DeepSeek API（R1 提取 + 打磨；V3 辅助判断 + 校验 + E2E 语义） |
+| AI 引擎 | DeepSeek API（R1 提取 + 打磨；V3 辅助判断 + 校验 + E2E 语义 + 问答生成） |
 | OCR 引擎 | 硅基流动 API（Qwen2.5-VL-72B 视觉模型） |
-| 数据库 | SQLite(22 张业务表 + 27 条索引;v2.3.1 新增 premium_ai_cache 表 + 3 索引) |
-| Web 界面 | Flask 本地管理后台（严格 ES5 前端，无 emoji） |
+| 数据库 | SQLite(**24 张业务表** + 31 条索引;v2.3.2 新增 qa_history + qa_feedback 两表 + 4 索引) |
+| Web 界面 | Flask 本地管理后台（严格 ES5 前端，Tab 1 知识审核 + Tab 2 系统管理 + Tab 3 智能问答） |
 | 操作方式 | 管理后台为主，bat 入口辅助 |
 
 ---
@@ -69,6 +68,14 @@
 ### Tab 2 工具箱（12 个按钮）
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
+
+**v2.3.2 关键交付**:
+- **F055 本地问答助手首版**:`scripts/qa_assistant.py` 866 行(QaAssistantEngine + 模块级 `run_qa()`),精品+quotable 池检索 + V3 重排 + 三级降级链 + 4 板块通用回答(直答/依据/延伸思考/补漏提醒);Tab 3 整段新建(~700 行 HTML+JS,严格 ES5);URL `?mode=friend` 朋友试用模式 + 反馈闭环 👍/👎/💬;老唐自测 `is_test_query=1` 不写埋点(防脏数据);商业化路径从"自用"过渡到"朋友试用 + 内容付费"
+- **F056 单 HTML 查看器**:`web/templates/f056_viewer.html` 471 行零依赖,双击浏览器打开即用;拖 JSON 进页面 + 校验 v1.0 标准(E001-E027 完整)+ 渲染 13 字段;朋友拿到导出 JSON 即看精品包
+- **api_server.py +7 路由 + 独立 `_qa_task` 槽**:`/api/qa/{ask,cancel,progress,history,history/<hid>,feedback,stats}`,4 层 readiness_check
+- **db_manager.py +6 方法 + 2 表 + 4 索引**:qa_history + qa_feedback + qa 相关索引
+- **3 新 Prompt + 9 新事件**:PROMPT_VERSION 升 v2.3.2(28→31);`qa_*` 族 9 种事件埋点
+- **立规则 57 首立**:Phase 3 工作量 grep 预评估,主动拆 part3a/part3b 不冒险
 
 **part3.8 关键修复**:
 - **F062 白名单一次性清账**:白名单从 db_manager 单文件扩展到 7 文件(db_manager+api_server+extractor+health_checker+duplicate_checker+preprocessor+backup_manager),DIM4 67→75/DIM6 11→79 条,新增 `WHITELIST_COVERAGE` 常量。E2E 扫分从 79.2 回到预期 92-95
@@ -165,8 +172,11 @@ rural-revitalization-kb/
 | **v2.3.0-part3.5** | **feature:E2E 诊断包 Markdown 导出(发给 Claude 做异地诊断)** | ✅ |
 | **v2.3.0-part3.6** | **hotfix:诊断包三 bug 修复 + 新立规则 49/50/51(工程纪律三条:拷贝替换 / 改完拉通 / 更新做减法)** | ✅ |
 | **v2.3.0-part3.7** | **hotfix:F062 规则精度三连改(silent_except/except_print_only snippet 行号对齐 body 真实行 + field_unknown 变量名收窄 + prompt_wrong_key 历史 key 白名单)+ 诊断包第三段口径与第四段对齐** | ✅ |
-| v2.3.1 | 批量重算成熟度（完整版）+ 关联体系 | 规划 |
-| v2.3.2 | 本地问答助手 | 规划 |
+| **v2.3.0-part3.8** | **hotfix:F062 白名单大扩展(7 文件)+ 6 批量路由 errors 收集 + 冗余代码清理 + 立规则 52** | ✅ |
+| **v2.3.1** | **feature:精品资产生产线(F2 双视角 AI 判定 + composite_score 排序 + 批量封神 + 精品 Markdown/JSON 导出)+ 立规则 53-56** | ✅ |
+| **v2.3.1-hotfix1** | **hotfix:annotations.title bug + premium_exporter F056 v1.0 升级 + validate_publish_json 校验函数;立规则 9 第 8 次应验** | ✅ |
+| **v2.3.2** | **feature:F055 本地问答助手首版(866 行 qa_assistant + 7 路由 + Tab 3 + 三级降级链 + 4 板块回答 + 朋友试用模式)+ F056 单 HTML 查看器(零依赖渲染 v1.0 标准 13 字段)+ 立规则 57 首立 + 立规则 9 第 10/11 次应验** | ✅ |
+| v2.3.3 | F020 冲突检测 + F030 知识关联网络 | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
 | v3.x | 云端产品化 | 远期 |
 
@@ -187,9 +197,9 @@ rural-revitalization-kb/
 ### Claude Projects 6 个项目文件
 
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化 / **新对话启动指南**
-- `01_工程手册.md`：代码清单 / 立规则（48 条，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
-- `02_知识体系.md`：分类 + 三层标签
-- `03_Prompt手册.md`：26 个 Prompt 清单与接口契约
+- `01_工程手册.md`：代码清单 / 立规则（**57 条**，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
+- `02_知识体系.md`：分类 + 三层标签 + **v2.3.2 问答历史元数据**
+- `03_Prompt手册.md`：**31 个 Prompt** 清单与接口契约
 - `CHANGELOG.md`：近 3 版完整 + 早期摘要
 - `README.md`：本文件
 
