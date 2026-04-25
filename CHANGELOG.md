@@ -6,6 +6,90 @@
 
 ---
 
+## [v2.3.3-mvp] - 2026-04-25 (feature - 双客户端架构)
+
+**定位**:**知识工厂从"产品形态首次出现"进化到"产品形态物理隔离 + 商业化前置就绪"**。F055 在 v2.3.2 用 `?mode=friend` URL 参数做朋友模式,本版老唐识别到该方案的 5 个根本缺陷(CSS 隐藏 ≠ 物理隔离 / API 接口暴露 / 代码耦合污染 / 品牌缺失 / 未来云端化阻碍),决定**架构升级到双客户端**:后台 `review.html` 保留调试视角(QA 分数 / official 标签 / 板块N 前缀 / main badge),独立 `qa_public.html` 1395 行做朋友试用产品页(营销首屏 + 自然语言板块 + 客户视角洁净 + 移动端适配)。商业化前置同步落地:`friend_tag` URL `?u=张三` 朋友身份精准识别 / IP 限速 20 次/天/只成功才计数(防 API 钱包烧穿)/ V3-R1 主链可选(自用调试 R1 深度,朋友强制 V3 不烧钱)。
+
+涉及 7 文件 / 部分1a 后端基础设施(5 文件)+ 部分1b qa_public.html 新建 1 文件 + 部分1c 后台改造 + f056_viewer 字段简化 2 文件。立规则 60 新立 + 立规则 58 新立 + 立规则 53 第 5-8 次自证 + 立规则 9 第 14 次应验。
+
+### Added
+
+- **GET /qa 路由**(api_server.py): 独立朋友试用产品页, 物理隔离不复用 review.html, 加载逻辑参考 REVIEW_HTML 三路径搜索(web/templates/web/根目录) + 文件不存在时占位 HTML 兜底
+- **`web/templates/qa_public.html`**(1395 行 / 38KB / part1b): 单 HTML 朋友试用产品页, 立规则 24 严格 ES5(无箭头/无模板字符串/无 async)。功能矩阵:
+  - **D1 营销首屏**:"专注乡村振兴政策" 大标题 + 三个核心数字(条款数动态从 /api/statistics 拉取按 100 取整 / 板块结构数 / 平均响应时间)+ 边界提示"日常聊天请用豆包"
+  - **D2 复制双格式**:[复制文本] 纯答案 + [复制带来源] Markdown(含问题/回答/参考来源逐条带 excerpt/说明/版本标记)
+  - **D3 朋友身份识别**:URL `?u=张三` 解析 → 顶部"欢迎,张三" → 调 /api/qa/ask 时透传 friend_tag → 后端写入 qa_history.friend_tag 字段
+  - **D4 限速 UI 反馈**:HTTP 429 响应触发友好弹窗"今天已问 X 个,达到上限 20 个"
+  - **D5 sessionStorage 历史隔离**:关闭标签即清, 最多 20 条, 客户端隔离不进 SQLite, 不同朋友互不可见
+  - **D6 加载文案价值化**:5 句文案每 3 秒轮换("正在检索 2400+ 条权威条款" → "正在比对最相关依据" → "正在排序 5 条最佳来源" → "正在为你生成结构化答案" → "马上就好,正在最后整理")
+  - **板块标题自然语言**:回答 / 参考来源 / 你可能还想问 / 说明(无"板块N·"前缀)
+  - **客户视角洁净**:0 个 main badge / 0 个 official 徽章 / 0 个 QA 分数 / 0 个文件名 / 0 个版本号
+  - **重新生成 + 反馈**:答案区右下三个按钮 [复制文本][复制带来源][重新生成];反馈条 [这个有帮助][没解决问题][写一句反馈]
+  - **Ctrl+Enter 快捷提交**:对齐豆包/Kimi 习惯
+  - **移动端适配**:媒体查询 520px 以下专门适配
+  - **物理隔离**:朋友 view-source 看到的就是产品页源码,0 行 review.html 后台代码
+- **`friend_quota_daily` 表**(db_manager.py + setup.py _V233): IP + date 复合主键 + count 自增 + last_at 时间戳, 朋友试用 IP 限速管理(20 次/天/IP)
+- **`qa_history.friend_tag` 字段**(VARCHAR50 nullable): URL ?u=朋友姓名 朋友身份, 仅 mode=friend 写入, 用于精准反馈分析
+- **`db.check_friend_quota(ip, daily_limit=20)` 方法**: 返回 (ok, used, limit), 不阻塞主流程,IP 缺失保守放行
+- **`db.incr_friend_quota(ip)` 方法**: UPSERT 自增(SQLite ON CONFLICT), worker 成功后调用, 失败不计数
+- **qa_ask 路由扩展**: 接收 model_pref('v3'|'r1') + friend_tag, 朋友模式后端强制 model_pref='v3' 不烧 R1 钱, IP 限速校验在抢锁前(超限直接 429), worker 成功完成才 incr_friend_quota
+- **qa_assistant 主链翻转**(`_generate_with_fallback_chain`): model_pref='v3' 时 V3 主→V3 L1→R1 L2→规则;model_pref='r1' 时 R1 主→R1 L1→V3 L2→规则。返回 dict 加 `model_used` 字段('deepseek-chat' / 'deepseek-reasoner' / None)便于前端展示
+- **review.html Tab 3 升级(part1c)**:
+  - 顶部版本号 v2.3.0-part3.8 → v2.3.3-mvp(span#brandVersion 留 hook 待 v2.3.4 接 /api/statistics 动态化)
+  - 提问区加 V3/R1 模型切换 toggle(自用模式独享, 朋友模式后端强制 v3)
+  - 时间提示动态切换("V3 单次约 10-30 秒" / "R1 单次约 60-180 秒")
+  - 直答板块加 `[复制文本]` `[复制带来源]` `[重新生成]` 三个 btn-tiny
+  - 直答 source badge 旁加 `model_used` badge(V3 / R1, 规则兜底时隐藏)
+  - 自测 checkbox 文案"标记为我自己测试 (不写入埋点)" → "自测"(简洁 + 鼠标悬停显示完整说明)
+  - Ctrl+Enter 快速提交(input 元素 keydown 监听一次性绑定)
+  - `qaCopyText / qaCopyMarkdown / qaRegenerate / qaSimplifyCoverageGap / qaDoCopy / qaFallbackCopy` 6 个新函数
+- **`f056_viewer.html` 字段名映射**(part1c): 加 25+ 条目的 FV_LABEL 映射表(顶层字段名 + 嵌套字段 + access_level/monetize_tier 取值映射), `fvObjectFields` 字段名 + 字段值都走 label 映射, 9 个 `fvSection` 标题去掉 (excerpt) (content) 等英文后缀
+- **`启动后台.bat` IP 打印**: ipconfig + findstr "IPv4" 提取局域网 IP, 启动时打印朋友试用地址 `http://[IP]:5000/qa?u=朋友姓名` + 提示文案(同 WiFi 才能访问 / 改成对方真名便于反馈分析)
+- **立规则 58 新立**: 对话内不输出代码细节,只输出思考与决策点,代码以文件交付。理由:老唐零编程看不懂,贴代码到对话浪费 token 加速触发上下文压缩,反而削弱协作记忆深度
+- **立规则 60 新立**: 新字段及其依赖索引必须只在 `_upgrade_schema_to_current` 中创建,不得放入 `init_tables`。`init_tables` 只放"CREATE TABLE 一次性建好的字段对应索引"
+
+### Fixed
+
+- **part1a 老唐首次安装报错 `no such column: friend_tag` 架构性 bug**(立规则 60 应验): db_manager.py init_tables 用 `CREATE TABLE IF NOT EXISTS qa_history`, 老库已存在表会跳过创建 → 紧随其后的 `CREATE INDEX IF NOT EXISTS idx_qa_history_friend_tag ON qa_history(friend_tag, ...)` 引用了 v2.3.3-mvp 新增字段 → 老库走到 [2/6] 步即崩, 根本到不了 [6/6] 步的 _upgrade_schema_to_current 升级。修法:从 init_tables 索引列表删除该索引, 仅保留在 _V233_NEW_INDEXES 中(新库经 [6/6] 步幂等 CREATE INDEX IF NOT EXISTS 也能补上)。架构原则:任何依赖"新字段"的索引都不能放 init_tables, 立规则 60 第 1 次落地
+- **setup.py 文件验证清单 qa_assistant.py 遗漏补全**(立规则 9 第 10 次应验顺手修): v2.3.2 注释明确说"核心文件校验清单追加 1 项: qa_assistant.py", 但实际清单(setup.py 行 374-377)没加 → 本版补上 + Migration 注释说明
+- **part1c 死代码清理**: review.html `_qaState.userMode` / `qaModeBadge` / `qaFriendBanner` / URL `?mode=friend` 解析 + 全部 isFriend 分支判断 / qaLoadHistory `mode=friend` URL 拼接全部删除(双客户端架构下后台永远是 self 模式, isFriend 永远 false)
+
+### Changed
+
+- **数据库表数量**: 24 → 25(+ friend_quota_daily)
+- **数据库索引**: 31 → 32(+ idx_qa_history_friend_tag)
+- **qa_history 字段**: 新增 friend_tag(TEXT, nullable, 默认 NULL, 老库 ALTER 安全)
+- **api_server.py qa_ask 路由埋点**: payload 新增 model_pref / friend_tag / client_ip 三字段(便于按朋友身份/IP/模型分析)
+- **qa_assistant 埋点**: qa_ask_done / qa_ask_failed payload 新增 model_pref / model_used / friend_tag 三字段
+- **commit log "ai_calls":self._ai_calls** 保留为后台调试字段, qa_public.html 朋友视角不显示
+- **后台 Tab 3 头部副标题**: "基于本地精品池 + DeepSeek V3" → "调试自用 · 朋友试用页是 /qa"
+
+### Migration
+
+- **schema 变更**: 1 字段 + 1 表 + 1 索引(全部 ALTER ADD COLUMN / CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS 幂等), 老库经 _upgrade_schema_to_current Step 6/7/8 自动追齐
+- **setup.py 升级常量**: 新增 _V233_NEW_COLUMNS / _V233_NEW_TABLES_SQL_LIST / _V233_NEW_INDEXES 三段独立常量(版本可追溯), _upgrade_schema_to_current 函数加 Step 6/7/8(立规则 55 第 4 次落地:不再单独提供 migrate 脚本)
+- **部署步骤**:
+  1. 备份当前 7 文件到 backups/v2.3.2-完整备份-20260425/
+  2. 替换 4 个 Python 文件 + 1 个 bat + 2 个 HTML(共 7 文件)
+  3. **必须跑一次 首次安装.bat** 触发 setup.py main → _upgrade_schema_to_current 自动追字段 + 建新表 + 建新索引(成功标志:"存量库升级:追加 1 字段 / 1 新表 / 1 新索引")
+  4. 双击新版 启动后台.bat(应该看到顶部 banner "v2.3.3-mvp-part1a" + 朋友试用地址 + 局域网 IP)
+  5. 浏览器 Ctrl+Shift+R 强刷
+  6. 验证 5 测试:Tab 3 V3/R1 切换 + 复制按钮 + Ctrl+Enter / `/qa?u=测试朋友` 顶部欢迎 + 营销首屏 / 手机访问局域网 IP / 限速 20 次后 429 弹窗 / f056_viewer 拖 JSON 看到中文字段名
+
+### 教训沉淀(立规则记录)
+
+- **立规则 53 第 5-8 次自证**: 本版 Phase 3 拆 part1a/1b/1c 三轮,每轮都在工具配额边缘想喊停新对话,老唐"继续"督促贯彻"对话内压缩上下文不丢记忆"原则。**累计 8 次自证 + 老唐明确反对新开对话(理由:每次新开都从头讨论,试过很多次)** = "凭配额顾虑喊停"是稳定 bug, 应在 Phase 2 阶段就把工作量预估清楚再开工
+- **立规则 58 触发场景**: 老唐第二轮 part1a 收尾时直接说"过程中需要怎样实现代码,你不用输出到我们的对话中, 因为我也看不懂, 你保存在你自己的记忆里就行了, 你输出在我们对话里面的, 就是你的思考和需要我拍板的点, 全是自然对话"。本规则是协作纪律的元规则,所有"代码细节"一律走 create_file + present_files,对话只留思考/决策
+- **立规则 60 触发场景**: part1a 文件交付后老唐首次安装即报 `no such column: friend_tag`, 立规则 50 拉通验证只做了 ast.parse 语法检查, 没做"老库模拟测试"。今后涉及 schema 变更必须额外验证:"用 sqlite3 创建缺新字段的旧表, 跑 setup.py main, 确认能完整跑完 [6/6] 步"
+- **立规则 9 第 14 次应验**: api_server REVIEW_HTML 加载逻辑(三路径搜索 web/templates/web/根目录), 凭记忆写新加 QA_PUBLIC_HTML 时如果不照葫芦画瓢就会路径不一致, 通过 grep 确认现有逻辑后照搬
+
+### 已登记到 v2.3.4 待办
+
+- **答案机械问题**(老唐 part1a 验证时反馈): QA_ANSWER_GEN_PROMPT 输出风格偏严肃公文风, 不够"大白话+分点+先结论", v2.3.4 改 prompt_templates.py 加结构化指令
+- **review.html 版本号动态化**: /api/statistics 加 version 字段返回, 前端 loadStatistics 写入 #brandVersion, 消灭硬编码
+
+---
+
 ## [v2.3.2-hotfix1] - 2026-04-25 (hotfix)
 
 **定位**:**F055 上线后老唐肉眼实测发现 4 处 bug + 1 处体验问题(图片证据 + 后台日志双确认),一次清除**。本版无新增功能,纯收缩面修复 + 用户视角洁净度提升。涉及 2 文件 / 7 处 str_replace。立规则 9 应验扩至第 13 次(2 个新场景:tag_config 没有 FRESHNESS_INTERVALS 常量 / api_server 真实路由是复数 knowledge-points)+ 立规则 53 第 4 次自证("凭感觉喊停"已是稳定 bug,需老唐持续校准)。

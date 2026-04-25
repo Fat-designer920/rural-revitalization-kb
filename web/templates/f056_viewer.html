@@ -349,63 +349,69 @@ function fvRenderDetail(kp){
   var h="";
   h+='<h2>#'+esc(kp.kp_id)+' '+esc(kp.title||"(无标题)")+'</h2>';
 
-  /* 元信息条 */
+  /* 元信息条 (v2.3.3-mvp-part1c: 字段名+取值都走 label 映射) */
   h+='<div class="fv-detail-meta">';
-  if(kp.access_level){h+='<span>access_level: '+esc(kp.access_level)+'</span>'}
-  if(kp.monetize_tier){h+='<span>monetize_tier: '+esc(kp.monetize_tier)+'</span>'}
+  if(kp.access_level){
+    var alLabel=FV_LABEL[kp.access_level]||kp.access_level;
+    h+='<span>访问级别: '+esc(alLabel)+'</span>';
+  }
+  if(kp.monetize_tier){
+    var mtLabel=FV_LABEL[kp.monetize_tier]||kp.monetize_tier;
+    h+='<span>商业等级: '+esc(mtLabel)+'</span>';
+  }
   h+='</div>';
 
   /* 1. excerpt */
   if(kp.excerpt){
-    h+=fvSection("摘要 (excerpt)","");
+    h+=fvSection("摘要","");
     h+='<div class="fv-field-val"><pre>'+esc(kp.excerpt)+'</pre></div></div>';
   }
 
   /* 2. content (object) */
   if(kp.content){
-    h+=fvSection("正文 (content)","");
+    h+=fvSection("正文","");
     h+=fvObjectFields(kp.content);
     h+='</div>';
   }
 
   /* 3. category (object) */
   if(kp.category){
-    h+=fvSection("分类 (category)","");
+    h+=fvSection("分类","");
     h+=fvObjectFields(kp.category);
     h+='</div>';
   }
 
   /* 4. quality (object) */
   if(kp.quality){
-    h+=fvSection("质量评估 (quality)","");
+    h+=fvSection("质量评估","");
     h+=fvObjectFields(kp.quality);
     h+='</div>';
   }
 
   /* 5. premium (object) */
   if(kp.premium){
-    h+=fvSection("精品标识 (premium)","");
+    h+=fvSection("精品标识","");
     h+=fvObjectFields(kp.premium);
     h+='</div>';
   }
 
   /* 6. source (object) */
   if(kp.source){
-    h+=fvSection("来源 (source)","");
+    h+=fvSection("来源","");
     h+=fvObjectFields(kp.source);
     h+='</div>';
   }
 
   /* 7. timestamps (object) */
   if(kp.timestamps){
-    h+=fvSection("时间戳 (timestamps)","");
+    h+=fvSection("时间戳","");
     h+=fvObjectFields(kp.timestamps);
     h+='</div>';
   }
 
   /* 8. tags (array) */
   if(kp.tags&&kp.tags.length){
-    h+=fvSection("标签 (tags)",kp.tags.length+" 个");
+    h+=fvSection("标签",kp.tags.length+" 个");
     h+='<div>';
     for(var i=0;i<kp.tags.length;i++){
       h+='<span class="fv-tag">'+esc(kp.tags[i])+'</span>';
@@ -415,7 +421,7 @@ function fvRenderDetail(kp){
 
   /* 9. annotations (array) */
   if(kp.annotations&&kp.annotations.length){
-    h+=fvSection("专家注解 (annotations)",kp.annotations.length+" 条");
+    h+=fvSection("专家批注",kp.annotations.length+" 条");
     h+='<ul class="fv-field-list">';
     for(var j=0;j<kp.annotations.length;j++){
       var ann=kp.annotations[j];
@@ -435,6 +441,27 @@ function fvRenderDetail(kp){
   pane.innerHTML=h;
   pane.scrollTop=0;
 }
+
+/* v2.3.3-mvp-part1c: 字段名 → 自然语言 label 映射 (避免暴露 access_level / monetize_tier 等内部字段名给朋友) */
+var FV_LABEL={
+  "kp_id":"知识点编号","title":"标题","excerpt":"摘要","content":"正文",
+  "category":"分类","quality":"质量评估","premium":"精品标识",
+  "source":"来源","timestamps":"时间戳","annotations":"批注",
+  "tags":"标签","access_level":"访问级别","monetize_tier":"商业等级",
+  /* 嵌套字段 */
+  "level1":"一级","level2":"二级","level3":"三级","path":"路径","name":"名称",
+  "score":"分数","grade":"等级","reasons":"理由","is_client":"客户型",
+  "is_rfp":"投标型","tier":"等级","tier_label":"等级标签",
+  "filename":"文件名","authority":"权威级别","extracted_at":"提取时间",
+  "policy_year":"政策年份","valid_period":"有效期",
+  "created_at":"创建时间","updated_at":"更新时间","published_at":"发布时间",
+  /* access_level 取值映射 */
+  "policy_official":"政策原文","policy_authoritative":"权威解读",
+  "case_record":"案例记录","tool_template":"工具模板",
+  /* monetize_tier 取值映射 */
+  "tier_a":"一档(基础)","tier_b":"二档(进阶)","tier_c":"三档(高级)"
+};
+function fvLabel(k){return FV_LABEL[k]||k}
 
 function fvSection(title,subtitle){
   var sub=subtitle?(' <span style="font-size:11px;color:var(--text-muted);font-weight:400">('+esc(subtitle)+')</span>'):'';
@@ -461,8 +488,13 @@ function fvObjectFields(obj){
       }
     }
     else if(typeof v==="object"){dispV='<pre style="margin:0;font-size:12px;color:var(--text-secondary)">'+esc(JSON.stringify(v,null,2))+'</pre>'}
-    else{dispV=esc(String(v))}
-    h+='<div class="fv-field"><div class="fv-field-key">'+esc(k)+'</div><div class="fv-field-val">'+dispV+'</div></div>';
+    else{
+      /* v2.3.3-mvp-part1c: 字段值也走 label 映射(如 access_level=policy_official → 政策原文) */
+      var sv=String(v);
+      var labeled=FV_LABEL[sv];
+      dispV=labeled?(esc(labeled)+' <span style="font-size:10px;color:var(--text-muted)">('+esc(sv)+')</span>'):esc(sv);
+    }
+    h+='<div class="fv-field"><div class="fv-field-key">'+esc(fvLabel(k))+'</div><div class="fv-field-val">'+dispV+'</div></div>';
   }
   return h;
 }

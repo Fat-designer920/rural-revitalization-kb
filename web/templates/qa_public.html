@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>乡村振兴政策助手</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="description" content="专注乡村振兴政策。已收录 2400+ 条权威政策条款,覆盖项目申报、补贴标准、土地整治、产业扶持等场景。">
+<!--
+  v2.3.3-mvp-part1b 朋友试用产品页 (双客户端架构 part1b/3)
+  路径: web/templates/qa_public.html
+  访问: http://[局域网IP]:5000/qa?u=张三
+
+  设计原则:
+    - 物理隔离: 0 行后台代码, view-source 看不到任何管理痕迹
+    - 客户视角: 无 main/r1_fallback 技术 badge, 无 official/QA 分数, 无文件名
+    - 营销驱动: 首屏定位语 + 2400+ 条权威条款 + 加载文案价值化
+    - 商业化前置: 朋友身份识别 + 限速 UI 反馈 + sessionStorage 历史隔离
+
+  立规则 24 严格 ES5: 无 emoji 字面量(用文字)/无箭头/无模板字符串/无 async
+  立规则 58: 对话内不输出代码细节, 代码以文件交付
+-->
+<style>
+:root{
+  --primary:#2D7B5F;
+  --primary-dark:#1F5A44;
+  --primary-light:#E8F5EE;
+  --bg:#F7F4EE;
+  --card:#FFFFFF;
+  --text:#1A1A1A;
+  --text-secondary:#555555;
+  --text-muted:#888888;
+  --border:#E5E0D8;
+  --info:#3B82A8;
+  --info-bg:#E8F4FA;
+  --warning:#C97A2C;
+  --warning-bg:#FFF3E0;
+  --success:#3D8B62;
+  --success-bg:#E8F5E9;
+  --shadow:0 2px 12px rgba(0,0,0,.06);
+  --shadow-hover:0 4px 20px rgba(0,0,0,.10);
+  --radius:14px;
+  --radius-small:8px;
+  --transition:all .2s ease;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  font-size:15px;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+.qp-container{
+  max-width:760px;
+  margin:0 auto;
+  padding:20px 16px 60px;
+  min-height:100vh;
+}
+
+/* ===== Header ===== */
+.qp-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 18px;
+  background:var(--card);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  margin-bottom:18px;
+}
+.qp-brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:700;
+  font-size:17px;
+  color:var(--primary);
+}
+.qp-brand-icon{
+  width:32px;height:32px;
+  background:var(--primary);
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:16px;font-weight:700;
+}
+.qp-user-tag{
+  font-size:12px;
+  color:var(--text-muted);
+  background:var(--bg);
+  padding:5px 12px;
+  border-radius:14px;
+}
+.qp-user-tag b{color:var(--primary);font-weight:600}
+
+/* ===== Hero (营销首屏) ===== */
+.qp-hero{
+  background:linear-gradient(135deg,var(--primary-light) 0%,#FFFFFF 100%);
+  border-radius:var(--radius);
+  padding:36px 28px 32px;
+  margin-bottom:18px;
+  border:1px solid var(--border);
+  text-align:center;
+}
+.qp-hero h1{
+  font-size:24px;
+  color:var(--primary-dark);
+  margin-bottom:14px;
+  line-height:1.4;
+  font-weight:700;
+}
+.qp-hero .qp-tagline{
+  font-size:14px;
+  color:var(--text-secondary);
+  line-height:1.8;
+  max-width:560px;
+  margin:0 auto 18px;
+}
+.qp-hero .qp-stats{
+  display:flex;
+  justify-content:center;
+  gap:24px;
+  flex-wrap:wrap;
+  margin-top:8px;
+}
+.qp-stat{
+  text-align:center;
+}
+.qp-stat-num{
+  display:block;
+  font-size:22px;
+  font-weight:700;
+  color:var(--primary);
+  line-height:1.2;
+}
+.qp-stat-label{
+  display:block;
+  font-size:11px;
+  color:var(--text-muted);
+  margin-top:2px;
+}
+.qp-hero-hint{
+  font-size:12px;
+  color:var(--text-muted);
+  margin-top:18px;
+  padding:8px 14px;
+  background:rgba(255,255,255,.6);
+  border-radius:var(--radius-small);
+  display:inline-block;
+}
+
+/* ===== Ask 区 ===== */
+.qp-ask{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:18px;
+  box-shadow:var(--shadow);
+  margin-bottom:18px;
+}
+.qp-input{
+  width:100%;
+  min-height:84px;
+  border:1.5px solid var(--border);
+  border-radius:var(--radius-small);
+  padding:12px 14px;
+  font-size:14.5px;
+  color:var(--text);
+  background:var(--bg);
+  resize:vertical;
+  font-family:inherit;
+  line-height:1.7;
+  transition:var(--transition);
+}
+.qp-input:focus{outline:none;border-color:var(--primary);background:#fff}
+.qp-input::placeholder{color:var(--text-muted)}
+.qp-ask-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:12px;
+  flex-wrap:wrap;
+}
+.qp-btn{
+  border:none;
+  border-radius:var(--radius-small);
+  padding:10px 22px;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:var(--transition);
+  font-family:inherit;
+}
+.qp-btn-primary{
+  background:var(--primary);
+  color:#fff;
+}
+.qp-btn-primary:hover{background:var(--primary-dark);transform:translateY(-1px);box-shadow:var(--shadow)}
+.qp-btn-primary:disabled{background:#B5B5B5;cursor:not-allowed;transform:none;box-shadow:none}
+.qp-btn-cancel{
+  background:var(--warning);
+  color:#fff;
+}
+.qp-btn-cancel:hover{background:#A86220}
+.qp-btn-secondary{
+  background:var(--bg);
+  color:var(--text-secondary);
+  border:1px solid var(--border);
+}
+.qp-btn-secondary:hover{background:var(--card);border-color:var(--primary);color:var(--primary)}
+.qp-btn-tiny{
+  padding:5px 10px;
+  font-size:12px;
+  font-weight:500;
+}
+.qp-ask-tip{
+  font-size:11.5px;
+  color:var(--text-muted);
+  margin-left:auto;
+}
+
+/* ===== 加载区 ===== */
+.qp-loading{
+  display:none;
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:22px;
+  margin-bottom:18px;
+  box-shadow:var(--shadow);
+  text-align:center;
+}
+.qp-loading-text{
+  font-size:14.5px;
+  color:var(--primary-dark);
+  font-weight:500;
+  margin-bottom:14px;
+  min-height:22px;
+  transition:opacity .3s ease;
+}
+.qp-progress-bar{
+  height:5px;
+  background:var(--border);
+  border-radius:3px;
+  overflow:hidden;
+  margin:0 auto;
+  max-width:380px;
+}
+.qp-progress-fill{
+  height:100%;
+  background:linear-gradient(90deg,var(--primary) 0%,var(--info) 100%);
+  width:0%;
+  transition:width .3s ease;
+}
+.qp-loading-meta{
+  font-size:11px;
+  color:var(--text-muted);
+  margin-top:10px;
+}
+
+/* ===== 答案区 ===== */
+.qp-answer{
+  display:none;
+}
+.qp-panel{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:20px 22px;
+  margin-bottom:14px;
+  box-shadow:var(--shadow);
+}
+.qp-panel-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--border);
+}
+.qp-panel-title{
+  font-size:15px;
+  font-weight:600;
+  color:var(--primary);
+}
+.qp-panel-count{
+  font-size:11px;
+  color:var(--text-muted);
+  background:var(--bg);
+  padding:2px 10px;
+  border-radius:10px;
+}
+.qp-direct{
+  font-size:14.5px;
+  line-height:1.85;
+  color:var(--text);
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.qp-direct-actions{
+  display:flex;
+  gap:8px;
+  margin-top:16px;
+  padding-top:14px;
+  border-top:1px solid var(--border);
+  flex-wrap:wrap;
+}
+
+/* 折叠面板 (依据 + 说明 默认折叠) */
+.qp-panel-collapse .qp-panel-head{
+  cursor:pointer;
+  user-select:none;
+  margin-bottom:0;
+  padding-bottom:0;
+  border-bottom:none;
+  transition:var(--transition);
+}
+.qp-panel-collapse .qp-panel-head:hover .qp-panel-title{color:var(--primary-dark)}
+.qp-panel-collapse .qp-collapse-icon{
+  font-size:12px;
+  color:var(--text-muted);
+  transition:transform .2s ease;
+}
+.qp-panel-collapse.qp-open .qp-panel-head{
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--border);
+}
+.qp-panel-collapse.qp-open .qp-collapse-icon{transform:rotate(180deg)}
+.qp-panel-body{display:none}
+.qp-panel-collapse.qp-open .qp-panel-body{display:block}
+
+/* 参考来源卡片 */
+.qp-evidence-list{display:flex;flex-direction:column;gap:8px}
+.qp-evidence-card{
+  background:var(--bg);
+  border-radius:var(--radius-small);
+  padding:11px 14px;
+  border-left:3px solid var(--primary);
+  transition:var(--transition);
+}
+.qp-evidence-card:hover{background:var(--primary-light)}
+.qp-evidence-title{
+  font-weight:600;
+  font-size:13.5px;
+  color:var(--text);
+  margin-bottom:4px;
+  line-height:1.5;
+}
+.qp-evidence-meta{
+  font-size:11px;
+  color:var(--text-muted);
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:6px;
+}
+.qp-evidence-meta .meta-tag{
+  padding:2px 8px;
+  border-radius:8px;
+  background:var(--card);
+  border:1px solid var(--border);
+}
+.qp-evidence-excerpt{
+  font-size:12.5px;
+  color:var(--text-secondary);
+  line-height:1.6;
+}
+
+/* 你可能还想问 */
+.qp-followup-list{display:flex;flex-direction:column;gap:8px}
+.qp-followup-item{
+  background:var(--bg);
+  border-radius:var(--radius-small);
+  padding:11px 14px;
+  cursor:pointer;
+  transition:var(--transition);
+  border:1.5px solid transparent;
+}
+.qp-followup-item:hover{
+  background:var(--card);
+  border-color:var(--primary);
+  transform:translateX(2px);
+}
+.qp-followup-q{
+  font-weight:600;
+  color:var(--primary);
+  font-size:13.5px;
+  margin-bottom:3px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.qp-followup-q::before{
+  content:"\u2192";
+  color:var(--primary);
+  font-weight:400;
+  font-size:14px;
+}
+.qp-followup-r{font-size:12px;color:var(--text-muted);padding-left:18px}
+
+/* 说明 (补漏提醒) */
+.qp-coverage{
+  font-size:13.5px;
+  color:var(--text-secondary);
+  background:var(--warning-bg);
+  border-left:3px solid var(--warning);
+  padding:10px 14px;
+  border-radius:0 var(--radius-small) var(--radius-small) 0;
+  line-height:1.7;
+}
+.qp-coverage-ok{
+  font-size:12.5px;
+  color:var(--success);
+  font-style:italic;
+  padding:6px 0;
+}
+
+/* 反馈条 */
+.qp-feedback{
+  display:flex;
+  gap:8px;
+  margin-top:6px;
+  padding:14px 22px;
+  background:var(--card);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  flex-wrap:wrap;
+}
+.qp-fb-btn{
+  padding:7px 14px;
+  border-radius:var(--radius-small);
+  border:1px solid var(--border);
+  background:var(--card);
+  font-size:12.5px;
+  cursor:pointer;
+  transition:var(--transition);
+  color:var(--text-secondary);
+  font-family:inherit;
+}
+.qp-fb-btn:hover{border-color:var(--primary);color:var(--primary)}
+.qp-fb-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.qp-fb-btn.active-down{background:var(--warning);color:#fff;border-color:var(--warning)}
+
+/* ===== 历史 ===== */
+.qp-history{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:14px 22px;
+  margin-top:18px;
+  box-shadow:var(--shadow);
+}
+.qp-history-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  cursor:pointer;
+  user-select:none;
+}
+.qp-history-title{
+  font-size:14px;
+  font-weight:600;
+  color:var(--primary);
+}
+.qp-history-title small{
+  color:var(--text-muted);
+  font-weight:400;
+  font-size:11px;
+  margin-left:8px;
+}
+.qp-history-toggle{
+  font-size:12px;
+  color:var(--text-muted);
+  transition:transform .2s ease;
+}
+.qp-history.qp-open .qp-history-toggle{transform:rotate(180deg)}
+.qp-history-list{display:none;margin-top:12px;flex-direction:column;gap:6px}
+.qp-history.qp-open .qp-history-list{display:flex}
+.qp-history-item{
+  background:var(--bg);
+  border-radius:var(--radius-small);
+  padding:8px 12px;
+  font-size:12.5px;
+  cursor:pointer;
+  transition:var(--transition);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+.qp-history-item:hover{background:var(--primary-light)}
+.qp-history-q{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.qp-history-time{font-size:10.5px;color:var(--text-muted);flex-shrink:0}
+.qp-history-empty{
+  text-align:center;
+  color:var(--text-muted);
+  font-size:12px;
+  padding:18px 0;
+}
+
+/* ===== 限速提示 (429) ===== */
+.qp-quota-modal{
+  display:none;
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,.5);
+  z-index:999;
+  align-items:center;
+  justify-content:center;
+}
+.qp-quota-modal.show{display:flex}
+.qp-quota-box{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:32px 28px;
+  max-width:380px;
+  width:90%;
+  text-align:center;
+  box-shadow:var(--shadow-hover);
+}
+.qp-quota-icon{
+  font-size:36px;
+  color:var(--warning);
+  margin-bottom:12px;
+}
+.qp-quota-title{
+  font-size:17px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:10px;
+}
+.qp-quota-msg{
+  font-size:13.5px;
+  color:var(--text-secondary);
+  line-height:1.7;
+  margin-bottom:18px;
+}
+.qp-quota-msg b{color:var(--warning);font-weight:600}
+
+/* ===== Toast ===== */
+.qp-toast{
+  position:fixed;
+  bottom:30px;
+  left:50%;
+  transform:translateX(-50%);
+  background:var(--text);
+  color:#fff;
+  padding:10px 20px;
+  border-radius:var(--radius-small);
+  font-size:13px;
+  z-index:1000;
+  box-shadow:var(--shadow-hover);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .25s ease;
+}
+.qp-toast.show{opacity:1}
+.qp-toast.toast-success{background:var(--success)}
+.qp-toast.toast-error{background:#C62828}
+
+/* ===== 反馈 dialog ===== */
+.qp-fb-dialog{
+  display:none;
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,.5);
+  z-index:998;
+  align-items:center;
+  justify-content:center;
+}
+.qp-fb-dialog.show{display:flex}
+.qp-fb-box{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:24px;
+  max-width:440px;
+  width:90%;
+  box-shadow:var(--shadow-hover);
+}
+.qp-fb-box h3{
+  font-size:16px;
+  color:var(--primary);
+  margin-bottom:14px;
+}
+.qp-fb-textarea{
+  width:100%;
+  min-height:88px;
+  border:1.5px solid var(--border);
+  border-radius:var(--radius-small);
+  padding:10px 12px;
+  font-size:13.5px;
+  font-family:inherit;
+  background:var(--bg);
+  resize:vertical;
+  line-height:1.6;
+  margin-bottom:14px;
+}
+.qp-fb-textarea:focus{outline:none;border-color:var(--primary)}
+.qp-fb-actions{
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+}
+
+/* ===== 底部 footer ===== */
+.qp-footer{
+  margin-top:30px;
+  text-align:center;
+  font-size:11px;
+  color:var(--text-muted);
+  padding:14px 0;
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width:520px){
+  .qp-container{padding:14px 12px 50px}
+  .qp-hero{padding:28px 18px 24px}
+  .qp-hero h1{font-size:20px}
+  .qp-hero .qp-tagline{font-size:13px}
+  .qp-stat-num{font-size:18px}
+  .qp-panel{padding:16px 18px}
+  .qp-feedback{padding:12px 16px}
+  .qp-history{padding:12px 18px}
+  .qp-direct-actions{flex-direction:column}
+  .qp-direct-actions .qp-btn{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="qp-container">
+
+  <!-- ===== Header ===== -->
+  <div class="qp-header">
+    <div class="qp-brand">
+      <div class="qp-brand-icon">乡</div>
+      <span>乡村振兴政策助手</span>
+    </div>
+    <div class="qp-user-tag" id="userTag">朋友试用</div>
+  </div>
+
+  <!-- ===== Hero (营销首屏) ===== -->
+  <div class="qp-hero" id="qpHero">
+    <h1>专注乡村振兴政策</h1>
+    <p class="qp-tagline">
+      已收录 <b style="color:var(--primary)" id="heroKpCount">2400+</b> 条权威政策条款,覆盖项目申报、补贴标准、土地整治、产业扶持等场景。<br>
+      问题越具体,答案越精准。
+    </p>
+    <div class="qp-stats">
+      <div class="qp-stat">
+        <span class="qp-stat-num" id="statKp">2400+</span>
+        <span class="qp-stat-label">权威条款</span>
+      </div>
+      <div class="qp-stat">
+        <span class="qp-stat-num">4</span>
+        <span class="qp-stat-label">板块结构化</span>
+      </div>
+      <div class="qp-stat">
+        <span class="qp-stat-num">10s</span>
+        <span class="qp-stat-label">平均响应</span>
+      </div>
+    </div>
+    <div class="qp-hero-hint">
+      日常聊天、其他行业问题请使用豆包/Kimi 等通用 AI
+    </div>
+  </div>
+
+  <!-- ===== Ask 区 ===== -->
+  <div class="qp-ask">
+    <textarea id="qpInput" class="qp-input" placeholder="试着问:全域土地综合整治流程? 农村宅基地审批要哪些材料? 高标准农田建设补贴标准?"></textarea>
+    <div class="qp-ask-row">
+      <button class="qp-btn qp-btn-primary" id="qpAskBtn" onclick="qpAsk()">提问</button>
+      <button class="qp-btn qp-btn-cancel" id="qpCancelBtn" onclick="qpCancel()" style="display:none">取消</button>
+      <span class="qp-ask-tip">单次约 10-30 秒 · 按 Ctrl+Enter 快速提问</span>
+    </div>
+  </div>
+
+  <!-- ===== 加载区 ===== -->
+  <div class="qp-loading" id="qpLoading">
+    <div class="qp-loading-text" id="qpLoadingText">正在检索权威政策条款...</div>
+    <div class="qp-progress-bar"><div class="qp-progress-fill" id="qpProgressFill"></div></div>
+    <div class="qp-loading-meta" id="qpLoadingMeta"></div>
+  </div>
+
+  <!-- ===== 答案区 ===== -->
+  <div class="qp-answer" id="qpAnswer">
+
+    <!-- 回答 (永远展开) -->
+    <div class="qp-panel">
+      <div class="qp-panel-head">
+        <div class="qp-panel-title">回答</div>
+      </div>
+      <div class="qp-direct" id="qpDirectAnswer"></div>
+      <div class="qp-direct-actions">
+        <button class="qp-btn qp-btn-secondary qp-btn-tiny" onclick="qpCopyText()">复制文本</button>
+        <button class="qp-btn qp-btn-secondary qp-btn-tiny" onclick="qpCopyMarkdown()">复制带来源</button>
+        <button class="qp-btn qp-btn-secondary qp-btn-tiny" onclick="qpRegenerate()">重新生成</button>
+      </div>
+    </div>
+
+    <!-- 参考来源 (默认折叠) -->
+    <div class="qp-panel qp-panel-collapse" id="qpPanelEvidence">
+      <div class="qp-panel-head" onclick="qpToggle('qpPanelEvidence')">
+        <div class="qp-panel-title">参考来源 <span class="qp-panel-count" id="qpEvidenceCount">0 条</span></div>
+        <span class="qp-collapse-icon">\u25BC</span>
+      </div>
+      <div class="qp-panel-body">
+        <div class="qp-evidence-list" id="qpEvidenceList"></div>
+      </div>
+    </div>
+
+    <!-- 你可能还想问 (默认折叠) -->
+    <div class="qp-panel qp-panel-collapse" id="qpPanelFollowup" style="display:none">
+      <div class="qp-panel-head" onclick="qpToggle('qpPanelFollowup')">
+        <div class="qp-panel-title">你可能还想问</div>
+        <span class="qp-collapse-icon">\u25BC</span>
+      </div>
+      <div class="qp-panel-body">
+        <div class="qp-followup-list" id="qpFollowupList"></div>
+      </div>
+    </div>
+
+    <!-- 说明 (默认折叠) -->
+    <div class="qp-panel qp-panel-collapse" id="qpPanelCoverage">
+      <div class="qp-panel-head" onclick="qpToggle('qpPanelCoverage')">
+        <div class="qp-panel-title">说明</div>
+        <span class="qp-collapse-icon">\u25BC</span>
+      </div>
+      <div class="qp-panel-body">
+        <div id="qpCoverage"></div>
+      </div>
+    </div>
+
+    <!-- 反馈条 -->
+    <div class="qp-feedback">
+      <button class="qp-fb-btn" id="qpFbHelpful" onclick="qpFeedback('helpful')">这个有帮助</button>
+      <button class="qp-fb-btn" id="qpFbNotHelpful" onclick="qpFeedback('not_helpful')">没解决问题</button>
+      <button class="qp-fb-btn" onclick="qpOpenComment()">写一句反馈</button>
+    </div>
+  </div>
+
+  <!-- ===== 历史 (sessionStorage) ===== -->
+  <div class="qp-history" id="qpHistory">
+    <div class="qp-history-head" onclick="qpToggleHistory()">
+      <div class="qp-history-title">本次对话历史 <small id="qpHistoryCount">0 条</small><small>关闭标签页后清空</small></div>
+      <span class="qp-history-toggle">\u25BC</span>
+    </div>
+    <div class="qp-history-list" id="qpHistoryList">
+      <div class="qp-history-empty">还没有提问记录</div>
+    </div>
+  </div>
+
+  <div class="qp-footer">
+    乡村振兴政策助手 · 仅回答政策法规、申报流程、补贴标准等专业问题
+  </div>
+</div>
+
+<!-- ===== 限速提示 ===== -->
+<div class="qp-quota-modal" id="qpQuotaModal">
+  <div class="qp-quota-box">
+    <div class="qp-quota-icon">\u26A0</div>
+    <div class="qp-quota-title">今日额度已用完</div>
+    <div class="qp-quota-msg" id="qpQuotaMsg">
+      你今天已经问了 <b>20</b> 个问题,达到当日上限。<br>
+      请明天再来,或联系老唐沟通需求。
+    </div>
+    <button class="qp-btn qp-btn-primary" onclick="qpCloseQuota()">我知道了</button>
+  </div>
+</div>
+
+<!-- ===== 反馈 dialog ===== -->
+<div class="qp-fb-dialog" id="qpFbDialog">
+  <div class="qp-fb-box">
+    <h3>写一句反馈</h3>
+    <textarea class="qp-fb-textarea" id="qpFbText" placeholder="对这个回答有什么想说的?(老唐会看到)"></textarea>
+    <div class="qp-fb-actions">
+      <button class="qp-btn qp-btn-secondary" onclick="qpCloseComment()">取消</button>
+      <button class="qp-btn qp-btn-primary" onclick="qpSubmitComment()">提交</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Toast ===== -->
+<div class="qp-toast" id="qpToast"></div>
+
+<script>
+/* ================================================================
+ * v2.3.3-mvp-part1b 朋友试用产品页 JS
+ * 立规则 24 严格 ES5: 无箭头/无模板字符串/无 async/await
+ * ================================================================ */
+
+var _qp = {
+  friendTag: null,        /* URL ?u=张三 解析得到, 没有则 null (匿名朋友) */
+  currentHid: 0,          /* 当前显示答案的 history_id (反馈用) */
+  pollTimer: null,        /* 进度轮询 timer */
+  inFlight: false,        /* 是否有正在进行的问答 */
+  lastQuery: "",          /* 上次问题 (重新生成用) */
+  lastResult: null,       /* 上次结果 (复制用) */
+  lastEvidenceItems: [],  /* 上次依据卡片 (复制带来源用) */
+  history: [],            /* sessionStorage 历史 */
+  loadingMsgIdx: 0,       /* 加载文案当前索引 */
+  loadingMsgTimer: null,  /* 加载文案轮换 timer */
+  feedbackHidForComment: 0/* 反馈 dialog 用的 history_id */
+};
+
+/* D6: 加载文案价值化 */
+var QP_LOADING_MESSAGES = [
+  "正在检索 2400+ 条权威政策条款...",
+  "正在比对最相关的政策依据...",
+  "正在排序最相关的 5 条来源...",
+  "正在为你生成结构化答案...",
+  "马上就好,正在最后整理..."
+];
+
+/* ================================================================
+ * 初始化
+ * ================================================================ */
+function qpInit(){
+  /* 解析 ?u= 朋友身份 */
+  var qs = window.location.search || "";
+  var m = qs.match(/[?&]u=([^&#]+)/);
+  if(m){
+    try{
+      _qp.friendTag = decodeURIComponent(m[1]).trim().substring(0,50);
+      if(!_qp.friendTag) _qp.friendTag = null;
+    }catch(e){_qp.friendTag = null}
+  }
+
+  /* 显示朋友身份 */
+  var tagEl = document.getElementById("userTag");
+  if(_qp.friendTag){
+    tagEl.innerHTML = '欢迎,<b>'+qpEsc(_qp.friendTag)+'</b>';
+  }else{
+    tagEl.textContent = "朋友试用";
+  }
+
+  /* 加载 sessionStorage 历史 (D5: 关闭标签页即清) */
+  try{
+    var raw = sessionStorage.getItem("qp_history");
+    _qp.history = raw ? JSON.parse(raw) : [];
+    if(!Array.isArray(_qp.history)) _qp.history = [];
+  }catch(e){_qp.history = []}
+  qpRenderHistory();
+
+  /* 拉取 statistics 更新 hero 数字 (动态显示真实知识量) */
+  qpApi("GET","/api/statistics",null,function(s){
+    if(s && !s.error){
+      var n = (s.total_confirmed!=null) ? s.total_confirmed : (s.knowledge_points && s.knowledge_points.confirmed)||0;
+      if(n>0){
+        var display = n>=1000 ? (Math.floor(n/100)*100)+"+" : ""+n;
+        document.getElementById("heroKpCount").textContent = display;
+        document.getElementById("statKp").textContent = display;
+      }
+    }
+  });
+
+  /* Ctrl+Enter 提交 */
+  document.getElementById("qpInput").addEventListener("keydown", function(e){
+    if((e.ctrlKey||e.metaKey) && e.key==="Enter"){
+      e.preventDefault();
+      qpAsk();
+    }
+  });
+
+  /* 检查后台是否已经有进行中的任务(防刷新丢状态) */
+  qpApi("GET","/api/qa/progress",null,function(r){
+    if(r && r.running){
+      _qp.inFlight = true;
+      qpToggleAskBtn(true);
+      qpShowLoading();
+      qpStartPoll();
+    }
+  });
+}
+
+/* ================================================================
+ * 提问主流程
+ * ================================================================ */
+function qpAsk(){
+  var input = document.getElementById("qpInput");
+  var query = (input.value||"").trim();
+  if(!query){qpToast("请先输入问题","error");return}
+  if(query.length>500){qpToast("问题超长 (>500 字)","error");return}
+  if(_qp.inFlight){qpToast("已有问答在进行,请等待","info");return}
+
+  _qp.inFlight = true;
+  _qp.lastQuery = query;
+  qpToggleAskBtn(true);
+  qpHideAnswer();
+  qpHideHero();
+  qpShowLoading();
+
+  var body = {
+    query: query,
+    mode: "friend",
+    is_test_query: 0,
+    model_pref: "v3",       /* 朋友模式后端会强制 v3, 这里也写 v3 */
+    friend_tag: _qp.friendTag/* null 匿名朋友也允许 */
+  };
+
+  qpApi("POST","/api/qa/ask",body,function(r){
+    if(r && r.error){
+      _qp.inFlight = false;
+      qpToggleAskBtn(false);
+      qpHideLoading();
+      /* 限速 429 → 友好弹窗 */
+      if(r.quota_used!=null){
+        qpShowQuota(r.quota_used, r.quota_limit||20);
+      }else{
+        qpToast("启动失败:"+r.error,"error");
+        qpShowHero();
+      }
+      return;
+    }
+    qpStartPoll();
+  });
+}
+
+function qpCancel(){
+  qpApi("POST","/api/qa/cancel",{},function(r){
+    if(r && r.error){qpToast(r.error,"error");return}
+    qpToast("已取消","info");
+  });
+}
+
+function qpStartPoll(){
+  if(_qp.pollTimer){clearTimeout(_qp.pollTimer)}
+  _qp.pollTimer = setTimeout(qpPollOnce, 1500);
+}
+
+function qpPollOnce(){
+  qpApi("GET","/api/qa/progress",null,function(r){
+    if(!r){_qp.pollTimer=setTimeout(qpPollOnce,2000);return}
+    if(r.running){
+      qpUpdateProgress(r.progress||{});
+      _qp.pollTimer=setTimeout(qpPollOnce,1500);
+    }else{
+      _qp.pollTimer = null;
+      _qp.inFlight = false;
+      qpHideLoading();
+      qpToggleAskBtn(false);
+      if(r.error){
+        qpToast("问答失败:"+r.error,"error");
+        qpShowHero();
+        return;
+      }
+      if(r.result){
+        if(!r.result.answer){
+          qpToast(r.result.canceled?"已取消":"暂无回答","info");
+          qpShowHero();
+          return;
+        }
+        qpRenderAnswer(r.result);
+      }
+    }
+  });
+}
+
+function qpUpdateProgress(p){
+  var total = p.total_kps || 5;
+  var done = p.processed_kps || 0;
+  var pct = total>0 ? Math.round(done*100/total) : 0;
+  document.getElementById("qpProgressFill").style.width = pct+"%";
+  /* loading-meta: 仅显示阶段名 (不暴露 ai_calls / cost) */
+  var stepNames = {tokenize:"理解问题",retrieve:"检索条款",rerank:"排序依据",
+                    generate:"生成答案",record:"整理输出",starting:"准备中"};
+  var step = stepNames[p.current_step] || "处理中";
+  document.getElementById("qpLoadingMeta").textContent = step+" · "+pct+"%";
+}
+
+function qpShowLoading(){
+  document.getElementById("qpLoading").style.display = "block";
+  document.getElementById("qpProgressFill").style.width = "0%";
+  /* D6: 加载文案轮换 (每 3 秒切一句) */
+  _qp.loadingMsgIdx = 0;
+  qpUpdateLoadingText();
+  if(_qp.loadingMsgTimer){clearInterval(_qp.loadingMsgTimer)}
+  _qp.loadingMsgTimer = setInterval(qpUpdateLoadingText, 3000);
+}
+
+function qpUpdateLoadingText(){
+  var el = document.getElementById("qpLoadingText");
+  if(!el) return;
+  el.style.opacity = "0";
+  setTimeout(function(){
+    el.textContent = QP_LOADING_MESSAGES[_qp.loadingMsgIdx % QP_LOADING_MESSAGES.length];
+    el.style.opacity = "1";
+    _qp.loadingMsgIdx++;
+  }, 200);
+}
+
+function qpHideLoading(){
+  document.getElementById("qpLoading").style.display = "none";
+  if(_qp.loadingMsgTimer){clearInterval(_qp.loadingMsgTimer);_qp.loadingMsgTimer=null}
+}
+
+function qpToggleAskBtn(running){
+  document.getElementById("qpAskBtn").style.display = running?"none":"inline-block";
+  document.getElementById("qpCancelBtn").style.display = running?"inline-block":"none";
+}
+
+function qpHideHero(){document.getElementById("qpHero").style.display="none"}
+function qpShowHero(){document.getElementById("qpHero").style.display="block"}
+function qpHideAnswer(){document.getElementById("qpAnswer").style.display="none"}
+
+/* ================================================================
+ * 渲染答案
+ * ================================================================ */
+function qpRenderAnswer(result){
+  _qp.currentHid = result.history_id || 0;
+  _qp.lastResult = result;
+  var ans = result.answer || {};
+
+  /* 重置反馈按钮 */
+  document.getElementById("qpFbHelpful").classList.remove("active");
+  document.getElementById("qpFbNotHelpful").classList.remove("active-down");
+
+  /* 重置折叠状态(全部折叠,只展开"回答") */
+  qpCollapse("qpPanelEvidence");
+  qpCollapse("qpPanelFollowup");
+  qpCollapse("qpPanelCoverage");
+
+  document.getElementById("qpAnswer").style.display = "block";
+  document.getElementById("qpDirectAnswer").textContent = ans.direct_answer || "(暂无答案)";
+
+  /* 参考来源 */
+  var evIds = ans.evidence_kp_ids || [];
+  document.getElementById("qpEvidenceCount").textContent = evIds.length+" 条";
+  qpRenderEvidence(evIds);
+
+  /* 你可能还想问 */
+  var fps = ans.followup_questions || [];
+  var fpc = document.getElementById("qpPanelFollowup");
+  if(fps.length>0){
+    fpc.style.display = "block";
+    var fl = document.getElementById("qpFollowupList");
+    var h = "";
+    for(var i=0;i<fps.length;i++){
+      var fp = fps[i];
+      var qstr = (fp.q||"").replace(/'/g,"&#39;").replace(/"/g,"&quot;");
+      h += '<div class="qp-followup-item" onclick="qpAskFollowup(\''+qstr+'\')">';
+      h += '<div class="qp-followup-q">'+qpEsc(fp.q||"")+'</div>';
+      if(fp.reason){h += '<div class="qp-followup-r">'+qpEsc(fp.reason)+'</div>'}
+      h += '</div>';
+    }
+    fl.innerHTML = h;
+  }else{
+    fpc.style.display = "none";
+  }
+
+  /* 说明 (补漏提醒) */
+  var gap = ans.coverage_gap || "";
+  var cv = document.getElementById("qpCoverage");
+  if(gap){
+    cv.className = "qp-coverage";
+    cv.textContent = gap;
+  }else{
+    cv.className = "qp-coverage-ok";
+    cv.textContent = "本次回答已覆盖完整";
+  }
+
+  /* 写入 sessionStorage 历史 (D5) */
+  qpSaveHistory(result);
+
+  /* 滚动到答案 */
+  setTimeout(function(){
+    var a = document.getElementById("qpAnswer");
+    if(a && a.scrollIntoView) a.scrollIntoView({behavior:"smooth",block:"start"});
+  }, 100);
+}
+
+function qpRenderEvidence(evIds){
+  var el = document.getElementById("qpEvidenceList");
+  if(!evIds || !evIds.length){
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">本次回答未引用具体条款</div>';
+    _qp.lastEvidenceItems = [];
+    return;
+  }
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">加载来源中...</div>';
+  var loaded = [];
+  var pending = evIds.length;
+  for(var i=0;i<evIds.length;i++){
+    (function(kid,idx){
+      qpApi("GET","/api/knowledge-points/"+kid,null,function(kp){
+        loaded[idx] = {id:kid,kp:kp||{}};
+        pending--;
+        if(pending===0){qpRenderEvidenceCards(loaded)}
+      });
+    })(evIds[i],i);
+  }
+}
+
+function qpRenderEvidenceCards(items){
+  /* 客户视角: 不显示 official/QA/文件名等技术信息
+     只显示: 标题 + 分类(自然语言) + 摘录 */
+  _qp.lastEvidenceItems = items.slice();
+  var h = "";
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    var kp = it.kp || {};
+    if(kp.error){continue}
+    var title = kp.title || "(条款 #"+it.id+")";
+    var category = kp.category || "";
+    var subcat = kp.subcategory || "";
+    var prem = (kp.premium_client===1 || kp.premium_rfp===1);
+    var excerpt = (kp.original_excerpt || "").substring(0,160);
+    h += '<div class="qp-evidence-card">';
+    h += '<div class="qp-evidence-title">'+qpEsc(title)+'</div>';
+    h += '<div class="qp-evidence-meta">';
+    if(category){h += '<span class="meta-tag">'+qpEsc(category)+(subcat?(" / "+qpEsc(subcat)):"")+'</span>'}
+    if(prem){h += '<span class="meta-tag" style="background:#FFF3E0;color:#C97A2C;border-color:#FFE0BC">精品来源</span>'}
+    h += '</div>';
+    if(excerpt){h += '<div class="qp-evidence-excerpt">'+qpEsc(excerpt)+(excerpt.length>=160?"...":"")+'</div>'}
+    h += '</div>';
+  }
+  if(!h){h='<div style="color:var(--text-muted);font-size:12px">来源信息暂时不可用</div>'}
+  document.getElementById("qpEvidenceList").innerHTML = h;
+}
+
+function qpAskFollowup(q){
+  document.getElementById("qpInput").value = q;
+  qpAsk();
+}
+
+/* ================================================================
+ * 折叠面板
+ * ================================================================ */
+function qpToggle(panelId){
+  var p = document.getElementById(panelId);
+  if(!p) return;
+  p.classList.toggle("qp-open");
+}
+
+function qpCollapse(panelId){
+  var p = document.getElementById(panelId);
+  if(!p) return;
+  p.classList.remove("qp-open");
+}
+
+function qpToggleHistory(){
+  document.getElementById("qpHistory").classList.toggle("qp-open");
+}
+
+/* ================================================================
+ * D2: 复制双格式
+ * ================================================================ */
+function qpCopyText(){
+  if(!_qp.lastResult || !_qp.lastResult.answer){
+    qpToast("当前无答案可复制","error");return;
+  }
+  var ans = _qp.lastResult.answer;
+  var text = (ans.direct_answer || "").trim();
+  qpDoCopy(text, "答案文本已复制");
+}
+
+function qpCopyMarkdown(){
+  if(!_qp.lastResult || !_qp.lastResult.answer){
+    qpToast("当前无答案可复制","error");return;
+  }
+  var ans = _qp.lastResult.answer;
+  var md = "## 问题\n\n"+(_qp.lastQuery||"")+"\n\n## 回答\n\n";
+  md += (ans.direct_answer||"").trim()+"\n\n";
+
+  if(_qp.lastEvidenceItems && _qp.lastEvidenceItems.length){
+    md += "## 参考来源\n\n";
+    for(var i=0;i<_qp.lastEvidenceItems.length;i++){
+      var it = _qp.lastEvidenceItems[i];
+      var kp = it.kp || {};
+      if(kp.error) continue;
+      var title = kp.title || "条款 #"+it.id;
+      var category = kp.category || "";
+      var excerpt = (kp.original_excerpt||"").substring(0,200);
+      md += (i+1)+". **"+title+"**";
+      if(category) md += " ("+category+")";
+      md += "\n";
+      if(excerpt) md += "   > "+excerpt+(excerpt.length>=200?"...":"")+"\n";
+      md += "\n";
+    }
+  }
+
+  if(ans.coverage_gap){
+    md += "## 说明\n\n"+ans.coverage_gap+"\n\n";
+  }
+
+  md += "---\n*来源:乡村振兴政策助手*";
+  qpDoCopy(md, "Markdown 格式已复制 (含来源)");
+}
+
+function qpDoCopy(text, successMsg){
+  /* 优先 navigator.clipboard, 降级 document.execCommand */
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){
+      qpToast(successMsg, "success");
+    }, function(){
+      qpFallbackCopy(text, successMsg);
+    });
+  }else{
+    qpFallbackCopy(text, successMsg);
+  }
+}
+
+function qpFallbackCopy(text, successMsg){
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  try{
+    document.execCommand("copy");
+    qpToast(successMsg, "success");
+  }catch(e){
+    qpToast("复制失败,请手动选中复制","error");
+  }
+  document.body.removeChild(ta);
+}
+
+/* ================================================================
+ * 重新生成 / 反馈
+ * ================================================================ */
+function qpRegenerate(){
+  if(!_qp.lastQuery){qpToast("没有可重新生成的问题","error");return}
+  if(_qp.inFlight){qpToast("已有问答在进行","info");return}
+  document.getElementById("qpInput").value = _qp.lastQuery;
+  qpAsk();
+}
+
+function qpFeedback(ftype){
+  if(!_qp.currentHid){qpToast("当前无答案可反馈","error");return}
+  qpApi("POST","/api/qa/feedback",{
+    qa_history_id: _qp.currentHid,
+    feedback_type: ftype
+  },function(r){
+    if(r && r.error){qpToast("反馈失败:"+r.error,"error");return}
+    qpToast("已收到你的反馈,谢谢", "success");
+    if(ftype==="helpful"){
+      document.getElementById("qpFbHelpful").classList.add("active");
+      document.getElementById("qpFbNotHelpful").classList.remove("active-down");
+    }else{
+      document.getElementById("qpFbNotHelpful").classList.add("active-down");
+      document.getElementById("qpFbHelpful").classList.remove("active");
+    }
+  });
+}
+
+function qpOpenComment(){
+  if(!_qp.currentHid){qpToast("当前无答案可反馈","error");return}
+  _qp.feedbackHidForComment = _qp.currentHid;
+  document.getElementById("qpFbText").value = "";
+  document.getElementById("qpFbDialog").classList.add("show");
+  setTimeout(function(){document.getElementById("qpFbText").focus()},100);
+}
+function qpCloseComment(){
+  document.getElementById("qpFbDialog").classList.remove("show");
+  _qp.feedbackHidForComment = 0;
+}
+function qpSubmitComment(){
+  var hid = _qp.feedbackHidForComment;
+  var txt = (document.getElementById("qpFbText").value||"").trim();
+  if(!txt){qpToast("请填写反馈内容","error");return}
+  qpApi("POST","/api/qa/feedback",{
+    qa_history_id: hid,
+    feedback_type: "comment",
+    comment: txt
+  },function(r){
+    if(r && r.error){qpToast("提交失败:"+r.error,"error");return}
+    qpToast("反馈已提交,谢谢", "success");
+    qpCloseComment();
+  });
+}
+
+/* ================================================================
+ * D5: sessionStorage 历史 (关闭标签即清)
+ * ================================================================ */
+function qpSaveHistory(result){
+  var ans = result.answer || {};
+  var item = {
+    hid: result.history_id || 0,
+    q: _qp.lastQuery || "",
+    a: (ans.direct_answer||"").substring(0,200),
+    ts: Date.now()
+  };
+  _qp.history.unshift(item);
+  if(_qp.history.length>20) _qp.history = _qp.history.slice(0,20);
+  try{
+    sessionStorage.setItem("qp_history", JSON.stringify(_qp.history));
+  }catch(e){}
+  qpRenderHistory();
+}
+
+function qpRenderHistory(){
+  var el = document.getElementById("qpHistoryList");
+  var cnt = document.getElementById("qpHistoryCount");
+  cnt.textContent = _qp.history.length+" 条";
+  if(!_qp.history.length){
+    el.innerHTML = '<div class="qp-history-empty">还没有提问记录</div>';
+    return;
+  }
+  var h = "";
+  for(var i=0;i<_qp.history.length;i++){
+    var it = _qp.history[i];
+    var t = qpFormatTime(it.ts);
+    var qstr = (it.q||"").replace(/'/g,"&#39;").replace(/"/g,"&quot;");
+    h += '<div class="qp-history-item" onclick="qpReplayQuery(\''+qstr+'\')">';
+    h += '<span class="qp-history-q">'+qpEsc(it.q||"")+'</span>';
+    h += '<span class="qp-history-time">'+t+'</span>';
+    h += '</div>';
+  }
+  el.innerHTML = h;
+}
+
+function qpReplayQuery(q){
+  document.getElementById("qpInput").value = q;
+  document.getElementById("qpInput").scrollIntoView({behavior:"smooth",block:"start"});
+  document.getElementById("qpInput").focus();
+}
+
+function qpFormatTime(ts){
+  if(!ts) return "";
+  var d = new Date(ts);
+  var hh = d.getHours();
+  var mm = d.getMinutes();
+  return (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
+}
+
+/* ================================================================
+ * 限速 429 提示
+ * ================================================================ */
+function qpShowQuota(used, limit){
+  var msg = "你今天已经问了 <b>"+used+"</b> 个问题,达到当日上限 ("+limit+" 个)。<br>请明天再来,或联系老唐沟通需求。";
+  document.getElementById("qpQuotaMsg").innerHTML = msg;
+  document.getElementById("qpQuotaModal").classList.add("show");
+  qpShowHero();
+}
+function qpCloseQuota(){
+  document.getElementById("qpQuotaModal").classList.remove("show");
+}
+
+/* ================================================================
+ * 工具函数
+ * ================================================================ */
+function qpEsc(s){
+  if(s==null) return "";
+  return String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+
+function qpToast(msg, type){
+  var el = document.getElementById("qpToast");
+  el.textContent = msg;
+  el.className = "qp-toast";
+  if(type==="success") el.className += " toast-success";
+  else if(type==="error") el.className += " toast-error";
+  el.classList.add("show");
+  setTimeout(function(){el.classList.remove("show")}, 2400);
+}
+
+function qpApi(method, url, body, cb){
+  var xhr = new XMLHttpRequest();
+  xhr.open(method, url, true);
+  if(body) xhr.setRequestHeader("Content-Type","application/json");
+  xhr.onreadystatechange = function(){
+    if(xhr.readyState!==4) return;
+    var data = null;
+    try{data = JSON.parse(xhr.responseText||"null")}catch(e){data=null}
+    /* 429 限速专门处理: 把 quota_used / quota_limit 透传给回调 */
+    if(xhr.status===429 && data){
+      cb(data);
+      return;
+    }
+    if(xhr.status>=200 && xhr.status<300){
+      cb(data);
+    }else{
+      cb(data || {error:"网络错误 ("+xhr.status+")"});
+    }
+  };
+  if(body){
+    xhr.send(JSON.stringify(body));
+  }else{
+    xhr.send();
+  }
+}
+
+/* ===== 入口 ===== */
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded", qpInit);
+}else{
+  qpInit();
+}
+</script>
+</body>
+</html>
