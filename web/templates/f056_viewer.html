@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>乡村振兴知识库 — 精品 JSON 查看器 (F056 v1.0)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<!--
+  F056 单 HTML 查看器 (v2.3.2)
+  ----------------------------------------------------------------
+  用途:
+    - 拖 JSON 文件进页面 → 解析 + 校验 v1.0 标准 → 渲染全部 13 字段
+    - 验证 v1.0 JSON 标准能跑通 (老唐"顺手验证"决策)
+    - 朋友试用时:老唐导出 JSON 发微信 → 朋友拖到本文件 → 看到精品包
+  特点:
+    - 零依赖:不引 React / Vue / 任何 CDN
+    - 双击浏览器打开即用,无需 Flask
+    - 立规则 24 严格 ES5
+  v1.0 JSON 标准 (来自 v2.3.1-hotfix1 冻结):
+    顶层: schema_version / publish_id / published_at / scope / count / kps[]
+    每条 kp 嵌套 13 字段:
+      kp_id / title / excerpt / content (object) / category (object)
+      quality (object) / premium (object) / source (object)
+      timestamps (object) / annotations (array) / tags (array)
+      access_level / monetize_tier (deprecated, 用 premium.tier)
+-->
+<style>
+:root{
+  --primary:#2D7B5F;
+  --bg:#F5F2ED;
+  --card:#fff;
+  --text:#1A1A1A;
+  --text-secondary:#555;
+  --text-muted:#888;
+  --border:#E5E0D8;
+  --info:#3B82A8;
+  --info-bg:#E0F4FF;
+  --success:#3D8B62;
+  --warning:#C97A2C;
+  --warning-bg:#FFF3E0;
+  --shadow:0 1px 3px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+body{
+  font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;margin:0;
+  -webkit-font-smoothing:antialiased
+}
+.fv-container{display:flex;height:100vh;overflow:hidden}
+.fv-header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 20px;
+  display:flex;align-items:center;gap:16px;box-shadow:var(--shadow);z-index:10;flex-wrap:wrap}
+.fv-header-title{font-weight:700;font-size:16px;color:var(--primary)}
+.fv-meta-pills{display:flex;gap:8px;flex-wrap:wrap}
+.fv-pill{font-size:11px;padding:3px 10px;border-radius:12px;background:var(--bg);color:var(--text-secondary)}
+.fv-pill-ok{background:#E8F5E9;color:var(--success)}
+.fv-pill-warn{background:var(--warning-bg);color:var(--warning)}
+.fv-pill-error{background:#FFEBEE;color:#C62828}
+.fv-search{flex:1;max-width:300px;margin-left:auto}
+.fv-search input{width:100%;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:var(--bg)}
+.fv-search input:focus{outline:none;border-color:var(--primary)}
+.fv-body{display:flex;flex:1;overflow:hidden}
+.fv-list{width:340px;background:var(--card);border-right:1px solid var(--border);overflow-y:auto;padding:8px}
+.fv-list-item{padding:10px 12px;margin-bottom:4px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text);transition:all .15s}
+.fv-list-item:hover{background:var(--bg)}
+.fv-list-item.active{background:var(--primary);color:#fff}
+.fv-list-item.active .fv-list-meta{color:rgba(255,255,255,.85)}
+.fv-list-title{font-weight:500;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fv-list-meta{font-size:10px;color:var(--text-muted);display:flex;gap:6px}
+.fv-list-meta .lm-tag{padding:1px 5px;border-radius:6px;background:var(--bg);color:var(--text-secondary)}
+.fv-list-item.active .lm-tag{background:rgba(255,255,255,.2);color:#fff}
+.fv-list-meta .lm-prem{background:var(--warning-bg);color:var(--warning);font-weight:600}
+.fv-detail{flex:1;overflow-y:auto;padding:24px 32px;background:var(--bg)}
+.fv-detail h2{margin:0 0 8px 0;font-size:18px;color:var(--text)}
+.fv-detail-meta{font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap}
+.fv-section{background:var(--card);border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:var(--shadow)}
+.fv-section-title{font-weight:600;font-size:13px;color:var(--primary);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.fv-field{margin-bottom:8px;display:flex;font-size:13px}
+.fv-field-key{font-weight:500;color:var(--text-secondary);min-width:140px;flex-shrink:0}
+.fv-field-val{color:var(--text);flex:1;word-break:break-word}
+.fv-field-val pre{margin:0;white-space:pre-wrap;font-family:inherit}
+.fv-field-list{margin:0;padding-left:18px}
+.fv-field-list li{margin-bottom:4px}
+.fv-tag{display:inline-block;padding:2px 8px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:11px;margin:2px 4px 2px 0}
+.fv-tag-prem{background:var(--warning-bg);color:var(--warning);font-weight:600}
+.fv-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-muted);text-align:center;padding:40px}
+.fv-empty-title{font-size:24px;color:var(--primary);margin-bottom:12px;font-weight:300}
+.fv-drop-zone{border:2px dashed var(--border);border-radius:12px;padding:80px 40px;cursor:pointer;
+  transition:all .2s;background:var(--card);max-width:480px;text-align:center}
+.fv-drop-zone:hover,.fv-drop-zone.dragover{border-color:var(--primary);background:#f0f8f4}
+.fv-drop-zone-icon{font-size:48px;color:var(--text-muted);margin-bottom:16px;font-weight:200}
+.fv-drop-zone-text{font-size:14px;color:var(--text-secondary);margin-bottom:6px}
+.fv-drop-zone-hint{font-size:11px;color:var(--text-muted)}
+.fv-validation-errors{background:#FFEBEE;border:1px solid #FFCDD2;border-radius:8px;padding:10px 14px;margin:10px 0;color:#C62828;font-size:12px}
+.fv-validation-errors strong{display:block;margin-bottom:4px}
+.fv-validation-errors ul{margin:4px 0 0 18px;padding:0}
+</style>
+</head>
+<body>
+<div class="fv-container">
+  <div style="display:flex;flex-direction:column;flex:1;height:100vh">
+
+    <div class="fv-header">
+      <div class="fv-header-title">F056 精品 JSON 查看器</div>
+      <div class="fv-meta-pills" id="fvMetaPills"></div>
+      <div class="fv-search" id="fvSearchWrap" style="display:none">
+        <input type="text" id="fvSearch" placeholder="搜索标题/分类/标签..." oninput="fvFilterList()">
+      </div>
+      <input type="file" id="fvFileInput" accept=".json,application/json" style="display:none" onchange="fvHandleFileInput(event)">
+      <button id="fvLoadBtn" onclick="document.getElementById('fvFileInput').click()" style="display:none;padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:12px;cursor:pointer;color:var(--primary)">换一个 JSON</button>
+    </div>
+
+    <div class="fv-body">
+      <div id="fvListPane" class="fv-list" style="display:none"></div>
+      <div id="fvDetailPane" class="fv-detail">
+        <div class="fv-empty" id="fvEmpty">
+          <div class="fv-drop-zone" id="fvDropZone" onclick="document.getElementById('fvFileInput').click()">
+            <div class="fv-drop-zone-icon">⬇</div>
+            <div class="fv-drop-zone-text">拖 JSON 文件到这里, 或点击选择</div>
+            <div class="fv-drop-zone-hint">支持 v1.0 精品包 JSON (来自 v2.3.1+ 导出)</div>
+          </div>
+          <div id="fvValidationErrors"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   F056 单 HTML 查看器 主 JS (立规则 24 严格 ES5)
+   ================================================================ */
+var FV_STATE={
+  data:null,
+  filtered:null,
+  currentIdx:-1,
+  filterText:""
+};
+
+function esc(s){if(s===null||s===undefined)return"";var d=document.createElement("div");d.textContent=String(s);return d.innerHTML}
+
+/* ----------------------------------------------------------------
+   File 拖拽 + 选择
+---------------------------------------------------------------- */
+function fvHandleFileInput(e){
+  var f=e.target.files&&e.target.files[0];
+  if(!f)return;
+  fvReadFile(f);
+}
+
+function fvReadFile(f){
+  if(!f.name.toLowerCase().match(/\.json$/)){
+    fvShowError(["文件必须是 .json 后缀"]);
+    return;
+  }
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var text=ev.target.result;
+    try{
+      var data=JSON.parse(text);
+      fvLoadData(data);
+    }catch(err){
+      fvShowError(["JSON 解析失败: "+err.message]);
+    }
+  };
+  reader.onerror=function(){fvShowError(["文件读取失败"])};
+  reader.readAsText(f,"UTF-8");
+}
+
+/* drag-drop 整页处理 */
+document.addEventListener("dragover",function(e){
+  e.preventDefault();
+  var dz=document.getElementById("fvDropZone");
+  if(dz)dz.classList.add("dragover");
+});
+document.addEventListener("dragleave",function(e){
+  var dz=document.getElementById("fvDropZone");
+  if(dz)dz.classList.remove("dragover");
+});
+document.addEventListener("drop",function(e){
+  e.preventDefault();
+  var dz=document.getElementById("fvDropZone");
+  if(dz)dz.classList.remove("dragover");
+  var dt=e.dataTransfer;
+  if(!dt||!dt.files||!dt.files.length)return;
+  fvReadFile(dt.files[0]);
+});
+
+/* ----------------------------------------------------------------
+   v1.0 标准校验
+---------------------------------------------------------------- */
+function fvValidate(data){
+  var errors=[];
+  if(typeof data!=="object"||data===null){errors.push("E001 顶层不是 object");return errors}
+  if(!data.schema_version){errors.push("E002 缺顶层 schema_version (期望 'v1.0' 或类似)")}
+  if(!data.publish_id){errors.push("E003 缺顶层 publish_id")}
+  if(!data.published_at){errors.push("E004 缺顶层 published_at")}
+  if(typeof data.count==="undefined"){errors.push("E005 缺顶层 count")}
+  if(!Array.isArray(data.kps)){errors.push("E006 顶层 kps 不是 array");return errors}
+  /* 每条 kp 抽查关键字段 */
+  for(var i=0;i<data.kps.length;i++){
+    var kp=data.kps[i];
+    var prefix="kps["+i+"] ";
+    if(typeof kp!=="object"||kp===null){errors.push(prefix+"E010 不是 object");continue}
+    if(typeof kp.kp_id==="undefined"){errors.push(prefix+"E011 缺 kp_id")}
+    if(typeof kp.title==="undefined"){errors.push(prefix+"E012 缺 title")}
+    if(typeof kp.excerpt==="undefined"){errors.push(prefix+"E013 缺 excerpt")}
+    /* 5 个嵌套对象 */
+    var nested=["content","category","quality","premium","source","timestamps"];
+    for(var j=0;j<nested.length;j++){
+      var k=nested[j];
+      if(typeof kp[k]==="undefined"){errors.push(prefix+"E020 缺嵌套 "+k);continue}
+      if(typeof kp[k]!=="object"||kp[k]===null){errors.push(prefix+"E021 "+k+" 不是 object")}
+    }
+    /* 数组字段 */
+    if(typeof kp.annotations!=="undefined"&&!Array.isArray(kp.annotations)){
+      errors.push(prefix+"E022 annotations 不是 array")
+    }
+    if(typeof kp.tags!=="undefined"&&!Array.isArray(kp.tags)){
+      errors.push(prefix+"E023 tags 不是 array")
+    }
+  }
+  /* count 字段一致性 */
+  if(Array.isArray(data.kps)&&typeof data.count==="number"&&data.count!==data.kps.length){
+    errors.push("E027 count("+data.count+") 与 kps.length("+data.kps.length+") 不一致");
+  }
+  return errors;
+}
+
+function fvShowError(errors){
+  var c=document.getElementById("fvValidationErrors");
+  if(!c)return;
+  var h='<div class="fv-validation-errors"><strong>解析或校验失败</strong><ul>';
+  for(var i=0;i<errors.length;i++){h+='<li>'+esc(errors[i])+'</li>'}
+  h+='</ul></div>';
+  c.innerHTML=h;
+}
+
+/* ----------------------------------------------------------------
+   加载 JSON 数据
+---------------------------------------------------------------- */
+function fvLoadData(data){
+  var errors=fvValidate(data);
+  if(errors.length>0){
+    fvShowError(errors);
+    /* 严重错误时,不渲染列表 */
+    if(!Array.isArray(data.kps)){return}
+  }
+  FV_STATE.data=data;
+  FV_STATE.filtered=data.kps||[];
+  FV_STATE.currentIdx=-1;
+  FV_STATE.filterText="";
+
+  document.getElementById("fvEmpty").style.display="none";
+  document.getElementById("fvListPane").style.display="block";
+  document.getElementById("fvSearchWrap").style.display="block";
+  document.getElementById("fvLoadBtn").style.display="inline-block";
+
+  fvRenderHeader(errors);
+  fvRenderList();
+  if((data.kps||[]).length>0){fvSelect(0)}
+}
+
+function fvRenderHeader(validationErrors){
+  var d=FV_STATE.data;
+  var pills=document.getElementById("fvMetaPills");
+  var h="";
+  h+='<span class="fv-pill">schema: '+esc(d.schema_version||"-")+'</span>';
+  h+='<span class="fv-pill">publish_id: '+esc(d.publish_id||"-")+'</span>';
+  h+='<span class="fv-pill">'+esc((d.published_at||"").substring(0,16))+'</span>';
+  h+='<span class="fv-pill">scope: '+esc(d.scope||"all")+'</span>';
+  h+='<span class="fv-pill">count: '+(d.count||0)+'</span>';
+  if(validationErrors&&validationErrors.length>0){
+    h+='<span class="fv-pill fv-pill-error" title="'+esc(validationErrors.join(" / "))+'">'+
+       '校验告警 '+validationErrors.length+' 条</span>';
+  }else{
+    h+='<span class="fv-pill fv-pill-ok">v1.0 标准 OK</span>';
+  }
+  pills.innerHTML=h;
+}
+
+/* ----------------------------------------------------------------
+   列表渲染 + 搜索过滤
+---------------------------------------------------------------- */
+function fvRenderList(){
+  var pane=document.getElementById("fvListPane");
+  var arr=FV_STATE.filtered||[];
+  if(!arr.length){
+    pane.innerHTML='<div style="padding:20px;color:var(--text-muted);font-size:13px;text-align:center">无匹配条目</div>';
+    return;
+  }
+  var h="";
+  for(var i=0;i<arr.length;i++){
+    var kp=arr[i];
+    var cat=(kp.category&&kp.category.path)||(kp.category&&kp.category.name)||"";
+    var prem=kp.premium||{};
+    var isPrem=prem.is_client||prem.is_rfp||prem.tier;
+    var actCls=(i===FV_STATE.currentIdx)?" active":"";
+    h+='<div class="fv-list-item'+actCls+'" onclick="fvSelect('+i+')">';
+    h+='<div class="fv-list-title">#'+esc(kp.kp_id||"?")+' '+esc(kp.title||"(无标题)")+'</div>';
+    h+='<div class="fv-list-meta">';
+    if(cat){h+='<span class="lm-tag">'+esc(cat)+'</span>'}
+    if(isPrem){
+      var t=prem.tier||(prem.is_client?"客户型":"投标型");
+      h+='<span class="lm-tag lm-prem">'+esc(t)+'</span>';
+    }
+    h+='</div></div>';
+  }
+  pane.innerHTML=h;
+}
+
+function fvFilterList(){
+  var input=document.getElementById("fvSearch");
+  var q=(input.value||"").toLowerCase().trim();
+  FV_STATE.filterText=q;
+  if(!FV_STATE.data||!FV_STATE.data.kps){return}
+  if(!q){
+    FV_STATE.filtered=FV_STATE.data.kps;
+  }else{
+    FV_STATE.filtered=[];
+    for(var i=0;i<FV_STATE.data.kps.length;i++){
+      var kp=FV_STATE.data.kps[i];
+      var hay=(kp.title||"")+" "+(kp.excerpt||"")+" "+
+              ((kp.category&&kp.category.path)||"")+" "+
+              ((kp.tags||[]).join(" "));
+      if(hay.toLowerCase().indexOf(q)>=0){
+        FV_STATE.filtered.push(kp);
+      }
+    }
+  }
+  FV_STATE.currentIdx=-1;
+  fvRenderList();
+  if(FV_STATE.filtered.length>0)fvSelect(0);
+  else document.getElementById("fvDetailPane").innerHTML='<div class="fv-empty"><div style="color:var(--text-muted)">无匹配条目</div></div>';
+}
+
+/* ----------------------------------------------------------------
+   详情区:13 字段渲染
+---------------------------------------------------------------- */
+function fvSelect(idx){
+  FV_STATE.currentIdx=idx;
+  var kp=FV_STATE.filtered[idx];
+  if(!kp)return;
+  fvRenderList();
+  fvRenderDetail(kp);
+}
+
+function fvRenderDetail(kp){
+  var pane=document.getElementById("fvDetailPane");
+  var h="";
+  h+='<h2>#'+esc(kp.kp_id)+' '+esc(kp.title||"(无标题)")+'</h2>';
+
+  /* 元信息条 */
+  h+='<div class="fv-detail-meta">';
+  if(kp.access_level){h+='<span>access_level: '+esc(kp.access_level)+'</span>'}
+  if(kp.monetize_tier){h+='<span>monetize_tier: '+esc(kp.monetize_tier)+'</span>'}
+  h+='</div>';
+
+  /* 1. excerpt */
+  if(kp.excerpt){
+    h+=fvSection("摘要 (excerpt)","");
+    h+='<div class="fv-field-val"><pre>'+esc(kp.excerpt)+'</pre></div></div>';
+  }
+
+  /* 2. content (object) */
+  if(kp.content){
+    h+=fvSection("正文 (content)","");
+    h+=fvObjectFields(kp.content);
+    h+='</div>';
+  }
+
+  /* 3. category (object) */
+  if(kp.category){
+    h+=fvSection("分类 (category)","");
+    h+=fvObjectFields(kp.category);
+    h+='</div>';
+  }
+
+  /* 4. quality (object) */
+  if(kp.quality){
+    h+=fvSection("质量评估 (quality)","");
+    h+=fvObjectFields(kp.quality);
+    h+='</div>';
+  }
+
+  /* 5. premium (object) */
+  if(kp.premium){
+    h+=fvSection("精品标识 (premium)","");
+    h+=fvObjectFields(kp.premium);
+    h+='</div>';
+  }
+
+  /* 6. source (object) */
+  if(kp.source){
+    h+=fvSection("来源 (source)","");
+    h+=fvObjectFields(kp.source);
+    h+='</div>';
+  }
+
+  /* 7. timestamps (object) */
+  if(kp.timestamps){
+    h+=fvSection("时间戳 (timestamps)","");
+    h+=fvObjectFields(kp.timestamps);
+    h+='</div>';
+  }
+
+  /* 8. tags (array) */
+  if(kp.tags&&kp.tags.length){
+    h+=fvSection("标签 (tags)",kp.tags.length+" 个");
+    h+='<div>';
+    for(var i=0;i<kp.tags.length;i++){
+      h+='<span class="fv-tag">'+esc(kp.tags[i])+'</span>';
+    }
+    h+='</div></div>';
+  }
+
+  /* 9. annotations (array) */
+  if(kp.annotations&&kp.annotations.length){
+    h+=fvSection("专家注解 (annotations)",kp.annotations.length+" 条");
+    h+='<ul class="fv-field-list">';
+    for(var j=0;j<kp.annotations.length;j++){
+      var ann=kp.annotations[j];
+      if(typeof ann==="object"&&ann!==null){
+        h+='<li>';
+        if(ann.author){h+='<strong>'+esc(ann.author)+'</strong>: '}
+        h+=esc(ann.content||ann.text||JSON.stringify(ann));
+        if(ann.created_at){h+=' <span style="color:var(--text-muted);font-size:11px">('+esc(ann.created_at)+')</span>'}
+        h+='</li>';
+      }else{
+        h+='<li>'+esc(String(ann))+'</li>';
+      }
+    }
+    h+='</ul></div>';
+  }
+
+  pane.innerHTML=h;
+  pane.scrollTop=0;
+}
+
+function fvSection(title,subtitle){
+  var sub=subtitle?(' <span style="font-size:11px;color:var(--text-muted);font-weight:400">('+esc(subtitle)+')</span>'):'';
+  return '<div class="fv-section"><div class="fv-section-title">'+esc(title)+sub+'</div>';
+}
+
+function fvObjectFields(obj){
+  if(!obj||typeof obj!=="object")return '<div style="color:var(--text-muted)">(空)</div>';
+  var h="";
+  for(var k in obj){
+    if(!obj.hasOwnProperty(k))continue;
+    var v=obj[k];
+    var dispV;
+    if(v===null||v===undefined){dispV='<span style="color:var(--text-muted)">null</span>'}
+    else if(typeof v==="boolean"){dispV='<span style="color:'+(v?"var(--success)":"var(--text-muted)")+'">'+v+'</span>'}
+    else if(Array.isArray(v)){
+      if(!v.length){dispV='<span style="color:var(--text-muted)">[]</span>'}
+      else{
+        var inner="";
+        for(var idx=0;idx<v.length;idx++){
+          inner+='<span class="fv-tag">'+esc(typeof v[idx]==="object"?JSON.stringify(v[idx]):String(v[idx]))+'</span>';
+        }
+        dispV=inner;
+      }
+    }
+    else if(typeof v==="object"){dispV='<pre style="margin:0;font-size:12px;color:var(--text-secondary)">'+esc(JSON.stringify(v,null,2))+'</pre>'}
+    else{dispV=esc(String(v))}
+    h+='<div class="fv-field"><div class="fv-field-key">'+esc(k)+'</div><div class="fv-field-val">'+dispV+'</div></div>';
+  }
+  return h;
+}
+</script>
+</body>
+</html>

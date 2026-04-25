@@ -718,6 +718,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="review" onclick="switchTab('review')">知识审核</button>
   <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">系统管理</button>
+  <button class="tab-btn" data-tab="qa" onclick="switchTab('qa')">智能问答 <span id="qaModeBadge" style="display:none;font-size:10px;padding:2px 6px;border-radius:8px;background:var(--info-bg);color:var(--info);margin-left:4px"></span></button>
 </div>
 
 <!-- ==================== Tab 1: Knowledge Review ==================== -->
@@ -1026,6 +1027,138 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   </div>
 </div>
 </div>
+
+<!-- ==================== Tab 3: Smart QA (v2.3.2) ==================== -->
+<style>
+.qa-wrap{max-width:880px;margin:20px auto;padding:0 20px}
+.qa-header{font-size:18px;font-weight:600;color:var(--primary);margin-bottom:16px}
+.qa-input-area{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
+.qa-input{width:100%;min-height:72px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);background:var(--bg);resize:vertical;font-family:inherit;line-height:1.6;box-sizing:border-box}
+.qa-input:focus{outline:none;border-color:var(--primary)}
+.qa-action-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.qa-meta-toggle{font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer}
+.qa-meta-toggle input{margin:0}
+.qa-progress{display:none;background:var(--bg);border-radius:8px;padding:10px 14px;margin-bottom:14px;border:1px solid var(--border)}
+.qa-progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:6px 0}
+.qa-progress-fill{height:100%;background:var(--primary);transition:width .3s ease}
+.qa-progress-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px}
+.qa-answer{display:none}
+.qa-panel{background:var(--card);border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.qa-panel-title{font-weight:600;font-size:13px;color:var(--primary);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.qa-panel-title .qa-badge{font-size:10px;font-weight:400;padding:2px 8px;border-radius:8px;background:var(--info-bg);color:var(--info)}
+.qa-direct{font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap}
+.qa-evidence-grid{display:flex;flex-direction:column;gap:8px}
+.qa-evidence-card{background:var(--bg);border-radius:8px;padding:10px 12px;border-left:3px solid var(--primary);cursor:pointer;transition:var(--transition)}
+.qa-evidence-card:hover{background:var(--border)}
+.qa-evidence-title{font-weight:600;font-size:13px;color:var(--text);margin-bottom:4px}
+.qa-evidence-meta{font-size:11px;color:var(--text-muted);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.qa-evidence-meta .meta-tag{padding:1px 6px;border-radius:6px;background:var(--card)}
+.qa-evidence-meta .meta-prem{background:#FFF3E0;color:#C97A2C;font-weight:600}
+.qa-evidence-excerpt{font-size:12px;color:var(--text-secondary);line-height:1.5}
+.qa-followup{display:flex;flex-direction:column;gap:6px}
+.qa-followup-item{background:var(--bg);border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;color:var(--text);transition:var(--transition);border:1px solid transparent}
+.qa-followup-item:hover{background:var(--card);border-color:var(--primary)}
+.qa-followup-item .fu-q{font-weight:500;color:var(--primary);margin-bottom:2px}
+.qa-followup-item .fu-r{font-size:11px;color:var(--text-muted)}
+.qa-coverage-gap{font-size:13px;color:var(--text-secondary);background:#FFF8E5;border-left:3px solid #C97A2C;padding:10px 14px;border-radius:0 8px 8px 0;line-height:1.6}
+.qa-coverage-gap-empty{font-size:12px;color:var(--success);font-style:italic}
+.qa-feedback-bar{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.qa-fb-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:12px;cursor:pointer;transition:var(--transition);color:var(--text)}
+.qa-fb-btn:hover{border-color:var(--primary);color:var(--primary)}
+.qa-fb-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.qa-fb-btn.active-down{background:#C97A2C;color:#fff;border-color:#C97A2C}
+.qa-history-section{background:var(--card);border-radius:12px;padding:14px 18px;margin-top:16px;box-shadow:var(--shadow)}
+.qa-history-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:14px;font-weight:600;color:var(--primary)}
+.qa-history-list{display:none;margin-top:10px;flex-direction:column;gap:6px}
+.qa-history-item{background:var(--bg);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.qa-history-item:hover{background:var(--border)}
+.qa-history-q{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qa-history-meta{font-size:10px;color:var(--text-muted);flex-shrink:0}
+.qa-history-source-main{color:var(--success)}
+.qa-history-source-r1{color:var(--info)}
+.qa-history-source-rule{color:#C97A2C}
+.qa-friend-banner{background:#E0F4FF;border-left:4px solid var(--info);color:var(--info);padding:8px 14px;border-radius:0 8px 8px 0;font-size:12px;margin-bottom:14px;font-weight:500}
+.qa-empty{text-align:center;color:var(--text-muted);padding:40px 0;font-size:14px}
+</style>
+
+<div id="tabQa" style="display:none">
+  <div class="qa-wrap">
+    <div class="qa-header">智能问答 <span style="font-size:12px;color:var(--text-muted);font-weight:400">— 基于本地精品池 + DeepSeek V3</span></div>
+
+    <div id="qaFriendBanner" class="qa-friend-banner" style="display:none">朋友试用模式: 老唐发给你的链接, 隐藏了内部元数据, 只显示答案与出处</div>
+
+    <div class="qa-input-area">
+      <textarea id="qaInput" class="qa-input" placeholder="请输入问题, 例如: 全域土地综合整治怎么搞? 试点县申报需要哪些材料?"></textarea>
+      <div class="qa-action-row">
+        <button class="btn btn-success" id="qaAskBtn" onclick="qaDoAsk()">提问</button>
+        <button class="btn" id="qaCancelBtn" onclick="qaDoCancel()" style="display:none;background:#C97A2C;color:#fff">取消</button>
+        <label class="qa-meta-toggle" id="qaTestLabel">
+          <input type="checkbox" id="qaTestQuery"> 标记为我自己测试 (不写入埋点)
+        </label>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:auto">单次约 10-30 秒</span>
+      </div>
+    </div>
+
+    <div id="qaProgress" class="qa-progress">
+      <div style="font-size:13px;color:var(--text);font-weight:500" id="qaProgressStep">分词中...</div>
+      <div class="qa-progress-bar"><div class="qa-progress-fill" id="qaProgressFill" style="width:0%"></div></div>
+      <div class="qa-progress-meta">
+        <span id="qaProgressMsg"></span>
+        <span><span id="qaProgressCalls">AI 调用 0</span> · <span id="qaProgressCost">0.0000 元</span></span>
+      </div>
+    </div>
+
+    <div id="qaAnswer" class="qa-answer">
+      <div class="qa-panel" id="qaPanelDirect">
+        <div class="qa-panel-title">板块 1 · 直答 <span class="qa-badge" id="qaSourceBadge">main</span></div>
+        <div class="qa-direct" id="qaDirectAnswer"></div>
+      </div>
+
+      <div class="qa-panel" id="qaPanelEvidence">
+        <div class="qa-panel-title">板块 2 · 依据 <span class="qa-badge" id="qaEvidenceCount">0 条</span></div>
+        <div class="qa-evidence-grid" id="qaEvidenceList"></div>
+      </div>
+
+      <div class="qa-panel" id="qaPanelFollowup" style="display:none">
+        <div class="qa-panel-title">板块 3 · 延伸思考</div>
+        <div class="qa-followup" id="qaFollowupList"></div>
+      </div>
+
+      <div class="qa-panel" id="qaPanelCoverage">
+        <div class="qa-panel-title">板块 4 · 补漏提醒 <span class="qa-badge">诚信兜底</span></div>
+        <div id="qaCoverageGap"></div>
+      </div>
+
+      <div class="qa-feedback-bar" id="qaFeedbackBar">
+        <button class="qa-fb-btn" id="qaFbHelpful" onclick="qaDoFeedback('helpful')">👍 有用</button>
+        <button class="qa-fb-btn" id="qaFbNotHelpful" onclick="qaDoFeedback('not_helpful')">👎 没用</button>
+        <button class="qa-fb-btn" id="qaFbComment" onclick="qaOpenCommentDlg()">💬 反馈一句</button>
+      </div>
+    </div>
+
+    <div id="qaEmpty" class="qa-empty">输入一个问题, 看看本地精品池能给出什么答案</div>
+
+    <div class="qa-history-section">
+      <div class="qa-history-header" onclick="qaToggleHistory()">
+        <span>最近问答历史 <span id="qaHistoryCount" style="font-size:11px;color:var(--text-muted);font-weight:400"></span></span>
+        <span id="qaHistoryToggleIcon" style="font-size:12px;color:var(--text-muted)">展开 ▼</span>
+      </div>
+      <div id="qaHistoryList" class="qa-history-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== QA Comment Dialog ==================== -->
+<div class="modal-overlay" id="qaCommentDlg"><div class="modal" style="width:480px">
+  <div class="modal-header">反馈一句</div>
+  <div class="modal-body">
+    <textarea id="qaCommentText" style="width:100%;min-height:90px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;box-sizing:border-box;background:var(--bg);color:var(--text)" placeholder="对这个回答你想说什么? (将被老唐看到)"></textarea>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="qaCloseCommentDlg()">取消</button>
+    <button class="btn btn-success" onclick="qaSubmitComment()">提交</button>
+  </div>
+</div></div>
 
 <!-- ==================== Modals (shared) ==================== -->
 <div class="modal-overlay" id="editModal"><div class="modal" style="width:740px">
@@ -1451,11 +1584,13 @@ function switchTab(tab){
   currentTab=tab;
   document.getElementById("tabReview").style.display=tab==="review"?"":"none";
   document.getElementById("tabAdmin").style.display=tab==="admin"?"":"none";
+  document.getElementById("tabQa").style.display=tab==="qa"?"":"none";
   var btns=document.querySelectorAll(".tab-btn");
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
   if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();premiumCheckRunningTask();_renderE2eBadge()}
+  if(tab==="qa"){qaInitOnEnter();qaCheckRunningTask()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
@@ -4084,6 +4219,374 @@ function doE2eExportDiagnosis(){
     try{document.body.removeChild(a)}catch(e){}
   },200);
   showToast("诊断包下载中...","success");
+}
+
+/* ================================================================
+   v2.3.2 F055 智能问答 Tab 3 JS 模块
+   --------------------------------------------------------------
+   状态:
+     _qaState.pollTimer    setTimeout 句柄
+     _qaState.userMode     'self' | 'friend' (URL ?mode=friend)
+     _qaState.currentHid   当前显示的回答 history_id
+   契约:
+     POST /api/qa/ask          {query, mode, is_test_query} -> 202
+     GET  /api/qa/progress     -> {running, progress, result, error}
+     POST /api/qa/cancel
+     GET  /api/qa/history?limit=20&mode=&exclude_test=0
+     POST /api/qa/feedback     {qa_history_id, feedback_type, comment}
+     GET  /api/qa/stats
+   立规则 24 严格 ES5: 无 emoji 字面量(用文字)/无箭头/无模板字符串/无 async
+================================================================ */
+var _qaState={pollTimer:null,userMode:"self",currentHid:0,inFlight:false,feedbackHid:0};
+
+function qaInitOnEnter(){
+  /* 解析 URL ?mode=friend, 决定模式与隐藏元数据 */
+  var qs=window.location.search||"";
+  var m=qs.match(/[?&]mode=(friend|self)/);
+  var mode=(m&&m[1])||"self";
+  _qaState.userMode=mode;
+  var badge=document.getElementById("qaModeBadge");
+  var banner=document.getElementById("qaFriendBanner");
+  var testLabel=document.getElementById("qaTestLabel");
+  if(mode==="friend"){
+    badge.textContent="朋友试用";
+    badge.style.display="inline-block";
+    banner.style.display="block";
+    if(testLabel)testLabel.style.display="none";
+  }else{
+    badge.style.display="none";
+    banner.style.display="none";
+    if(testLabel)testLabel.style.display="";
+  }
+  qaLoadHistory();
+}
+
+function qaDoAsk(){
+  var input=document.getElementById("qaInput");
+  var query=(input.value||"").trim();
+  if(!query){showToast("请先输入问题","error");return}
+  if(query.length>500){showToast("问题超长(>500 字)","error");return}
+  if(_qaState.inFlight){showToast("已有问答在进行,请等待或取消","info");return}
+  var isTest=0;
+  var tcb=document.getElementById("qaTestQuery");
+  if(tcb&&tcb.checked&&_qaState.userMode==="self")isTest=1;
+
+  _qaState.inFlight=true;
+  document.getElementById("qaAskBtn").style.display="none";
+  document.getElementById("qaCancelBtn").style.display="inline-block";
+  document.getElementById("qaEmpty").style.display="none";
+  document.getElementById("qaAnswer").style.display="none";
+  qaShowProgress({current_step:"starting",message:"正在启动...",
+                   processed_kps:0,total_kps:5,
+                   ai_calls_count:0,cost_estimate_cny:0});
+
+  apiPost("/api/qa/ask",{query:query,mode:_qaState.userMode,
+                          is_test_query:isTest}).then(function(r){
+    if(r&&r.error){
+      _qaResetUi();
+      var d=r.details?(": "+r.details.join("; ")):"";
+      showToast("启动失败: "+r.error+d,"error");
+      return;
+    }
+    qaStartPolling();
+  });
+}
+
+function qaDoCancel(){
+  apiPost("/api/qa/cancel",{}).then(function(r){
+    if(r&&r.error){showToast(r.error,"error");return}
+    showToast("已发送取消请求","info");
+  });
+}
+
+function qaCheckRunningTask(){
+  /* 进入 Tab 时复活轮询(对齐 qcCheckRunningTask 模式) */
+  apiGet("/api/qa/progress").then(function(r){
+    if(!r)return;
+    if(r.running){
+      _qaState.inFlight=true;
+      document.getElementById("qaAskBtn").style.display="none";
+      document.getElementById("qaCancelBtn").style.display="inline-block";
+      document.getElementById("qaEmpty").style.display="none";
+      qaShowProgress(r.progress||{});
+      qaStartPolling();
+    }
+  });
+}
+
+function qaStartPolling(){
+  if(_qaState.pollTimer){clearTimeout(_qaState.pollTimer)}
+  _qaState.pollTimer=setTimeout(qaPollOnce,1500);
+}
+
+function qaPollOnce(){
+  apiGet("/api/qa/progress").then(function(r){
+    if(!r){_qaState.pollTimer=setTimeout(qaPollOnce,2000);return}
+    if(r.running){
+      qaShowProgress(r.progress||{});
+      _qaState.pollTimer=setTimeout(qaPollOnce,1500);
+    }else{
+      _qaState.pollTimer=null;
+      _qaState.inFlight=false;
+      qaHideProgress();
+      document.getElementById("qaAskBtn").style.display="inline-block";
+      document.getElementById("qaCancelBtn").style.display="none";
+      if(r.error){showToast("问答失败: "+r.error,"error");return}
+      if(r.result){qaRenderAnswer(r.result);qaLoadHistory()}
+    }
+  });
+}
+
+function qaShowProgress(p){
+  var c=document.getElementById("qaProgress");
+  c.style.display="block";
+  var stepNames={tokenize:"分词中",retrieve:"检索中",rerank:"重排序中",
+                  generate:"生成回答中",record:"记录中",
+                  starting:"启动中"};
+  var step=stepNames[p.current_step]||p.current_step||"处理中";
+  document.getElementById("qaProgressStep").textContent=step+"...";
+  document.getElementById("qaProgressMsg").textContent=p.message||"";
+  var total=p.total_kps||5,done=p.processed_kps||0;
+  var pct=total>0?Math.round(done*100/total):0;
+  document.getElementById("qaProgressFill").style.width=pct+"%";
+  document.getElementById("qaProgressCalls").textContent="AI 调用 "+(p.ai_calls_count||0);
+  var cost=p.cost_estimate_cny||0;
+  document.getElementById("qaProgressCost").textContent=cost.toFixed(4)+" 元";
+}
+
+function qaHideProgress(){document.getElementById("qaProgress").style.display="none"}
+
+function qaRenderAnswer(result){
+  if(!result.answer){
+    if(result.canceled){showToast("已取消","info")}
+    document.getElementById("qaEmpty").style.display="block";
+    document.getElementById("qaEmpty").textContent=result.canceled?"已取消":"暂无回答";
+    return;
+  }
+  _qaState.currentHid=result.history_id||0;
+  document.getElementById("qaAnswer").style.display="block";
+  document.getElementById("qaEmpty").style.display="none";
+  /* 重置 feedback 按钮 */
+  document.getElementById("qaFbHelpful").classList.remove("active");
+  document.getElementById("qaFbNotHelpful").classList.remove("active-down");
+
+  var ans=result.answer;
+  /* 板块 1 + source badge */
+  var sb=document.getElementById("qaSourceBadge");
+  sb.textContent=result.source||"main";
+  sb.style.background=result.source==="rule_fallback"?"#FFF3E0":"var(--info-bg)";
+  sb.style.color=result.source==="rule_fallback"?"#C97A2C":"var(--info)";
+  document.getElementById("qaDirectAnswer").textContent=ans.direct_answer||"(空)";
+
+  /* 板块 2 依据 */
+  var evIds=ans.evidence_kp_ids||[];
+  document.getElementById("qaEvidenceCount").textContent=evIds.length+" 条";
+  qaRenderEvidence(evIds);
+
+  /* 板块 3 延伸思考 */
+  var fps=ans.followup_questions||[];
+  var fpc=document.getElementById("qaPanelFollowup");
+  if(fps.length>0){
+    fpc.style.display="block";
+    var fl=document.getElementById("qaFollowupList");
+    var h="";
+    for(var i=0;i<fps.length;i++){
+      var fp=fps[i];
+      h+='<div class="qa-followup-item" onclick="qaAskFollowup(\''+
+         esc(fp.q||"").replace(/'/g,"&#39;")+'\')">';
+      h+='<div class="fu-q">'+esc(fp.q||"")+'</div>';
+      if(fp.reason){h+='<div class="fu-r">'+esc(fp.reason)+'</div>'}
+      h+='</div>';
+    }
+    fl.innerHTML=h;
+  }else{
+    fpc.style.display="none";
+  }
+
+  /* 板块 4 补漏提醒 */
+  var gap=ans.coverage_gap||"";
+  var gc=document.getElementById("qaCoverageGap");
+  if(gap){
+    gc.className="qa-coverage-gap";
+    gc.textContent=gap;
+  }else{
+    gc.className="qa-coverage-gap-empty";
+    gc.textContent="本次回答覆盖完整, 库内充分支持";
+  }
+
+  /* 滚动到答案区 */
+  document.getElementById("qaPanelDirect").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function qaRenderEvidence(evIds){
+  var el=document.getElementById("qaEvidenceList");
+  if(!evIds||!evIds.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text-muted)">未引用任何知识点</div>';
+    return;
+  }
+  /* 批量取 KP 详情, 用现有 /api/knowledge-point/<id> 路由 */
+  el.innerHTML='<div style="font-size:12px;color:var(--text-muted)">加载依据中...</div>';
+  var loaded=[];
+  var pending=evIds.length;
+  for(var i=0;i<evIds.length;i++){
+    (function(kid,idx){
+      apiGet("/api/knowledge-point/"+kid).then(function(kp){
+        loaded[idx]={id:kid,kp:kp};
+        pending--;
+        if(pending===0){qaRenderEvidenceCards(loaded)}
+      });
+    })(evIds[i],i);
+  }
+}
+
+function qaRenderEvidenceCards(items){
+  var isFriend=_qaState.userMode==="friend";
+  var h="";
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    var kp=it.kp||{};
+    if(kp.error){
+      h+='<div class="qa-evidence-card"><div class="qa-evidence-title">#'+it.id+' (加载失败)</div></div>';
+      continue;
+    }
+    var title=kp.title||kp.original_excerpt||"(无标题)";
+    var category=kp.category||"";
+    var subcat=kp.subcategory||"";
+    var prem=(kp.premium_client===1||kp.premium_rfp===1);
+    var auth=kp.source_authority||"";
+    var srcFile=kp.renamed_filename||kp.original_filename||"";
+    var excerpt=(kp.original_excerpt||"").substring(0,180);
+    h+='<div class="qa-evidence-card" onclick="qaJumpToKp('+it.id+')">';
+    h+='<div class="qa-evidence-title">#'+it.id+' '+esc(title)+'</div>';
+    h+='<div class="qa-evidence-meta">';
+    if(category){h+='<span class="meta-tag">'+esc(category)+(subcat?(" / "+esc(subcat)):"")+'</span>'}
+    if(prem){h+='<span class="meta-tag meta-prem">精品</span>'}
+    if(!isFriend&&auth){h+='<span class="meta-tag">'+esc(auth)+'</span>'}
+    if(!isFriend&&kp.qa_score){h+='<span class="meta-tag">QA '+kp.qa_score+'</span>'}
+    if(srcFile){h+='<span class="meta-tag" style="font-size:10px">'+esc(srcFile)+'</span>'}
+    h+='</div>';
+    if(excerpt){h+='<div class="qa-evidence-excerpt">'+esc(excerpt)+(excerpt.length>=180?"...":"")+'</div>'}
+    h+='</div>';
+  }
+  document.getElementById("qaEvidenceList").innerHTML=h;
+}
+
+function qaAskFollowup(q){
+  document.getElementById("qaInput").value=q;
+  qaDoAsk();
+}
+
+function qaJumpToKp(kid){
+  switchTab("review");
+  window.scrollTo(0,0);
+  currentSearch=""+kid;
+  document.getElementById("searchInput").value=""+kid;
+  currentStatus=null;
+  currentPage=1;
+  loadKnowledgePoints();
+}
+
+function qaDoFeedback(ftype){
+  if(!_qaState.currentHid){showToast("当前无回答可反馈","error");return}
+  apiPost("/api/qa/feedback",{qa_history_id:_qaState.currentHid,
+                                feedback_type:ftype}).then(function(r){
+    if(r&&r.error){showToast("反馈失败: "+r.error,"error");return}
+    showToast("已提交反馈","success");
+    if(ftype==="helpful"){
+      document.getElementById("qaFbHelpful").classList.add("active");
+      document.getElementById("qaFbNotHelpful").classList.remove("active-down");
+    }else if(ftype==="not_helpful"){
+      document.getElementById("qaFbNotHelpful").classList.add("active-down");
+      document.getElementById("qaFbHelpful").classList.remove("active");
+    }
+  });
+}
+
+function qaOpenCommentDlg(){
+  if(!_qaState.currentHid){showToast("当前无回答可反馈","error");return}
+  _qaState.feedbackHid=_qaState.currentHid;
+  document.getElementById("qaCommentText").value="";
+  document.getElementById("qaCommentDlg").classList.add("open");
+}
+function qaCloseCommentDlg(){
+  document.getElementById("qaCommentDlg").classList.remove("open");
+  _qaState.feedbackHid=0;
+}
+function qaSubmitComment(){
+  var hid=_qaState.feedbackHid;
+  var txt=(document.getElementById("qaCommentText").value||"").trim();
+  if(!txt){showToast("请填写反馈内容","error");return}
+  apiPost("/api/qa/feedback",{qa_history_id:hid,
+                                feedback_type:"comment",comment:txt}).then(function(r){
+    if(r&&r.error){showToast("提交失败: "+r.error,"error");return}
+    showToast("反馈已提交, 老唐会看到的", "success");
+    qaCloseCommentDlg();
+  });
+}
+
+function qaToggleHistory(){
+  var lst=document.getElementById("qaHistoryList");
+  var ico=document.getElementById("qaHistoryToggleIcon");
+  if(lst.style.display==="none"||!lst.style.display){
+    lst.style.display="flex";
+    ico.textContent="收起 ▲";
+  }else{
+    lst.style.display="none";
+    ico.textContent="展开 ▼";
+  }
+}
+
+function qaLoadHistory(){
+  var url="/api/qa/history?limit=20";
+  if(_qaState.userMode==="friend"){url+="&mode=friend"}
+  else{url+="&exclude_test=1"} /* 自用模式过滤老唐自测 */
+  apiGet(url).then(function(r){
+    if(!r||r.error)return;
+    var rows=r.items||[];
+    document.getElementById("qaHistoryCount").textContent="("+rows.length+" 条)";
+    var lst=document.getElementById("qaHistoryList");
+    if(!rows.length){
+      lst.innerHTML='<div style="font-size:12px;color:var(--text-muted);padding:8px">暂无历史</div>';
+      return;
+    }
+    var h="";
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i];
+      var srcCls="qa-history-source-main";
+      if(row.source==="r1_fallback")srcCls="qa-history-source-r1";
+      else if(row.source==="rule_fallback")srcCls="qa-history-source-rule";
+      h+='<div class="qa-history-item" onclick="qaReplayHistory('+row.id+')">';
+      h+='<span class="qa-history-q">'+esc(row.query||"")+'</span>';
+      h+='<span class="qa-history-meta '+srcCls+'">'+esc(row.source||"main")+
+         ' · '+esc((row.created_at||"").substring(5,16))+'</span>';
+      h+='</div>';
+    }
+    lst.innerHTML=h;
+  });
+}
+
+function qaReplayHistory(hid){
+  apiGet("/api/qa/history/"+hid).then(function(r){
+    if(!r||!r.success){showToast("加载失败","error");return}
+    var item=r.item;
+    document.getElementById("qaInput").value=item.query||"";
+    /* 用历史记录数据直接渲染 */
+    qaRenderAnswer({
+      history_id:item.id,
+      answer:item.answer_json,
+      source:item.source,
+      retrieved_kp_ids:item.retrieved_kp_ids||[]
+    });
+    showToast("已恢复历史 #"+hid,"info");
+  });
+}
+
+function _qaResetUi(){
+  _qaState.inFlight=false;
+  document.getElementById("qaAskBtn").style.display="inline-block";
+  document.getElementById("qaCancelBtn").style.display="none";
+  qaHideProgress();
+  document.getElementById("qaEmpty").style.display="block";
 }
 
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}
