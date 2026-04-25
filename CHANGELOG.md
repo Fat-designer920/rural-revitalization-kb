@@ -6,6 +6,74 @@
 
 ---
 
+## [v2.3.2-hotfix1] - 2026-04-25 (hotfix)
+
+**定位**:**F055 上线后老唐肉眼实测发现 4 处 bug + 1 处体验问题(图片证据 + 后台日志双确认),一次清除**。本版无新增功能,纯收缩面修复 + 用户视角洁净度提升。涉及 2 文件 / 7 处 str_replace。立规则 9 应验扩至第 13 次(2 个新场景:tag_config 没有 FRESHNESS_INTERVALS 常量 / api_server 真实路由是复数 knowledge-points)+ 立规则 53 第 4 次自证("凭感觉喊停"已是稳定 bug,需老唐持续校准)。
+
+### Fixed
+
+- **P0-1 `/api/tag-definitions` 路由 ImportError 500**(api_server.py 行 1322-1340):tag_config.py 真实只导出 5 个常量(CONTENT_READINESS / SOURCE_AUTHORITY / ACCESS_LEVEL / FRESHNESS_RULES / FRESHNESS_OVERDUE_DAYS),但 api_server 行 1326 凭记忆 import 了不存在的 `FRESHNESS_INTERVALS` → 后台启动后仪表盘加载触发 `ImportError: cannot import name 'FRESHNESS_INTERVALS'` 即 500。修法:删除 import 列表里的 FRESHNESS_INTERVALS + 删除返回 JSON 的 freshness_intervals 字段。前端 grep `tagDefs.*` 验证只用 `layer1` / `layer2`,**返回的 readiness/authority/access_level 三字段也是死字段,但保留作 reference 不主动删**(立规则 51 做减法 ≠ 一次清空所有死字段,以单点 hotfix 为准)
+- **P0-2 智能问答"依据卡片"5/5 全部 404**(review.html 行 4427/4433):前端调单数路由 `/api/knowledge-point/<id>`,api_server.py 行 683 真实路由是 `/api/knowledge-points/<int:kid>`(复数 + 末段 kid)→ 后台日志 GET /api/knowledge-point/2711 等连续 5 次 404 → 卡片渲染兜底分支输出"#xxxx (加载失败)"。修法:review.html 4427(注释)+ 4433(代码)单数改复数。**工程手册 §6.8 写的契约也是单数,跟着错抄,这次同步纠正**
+
+### Changed(体验优化)
+
+- **P1-3 4 板块默认全展开 → 板块 2 依据 + 板块 4 补漏默认折叠**(review.html 4 处改造,新增 1 个 CSS 段 + 2 个 JS 函数):
+  - HTML 行 1117/1127 改造:加 `.qa-panel-collapsible` 类 + 标题点击切换 + 折叠图标 ▼/▲
+  - CSS 新增段(行 1083-1089,7 行):`.qa-panel-collapsible` / `.qa-collapsible-head` / `.qa-collapse-icon` / `.qa-panel-open` 状态切换样式
+  - JS 新增 `qaTogglePanel(panelId)` / `qaCollapsePanel(panelId)` 两函数(行 4451-4471)
+  - `qaRenderAnswer` 在每次新答案到来时调用 `qaCollapsePanel("qaPanelEvidence")` + `qaCollapsePanel("qaPanelCoverage")` → 默认折叠
+  - **板块 1 直答 + 板块 3 延伸思考保持永远展开**(主答案 + 引导继续提问,折叠会丢失主信号)
+  - 设计参考主流问答产品(豆包/Kimi/秘塔):首屏只剩答案 + 延伸思考,2 屏压到 1 屏内
+- **P1-4 isTest checkbox 默认 unchecked → 默认 checked**(review.html 行 1096):防止老唐自测每次提问都污染 used_count(每条 evidence kp 写入 used_count + last_used_at + used_for JSON)。需要"算埋点"时手动取消勾选
+- **P2-5 朋友模式隐藏内部技术 badge**(review.html `qaRenderAnswer` 行 4385/4394-4399 + 4434-4435):
+  - 板块 1 标题右边 `main` / `r1_fallback` / `rule_fallback` source badge → 朋友模式 `_qaState.userMode==="friend"` 时整个 badge 隐藏(自用模式仍显示)
+  - 板块 4 标题右边"诚信兜底" badge → 同上判断隐藏
+  - 朋友看不懂"main 是啥"/"诚信兜底是啥",这两个 badge 是研发期内部信号
+
+### Migration
+
+- **零 schema 变更 / 零 Prompt 变更 / 零 db 方法变更**:本版只动 2 文件(scripts/api_server.py + web/templates/review.html),不动 db / Prompt / setup
+- **零数据迁移**:user used_count 已被 v2.3.2 自测污染的部分**不回滚**,v2.3.2-hotfix1 起新提问默认勾选 isTest 不再污染。如需手动清洗,SQL: `UPDATE knowledge_points SET used_count=0, last_used_at=NULL, used_for=NULL WHERE id IN (老唐自测引用过的 kp_id 列表)` —— 但建议不做,used_count 数据脏一点不影响精品判定
+
+### Upgrade Path
+
+1. 备份 `data/database/knowledge_base.db`(每次必做)
+2. 替换 2 文件:
+   - `scripts/api_server.py` → 替换原文件
+   - `web/templates/review.html` → 替换原文件
+3. 推送 GitHub
+4. 重启 `启动后台.bat`
+5. 强刷浏览器 `Ctrl+Shift+R`
+6. **验证 P0-1**:打开后台,看日志不再有 `ImportError: FRESHNESS_INTERVALS` 报错 + `/api/tag-definitions` 200 不再 500
+7. **验证 P0-2**:Tab 3 智能问答提问"全域土地综合整治怎么实施?",点击"板块 2 · 依据 X 条 ▼"展开,看到 5 张卡片**正常显示标题/分类/精品徽章/excerpt**(不再是"#2711 (加载失败)")
+8. **验证 P1-3**:回答出来后**板块 2/4 默认折叠**(只看到标题栏 + 计数 badge + ▼ 图标),点击展开后图标变 ▲;板块 1/3 永远展开
+9. **验证 P1-4**:提问区右下"标记为我自己测试 (不写入埋点)" checkbox **默认已勾选**(自测不污染数据),取消勾选才会写埋点
+10. **验证 P2-5**:URL 加 `?mode=friend` 后(如 `http://127.0.0.1:5000/?mode=friend`),Tab 3 提问后**板块 1 标题不再有 main/r1 badge**,板块 4 标题不再有"诚信兜底" badge
+11. 异常回滚到 v2.3.2
+
+### 教训段(立规则 9 第 12/13 次应验 + 立规则 53 第 4 次自证)
+
+- **第 12 次应验**:tag_config.py 行 168-200 真实只导出 5 个常量,api_server.py 行 1326 凭记忆 import 了 FRESHNESS_INTERVALS 这个不存在的常量。两条侧面证据加重这个 bug:
+  1. **前端 grep 验证只用 layer1/layer2**(buildTagMap / 类别下拉 / 属性编辑器三处),import 的 readiness/authority/access_level 三字段也是死字段
+  2. **bug 潜伏期跨多版本**:估计这个 import 错误从 v2.1.0 三层标签体系上线时就有,但因 import 是函数内 `try` 包裹,只在 `/api/tag-definitions` 被调用时才暴露,平时静默
+- **第 13 次应验**:api_server.py 行 683 真实路由 `/api/knowledge-points/<int:kid>`(复数),前端 review.html + 工程手册 §6.8 都写成单数。这次特别血,因为**工程手册凭记忆写错的契约反向污染了前端代码**。规则修订:**前后端契约必须以 api_server.py 真实 `@app.route` 装饰器为准,工程手册只是导航,不是真相源**
+- **立规则 53 第 4 次自证**:本版 Phase 3 我中途又一次"配额顾虑"想跳新对话,老唐"继续"督促,实际剩 ~15 次工具调用绝对充足。**累计 4 次自证 = "凭感觉喊停"已是我的稳定 bug,需老唐持续校准**。每次老唐"继续"都是在告诉我:**对话内闭环不是规则,是工程纪律。凭感觉喊停就是违规**
+
+### 数字回溯
+
+| 维度 | v2.3.2 | v2.3.2-hotfix1 | 变化 |
+|------|--------|---------------|------|
+| 数据库表 | 24 | 24 | - |
+| 立规则数量 | 57 | 57 | - |
+| 立规则 9 应验次数 | 11 | 13 | +2 |
+| 立规则 53 自证次数 | 3 | 4 | +1 |
+| 修改文件数 | (本版作为 hotfix 不计 v2.3.2 大改)| 2 | - |
+| str_replace 次数 | - | 7 | - |
+| 引入新 Prompt 数 | 0 | 0 | - |
+| 引入新表/字段 | 0 | 0 | - |
+
+---
+
 ## [v2.3.2] - 2026-04-25 (feature)
 
 **定位**:**本地问答助手首版上线 + F056 客户端最小可用版**。商业化路径从"自用"过渡到"朋友试用",2400+ quotable + 200+ premium 知识点首次能"问得出来 + 答得准 + 给得了出处"。F055 主引擎 866 行(精品优先 + quotable 兜底检索 / 三级降级链 / 4 板块通用回答 / 朋友试用 URL 模式 / 反馈闭环);F056 单 HTML 查看器零依赖渲染 v1.0 标准 13 字段。Phase 3 分 4 轮交付(基础层 / 引擎层 / 界面层 part3a 后端 + part3b 前端 / 文档层),立规则 57 首次正式应用(开工前 grep 评估工作量 → 主动拆 a/b)。

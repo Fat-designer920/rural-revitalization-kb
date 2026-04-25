@@ -1321,19 +1321,22 @@ def reject_suggestion(sid):
 # ================================================================
 @app.route("/api/tag-definitions")
 def get_tag_defs():
-    """返回三层标签体系的完整定义"""
+    """返回三层标签体系的完整定义
+
+    v2.3.2-hotfix1: 移除不存在的 FRESHNESS_INTERVALS(tag_config 真实只有
+    FRESHNESS_RULES + FRESHNESS_OVERDUE_DAYS),前端实际只消费 layer1/layer2,
+    其余字段保留作为 reference。立规则 9 第 12 次应验。
+    """
     try:
         from scripts.tag_config import (LAYER1_TAGS, LAYER2_DIMENSIONS, LAYER3_KEYWORD_RULES,
-                                        CONTENT_READINESS, SOURCE_AUTHORITY, ACCESS_LEVEL,
-                                        FRESHNESS_INTERVALS)
+                                        CONTENT_READINESS, SOURCE_AUTHORITY, ACCESS_LEVEL)
         return jsonify({
             "layer1": LAYER1_TAGS,
             "layer2": LAYER2_DIMENSIONS,
             "layer3_rules": LAYER3_KEYWORD_RULES,
             "readiness": CONTENT_READINESS,
             "authority": SOURCE_AUTHORITY,
-            "access_level": ACCESS_LEVEL,
-            "freshness_intervals": FRESHNESS_INTERVALS
+            "access_level": ACCESS_LEVEL
         })
     except Exception as e:
         traceback.print_exc()

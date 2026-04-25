@@ -1079,6 +1079,14 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .qa-history-source-rule{color:#C97A2C}
 .qa-friend-banner{background:#E0F4FF;border-left:4px solid var(--info);color:var(--info);padding:8px 14px;border-radius:0 8px 8px 0;font-size:12px;margin-bottom:14px;font-weight:500}
 .qa-empty{text-align:center;color:var(--text-muted);padding:40px 0;font-size:14px}
+/* v2.3.2-hotfix1: 板块 2/4 折叠样式 */
+.qa-panel-collapsible .qa-collapsible-head{cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding-bottom:0;border-bottom:none;margin-bottom:0;transition:var(--transition);user-select:none}
+.qa-panel-collapsible .qa-collapsible-head:hover{color:var(--primary)}
+.qa-panel-collapsible .qa-collapsible-head .qa-collapse-icon{font-size:11px;color:var(--text-muted);transition:transform .2s ease;flex-shrink:0;margin-left:8px}
+.qa-panel-collapsible.qa-panel-open .qa-collapsible-head{padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.qa-panel-collapsible.qa-panel-open .qa-collapse-icon{transform:rotate(180deg)}
+.qa-panel-collapsible .qa-panel-head-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.qa-panel-body{}
 </style>
 
 <div id="tabQa" style="display:none">
@@ -1093,7 +1101,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <button class="btn btn-success" id="qaAskBtn" onclick="qaDoAsk()">提问</button>
         <button class="btn" id="qaCancelBtn" onclick="qaDoCancel()" style="display:none;background:#C97A2C;color:#fff">取消</button>
         <label class="qa-meta-toggle" id="qaTestLabel">
-          <input type="checkbox" id="qaTestQuery"> 标记为我自己测试 (不写入埋点)
+          <input type="checkbox" id="qaTestQuery" checked> 标记为我自己测试 (不写入埋点)
         </label>
         <span style="font-size:11px;color:var(--text-muted);margin-left:auto">单次约 10-30 秒</span>
       </div>
@@ -1114,9 +1122,14 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="qa-direct" id="qaDirectAnswer"></div>
       </div>
 
-      <div class="qa-panel" id="qaPanelEvidence">
-        <div class="qa-panel-title">板块 2 · 依据 <span class="qa-badge" id="qaEvidenceCount">0 条</span></div>
-        <div class="qa-evidence-grid" id="qaEvidenceList"></div>
+      <div class="qa-panel qa-panel-collapsible" id="qaPanelEvidence">
+        <div class="qa-panel-title qa-collapsible-head" onclick="qaTogglePanel('qaPanelEvidence')">
+          <span class="qa-panel-head-left">板块 2 · 依据 <span class="qa-badge" id="qaEvidenceCount">0 条</span></span>
+          <span class="qa-collapse-icon">▼</span>
+        </div>
+        <div class="qa-panel-body" style="display:none">
+          <div class="qa-evidence-grid" id="qaEvidenceList"></div>
+        </div>
       </div>
 
       <div class="qa-panel" id="qaPanelFollowup" style="display:none">
@@ -1124,9 +1137,14 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="qa-followup" id="qaFollowupList"></div>
       </div>
 
-      <div class="qa-panel" id="qaPanelCoverage">
-        <div class="qa-panel-title">板块 4 · 补漏提醒 <span class="qa-badge">诚信兜底</span></div>
-        <div id="qaCoverageGap"></div>
+      <div class="qa-panel qa-panel-collapsible" id="qaPanelCoverage">
+        <div class="qa-panel-title qa-collapsible-head" onclick="qaTogglePanel('qaPanelCoverage')">
+          <span class="qa-panel-head-left">板块 4 · 补漏提醒 <span class="qa-badge" id="qaCoverageBadge">诚信兜底</span></span>
+          <span class="qa-collapse-icon">▼</span>
+        </div>
+        <div class="qa-panel-body" style="display:none">
+          <div id="qaCoverageGap"></div>
+        </div>
       </div>
 
       <div class="qa-feedback-bar" id="qaFeedbackBar">
@@ -4364,18 +4382,27 @@ function qaRenderAnswer(result){
     return;
   }
   _qaState.currentHid=result.history_id||0;
+  var isFriend=_qaState.userMode==="friend";
   document.getElementById("qaAnswer").style.display="block";
   document.getElementById("qaEmpty").style.display="none";
   /* 重置 feedback 按钮 */
   document.getElementById("qaFbHelpful").classList.remove("active");
   document.getElementById("qaFbNotHelpful").classList.remove("active-down");
+  /* v2.3.2-hotfix1: 重置板块 2/4 折叠状态(默认折叠) */
+  qaCollapsePanel("qaPanelEvidence");
+  qaCollapsePanel("qaPanelCoverage");
 
   var ans=result.answer;
-  /* 板块 1 + source badge */
+  /* 板块 1 + source badge (朋友模式隐藏 main/r1_fallback/rule_fallback 内部标签) */
   var sb=document.getElementById("qaSourceBadge");
-  sb.textContent=result.source||"main";
-  sb.style.background=result.source==="rule_fallback"?"#FFF3E0":"var(--info-bg)";
-  sb.style.color=result.source==="rule_fallback"?"#C97A2C":"var(--info)";
+  if(isFriend){
+    sb.style.display="none";
+  }else{
+    sb.style.display="";
+    sb.textContent=result.source||"main";
+    sb.style.background=result.source==="rule_fallback"?"#FFF3E0":"var(--info-bg)";
+    sb.style.color=result.source==="rule_fallback"?"#C97A2C":"var(--info)";
+  }
   document.getElementById("qaDirectAnswer").textContent=ans.direct_answer||"(空)";
 
   /* 板块 2 依据 */
@@ -4403,7 +4430,9 @@ function qaRenderAnswer(result){
     fpc.style.display="none";
   }
 
-  /* 板块 4 补漏提醒 */
+  /* 板块 4 补漏提醒 + 诚信兜底 badge (朋友模式隐藏内部 badge) */
+  var covBadge=document.getElementById("qaCoverageBadge");
+  if(covBadge){covBadge.style.display=isFriend?"none":""}
   var gap=ans.coverage_gap||"";
   var gc=document.getElementById("qaCoverageGap");
   if(gap){
@@ -4418,19 +4447,42 @@ function qaRenderAnswer(result){
   document.getElementById("qaPanelDirect").scrollIntoView({behavior:"smooth",block:"start"});
 }
 
+/* v2.3.2-hotfix1: 板块折叠交互 */
+function qaTogglePanel(panelId){
+  var panel=document.getElementById(panelId);
+  if(!panel)return;
+  var body=panel.querySelector(".qa-panel-body");
+  if(!body)return;
+  if(body.style.display==="none"||!body.style.display){
+    body.style.display="block";
+    panel.classList.add("qa-panel-open");
+  }else{
+    body.style.display="none";
+    panel.classList.remove("qa-panel-open");
+  }
+}
+
+function qaCollapsePanel(panelId){
+  var panel=document.getElementById(panelId);
+  if(!panel)return;
+  var body=panel.querySelector(".qa-panel-body");
+  if(body){body.style.display="none"}
+  panel.classList.remove("qa-panel-open");
+}
+
 function qaRenderEvidence(evIds){
   var el=document.getElementById("qaEvidenceList");
   if(!evIds||!evIds.length){
     el.innerHTML='<div style="font-size:12px;color:var(--text-muted)">未引用任何知识点</div>';
     return;
   }
-  /* 批量取 KP 详情, 用现有 /api/knowledge-point/<id> 路由 */
+  /* 批量取 KP 详情, 用现有 /api/knowledge-points/<id> 路由 (v2.3.2-hotfix1: 复数,对齐 api_server) */
   el.innerHTML='<div style="font-size:12px;color:var(--text-muted)">加载依据中...</div>';
   var loaded=[];
   var pending=evIds.length;
   for(var i=0;i<evIds.length;i++){
     (function(kid,idx){
-      apiGet("/api/knowledge-point/"+kid).then(function(kp){
+      apiGet("/api/knowledge-points/"+kid).then(function(kp){
         loaded[idx]={id:kid,kp:kp};
         pending--;
         if(pending===0){qaRenderEvidenceCards(loaded)}
