@@ -472,6 +472,123 @@ def _premium_readiness_check():
 
     return (len(errors) == 0), errors
 
+
+# ================================================================
+# v2.3.2 F055 本地问答助手独立任务槽(对齐 _premium_task 模式)
+# ----------------------------------------------------------------
+# 设计动机:
+#   - 单次问答 ~10-30 秒(短任务),但仍走异步以支持取消 + 进度查看
+#   - 与 _qc_task / _premium_task 物理隔离,允许并发
+#     (老唐自测的同时朋友试用,互不干扰)
+#   - cancel_requested 标志供 qa_assistant 引擎 cancel_check 协作式退出
+#   - 端到端硬上限 60 秒,超时由前端发起 /cancel
+# ================================================================
+_qa_task_lock = threading.Lock()
+_qa_task = {
+    "running": False,
+    "started_at": None,
+    "cancel_requested": False,
+    "progress": {
+        "total_kps": 5,            # 5 个 stage 固定(tokenize/retrieve/rerank/generate/record)
+        "processed_kps": 0,
+        "current_step": "",        # tokenize | retrieve | rerank | generate | record
+        "message": "",
+        "ai_calls_count": 0,
+        "cost_estimate_cny": 0.0,
+    },
+    "result": None,
+    "error": None,
+}
+
+
+def _qa_task_update_progress(data):
+    """供 qa_assistant 主循环回调更新进度(同 _premium_task_update_progress 模式)."""
+    with _qa_task_lock:
+        for k, v in data.items():
+            if k in _qa_task["progress"]:
+                _qa_task["progress"][k] = v
+
+
+def _qa_cancel_check():
+    """供 qa_assistant 引擎查询取消标志."""
+    with _qa_task_lock:
+        return bool(_qa_task.get("cancel_requested"))
+
+
+def _qa_readiness_check():
+    """v2.3.2 F055 问答助手启动就绪性自检(对齐 F048/F062/part3.2 模板).
+
+    自检 4 项(立规则 31):
+      [1] db 可连 SELECT 1
+      [2] db 有 v2.3.2-part1 落地的 6 个 qa 方法 + log_operation_event
+      [3] Prompt 可 import:QA_RETRIEVAL_RANK_PROMPT / QA_ANSWER_GEN_PROMPT /
+          QA_FOLLOWUP_GEN_PROMPT 均含 system_prompt + user_prompt_template
+      [4] qa_history / qa_feedback 表存在(防老库未跑 setup.py 就启用)
+
+    总耗时 <100ms,失败时调用方必须在 _qa_task_lock 之前返回 400.
+    """
+    errors = []
+
+    # [1] db 可连
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT 1"); c.fetchone()
+        conn.close()
+    except Exception as e:
+        errors.append("[1] db 连接失败: " + str(e))
+        return False, errors
+
+    # [2] db 关键方法(6 个 v2.3.2 新方法 + log_operation_event)
+    for m in ("get_qa_retrieval_candidates", "save_qa_history",
+              "save_qa_feedback", "record_kp_used",
+              "get_qa_history_list", "get_qa_stats",
+              "log_operation_event"):
+        if not hasattr(db, m):
+            errors.append("[2] db 缺方法: " + m)
+
+    # [3] Prompt 可 import + 双 key 规范
+    try:
+        try:
+            from scripts.prompts.prompt_templates import (
+                QA_RETRIEVAL_RANK_PROMPT as _RP,
+                QA_ANSWER_GEN_PROMPT as _AP,
+                QA_FOLLOWUP_GEN_PROMPT as _FP,
+            )
+        except ImportError:
+            from prompts.prompt_templates import (
+                QA_RETRIEVAL_RANK_PROMPT as _RP,
+                QA_ANSWER_GEN_PROMPT as _AP,
+                QA_FOLLOWUP_GEN_PROMPT as _FP,
+            )
+        for name, pr in (("QA_RETRIEVAL_RANK_PROMPT", _RP),
+                          ("QA_ANSWER_GEN_PROMPT", _AP),
+                          ("QA_FOLLOWUP_GEN_PROMPT", _FP)):
+            if not isinstance(pr, dict):
+                errors.append("[3] %s 不是 dict" % name)
+                continue
+            if "system_prompt" not in pr:
+                errors.append("[3] %s 缺 system_prompt key" % name)
+            if "user_prompt_template" not in pr:
+                errors.append("[3] %s 缺 user_prompt_template key" % name)
+    except Exception as e:
+        errors.append("[3] Prompt import 失败: " + str(e)[:200])
+
+    # [4] qa_history / qa_feedback 表存在(防老库未跑 setup.py)
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                  "AND name IN ('qa_history','qa_feedback')")
+        existing = {r[0] for r in c.fetchall()}
+        conn.close()
+        for t in ("qa_history", "qa_feedback"):
+            if t not in existing:
+                errors.append("[4] 表 " + t + " 不存在(请先运行 首次安装.bat 追齐 schema)")
+    except Exception as e:
+        errors.append("[4] schema 检查失败: " + str(e))
+
+    return (len(errors) == 0), errors
+
+
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
     if _p.exists():
@@ -4178,6 +4295,281 @@ def e2e_issue_set_status(iid):
 
 
 # ================================================================
+# v2.3.2 F055 本地问答助手路由(7 条)
+# ----------------------------------------------------------------
+# /api/qa/ask              POST   启动问答(异步 202)
+# /api/qa/progress         GET    进度轮询(2 秒一次)
+# /api/qa/cancel           POST   取消(协作式退出)
+# /api/qa/history          GET    问答历史列表(分页 + 模式筛选 + test 过滤)
+# /api/qa/history/<hid>    GET    单条问答详情
+# /api/qa/feedback         POST   反馈写入(👍/👎/💬)
+# /api/qa/stats            GET    反馈聚合统计
+#
+# 设计要点:
+#   - 独立 _qa_task 槽,允许并发(老唐自测 + 朋友试用同时跑)
+#   - 端到端硬上限 60 秒,前端轮询超时主动 /cancel
+#   - mode='self|friend' 由请求体传(默认 self),朋友试用走 ?mode=friend URL
+#   - is_test_query=1 标记老唐自测,不回写 used_count(防脏数据)
+# ================================================================
+@app.route("/api/qa/ask", methods=["POST"])
+def qa_ask():
+    """启动一次问答(异步 202).
+
+    Body JSON:
+      query:         str   用户问题(必填,1-500 字)
+      mode:          'self' | 'friend'  默认 self
+      is_test_query: 0 | 1  老唐自测标记,默认 0
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    query = (body.get("query") or "").strip()
+    mode = body.get("mode") or "self"
+    if mode not in ("self", "friend"):
+        mode = "self"
+    is_test = 1 if body.get("is_test_query") else 0
+
+    if not query:
+        return jsonify({"success": False, "error": "query 必填"}), 400
+    if len(query) > 500:
+        return jsonify({"success": False, "error": "query 超长(>500 字)"}), 400
+
+    # 启动就绪性自检(立规则 31:必须在 _qa_task_lock 之前)
+    ok, errors = _qa_readiness_check()
+    if not ok:
+        try:
+            db.log_operation_event(
+                event_type="qa_readiness_check_failed",
+                module="api_server", severity="error",
+                payload={"errors": errors},
+            )
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": "启动自检失败",
+                        "details": errors}), 400
+
+    # 抢锁并启动后台线程
+    with _qa_task_lock:
+        if _qa_task["running"]:
+            return jsonify({
+                "success": False,
+                "error": "另一个问答正在进行,请等待或先 /cancel"
+            }), 409
+        _qa_task["running"] = True
+        _qa_task["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _qa_task["cancel_requested"] = False
+        _qa_task["result"] = None
+        _qa_task["error"] = None
+        # 重置进度
+        _qa_task["progress"] = {
+            "total_kps": 5,
+            "processed_kps": 0,
+            "current_step": "starting",
+            "message": "正在启动...",
+            "ai_calls_count": 0,
+            "cost_estimate_cny": 0.0,
+        }
+
+    # 埋点:启动事件
+    try:
+        db.log_operation_event(
+            event_type="qa_ask_start", module="api_server", severity="info",
+            payload={"query_preview": query[:200], "mode": mode,
+                     "is_test_query": is_test},
+        )
+    except Exception:
+        pass
+
+    def _worker():
+        try:
+            from scripts.qa_assistant import run_qa
+            from scripts.deepseek_client import DeepSeekClient
+            client = DeepSeekClient()
+            result = run_qa(
+                db, client, query,
+                mode=mode, is_test_query=is_test,
+                progress_callback=_qa_task_update_progress,
+                cancel_check=_qa_cancel_check,
+            )
+            with _qa_task_lock:
+                _qa_task["result"] = result
+                _qa_task["error"] = None
+        except Exception as e:
+            traceback.print_exc()
+            with _qa_task_lock:
+                _qa_task["error"] = str(e)[:500]
+                _qa_task["result"] = None
+            try:
+                db.log_operation_event(
+                    event_type="qa_ask_failed", module="api_server",
+                    severity="error",
+                    payload={"error": str(e)[:500],
+                             "query_preview": query[:200]},
+                )
+            except Exception:
+                pass
+        finally:
+            with _qa_task_lock:
+                _qa_task["running"] = False
+                _qa_task["cancel_requested"] = False
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({
+        "success": True,
+        "status": "started",
+        "message": "问答任务已启动,请通过 /api/qa/progress 轮询",
+    }), 202
+
+
+@app.route("/api/qa/cancel", methods=["POST"])
+def qa_cancel():
+    """请求取消正在执行的问答(协作式,引擎下一个 stage 检查)."""
+    with _qa_task_lock:
+        if not _qa_task["running"]:
+            return jsonify({"success": False,
+                            "error": "当前无问答任务"}), 409
+        _qa_task["cancel_requested"] = True
+    return jsonify({"success": True,
+                    "message": "已发送取消请求,引擎将在下一个 stage 退出"})
+
+
+@app.route("/api/qa/progress", methods=["GET"])
+def qa_progress():
+    """获取当前问答进度(前端 1-2 秒轮询)."""
+    with _qa_task_lock:
+        snap = {
+            "running": _qa_task["running"],
+            "started_at": _qa_task["started_at"],
+            "cancel_requested": _qa_task["cancel_requested"],
+            "progress": dict(_qa_task["progress"]),
+            "result": _qa_task["result"],
+            "error": _qa_task["error"],
+        }
+    return jsonify(snap)
+
+
+@app.route("/api/qa/history", methods=["GET"])
+def qa_history_list():
+    """问答历史列表(分页 + 模式筛选 + test 过滤).
+
+    Query:
+      limit:        int  (默认 20)
+      offset:       int  (默认 0)
+      mode:         self | friend | (空)
+      exclude_test: 0/1  (默认 0)
+    """
+    try:
+        limit = int(request.args.get("limit") or 20)
+        offset = int(request.args.get("offset") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"success": False,
+                        "error": "limit/offset 必须为整数"}), 400
+    mode = request.args.get("mode")
+    if mode not in ("self", "friend"):
+        mode = None
+    exclude_test = bool(int(request.args.get("exclude_test") or 0))
+
+    try:
+        rows = db.get_qa_history_list(
+            limit=limit, offset=offset,
+            mode=mode, exclude_test=exclude_test,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)[:500]}), 500
+    return jsonify({"success": True, "items": rows, "count": len(rows)})
+
+
+@app.route("/api/qa/history/<int:hid>", methods=["GET"])
+def qa_history_detail(hid):
+    """获取单条问答详情(含 4 板块解析后的完整 answer + 反馈聚合)."""
+    try:
+        # 复用 list 方法但传 limit=1, offset 强校验
+        # db 没有 get_qa_history_by_id, 用 list + filter 兜底
+        all_rows = db.get_qa_history_list(limit=10000, offset=0)
+        target = None
+        for r in all_rows:
+            if r.get("id") == hid:
+                target = r
+                break
+        if not target:
+            return jsonify({"success": False,
+                            "error": "history_id %d 不存在" % hid}), 404
+        # 附带本条反馈(从 qa_feedback 表查)
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT id, feedback_type, comment, created_at
+                       FROM qa_feedback
+                      WHERE qa_history_id=?
+                      ORDER BY created_at DESC""", (hid,))
+        fb = [dict(r) for r in c.fetchall()]
+        conn.close()
+        target["feedbacks"] = fb
+        return jsonify({"success": True, "item": target})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)[:500]}), 500
+
+
+@app.route("/api/qa/feedback", methods=["POST"])
+def qa_feedback():
+    """提交反馈(👍/👎/💬).
+
+    Body JSON:
+      qa_history_id: int    必填
+      feedback_type: 'helpful' | 'not_helpful' | 'comment'   必填
+      comment:       str    可选(comment 类型时建议非空)
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        body = {}
+    try:
+        hid = int(body.get("qa_history_id"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False,
+                        "error": "qa_history_id 必填且为整数"}), 400
+    ft = body.get("feedback_type")
+    if ft not in ("helpful", "not_helpful", "comment"):
+        return jsonify({
+            "success": False,
+            "error": "feedback_type 必须是 helpful/not_helpful/comment"
+        }), 400
+    comment = (body.get("comment") or "").strip()
+    if ft == "comment" and not comment:
+        return jsonify({"success": False,
+                        "error": "comment 类型时 comment 字段必填"}), 400
+
+    try:
+        fid = db.save_qa_feedback(hid, ft, comment if comment else None)
+        try:
+            db.log_operation_event(
+                event_type="qa_feedback_received", module="api_server",
+                severity="info",
+                payload={"qa_history_id": hid, "feedback_type": ft,
+                         "feedback_id": fid,
+                         "comment_preview": comment[:200]},
+            )
+        except Exception:
+            pass
+        return jsonify({"success": True, "feedback_id": fid})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)[:500]}), 500
+
+
+@app.route("/api/qa/stats", methods=["GET"])
+def qa_stats():
+    """反馈 + 历史聚合统计(老唐用于自测、朋友试用、付费意愿验证看板)."""
+    try:
+        out = db.get_qa_stats()
+        return jsonify({"success": True, **out})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)[:500]}), 500
+
+
+# ================================================================
 # 启动
 # ================================================================
 def _open(port):
@@ -4188,9 +4580,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.0-part3.2")
-    print(f"  Tab1 知识审核 | Tab2 系统管理(仪表盘+工具箱+提取管理+经验速记)")
-    print(f"  v2.3.0-part3.2 hotfix: 仪表盘 UI + 质检补跑异步化 + 就绪度联动预埋")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.2-part3a")
+    print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答(后端 ready, 前端 part3b 启用)")
+    print(f"  v2.3.2-part3a: F055 问答助手后端 7 路由 + _qa_task 槽 + readiness_check")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")
