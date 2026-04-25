@@ -595,6 +595,40 @@ for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"rev
         with open(_p,"r",encoding="utf-8") as _f: REVIEW_HTML = _f.read()
         print(f"  [OK] review.html: {_p}"); break
 
+# v2.3.3-mvp-part1a: 朋友试用产品页(双客户端架构, 物理隔离)
+# part1a 阶段:文件不存在则使用占位 HTML, part1b 创建真实模板后自动加载
+QA_PUBLIC_HTML = None
+for _p in [PROJECT_ROOT/"web"/"templates"/"qa_public.html", PROJECT_ROOT/"web"/"qa_public.html", PROJECT_ROOT/"qa_public.html"]:
+    if _p.exists():
+        with open(_p,"r",encoding="utf-8") as _f: QA_PUBLIC_HTML = _f.read()
+        print(f"  [OK] qa_public.html: {_p}"); break
+if QA_PUBLIC_HTML is None:
+    # part1a 占位:友好提示朋友 + 引导自用 Tab 3
+    QA_PUBLIC_HTML = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<title>乡村振兴政策助手 — 即将上线</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:#F5F2ED;color:#1A1A1A;margin:0;padding:60px 20px;text-align:center}
+.box{max-width:520px;margin:0 auto;background:#fff;border-radius:16px;
+  padding:40px 30px;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+h1{color:#2D7B5F;font-size:24px;margin:0 0 16px}
+p{color:#555;line-height:1.8;font-size:15px;margin:8px 0}
+.tag{display:inline-block;background:#E0F4FF;color:#3B82A8;padding:4px 12px;
+  border-radius:12px;font-size:12px;margin-bottom:20px}
+.note{margin-top:24px;padding:14px;background:#FFF8E5;border-radius:10px;
+  font-size:13px;color:#C97A2C}
+</style></head><body>
+<div class="box">
+<div class="tag">v2.3.3-mvp · part1a</div>
+<h1>乡村振兴政策助手</h1>
+<p>专属顾问产品页正在搭建中。</p>
+<p>已收录 2400+ 条权威政策条款,覆盖项目申报、补贴标准、土地整治、产业扶持等场景。</p>
+<div class="note">朋友试用产品页(part1b)即将上线。<br>当前阶段后端基础设施已就绪,前端体验马上来。</div>
+</div></body></html>"""
+    print("  [..] qa_public.html: 使用 part1a 占位页(part1b 替换为真实模板)")
+
 def _parse(v):
     if v is None or isinstance(v,(dict,list)): return v
     if isinstance(v,str):
@@ -641,6 +675,14 @@ def _404(e): return jsonify({"error":"not found:"+request.path}),404
 def index():
     if REVIEW_HTML: return Response(REVIEW_HTML, mimetype="text/html; charset=utf-8")
     return "<h1>review.html not found</h1>",404
+
+@app.route("/qa")
+def qa_public_page():
+    """v2.3.3-mvp-part1a: 朋友试用产品页(双客户端架构,物理隔离)
+    朋友访问路径: http://[本机IP]:5000/qa?u=张三
+    URL 参数 ?u= 为朋友身份标记(传给 qa_ask 写入 friend_tag)
+    """
+    return Response(QA_PUBLIC_HTML, mimetype="text/html; charset=utf-8")
 
 # ================================================================
 # 知识点 CRUD
@@ -4322,6 +4364,13 @@ def qa_ask():
       query:         str   用户问题(必填,1-500 字)
       mode:          'self' | 'friend'  默认 self
       is_test_query: 0 | 1  老唐自测标记,默认 0
+      model_pref:    'v3' | 'r1'  v2.3.3-mvp 主链模型偏好(默认 v3,
+                                    朋友模式被强制为 v3 不烧钱)
+      friend_tag:    str|None  v2.3.3-mvp 朋友身份(URL ?u=张三),
+                                  仅 mode=friend 写入 qa_history
+    v2.3.3-mvp 限速:
+      朋友模式按 IP 限速 20 次/天, 超限返回 429.
+      只成功完成才计数(worker 末尾 incr_friend_quota), 失败不吐刷额度.
     """
     try:
         body = request.get_json(silent=True) or {}
@@ -4333,10 +4382,50 @@ def qa_ask():
         mode = "self"
     is_test = 1 if body.get("is_test_query") else 0
 
+    # v2.3.3-mvp: model_pref + friend_tag 接收
+    model_pref = (body.get("model_pref") or "v3").strip().lower()
+    if model_pref not in ("v3", "r1"):
+        model_pref = "v3"
+    friend_tag = body.get("friend_tag")
+    if friend_tag is not None:
+        friend_tag = str(friend_tag).strip()[:50] or None
+
+    # v2.3.3-mvp: 朋友模式强制 V3(不烧 R1 钱), friend_tag 仅 friend 模式有效
+    if mode == "friend":
+        model_pref = "v3"
+    else:
+        friend_tag = None  # 自用模式不记朋友身份
+
     if not query:
         return jsonify({"success": False, "error": "query 必填"}), 400
     if len(query) > 500:
         return jsonify({"success": False, "error": "query 超长(>500 字)"}), 400
+
+    # v2.3.3-mvp F063: 朋友模式 IP 限速校验(自用模式不限速)
+    client_ip = request.remote_addr or ""
+    if mode == "friend":
+        try:
+            ok, used, limit = db.check_friend_quota(client_ip, daily_limit=20)
+        except Exception as e:
+            # 限速查询失败保守放行(避免误伤朋友)
+            traceback.print_exc()
+            ok, used, limit = (True, 0, 20)
+        if not ok:
+            try:
+                db.log_operation_event(
+                    event_type="qa_quota_exceeded", module="api_server",
+                    severity="warning",
+                    payload={"ip": client_ip, "used": used, "limit": limit,
+                             "friend_tag": friend_tag},
+                )
+            except Exception:
+                pass
+            return jsonify({
+                "success": False,
+                "error": "今日额度已用完,请明天再来",
+                "quota_used": used,
+                "quota_limit": limit,
+            }), 429
 
     # 启动就绪性自检(立规则 31:必须在 _qa_task_lock 之前)
     ok, errors = _qa_readiness_check()
@@ -4379,12 +4468,16 @@ def qa_ask():
         db.log_operation_event(
             event_type="qa_ask_start", module="api_server", severity="info",
             payload={"query_preview": query[:200], "mode": mode,
-                     "is_test_query": is_test},
+                     "is_test_query": is_test,
+                     "model_pref": model_pref,
+                     "friend_tag": friend_tag,
+                     "client_ip": client_ip},
         )
     except Exception:
         pass
 
     def _worker():
+        success_for_quota = False  # v2.3.3-mvp: 仅主链/L1/L2 成功才计配额
         try:
             from scripts.qa_assistant import run_qa
             from scripts.deepseek_client import DeepSeekClient
@@ -4394,10 +4487,18 @@ def qa_ask():
                 mode=mode, is_test_query=is_test,
                 progress_callback=_qa_task_update_progress,
                 cancel_check=_qa_cancel_check,
+                model_pref=model_pref,
+                friend_tag=friend_tag,
             )
             with _qa_task_lock:
                 _qa_task["result"] = result
                 _qa_task["error"] = None
+            # v2.3.3-mvp: 限速计数(只成功才扣额度,失败不吐刷)
+            # 成功定义:有 answer 且 source != rule_fallback(规则兜底也不算成功)
+            if (result and result.get("answer")
+                    and result.get("source") != "rule_fallback"
+                    and not result.get("canceled")):
+                success_for_quota = True
         except Exception as e:
             traceback.print_exc()
             with _qa_task_lock:
@@ -4416,6 +4517,12 @@ def qa_ask():
             with _qa_task_lock:
                 _qa_task["running"] = False
                 _qa_task["cancel_requested"] = False
+            # v2.3.3-mvp F063: 朋友模式成功问答 → IP 配额 +1
+            if mode == "friend" and success_for_quota and client_ip:
+                try:
+                    db.incr_friend_quota(client_ip)
+                except Exception:
+                    pass  # 限速失败不能阻塞主流程
 
     threading.Thread(target=_worker, daemon=True).start()
     return jsonify({

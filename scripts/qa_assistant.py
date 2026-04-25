@@ -210,10 +210,17 @@ class QaAssistantEngine:
     # 主入口
     # ================================================================
     def run_qa(self, query: str, mode: str = 'self',
-                is_test_query: int = 0) -> Dict:
+                is_test_query: int = 0,
+                model_pref: str = 'v3',
+                friend_tag: Optional[str] = None) -> Dict:
         """单次问答完整流程.
 
+        v2.3.3-mvp 新增参数:
+          model_pref: 'v3' | 'r1'  主链模型偏好(自用 R1 时主链翻转)
+          friend_tag: str|None     朋友身份(URL ?u=张三),仅 mode=friend 有意义
+
         返回 dict 字段见模块顶部 docstring.
+        v2.3.3-mvp 新增返回字段: model_used = 'deepseek-chat' | 'deepseek-reasoner'
         """
         start_ts = time.time()
 
@@ -224,11 +231,15 @@ class QaAssistantEngine:
                 "source": "rule_fallback", "latency_ms": 0,
                 "retrieved_kp_ids": [], "canceled": False,
                 "cost_estimate_cny": 0.0, "error": "empty query",
+                "model_used": None,
             }
         query = str(query).strip()
         # mode 校验(立规则 5):未知 mode 一律落 self
         if mode not in ('self', 'friend'):
             mode = 'self'
+        # model_pref 校验:未知值落 v3(自用默认 + 朋友模式由 api_server 强制)
+        if model_pref not in ('v3', 'r1'):
+            model_pref = 'v3'
 
         # 进度初始化
         self._emit_progress("tokenize", 0, "分词中")
@@ -247,7 +258,8 @@ class QaAssistantEngine:
         candidates = self._retrieve_and_score(keywords)
         if not candidates:
             # 0 召回 → 直接走 L3
-            return self._handle_zero_recall(query, mode, is_test_query, start_ts)
+            return self._handle_zero_recall(query, mode, is_test_query,
+                                              start_ts, friend_tag=friend_tag)
 
         # ---- Stage 3: rerank ----
         self._emit_progress("rerank", 2, "重排序中(候选 %d 条)" % len(candidates))
@@ -264,8 +276,8 @@ class QaAssistantEngine:
         if self._is_canceled():
             return self._canceled_result(start_ts, "generate 前取消")
 
-        answer, source, gen_err = self._generate_with_fallback_chain(
-            query, top_n)
+        answer, source, gen_err, model_used = self._generate_with_fallback_chain(
+            query, top_n, model_pref=model_pref)
 
         # followup 补救(主链/L1/R1 成功但 板块 3 空)
         if source != 'rule_fallback':
@@ -294,6 +306,7 @@ class QaAssistantEngine:
                 source=source,
                 latency_ms=latency_ms,
                 is_test_query=is_test_query,
+                friend_tag=friend_tag,
             )
         except Exception as e:
             self._safe_log_event("qa_save_history_failed", "error",
@@ -322,6 +335,9 @@ class QaAssistantEngine:
         self._safe_log_event(evt, sev, {
             "mode": mode,
             "source": source,
+            "model_pref": model_pref,
+            "model_used": model_used,
+            "friend_tag": friend_tag,
             "latency_ms": latency_ms,
             "retrieved_count": len(retrieved_ids),
             "history_id": history_id,
@@ -342,6 +358,7 @@ class QaAssistantEngine:
             "canceled": False,
             "cost_estimate_cny": round(self._cost, 4),
             "error": gen_err,
+            "model_used": model_used,
         }
 
     # ================================================================
@@ -433,57 +450,82 @@ class QaAssistantEngine:
             return candidates[:QA_TOP_N_AFTER_RANK]
 
     def _generate_with_fallback_chain(
-        self, query: str, top_n: List[Dict]
+        self, query: str, top_n: List[Dict], model_pref: str = 'v3'
     ) -> tuple:
         """主 → L1 → L2 → L3 三级降级链.
 
-        返回 (answer_dict, source_label, last_error_str)
+        v2.3.3-mvp: 主链根据 model_pref 翻转
+          - model_pref='v3' (默认): V3 主 → V3 L1 重试 → R1 L2 跨模型兜底 → L3 规则
+          - model_pref='r1':         R1 主 → R1 L1 重试 → V3 L2 跨模型兜底 → L3 规则
+
+        source 标签语义保持向后兼容(不破坏 schema CHECK):
+          - main:          主链(v3 或 r1)首发成功
+          - l1_retry:      主链同模型 L1 重试成功
+          - r1_fallback:   L2 跨模型兜底成功(v3 主链下=R1兜底, r1 主链下=V3兜底)
+          - rule_fallback: L3 规则兜底
+
+        返回 (answer_dict, source_label, last_error_str, model_used_str)
+            model_used: 实际生成答案的模型名('deepseek-chat' / 'deepseek-reasoner' / None)
+                        rule_fallback 时返回 None
         """
         last_err = None
+
+        # 主链 / L1 同模型,L2 跨模型兜底
+        if model_pref == 'r1':
+            primary_model = 'deepseek-reasoner'
+            l2_fallback_model = 'deepseek-chat'
+        else:
+            primary_model = 'deepseek-chat'
+            l2_fallback_model = 'deepseek-reasoner'
 
         # 主链
         try:
             ans = self._generate_4_panels(query, top_n,
-                                            model='deepseek-chat')
+                                            model=primary_model)
             if ans:
-                return ans, 'main', None
+                return ans, 'main', None, primary_model
         except Exception as e:
             last_err = str(e)[:300]
             self._safe_log_event("qa_ai_call_failed", "warning",
-                                  {"tier": "main", "err": last_err})
+                                  {"tier": "main", "model": primary_model,
+                                   "err": last_err})
 
-        # L1 重试
+        # L1 重试(同模型)
         if self._is_canceled():
             return self._l3_rule_fallback(top_n, query), 'rule_fallback', \
-                "canceled before L1"
-        self._emit_progress("generate", 3, "L1 重试中")
+                "canceled before L1", None
+        self._emit_progress("generate", 3,
+                            "L1 重试中(%s)" % primary_model)
         try:
             ans = self._generate_4_panels(query, top_n,
-                                            model='deepseek-chat')
+                                            model=primary_model)
             if ans:
-                return ans, 'l1_retry', None
+                return ans, 'l1_retry', None, primary_model
         except Exception as e:
             last_err = str(e)[:300]
             self._safe_log_event("qa_ai_call_failed", "warning",
-                                  {"tier": "l1", "err": last_err})
+                                  {"tier": "l1", "model": primary_model,
+                                   "err": last_err})
 
-        # L2 R1 兜底
+        # L2 跨模型兜底
         if self._is_canceled():
             return self._l3_rule_fallback(top_n, query), 'rule_fallback', \
-                "canceled before L2"
-        self._emit_progress("generate", 3, "L2 R1 兜底中")
+                "canceled before L2", None
+        self._emit_progress("generate", 3,
+                            "L2 跨模型兜底(%s)" % l2_fallback_model)
         try:
             ans = self._generate_4_panels(query, top_n,
-                                            model='deepseek-reasoner')
+                                            model=l2_fallback_model)
             if ans:
-                return ans, 'r1_fallback', None
+                return ans, 'r1_fallback', None, l2_fallback_model
         except Exception as e:
             last_err = str(e)[:300]
             self._safe_log_event("qa_ai_call_failed", "error",
-                                  {"tier": "l2", "err": last_err})
+                                  {"tier": "l2", "model": l2_fallback_model,
+                                   "err": last_err})
 
         # L3 规则兜底
-        return self._l3_rule_fallback(top_n, query), 'rule_fallback', last_err
+        return self._l3_rule_fallback(top_n, query), 'rule_fallback', last_err, None
 
     def _generate_4_panels(self, query: str, retrieved_kps: List[Dict],
                             model: str = 'deepseek-chat') -> Optional[Dict]:
@@ -623,7 +665,8 @@ class QaAssistantEngine:
     # 0 召回兜底(独立路径)
     # ================================================================
     def _handle_zero_recall(self, query: str, mode: str, is_test_query: int,
-                              start_ts: float) -> Dict:
+                              start_ts: float,
+                              friend_tag: Optional[str] = None) -> Dict:
         """检索 0 命中时的标准化处理:直接 L3 + 写历史."""
         self._emit_progress("generate", 3, "0 召回, 走规则兜底")
         ans = self._l3_rule_fallback([], query)
@@ -635,6 +678,7 @@ class QaAssistantEngine:
                 query=query, answer_json=ans, retrieved_kp_ids=[],
                 mode=mode, source='rule_fallback',
                 latency_ms=latency_ms, is_test_query=is_test_query,
+                friend_tag=friend_tag,
             )
         except Exception as e:
             self._safe_log_event("qa_save_history_failed", "error",
@@ -643,6 +687,7 @@ class QaAssistantEngine:
         self._safe_log_event("qa_retrieval_empty", "warning", {
             "query": query[:200], "mode": mode,
             "is_test_query": int(is_test_query),
+            "friend_tag": friend_tag,
             "history_id": history_id,
         })
         self._emit_progress("record", 5, "完成(0 召回 → L3)")
@@ -653,6 +698,7 @@ class QaAssistantEngine:
             "retrieved_kp_ids": [], "canceled": False,
             "cost_estimate_cny": round(self._cost, 4),
             "error": None,
+            "model_used": None,  # 规则兜底不调 AI
         }
 
     # ================================================================
@@ -828,6 +874,7 @@ class QaAssistantEngine:
             "retrieved_kp_ids": [], "canceled": True,
             "cost_estimate_cny": round(self._cost, 4),
             "error": msg,
+            "model_used": None,
         }
 
     def _safe_log_event(self, event_type: str, severity: str,
@@ -852,15 +899,24 @@ class QaAssistantEngine:
 def run_qa(db: Any, client: Any, query: str, mode: str = 'self',
             is_test_query: int = 0,
             progress_callback: Optional[Callable[[Dict], None]] = None,
-            cancel_check: Optional[Callable[[], bool]] = None) -> Dict:
+            cancel_check: Optional[Callable[[], bool]] = None,
+            model_pref: str = 'v3',
+            friend_tag: Optional[str] = None) -> Dict:
     """模块级便捷函数,供 api_server 调用.
+
+    v2.3.3-mvp 新增参数:
+      model_pref: 'v3' | 'r1'  主链模型偏好(自用 R1 时主链翻转)
+      friend_tag: str|None     朋友身份(URL ?u=张三)
 
     调用方式:
         from scripts.qa_assistant import run_qa
         result = run_qa(db, client, "全域土地综合整治怎么搞",
                          mode='self', is_test_query=0,
                          progress_callback=cb,
-                         cancel_check=lambda: _qa_task['cancel_requested'])
+                         cancel_check=lambda: _qa_task['cancel_requested'],
+                         model_pref='v3',
+                         friend_tag='张三')
     """
     engine = QaAssistantEngine(db, client, progress_callback, cancel_check)
-    return engine.run_qa(query, mode=mode, is_test_query=is_test_query)
+    return engine.run_qa(query, mode=mode, is_test_query=is_test_query,
+                          model_pref=model_pref, friend_tag=friend_tag)

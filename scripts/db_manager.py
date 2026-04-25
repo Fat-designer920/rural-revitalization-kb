@@ -498,6 +498,7 @@ class DatabaseManager:
                 CHECK(source IN ('main','l1_retry','r1_fallback','rule_fallback')),
             is_test_query INTEGER DEFAULT 0,
             latency_ms INTEGER DEFAULT 0,
+            friend_tag TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime'))
         )""")
         c.execute("""CREATE TABLE IF NOT EXISTS qa_feedback (
@@ -508,6 +509,16 @@ class DatabaseManager:
             comment TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (qa_history_id) REFERENCES qa_history(id)
+        )""")
+        # v2.3.3-mvp F063 朋友试用配额管理: 限速 20 次/天/IP
+        # ip + date 复合主键: 同一 IP 同一天的配额累加
+        # 仅 mode=friend 时校验/计数,自用模式不消耗
+        c.execute("""CREATE TABLE IF NOT EXISTS friend_quota_daily (
+            ip TEXT NOT NULL,
+            date TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            last_at TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (ip, date)
         )""")
         # --- 索引 ---
         for idx in [
@@ -547,6 +558,11 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_qa_history_mode ON qa_history(mode, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_qa_history_test ON qa_history(is_test_query, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_qa_feedback_history ON qa_feedback(qa_history_id)",
+            # v2.3.3-mvp F063 朋友试用配额管理
+            # 注意:idx_qa_history_friend_tag 引用 friend_tag 字段(v2.3.3-mvp 新增),
+            # 老库走 init_tables 时 CREATE TABLE IF NOT EXISTS 跳过, friend_tag 字段不存在,
+            # 此处创建索引会崩(立规则 60 应验). 该索引仅在 _upgrade_schema_to_current
+            # 的 _V233_NEW_INDEXES 中创建(在 ALTER TABLE ADD COLUMN 之后,新库幂等触发).
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -3074,7 +3090,8 @@ class DatabaseManager:
 
     def save_qa_history(self, query, answer_json, retrieved_kp_ids,
                          mode="self", source="main",
-                         latency_ms=0, is_test_query=0):
+                         latency_ms=0, is_test_query=0,
+                         friend_tag=None):
         """问答留痕. 返回 history_id (int).
 
         query: str            用户原始问题
@@ -3084,6 +3101,7 @@ class DatabaseManager:
         source: 'main' | 'l1_retry' | 'r1_fallback' | 'rule_fallback'
         latency_ms: int       端到端耗时
         is_test_query: 0 | 1  老唐自测标记
+        friend_tag: str|None  v2.3.3-mvp 朋友身份(URL ?u=张三),仅 mode=friend 有值
         """
         if mode not in ("self", "friend"):
             mode = "self"
@@ -3106,16 +3124,80 @@ class DatabaseManager:
         else:
             kp_ids_str = "[]"
 
+        # friend_tag 安全清洗:截断 50 字符,去前后空白
+        ft_clean = None
+        if friend_tag is not None:
+            ft_clean = str(friend_tag).strip()[:50] or None
+
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO qa_history
                      (query, answer_json, retrieved_kp_ids,
-                      mode, source, latency_ms, is_test_query, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
+                      mode, source, latency_ms, is_test_query,
+                      friend_tag, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
                   (str(query or ""), answer_json_str, kp_ids_str,
-                   mode, source, int(latency_ms or 0), 1 if is_test_query else 0))
+                   mode, source, int(latency_ms or 0),
+                   1 if is_test_query else 0, ft_clean))
         history_id = c.lastrowid
         conn.commit(); conn.close()
         return int(history_id)
+
+    # ================================================================
+    # v2.3.3-mvp F063 朋友试用配额管理
+    # ----------------------------------------------------------------
+    # 设计:
+    #   - 仅 mode=friend 时调用本组方法(自用模式不限速)
+    #   - 用 IP + date 复合主键,跨自然天自动重置(SQLite date('now','localtime'))
+    #   - check 在 qa_ask 抢锁前调用,超限 429 拒绝
+    #   - incr 在 worker 成功后调用,失败不计数(老唐决策:不吐刷朋友额度)
+    # ================================================================
+    def check_friend_quota(self, ip, daily_limit=20):
+        """检查 IP 当天配额是否还够.
+
+        ip: str          客户端 IP(api_server.py 用 request.remote_addr 提取)
+        daily_limit: int 当日上限,默认 20
+        返回: (ok: bool, used: int, limit: int)
+            ok=True  → 配额充足,可放行
+            ok=False → 已超限,拒绝(429)
+        """
+        if not ip:
+            return (True, 0, daily_limit)  # IP 缺失保守放行(避免误伤)
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("""SELECT count FROM friend_quota_daily
+                         WHERE ip=? AND date=date('now','localtime')""",
+                      (str(ip),))
+            row = c.fetchone()
+            used = int(row[0]) if row else 0
+            return (used < daily_limit, used, daily_limit)
+        finally:
+            conn.close()
+
+    def incr_friend_quota(self, ip):
+        """成功完成一次问答后,IP 当天配额 +1.
+
+        UPSERT 模式(SQLite 3.24+ ON CONFLICT):
+          首次 → INSERT count=1
+          后续 → UPDATE count=count+1
+        ip 缺失则静默跳过(不报错,不计数)
+        """
+        if not ip:
+            return
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("""INSERT INTO friend_quota_daily (ip, date, count, last_at)
+                         VALUES (?, date('now','localtime'), 1,
+                                 datetime('now','localtime'))
+                         ON CONFLICT(ip, date) DO UPDATE SET
+                             count = count + 1,
+                             last_at = datetime('now','localtime')""",
+                      (str(ip),))
+            conn.commit()
+        except Exception:
+            # 限速失败不能阻塞主流程,降级为日志(无日志方法时静默)
+            pass
+        finally:
+            conn.close()
 
     def save_qa_feedback(self, qa_history_id, feedback_type, comment=None):
         """反馈写入. 返回 feedback_id (int).

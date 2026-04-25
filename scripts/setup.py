@@ -1,14 +1,14 @@
 """
 setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.2
+版本：v2.3.3-mvp-part1a
 
 功能：
   1. 创建目录结构（9个目录）
-  2. 初始化数据库（24张表,全部字段,一次建成）
+  2. 初始化数据库（25张表,全部字段,一次建成）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. [v2.3.1/v2.3.2 新增] 追齐存量库 schema（幂等,新库空跑）
+  5. [v2.3.1/v2.3.2/v2.3.3-mvp 新增] 追齐存量库 schema（幂等,新库空跑）
   6. 创建桌面快捷方式
   7. 验证核心文件完整性
 
@@ -16,6 +16,18 @@ setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
       新用户首次安装 → init_tables() 一步到位拿最新 schema。
       存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
       同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
+
+v2.3.3-mvp-part1a 变更：
+  - 双客户端架构 part1a 后端基础设施(part1b qa_public.html / part1c review.html 改造)
+  - F063 朋友试用配额管理 (新表 friend_quota_daily) 限速 20 次/天/IP
+  - qa_history 加 friend_tag 字段(URL ?u=张三 朋友身份识别,精准反馈分析)
+  - 新表 friend_quota_daily(ip + date 复合主键 + count 自增)
+  - 1 个新索引: idx_qa_history_friend_tag
+  - 数据库表数量: 24 → 25 张
+  - _V233_NEW_COLUMNS / _V233_NEW_TABLES_SQL_LIST / _V233_NEW_INDEXES 独立常量
+  - _upgrade_schema_to_current 加 Step 6/7/8 处理 v2.3.3-mvp schema
+  - 立规则 55 第 4 次落地:不再单独提供 migrate 脚本,合并入本脚本
+  - 立规则 9 第 10 次应验:文件验证清单本版补 qa_assistant.py(v2.3.2 注释说加但实际清单遗漏)
 
 v2.3.2 变更：
   - F055 本地问答助手 schema 加入(立规则 55 第 3 次落地,继续合并入本脚本)
@@ -74,7 +86,7 @@ def get_config():
 
 def get_version():
     p = PROJECT_ROOT / "VERSION"
-    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.2"
+    return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.3-mvp-part1a"
 
 
 # ================================================================
@@ -157,14 +169,44 @@ _V232_NEW_INDEXES = [
 ]
 
 
+# ================================================================
+# v2.3.3-mvp-part1a 追齐:朋友试用配额管理 + 朋友身份识别
+# ----------------------------------------------------------------
+# 双客户端架构 part1a 后端基础设施:
+#   - qa_history 加 friend_tag 字段(URL ?u=张三, 朋友身份精准识别)
+#   - 新表 friend_quota_daily(IP 限速 20 次/天)
+#   - 1 个索引:idx_qa_history_friend_tag(便于按朋友筛选历史)
+# ================================================================
+_V233_NEW_COLUMNS = [
+    ("friend_tag", "TEXT DEFAULT NULL"),  # 朋友身份(URL ?u=张三),仅 mode=friend 有值
+]
+
+_V233_NEW_TABLES_SQL_LIST = [
+    ("friend_quota_daily", """
+CREATE TABLE IF NOT EXISTS friend_quota_daily (
+    ip TEXT NOT NULL,
+    date TEXT NOT NULL,
+    count INTEGER DEFAULT 0,
+    last_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (ip, date)
+)
+"""),
+]
+
+_V233_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_qa_history_friend_tag ON qa_history(friend_tag, created_at DESC)",
+]
+
+
 def _upgrade_schema_to_current(db_path):
-    """追齐存量库 schema 到 v2.3.2.
+    """追齐存量库 schema 到 v2.3.3-mvp-part1a.
 
     返回 dict 描述本次实际追加的内容(供 setup 主流程打印汇总).
     新库场景下会全部跳过,返回全零值.
 
-    本函数同时处理 v2.3.1 (premium 系列) 和 v2.3.2 (qa 系列) 两批 schema,
-    版本常量分两组保留, 升级时只看"做了几件"不看"哪个版本做的".
+    本函数同时处理 v2.3.1 (premium 系列) / v2.3.2 (qa 系列) /
+    v2.3.3-mvp (朋友试用配额 + 朋友身份识别) 三批 schema,
+    版本常量分组保留, 升级时只看"做了几件"不看"哪个版本做的".
     """
     summary = {
         "columns_added": [], "columns_skipped": [],
@@ -226,6 +268,38 @@ def _upgrade_schema_to_current(db_path):
                 c.execute(idx_sql)
                 summary["indexes_created"].append(idx_name)
 
+        # Step 6: qa_history 加 friend_tag 字段 (v2.3.3-mvp)
+        c.execute("PRAGMA table_info(qa_history)")
+        qa_existing_cols = {r[1] for r in c.fetchall()}
+        for col_name, col_def in _V233_NEW_COLUMNS:
+            if col_name in qa_existing_cols:
+                summary["columns_skipped"].append(col_name)
+            else:
+                c.execute("ALTER TABLE qa_history ADD COLUMN %s %s"
+                          % (col_name, col_def))
+                summary["columns_added"].append(col_name)
+
+        # Step 7: friend_quota_daily 新表 (v2.3.3-mvp)
+        for tbl_name, tbl_sql in _V233_NEW_TABLES_SQL_LIST:
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                      "AND name=?", (tbl_name,))
+            if c.fetchone():
+                summary["tables_skipped"].append(tbl_name)
+            else:
+                c.execute(tbl_sql)
+                summary["tables_created"].append(tbl_name)
+
+        # Step 8: 1 个新索引 (v2.3.3-mvp, CREATE INDEX IF NOT EXISTS)
+        for idx_sql in _V233_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
         conn.commit()
     finally:
         conn.close()
@@ -269,7 +343,7 @@ def main():
                          str(base / "data" / "database" / "knowledge_base.db"))
     db = DatabaseManager(db_path)
     db.init_tables()
-    print("    OK 24张表已创建（全部字段，无需迁移）")
+    print("    OK 25张表已创建（全部字段，无需迁移）")
 
     # ── [3/6] 写入默认分类 ──────────────────────────
     print("\n[3/6] 写入默认分类...")
@@ -301,12 +375,12 @@ def main():
         print("    OK 虚拟source_file(id=0)已存在")
     conn.close()
 
-    # ── [6/6] 追齐存量库 schema (v2.3.1 + v2.3.2) ────
+    # ── [6/6] 追齐存量库 schema (v2.3.1 + v2.3.2 + v2.3.3-mvp) ────
     # 新库场景下本步骤全部跳过(init_tables 已建全)
     # 老库场景下本步骤会 ALTER TABLE ADD COLUMN / CREATE TABLE IF NOT EXISTS
-    # 本函数合并自原 scripts/migrate_v2_3_1.py + v2.3.2 schema,
-    # 立规则 55 第 3 次落地:不再单独提供 migrate 脚本
-    print("\n[6/6] 追齐存量库 schema (v2.3.1 + v2.3.2)...")
+    # 本函数合并自原 scripts/migrate_v2_3_1.py + v2.3.2/v2.3.3-mvp schema,
+    # 立规则 55 第 4 次落地:不再单独提供 migrate 脚本
+    print("\n[6/6] 追齐存量库 schema (v2.3.1 + v2.3.2 + v2.3.3-mvp)...")
     try:
         up = _upgrade_schema_to_current(db_path)
         ca = len(up["columns_added"]); cs = len(up["columns_skipped"])
@@ -327,7 +401,7 @@ def main():
     except Exception as e:
         print("    !! 追齐 schema 失败: %s" % e)
         print("       可用 sqlite3 手动查 knowledge_points / premium_ai_cache /"
-              " qa_history / qa_feedback 表")
+              " qa_history / qa_feedback / friend_quota_daily 表")
 
     db.log_operation("system_init", details={"version": get_version()})
 
@@ -372,6 +446,7 @@ def main():
         "scripts/e2e_tester.py",         # v2.3.0-part3-alpha2 新增（F062 六维度扫描引擎层）
         "scripts/premium_judge.py",      # v2.3.1 新增（F2 精品候选 AI 双视角判定引擎）
         "scripts/premium_exporter.py",   # v2.3.1 新增（F6 精品导出 Markdown/JSON 格式化）
+        "scripts/qa_assistant.py",       # v2.3.2 新增（F055 智能问答四级降级链 + 4 板块组装）
         "scripts/prompts/prompt_templates.py",
         "web/templates/review.html",
     ]
