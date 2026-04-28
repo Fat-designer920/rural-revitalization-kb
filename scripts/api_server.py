@@ -1580,6 +1580,33 @@ def dashboard():
             print(f"[dashboard] tag_distribution 计算失败: {_td_e}")
             data["tag_distribution"] = {"A": [], "C": [], "D": []}
 
+        # v2.3.4-hotfix1: 提取来源模型分布(老唐肉眼监控非主链救回 kp 比例)
+        # 数据源 knowledge_points.extracted_by_model 字段(L0=r1/L1=kimi/L2=r1_mirror/L3=f057_recovery)
+        # 老库默认值 'r1' 兼容,新提取的 kp 由 extractor 透传真实来源
+        try:
+            c.execute("""SELECT extracted_by_model, COUNT(*) FROM knowledge_points
+                         GROUP BY extracted_by_model""")
+            md_map = {}
+            md_total = 0
+            md_non_main = 0
+            for row in c.fetchall():
+                model = row[0] or "r1"
+                cnt = row[1]
+                md_map[model] = cnt
+                md_total += cnt
+                if model != "r1":
+                    md_non_main += cnt
+            data["model_distribution"] = {
+                "by_model": md_map,
+                "total": md_total,
+                "non_main_recovered": md_non_main,
+                "non_main_pct": round(md_non_main * 100.0 / md_total, 2) if md_total > 0 else 0.0
+            }
+        except Exception as _md_e:
+            print(f"[dashboard] model_distribution 计算失败: {_md_e}")
+            data["model_distribution"] = {"by_model": {}, "total": 0,
+                                          "non_main_recovered": 0, "non_main_pct": 0.0}
+
         # 文件管线
         pipeline = {}
         base = PROJECT_ROOT

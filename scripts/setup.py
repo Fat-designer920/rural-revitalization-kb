@@ -1,14 +1,14 @@
 """
 setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.3-mvp-part1a
+版本：v2.3.4-hotfix1
 
 功能：
   1. 创建目录结构（9个目录）
   2. 初始化数据库（25张表,全部字段,一次建成）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. [v2.3.1/v2.3.2/v2.3.3-mvp 新增] 追齐存量库 schema（幂等,新库空跑）
+  5. [v2.3.1/v2.3.2/v2.3.3-mvp/v2.3.4-hotfix1 新增] 追齐存量库 schema（幂等,新库空跑）
   6. 创建桌面快捷方式
   7. 验证核心文件完整性
 
@@ -16,6 +16,12 @@ setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
       新用户首次安装 → init_tables() 一步到位拿最新 schema。
       存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
       同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
+
+v2.3.4-hotfix1 变更：
+  - 截断零提取多模型兜底(L1 Kimi-K2.6 + L2 R1 跨厂商镜像)
+  - knowledge_points 表加 extracted_by_model 字段(默认 'r1' 兼容老库)
+  - 新增索引 idx_kp_model 走 _upgrade Step 9/10(立规则 60:依赖新字段的索引必须在字段建好后建)
+  - _V234_NEW_COLUMNS / _V234_NEW_INDEXES 独立常量,db 表数量不变(25 张)
 
 v2.3.3-mvp-part1a 变更：
   - 双客户端架构 part1a 后端基础设施(part1b qa_public.html / part1c review.html 改造)
@@ -197,6 +203,18 @@ _V233_NEW_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_qa_history_friend_tag ON qa_history(friend_tag, created_at DESC)",
 ]
 
+# v2.3.4-hotfix1: 提取来源模型字段 + 索引
+# 立规则 60 落地:索引依赖新字段,必须先 ALTER 加字段(Step 9)再 CREATE INDEX(Step 10),
+# 不能放 db_manager.init_tables 的统一 indexes 列表里(老库走 IF NOT EXISTS 跳过 CREATE TABLE,
+# extracted_by_model 字段不存在,index 创建会崩 — 与 v2.3.3 idx_qa_history_friend_tag 同模式)
+_V234_NEW_COLUMNS = [
+    ("extracted_by_model", "TEXT DEFAULT 'r1'"),  # L0=r1 / L1=kimi / L2=r1_mirror / L3=f057_recovery
+]
+
+_V234_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_kp_model ON knowledge_points(extracted_by_model)",
+]
+
 
 def _upgrade_schema_to_current(db_path):
     """追齐存量库 schema 到 v2.3.3-mvp-part1a.
@@ -291,6 +309,28 @@ def _upgrade_schema_to_current(db_path):
 
         # Step 8: 1 个新索引 (v2.3.3-mvp, CREATE INDEX IF NOT EXISTS)
         for idx_sql in _V233_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 9: knowledge_points 加 extracted_by_model 字段 (v2.3.4-hotfix1)
+        c.execute("PRAGMA table_info(knowledge_points)")
+        kp_existing_cols = {r[1] for r in c.fetchall()}
+        for col_name, col_def in _V234_NEW_COLUMNS:
+            if col_name in kp_existing_cols:
+                summary["columns_skipped"].append(col_name)
+            else:
+                c.execute("ALTER TABLE knowledge_points ADD COLUMN %s %s"
+                          % (col_name, col_def))
+                summary["columns_added"].append(col_name)
+
+        # Step 10: idx_kp_model 索引 (v2.3.4-hotfix1, 必须在 Step 9 后)
+        for idx_sql in _V234_NEW_INDEXES:
             idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
             c.execute("SELECT name FROM sqlite_master WHERE type='index' "
                       "AND name=?", (idx_name,))

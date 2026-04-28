@@ -1,7 +1,13 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.3.0-part3-alpha1 - F062 端到端健康测试 Agent 基础层 Prompt
+版本：v2.3.4-hotfix1 - 多模型整段重提 PROMPT 100% 复用
+
+变更说明（v2.3.4-hotfix1）：
+  - PROMPT_VERSION 从 v2.3.4 升到 v2.3.4-hotfix1
+  - Prompt 内容**完全不动**:同一套 prompt 同时喂 R1 / Kimi-K2.6(思考型) / R1 跨厂商镜像
+  - 不为 Qwen3 / Kimi 单独适配:OpenAI 兼容格式 + JSON Lines 输出 + 思考型默认开启
+  - extractor.py L1/L2 通过 chat_via_siliconflow 调用,prompt 包字面相同
 
 变更说明（v2.3.0-part3-alpha1 对话 1/3）：
   - 新增 1 个 F062 体检 Prompt 正式版文本:
@@ -108,7 +114,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.3.3"
+PROMPT_VERSION = "v2.3.4-hotfix1"
 
 
 def get_prompt_version():
@@ -457,7 +463,7 @@ _POLICY_EXTRACT_BASE = {
 "suggested_category_code":"分类编码如1.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式（v2.3.3 升级:JSON Lines）
+## 输出格式（v2.3.4 升级:JSON Lines）
 逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
 最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字文件概述","extraction_notes":"提取过程说明"}
 
@@ -564,7 +570,7 @@ _CASE_EXTRACT_BASE = {
 "suggested_category_code":"如2.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式（v2.3.3 升级:JSON Lines）
+## 输出格式（v2.3.4 升级:JSON Lines）
 逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
 最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
 
@@ -666,7 +672,7 @@ _EXPERIENCE_EXTRACT_BASE = {
 "suggested_category_code":"如3.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式（v2.3.3 升级:JSON Lines）
+## 输出格式（v2.3.4 升级:JSON Lines）
 逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
 最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
 
@@ -752,7 +758,7 @@ _TOOL_EXTRACT_BASE = {
 "suggested_category_code":"如4.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式（v2.3.3 升级:JSON Lines）
+## 输出格式（v2.3.4 升级:JSON Lines）
 逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
 最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
 
@@ -833,7 +839,7 @@ _DATA_EXTRACT_BASE = {
 "suggested_category_code":"如5.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式（v2.3.3 升级:JSON Lines）
+## 输出格式（v2.3.4 升级:JSON Lines）
 逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
 最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
 

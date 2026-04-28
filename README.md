@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:**v2.3.3-mvp**(双客户端架构:后台调试 + 朋友试用产品页 /qa 物理隔离 / friend_tag URL ?u= 朋友身份 / IP 限速 20 次/天 / V3-R1 主链可选 / 立规则 60 新立)
+> **当前版本**:**v2.3.4-hotfix1**(截断零提取多模型整段重提:废弃 prefix 续写主链 + L1 Kimi-K2.6 整段重提 + L2 R1 跨厂商镜像整段重提 + F057 降为 L3 + extracted_by_model 字段 + 仪表盘 Card 15 老唐肉眼监控;PROMPT_VERSION 升 v2.3.4-hotfix1)
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 做什么 | 验证什么 |
 |------|--------|---------|
-| 当前(v2.3.3-mvp 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa(?u=张三 精准追踪)** | 回答质量 / 体验 / 付费意愿 / 哪类朋友提哪类问题 |
+| 当前(v2.3.4-hotfix1 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa(?u=张三 精准追踪)+ 多思考型模型整段重提兜底** | 回答质量 / 体验 / 付费意愿 / 大文件提取截断率 / L1/L2 救回 kp 质量 |
 | 200 条精品+ | 政策解读文章发行业圈子 | 内容付费 |
 | 300 条精品+ | 云端问答助手产品化 | C 端订阅 |
 | 500 条精品+ | 投标辅助 / 培训 / 合规自检 | B 端高客单价 |
@@ -53,7 +53,7 @@
 双击 首次安装.bat
 ```
 
-按提示完成 Python 环境检查、依赖安装、双 API Key 配置、数据库初始化（21 张表一次建成）。
+按提示完成 Python 环境检查、依赖安装、双 API Key 配置、数据库初始化（25 张表一次建成）。
 
 ### 日常使用
 
@@ -69,28 +69,30 @@
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
 
-**v2.3.2 关键交付**:
-- **F055 本地问答助手首版**:`scripts/qa_assistant.py` 866 行(QaAssistantEngine + 模块级 `run_qa()`),精品+quotable 池检索 + V3 重排 + 三级降级链 + 4 板块通用回答(直答/依据/延伸思考/补漏提醒);Tab 3 整段新建(~700 行 HTML+JS,严格 ES5);URL `?mode=friend` 朋友试用模式 + 反馈闭环 👍/👎/💬;老唐自测 `is_test_query=1` 不写埋点(防脏数据);商业化路径从"自用"过渡到"朋友试用 + 内容付费"
-- **F056 单 HTML 查看器**:`web/templates/f056_viewer.html` 471 行零依赖,双击浏览器打开即用;拖 JSON 进页面 + 校验 v1.0 标准(E001-E027 完整)+ 渲染 13 字段;朋友拿到导出 JSON 即看精品包
-- **api_server.py +7 路由 + 独立 `_qa_task` 槽**:`/api/qa/{ask,cancel,progress,history,history/<hid>,feedback,stats}`,4 层 readiness_check
-- **db_manager.py +6 方法 + 2 表 + 4 索引**:qa_history + qa_feedback + qa 相关索引
-- **3 新 Prompt + 9 新事件**:PROMPT_VERSION 升 v2.3.2(28→31);`qa_*` 族 9 种事件埋点
-- **立规则 57 首立**:Phase 3 工作量 grep 预评估,主动拆 part3a/part3b 不冒险
+**v2.3.4-hotfix1 关键交付**(2026-04-28):
 
-**part3.8 关键修复**:
-- **F062 白名单一次性清账**:白名单从 db_manager 单文件扩展到 7 文件(db_manager+api_server+extractor+health_checker+duplicate_checker+preprocessor+backup_manager),DIM4 67→75/DIM6 11→79 条,新增 `WHITELIST_COVERAGE` 常量。E2E 扫分从 79.2 回到预期 92-95
-- **6 批量路由 errors 收集改造**(E2 方案):批量确认/忽略/删除/续期/标记过时/恢复/移除 共 7 个按钮,把原 `except:pass` 改为 `except Exception as e: errors.append({id,error})`,前端混合策略(成功 toast/有失败弹 `#batchResultModal` 看详情)。老唐以后能看到每条失败原因
-- **冗余代码清理(立规则 52 条首次应用)**:extractor.py 删 37 行(run_headless 5 迁移 import 整段 -17 + main 双路径 fallback -20),duplicate_checker.py 删 3 行(main 内 migrate),10 条 dim6 issue 自然消失
+- **5 层降级链彻底重写**:R1 → Kimi-K2.6 整段重提(硅基,256K context)→ R1 跨厂商镜像整段重提 → F057(若 partial>=1)→ 保留;**段内同步降级,不留事后批量重跑**;跨 3 模型同段全失败概率接近 0
+- **废弃 prefix 续写主链**(chat_continue_with_prefix / _recover_via_prefix 标 DEPRECATED 代码保留):废弃理由 partial==0 时 prefix 空续写无法启动
+- **`extracted_by_model` 字段**:每条 kp 入库带来源标记(r1/kimi/r1_mirror/f057_recovery),老唐肉眼监控非主链救回比例
+- **仪表盘 Card 15 "非主链救回 kp 数"**:占比百分比 + 按模型分行 + ">5% 警示"提示文案
+- **`chat_via_siliconflow(model, ...)` 通用方法**:L1/L2 复用,走 `https://api.siliconflow.cn/v1/chat/completions`,复用 OCR 已配的硅基流动 API key
+- **立规则 60 第 1 次正式落地**:新字段 + 依赖索引必须放 setup.py `_upgrade_schema_to_current` Step 9/10,不放 db_manager.init_tables 统一 indexes 列表(v2.3.3-mvp 文档债务清理)
 
-**part3.7 关键修复**:
-- **F062 规则精度**:E2E 扫描 issue 从 207 降到 60-90,信噪比质变。规则精度三连改(snippet 显示真实 pass 行 / `r` 不再当 kp / 历史 Prompt key 白名单静默)
-- **诊断包口径对齐**:第三段 dim4/dim6 count 与第四段聚合清单同源
+**v2.3.4 关键交付**:
+- **提取系统截断防御重构**:R1/V3 max_tokens 显式设 8192(原默认 4K,翻倍输出空间,**单次稳定输出 kp 数 4-7→8-13 条**)
+- **chat_with_json 默认启用 JSON Mode + 双保险**:`response_format={"type":"json_object"}` 启用 + system_prompt 的"必须 JSON"硬话保留 + 失败自动降级一次不带 mode 重试,JSON 解析成功率 ~70%→95%+
+- **新增 chat_continue_with_prefix(走 beta 端点 + V3 续写)**:Chat Prefix Completion 续写截断输出,把已生成 JSON 当 prefix 让模型直接接着写,**比 F057 excerpt 定位强 10 倍 + 成本降 8 倍**(R1 4/16 元 vs V3 1/2 元/百万 token)
+- **5 个提取 Prompt 输出格式改 JSON Lines + PROMPT_VERSION 升 v2.3.4**:每行 1 个独立 kp JSON,最后一行 `_meta` 元数据,**截断只丢最后 1 行**而非整份 JSON
+- **截断三级降级新流程**:L0/L1 Prefix 续写(2 次)→ L2 F057 兜底(从主补救降为兜底)→ L3 保留已提取
+- **D11 控制台文件级统计**:每文件提取完成时输出 `📊 [文件统计] 截断N/Prefix续写M/F057兜底K/耗时Ts/估算Y元 / Prompt v2.3.4`,老唐肉眼即看
+- **立规则 59 新立**:CHANGELOG.md 是版本号唯一真相源,优先于 00_项目全景.md(本版血泪立规则,立规则 9 第 14 次应验同根)
 
-**part3.6 关键修复**:
-- **诊断包准确性**:六维度得分权重列不再全 0、白名单失效自检输出警告、近 7 天事件日志正常显示
-- **工程纪律**:沉淀立规则 49/50/51 三条
+**v2.3.3-mvp 关键交付**(2026-04-25 上线):
+- **双客户端架构**:后台 review.html(调试视角)+ 独立 qa_public.html(1395 行朋友试用产品页),物理隔离 + 营销首屏 + 复制双格式 + URL `?u=张三` 朋友身份精准识别 + IP 限速 20 次/天/只成功才计数 + V3/R1 主链可选(自用调试 R1,朋友强制 V3 不烧钱)
+- **新增 friend_quota_daily 表 + qa_history.friend_tag 字段 + 1 索引**(数据库 24→25 表,索引 31→32)
+- **立规则 58/60 新立**:对话内不输出代码细节(只交付文件)+ 新字段依赖索引必须放 _upgrade_schema_to_current
 
-**历史版本精华**(part3.3/part3.4/part3.5):低分打磨候选池允许 confirmed / E2E issue 签名漂移修复 / 审核统计 UI 重写 / E2E 诊断包导出 feature —— 详见 CHANGELOG
+**v2.3.2 关键交付**(2026-04-25):F055 本地问答助手首版(866 行 qa_assistant + 7 路由 + Tab 3 + 三级降级链 + 4 板块回答)+ F056 单 HTML 查看器零依赖渲染 + 立规则 57 首立(Phase 3 工作量 grep 预评估)
 
 ---
 
@@ -99,7 +101,7 @@
 ```
 rural-revitalization-kb/
 ├── scripts/
-│   ├── prompts/             # Prompt 模板（26 个）
+│   ├── prompts/             # Prompt 模板（31 个）
 │   ├── api_server.py        # 管理后台 API（v2.3.0-part3.8，F048 8 + F062 8 + qc_rerun 3 路由 + 启动兜底 init_tables；part3.8 6 批量路由 errors 收集改造）
 │   ├── extractor.py         # 知识提取引擎（v2.3.0-part3.8，含 F057/F058，part3.8 冗余迁移 import 清理-21 行）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
@@ -176,7 +178,10 @@ rural-revitalization-kb/
 | **v2.3.1** | **feature:精品资产生产线(F2 双视角 AI 判定 + composite_score 排序 + 批量封神 + 精品 Markdown/JSON 导出)+ 立规则 53-56** | ✅ |
 | **v2.3.1-hotfix1** | **hotfix:annotations.title bug + premium_exporter F056 v1.0 升级 + validate_publish_json 校验函数;立规则 9 第 8 次应验** | ✅ |
 | **v2.3.2** | **feature:F055 本地问答助手首版(866 行 qa_assistant + 7 路由 + Tab 3 + 三级降级链 + 4 板块回答 + 朋友试用模式)+ F056 单 HTML 查看器(零依赖渲染 v1.0 标准 13 字段)+ 立规则 57 首立 + 立规则 9 第 10/11 次应验** | ✅ |
-| v2.3.3 | F020 冲突检测 + F030 知识关联网络 | 规划 |
+| **v2.3.3-mvp** | **feature:双客户端架构(后台调试 + qa_public.html 朋友试用产品页 1395 行)+ friend_quota_daily 表 + qa_history.friend_tag + 立规则 58/60 新立** | ✅ 2026-04-25 |
+| **v2.3.4** | **feature:提取系统截断防御重构(R1/V3 max_tokens 8192 + JSON Mode + Chat Prefix Completion 续写主链 + JSON Lines 输出 + F057 降为 L2 兜底 + 控制台 📊 文件统计)+ 立规则 59 新立(CHANGELOG 是版本号唯一真相源)+ 立规则 9 第 14 次应验** | ✅ 2026-04-28 |
+| **v2.3.4-hotfix1** | **hotfix:截断零提取多模型整段重提(废弃 prefix 续写主链 + L1 Kimi-K2.6 + L2 R1 跨厂商镜像 + F057 降为 L3 + extracted_by_model 字段 + 仪表盘 Card 15)+ 立规则 16 改造 + 9 第 15 次应验 + 60 第 1 次正式落地** | ✅ 2026-04-28 |
+| v2.3.5 | F020 冲突检测 + F030 知识关联网络(原 v2.3.3 scope,顺延两次) | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
 | v3.x | 云端产品化 | 远期 |
 
@@ -197,7 +202,7 @@ rural-revitalization-kb/
 ### Claude Projects 6 个项目文件
 
 - `00_项目全景.md`：模块状态 / 迭代路线 / 商业化 / **新对话启动指南**
-- `01_工程手册.md`：代码清单 / 立规则（**57 条**，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
+- `01_工程手册.md`：代码清单 / 立规则（**59 条**，分 4 类）/ 架构速查 / 模块结构 / **未来扩展指南**
 - `02_知识体系.md`：分类 + 三层标签 + **v2.3.2 问答历史元数据**
 - `03_Prompt手册.md`：**31 个 Prompt** 清单与接口契约
 - `CHANGELOG.md`：近 3 版完整 + 早期摘要
@@ -211,7 +216,7 @@ https://github.com/Fat-designer920/rural-revitalization-kb
 
 ## 关键约束（改代码时必读）
 
-> 完整立规则见 `01_工程手册.md` §二（分数据层 / 代码层 / 交互层 / 流程层 4 类 48 条）。以下是高频命中项：
+> 完整立规则见 `01_工程手册.md` §二（分数据层 / 代码层 / 交互层 / 流程层 4 类 59 条）。以下是高频命中项：
 
 **环境约束**：
 - **bat 文件**：GBK 编码 + CRLF 换行；不在 Python `-c` 参数内用 `%~dp0`

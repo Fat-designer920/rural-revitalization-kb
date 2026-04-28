@@ -240,6 +240,9 @@ class DatabaseManager:
             insight_reliability TEXT DEFAULT NULL,
             -- v2.2.0: 来源类型
             source_type TEXT DEFAULT 'extracted',
+            -- v2.3.4-hotfix1: 提取来源模型(L0=r1 / L1=kimi / L2=r1_mirror / L3=f057_recovery)
+            -- 老唐肉眼监控非主链救回的 kp 比例,F058 质检对所有 kp 一视同仁
+            extracted_by_model TEXT DEFAULT 'r1',
             -- v2.3.1: 精品资产生产线（双标独立 + 三级成色 + 使用埋点 + 保鲜预埋）
             premium_client INTEGER DEFAULT 0,
             premium_rfp INTEGER DEFAULT 0,
@@ -680,15 +683,19 @@ class DatabaseManager:
                             content_readiness="draft", source_authority="firsthand",
                             prompt_version="",
                             practical_insights=None,
-                            source_type="extracted"):
+                            source_type="extracted",
+                            extracted_by_model="r1"):
+        """v2.3.4-hotfix1:增加 extracted_by_model 参数(默认 'r1' 兼容老调用方)。
+        值约定:r1 / kimi / r1_mirror / f057_recovery,extractor 在 kp dict 用 _extracted_by_model 透传。
+        """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
              content_readiness, source_authority, prompt_version, practical_insights,
-             source_type)
-            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?)""",
+             source_type, extracted_by_model)
+            VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)""",
             (source_file_id, title, content_type, original_excerpt,
              json.dumps(ai_extracted_content or {}, ensure_ascii=False),
              suggested_category_id,
@@ -699,7 +706,7 @@ class DatabaseManager:
              source_page, source_keyword,
              content_readiness, source_authority, prompt_version,
              json.dumps(practical_insights or [], ensure_ascii=False),
-             source_type))
+             source_type, extracted_by_model))
         kid = c.lastrowid; conn.commit(); conn.close(); return kid
 
     def get_all_knowledge_points(self, review_status=None, content_type=None,

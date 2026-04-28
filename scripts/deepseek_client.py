@@ -1,15 +1,26 @@
 """
-deepseek_client.py - DeepSeek API封装 + 硅基流动OCR
+deepseek_client.py - DeepSeek API封装 + 硅基流动OCR + 硅基流动文本兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.3 - 提取系统截断防御重构(D1-D8 落地)
+版本：v2.3.4-hotfix1 - 截断零提取多模型兜底(L1 Kimi-K2.6 + L2 R1 镜像)
 
-变更说明(v2.3.3):
+变更说明(v2.3.4-hotfix1):
+  H1 _request 增加 api_key_override 参数(给硅基流动文本调用复用 retry 逻辑)
+  H2 类顶部新增 SILICONFLOW_TEXT_ENDPOINT / SILICONFLOW_TEXT_MODEL_L1 / SILICONFLOW_TEXT_MODEL_L2
+  H3 新增 chat_via_siliconflow() 通用方法 — 走硅基流动 endpoint,L1/L2 复用
+     默认 L1 = Pro/moonshotai/Kimi-K2.6(思考型,256K context)
+     默认 L2 = Pro/deepseek-ai/DeepSeek-R1(R1 跨厂商镜像)
+     可被环境变量 / .env 覆盖
+  H4 chat_continue_with_prefix 标注 DEPRECATED — 老逻辑代码完整保留,extractor 不再调用
+     废弃理由:prefix 续写假设 partial_kps>=1, R1 思考爆 token 时 partial==0 直接失效
+     替代方案:多思考型模型整段重提(extractor._extract_with_auto_split L1/L2 分支)
+
+变更说明(v2.3.4):
   D1 R1 max_tokens 显式设 8192(原默认 4K)
   D2 V3 max_tokens 默认从 4096 升 8192
   D3 chat_with_json 启用 response_format={"type":"json_object"} (JSON Mode)
   D4 双保险:同时保留 system_prompt 的"必须 JSON"硬话
   D5 JSON Mode 启用后空 content/解析失败 → 自动降级一次不带 mode 重试
-  D7 新增 chat_continue_with_prefix() 走 https://api.deepseek.com/beta 端点
+  D7 新增 chat_continue_with_prefix() 走 https://api.deepseek.com/beta 端点 [v2.3.4-hotfix1 起 DEPRECATED]
   D8 续写默认走 V3(deepseek-chat),成本降 8 倍
   新增 chat_with_jsonl() — JSON Lines 逐行解析容错,返回 prefix_for_continuation
   保留 _repair_truncated_json — 作为 jsonl 解析失败的最终兜底
@@ -29,10 +40,23 @@ class CostLimitExceeded(Exception):
 class DeepSeekClient:
     PRICING = {
         "deepseek-chat": {"input": 1.0, "output": 2.0},
-        "deepseek-reasoner": {"input": 4.0, "output": 16.0}
+        "deepseek-reasoner": {"input": 4.0, "output": 16.0},
+        # v2.3.4-hotfix1 H2:硅基流动文本模型(L1/L2 兜底)
+        # 价格按硅基流动 2026.4 公开估算,实际计费以平台为准
+        "Pro/moonshotai/Kimi-K2.6": {"input": 4.0, "output": 16.0},
+        "Pro/deepseek-ai/DeepSeek-R1": {"input": 4.0, "output": 16.0},
+        # 候补(若主选不可用,extractor 可通过 model_override 切换)
+        "Pro/moonshotai/Kimi-K2.5": {"input": 4.0, "output": 21.0},
+        "Pro/zai-org/GLM-4.7": {"input": 4.0, "output": 16.0},
     }
 
     R1_MODELS = {"deepseek-reasoner"}
+
+    # v2.3.4-hotfix1 H2:硅基流动文本调用 endpoint 与默认模型
+    # 老唐 .env 可设 SILICONFLOW_TEXT_MODEL_L1 / SILICONFLOW_TEXT_MODEL_L2 覆盖
+    SILICONFLOW_TEXT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
+    SILICONFLOW_TEXT_MODEL_L1 = os.getenv("SILICONFLOW_TEXT_MODEL_L1", "Pro/moonshotai/Kimi-K2.6")
+    SILICONFLOW_TEXT_MODEL_L2 = os.getenv("SILICONFLOW_TEXT_MODEL_L2", "Pro/deepseek-ai/DeepSeek-R1")
 
     def __init__(self, config=None):
         if config is None:
@@ -88,10 +112,21 @@ class DeepSeekClient:
     def _is_r1(self, model):
         return model in self.R1_MODELS
 
-    def _request(self, endpoint, payload, use_model=None, base_url_override=None):
+    def _request(self, endpoint, payload, use_model=None, base_url_override=None,
+                 api_key_override=None):
+        """v2.3.4-hotfix1 H1:增加 api_key_override 参数。
+        chat_via_siliconflow 走硅基流动 endpoint 时复用本方法的 retry 逻辑,
+        但 Authorization 头需要硅基流动的 key 而非 DeepSeek 的 key。
+        老调用方传 None 即维持原 DeepSeek 行为,零破坏。
+        """
         base = base_url_override or self.base_url
-        url = f"{base}/{endpoint.lstrip('/')}"
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        # H1:endpoint 可以是完整 URL(硅基流动场景)或相对路径(DeepSeek 场景)
+        if endpoint.startswith("http://") or endpoint.startswith("https://"):
+            url = endpoint
+        else:
+            url = f"{base}/{endpoint.lstrip('/')}"
+        api_key = api_key_override or self.api_key
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         timeout = self.r1_timeout if self._is_r1(use_model or self.model) else self.timeout
         last_err = None
         for attempt in range(1, self.max_retries + 1):
@@ -125,7 +160,7 @@ class DeepSeekClient:
     def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=8192,
              call_type="general", model_override=None, response_format=None,
              extra_messages=None, base_url_override=None, stop=None):
-        """v2.3.3 升级:
+        """v2.3.4 升级:
         - max_tokens 默认 4096 → 8192(D1+D2 R1/V3 输出窗口上限)
         - R1 分支显式传 max_tokens(原代码 pass 等于默认 4K,实测就是截断主因)
         - 新增 response_format(D3 JSON Mode)
@@ -324,7 +359,7 @@ class DeepSeekClient:
 
     def chat_with_json(self, system_prompt, user_prompt, temperature=0.1, max_tokens=8192,
                        call_type="json_extract", model_override=None, use_json_mode=True):
-        """v2.3.3 升级:
+        """v2.3.4 升级:
         - max_tokens 默认 4096 → 8192(D2)
         - 默认启用 response_format={"type":"json_object"}(D3 JSON Mode)
         - 双保险:同时保留 system_prompt 的"必须 JSON"硬话(D4)
@@ -380,7 +415,7 @@ class DeepSeekClient:
 
     def chat_with_jsonl(self, system_prompt, user_prompt, temperature=0.2, max_tokens=8192,
                         call_type="jsonl_extract", model_override=None):
-        """v2.3.3 新增(D9):JSON Lines 输出专用解析。
+        """v2.3.4 新增(D9):JSON Lines 输出专用解析。
 
         约定:模型每行输出一个独立完整的 JSON 对象,最后一行可选输出 {"_meta":true,...}
         逐行 try parse,任一行解析失败 → 视为该行被截断,后续行丢弃。
@@ -449,10 +484,155 @@ class DeepSeekClient:
         result["prefix_for_continuation"] = prefix_for_continuation
         return result
 
+    def chat_via_siliconflow(self, system_prompt, user_prompt, model,
+                             temperature=0.2, max_tokens=8192,
+                             call_type="extract_siliconflow",
+                             response_format=None, stop=None,
+                             extra_messages=None):
+        """v2.3.4-hotfix1 H3:硅基流动文本模型通用调用。
+
+        L1/L2 降级链复用此方法。endpoint 走 https://api.siliconflow.cn/v1/chat/completions,
+        Authorization 用硅基流动 API key(self._get_siliconflow_api_key()),
+        OpenAI 兼容格式,支持思考型模型(reasoning_content 字段会被一并接收)。
+
+        参数 model:硅基流动模型 ID,如:
+          - Pro/moonshotai/Kimi-K2.6  (L1 默认,思考型,中文政策强)
+          - Pro/deepseek-ai/DeepSeek-R1  (L2 默认,R1 跨厂商镜像)
+          - Pro/moonshotai/Kimi-K2.5  (候补)
+          - Pro/zai-org/GLM-4.7  (候补)
+
+        返回 dict 同 chat()(content / input_tokens / output_tokens / estimated_cost /
+        model / was_truncated / 可选 reasoning_content)。
+        """
+        self._check_cost()
+        sf_key = self._get_siliconflow_api_key()  # 复用 OCR 已配的 key
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        if extra_messages:
+            messages.extend(extra_messages)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        # 思考型模型(R1 / Kimi-thinking)不传 temperature,让模型默认值
+        # 这里规则简单:模型名含 R1 或 Thinking 时跳过 temperature
+        is_thinking = ("R1" in model or "Thinking" in model or "thinking" in model
+                       or "K2.6" in model or "K2.5" in model)  # K2.6/K2.5 默认 thinking
+        if not is_thinking:
+            payload["temperature"] = temperature
+        if response_format is not None:
+            payload["response_format"] = response_format
+        if stop is not None:
+            payload["stop"] = stop
+
+        # H1:复用 _request retry 逻辑,api_key_override=硅基流动 key
+        # endpoint 直接传完整 URL,_request 检测到 http(s):// 开头不再拼 base
+        resp = self._request(self.SILICONFLOW_TEXT_ENDPOINT, payload,
+                             use_model=model,
+                             api_key_override=sf_key)
+
+        msg = resp["choices"][0]["message"]
+        content = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
+
+        u = resp.get("usage", {})
+        inp = u.get("prompt_tokens", 0)
+        out = u.get("completion_tokens", 0)
+
+        finish_reason = resp["choices"][0].get("finish_reason", "stop")
+        was_truncated = (finish_reason == "length")
+
+        cost = self._estimate_cost(model, inp, out)
+        self.db.log_api_call(call_type, model, inp, out, cost)
+
+        result = {
+            "content": content,
+            "input_tokens": inp,
+            "output_tokens": out,
+            "estimated_cost": cost,
+            "model": model,
+            "was_truncated": was_truncated
+        }
+        if reasoning:
+            result["reasoning_content"] = reasoning
+        return result
+
+    def chat_jsonl_via_siliconflow(self, system_prompt, user_prompt, model,
+                                   temperature=0.2, max_tokens=8192,
+                                   call_type="extract_siliconflow_jsonl"):
+        """v2.3.4-hotfix1 H3:硅基流动 JSON Lines 解析版,行为与 chat_with_jsonl 对齐。
+
+        与 chat_with_jsonl 唯一差别:走 chat_via_siliconflow 而非 chat()。
+        返回字段同 chat_with_jsonl(parsed_lines/kp_objects/meta_object/last_broken_line/...)。
+        """
+        result = self.chat_via_siliconflow(system_prompt, user_prompt, model,
+                                           temperature=temperature, max_tokens=max_tokens,
+                                           call_type=call_type)
+        content = result.get("content", "") or ""
+
+        # 清理 markdown 代码块包装
+        cleaned = content.strip()
+        cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
+        if cb:
+            cleaned = cb.group(1).strip()
+
+        parsed_lines = []
+        kp_objects = []
+        meta_object = None
+        last_broken_line = ""
+        completed_text_parts = []
+
+        lines = cleaned.split("\n")
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    parsed_lines.append(obj)
+                    if obj.get("_meta") is True:
+                        meta_object = obj
+                    else:
+                        kp_objects.append(obj)
+                    completed_text_parts.append(raw_line)
+                else:
+                    completed_text_parts.append(raw_line)
+            except json.JSONDecodeError:
+                last_broken_line = raw_line
+                break
+
+        prefix_for_continuation = ""
+        if completed_text_parts:
+            prefix_for_continuation = "\n".join(completed_text_parts) + "\n"
+        if last_broken_line:
+            prefix_for_continuation += last_broken_line
+
+        result["parsed_lines"] = parsed_lines
+        result["kp_objects"] = kp_objects
+        result["meta_object"] = meta_object
+        result["last_broken_line"] = last_broken_line
+        result["prefix_for_continuation"] = prefix_for_continuation
+        return result
+
     def chat_continue_with_prefix(self, system_prompt, user_prompt, prefix_content,
                                   max_tokens=8192, call_type="prefix_continue",
                                   model_override=None, stop=None):
-        """v2.3.3 新增(D7):Chat Prefix Completion(走 beta 端点)。
+        """v2.3.4 新增(D7):Chat Prefix Completion(走 beta 端点)。
+
+        ⚠️ DEPRECATED in v2.3.4-hotfix1
+        ---------------------------
+        废弃理由:本方法的设计前提是"R1 截断时已生成至少 1 条完整 kp,prefix 有内容可续"。
+        实测发现 R1 思考过程吃光 max_tokens 时 partial_kps==0,prefix 为空,本方法无法启动。
+        替代方案:多思考型模型整段重提(extractor._extract_with_auto_split L1/L2 分支
+        通过 chat_via_siliconflow 调用 Kimi-K2.6 + R1 跨厂商镜像)。
+        本方法代码完整保留,extractor 不再调用,留作未来若有"prefix 续写适用"场景重启。
+        ---------------------------
 
         DeepSeek 官方契约:
         - 必须 base_url=https://api.deepseek.com/beta

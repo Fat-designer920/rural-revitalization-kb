@@ -6,6 +6,116 @@
 
 ---
 
+---
+
+## [v2.3.4-hotfix1] - 2026-04-28 (hotfix - 截断零提取多模型整段重提)
+
+**定位**:**v2.3.4 上线当天老唐喂料实测触发 prefix 续写主链的设计前提缺口,一次根治**。第 8/10 段(611 字小段)R1 思考爆 token → partial_kps==0 → prefix 空 → 续写跳过 → F057 也无 last_excerpt 可定位 → 整段 0 提取。诊断:任何思考型模型(R1/Kimi-Thinking/GLM-Thinking)都可能踩 max_tokens 共享上限,**跨模型概率冗余是唯一物理解**。Phase 2 经老唐三次纠正后(V3 救回不行→Qwen3-Instruct 不行→千问推演不行)锁定 L1 Kimi-K2.6 + L2 R1 跨厂商镜像方案。
+
+涉及 7 文件(deepseek_client.py / extractor.py / db_manager.py / setup.py / prompt_templates.py / api_server.py / review.html)+ 4 项目文件。立规则 16 改造 + 9 第 15 次应验 + 60 第 1 次正式落地。
+
+### Added
+
+- **`chat_via_siliconflow(model, ...)`**(deepseek_client.py H3): 硅基流动文本模型通用调用方法,L1/L2 共用,走 `https://api.siliconflow.cn/v1/chat/completions`,Authorization 复用 `_get_siliconflow_api_key()`(OCR 已配的 key);思考型模型(R1/Thinking/K2.6/K2.5)自动跳过 temperature
+- **`chat_jsonl_via_siliconflow(model, ...)`**(deepseek_client.py H3): JSON Lines 解析版,行为与 `chat_with_jsonl` 对齐
+- **`_retry_via_siliconflow(...)`**(extractor.py H1): L1/L2 共用整段重提方法,走硅基流动 endpoint,捕获接口异常 → 返回 None 进入下一层;捕获解析失败 → 返回 None;成功(包括 0 kp 但 _meta 存在的合理情况)→ 返回 kp_objects;每个分支记 operation_events
+- **`extracted_by_model` 字段**(db_manager.py knowledge_points 表): TEXT DEFAULT 'r1',兼容老库;extractor 在 kp dict 用 `_extracted_by_model` 透传,`add_knowledge_point` 签名加 `extracted_by_model="r1"` 参数 + INSERT SQL 加字段
+- **`idx_kp_model` 索引**(setup.py _V234_NEW_INDEXES): `CREATE INDEX IF NOT EXISTS idx_kp_model ON knowledge_points(extracted_by_model)`,**只在 _upgrade_schema_to_current Step 10 创建,不放 db_manager.init_tables 的统一 indexes 列表**(立规则 60 第 1 次正式落地)
+- **/api/dashboard model_distribution 字段**(api_server.py): SQL `SELECT extracted_by_model, COUNT(*) FROM knowledge_points GROUP BY extracted_by_model`,返回 `{by_model: {r1:N, kimi:N, r1_mirror:N, f057_recovery:N}, total, non_main_recovered, non_main_pct}`,异常降级返回空 dict
+- **Card 15 仪表盘卡 "非主链救回 kp 数"**(review.html): 大字数 + 占比百分比 + 按模型分行 + 提示文案"非主链占比>5% 时建议检查日志,可能 L1 模型不稳定";老唐肉眼监控
+- **类常量 `SILICONFLOW_TEXT_ENDPOINT/SILICONFLOW_TEXT_MODEL_L1/SILICONFLOW_TEXT_MODEL_L2`**(deepseek_client.py H2): 默认 L1=`Pro/moonshotai/Kimi-K2.6` / L2=`Pro/deepseek-ai/DeepSeek-R1`,可被环境变量 `SILICONFLOW_TEXT_MODEL_L1/L2` 覆盖
+- **PRICING 表加 4 项**(deepseek_client.py): Pro/moonshotai/Kimi-K2.6 + Pro/deepseek-ai/DeepSeek-R1(4/16) + 候补 Pro/moonshotai/Kimi-K2.5(4/21) + Pro/zai-org/GLM-4.7(4/16)
+- **立规则 16 改造**(01 §二): R1 截断主补救从"prefix 续写"改为"多思考型模型整段重提",F057 降为 L3
+- **立规则 60 正式条目**(01 §二): v2.3.3-mvp 文档债务清理,首次正式应用于本版 extracted_by_model 字段 + idx_kp_model 索引落位
+
+### Changed
+
+- **`_request()` 加 `api_key_override` 参数**(deepseek_client.py H1): 让 chat_via_siliconflow 复用 retry 逻辑,Authorization 头切换硅基流动 key 而非 DeepSeek key;endpoint 检测 `http(s)://` 前缀决定是否拼 base_url,老调用方传 None 维持原行为零破坏
+- **`_extract_with_auto_split` 5 层降级链彻底重写**(extractor.py H1): R1 → Kimi-K2.6 整段重提 → R1 跨厂商镜像整段重提 → F057(若 partial>=1)→ 保留;每层成功的 kp 在生成时打 `_extracted_by_model` 标记
+- **`_truncation_stats` 扩字段**(extractor.py H4): 新增 `kimi_recoveries / r1_mirror_recoveries / total_failures` 三字段,保留 `prefix_recoveries` 兼容(标 DEPRECATED)
+- **`_print_truncation_stats` 输出格式升级**(extractor.py H5): `📊 [文件统计] 截断N / L1 Kimi救M1 / L2 R1镜像救M2 / L3 F057兜底K / ❌ 全失败J / 知识点N条 / 耗时Ts / Prompt vX`(动态显示,无救回不打印对应字段)
+- **`add_knowledge_point` 调用透传**(extractor.py): 行 1963 加 `extracted_by_model=kp.get("_extracted_by_model", "r1")`,默认 'r1' 兼容历史 kp 字典
+- **PROMPT_VERSION** v2.3.4 → **v2.3.4-hotfix1**(prompt_templates.py): Prompt 内容**完全不动**,同一套 prompt 同时喂 R1 / Kimi-K2.6 / R1 跨厂商镜像
+- **knowledge_points CREATE TABLE schema** 加 `extracted_by_model TEXT DEFAULT 'r1'` 字段(db_manager.py 行 245,新库一次到位);老库走 setup.py `_upgrade_schema_to_current` Step 9 ALTER ADD COLUMN
+
+### Deprecated
+
+- **`chat_continue_with_prefix()`**(deepseek_client.py): 标 DEPRECATED 注释,代码完整保留,extractor 不再调用。废弃理由:本方法假设 partial_kps>=1 才有内容续写,R1 思考爆 token 时 partial==0 直接失效。替代方案:多思考型模型整段重提
+- **`_recover_via_prefix()` + 整个 prefix 续写主链**(extractor.py): 标 DEPRECATED 注释,代码完整保留,`_extract_with_auto_split` 改走 `_retry_via_siliconflow`
+
+### Migration
+
+- **存量库**:跑一次 `首次安装.bat`(setup.py 主流程包含 `_upgrade_schema_to_current`),自动追齐 `extracted_by_model` 字段(老 kp 默认 'r1')+ `idx_kp_model` 索引;**幂等可重复跑,新库空跑**
+- **新库**:跑一次 `首次安装.bat` 即可,`init_tables` 一步到位
+- **`.env` 可选配置**(老唐 Phase 4 部署后视情况添加):
+  - `SILICONFLOW_TEXT_MODEL_L1=Pro/moonshotai/Kimi-K2.6`(默认值,L1 救回)
+  - `SILICONFLOW_TEXT_MODEL_L2=Pro/deepseek-ai/DeepSeek-R1`(默认值,L2 救回)
+  - 不填则走代码内置默认值,候补可改为 `Pro/moonshotai/Kimi-K2.5` 或 `Pro/zai-org/GLM-4.7`
+- **硅基流动 API key**:复用现有 OCR 已配的 `siliconflow_api_key_encrypted`,**不需要重新配置**
+
+### 立规则应验
+
+- **立规则 9 第 15 次应验**:prefix 续写代码假设 "partial_kps>=1" 没核对真实截断场景,与 v2.3.4 立规则 59 同根 — 写代码靠记忆靠猜是 bug 温床
+- **立规则 16 改造**:从"R1 截断 F057 主补救"改为"多思考型模型整段重提主补救 + F057 L3 兜底"
+- **立规则 60 第 1 次正式落地**:v2.3.3-mvp CHANGELOG 声称新立但 part3b 项目文件未跑完留作债务,本版正式合并到 §二立规则区
+- **立规则 53 第 6 次自证**:Phase 3 中途凭"配额顾虑"建议拆 part3b 一次,老唐"继续"督促才在原对话内完成全 7 文件修改;反思:配额评估永远偏保守 30-50%,老唐"继续"是反作弊触发器
+- **立规则 57 第 2 次应验**:Phase 3 开工前 grep 评估工作量 ~270 行 / 34 次工具调用,实际 ~380 行 / ~50 次,**评估精度仍偏低**,但单对话内成功闭环 — 反映"评估保守"和"过度保守"的边界仍需校准
+
+### 反思
+
+- **协作原则#5 客观分析不迎合的真实形态**:老唐三次纠正(V3 不行 → Qwen3-Instruct 不行 → 千问推演不行)+ 我三次修正方案(方案 A → B → 最终版),不是"我错你对",是**两个不同视角(基准分 vs 产品场景)交叉校准**得到正解。Claude 凭基准分推荐,老唐凭实操体感否决,两者都不可少
+- **product context > model benchmark**:Qwen3-Thinking-2507 基准分对标 Gemini-2.5 Pro,但老唐反馈"千问回答像教科书不像操盘手",这是**基准跑分覆盖不到的产品维度**。下次推荐 AI 模型必先问"老唐过去用过吗,印象如何"
+
+---
+
+## [v2.3.4] - 2026-04-28 (feature - 提取系统截断防御重构)
+
+**定位**:**提取系统从"补救式截断处理"升级到"源头级截断防御"**。F057 上线 9 个月后老唐肉眼发现仍频繁"完全截断/JSON 解析失败/中段丢失"三类失败。本版 grep DeepSeek 官方 API 识别出 3 项架构性偏差:R1 max_tokens 完全不传(默认 4K vs 上限 8K)+ JSON Mode 未启用(30%+ 假截断)+ JSON 数组形态先天易截断。**11 条决策 D1-D11 落地后,单次稳定输出 4-7→8-13 条 kp,JSON 解析成功率 ~70%→95%+,F057 从主补救降为 L2 兜底**。
+
+涉及 3 文件(deepseek_client.py +194 行 / extractor.py +185 行 / prompt_templates.py +52 行)+ 6 项目文件。立规则 59 新立 + 立规则 9 第 14 次应验。
+
+### Added
+
+- **`chat_continue_with_prefix()`**(deepseek_client.py): Chat Prefix Completion 续写截断输出,走 `https://api.deepseek.com/beta`;**默认走 V3**(续写是格式接力不是创造,**成本降 8 倍**:R1 4/16 vs V3 1/2 元/百万 token)
+- **`chat_with_jsonl()`**(deepseek_client.py): JSON Lines 逐行 try parse,任一行失败视为该行截断后续行丢弃;返回 dict 加 `parsed_lines/kp_objects/meta_object/last_broken_line/prefix_for_continuation` 5 字段
+- **`_recover_via_prefix()` + `_parse_jsonl_text()`**(extractor.py): D10 L0/L1 prefix 续写主补救核心(最多 2 次)+ JSONL 文本逐行容错解析(供续写后整体重解析)
+- **`_print_truncation_stats()`**(extractor.py): D11 文件级控制台 `📊 [文件统计] 截断N/Prefix续写M/F057兜底K/耗时Ts/估算Y元`,不入库,老唐肉眼即看
+- **立规则 59 新立**(01 §二): **CHANGELOG.md 是版本号唯一真相源,优先于 00_项目全景.md**。代码改动确定版本号前**第一动作** grep CHANGELOG 前 3 个版本头,不能只信 00 的"当前版本"字段(流水账永远比导航新)
+
+### Changed
+
+- **`chat()` 签名扩展**(deepseek_client.py): max_tokens 默认 4096→**8192**(D1+D2);R1 分支不再 `pass`,显式 `payload["max_tokens"]=8192`(D1);新增 `response_format/extra_messages/base_url_override/stop` 4 个关键字参数(默认值兼容,**老调用方零破坏**)
+- **`chat_with_json()` 启用 JSON Mode**: 默认 `response_format={"type":"json_object"}`(D3);双保险保留 system_prompt "必须 JSON"硬话(D4);JSON Mode 启用后空 content/解析失败自动回退一次不带 mode 重试(D5)
+- **`_extract_single` 改用 `chat_with_jsonl`**(extractor.py): 返回 dict 加 4 字段(`prefix_for_continuation/meta/system_prompt/user_prompt`)
+- **`_extract_with_auto_split` 三级降级新流程**: 截断→L0/L1 prefix 续写→L2 F057 老逻辑 excerpt 定位→L3 保留已提取;**F057 从"主补救"降为"L2 兜底"**,代码完全保留(立规则 16 配套语义升级)
+- **5 个提取类 BASE 输出格式段**: 从 `{"knowledge_points":[...]}` 嵌套数组 → **JSON Lines**(每行 1 KP + 末行 `_meta`);`PROMPT_VERSION` v2.3.2 → v2.3.4
+
+### Fixed
+
+- **R1 截断主因定位**(立规则 9 第 14 次应验): `chat()` 行 126-127 R1 分支 `pass` 等于默认 4K 输出,注释"让 R1 写完为止"是错觉。DeepSeek 官方 R1 默认 4K 可设 8K,本版显式 8192,**单次稳定输出 kp 数翻倍**
+- **F057 致命前提**: `_recover_from_truncation` 必须依赖 `last_excerpt`,**第一条 kp 都没解析出来时直接放弃**(症状 A 来源);本版 prefix 续写**不依赖 last_excerpt**,直接续写已生成内容,修复前提缺口
+
+### Migration
+
+- **schema 不变**:无字段 / 无表 / 无索引变更
+- **api_server 不变**:无 API 路由变更,前端零改动
+- **配置可选**:`config/settings.json` 可加 `deepseek_beta_url`(默认 `https://api.deepseek.com/beta`,通常不需要改)
+- **PROMPT_VERSION 触发 F044**:v2.3.2 → v2.3.4,存量 kp 标"待升级"(立规则 §十 Prompt 新增段预期行为,可忽略或选择性 F059 批量重提取)
+- **部署步骤**:
+  1. 备份 3 文件到 `backups/v2.3.3-mvp-完整备份-YYYYMMDD/`
+  2. 替换 `scripts/deepseek_client.py` / `scripts/prompts/prompt_templates.py` / `scripts/extractor.py`
+  3. **不需要跑 首次安装.bat**(无 schema 变更)
+  4. 双击 `启动后台.bat`,浏览器 Ctrl+Shift+R 强刷
+  5. **验证 7 测试**:任意文件提取 console 末尾必有 📊 / 长文件触发截断 console 出现 `[L0 Prefix续写]` / 仪表盘 PROMPT_VERSION 显示 v2.3.4 / F058 质检 / F048 体检 / F062 E2E / F055 问答 / F2 精品判定全部跑通(JSON Mode 启用对它们也受益,理论可能短暂走 D5 降级一次,不影响最终结果)
+
+### 教训沉淀(立规则记录)
+
+- **立规则 9 第 14 次应验 + 立规则 59 诞生**(2026-04-28): 项目文件之间也会"读方/写方"分叉。`00_项目全景.md` "当前版本"字段比 CHANGELOG.md 落后两版(v2.3.2-hotfix1 vs 已上线 v2.3.3-mvp),Phase 1 我直接信了 00 一路推荐"v2.3.3",part3a 已经把 v2.3.3 写进 3 文件代码,part3b 才发现版本号撞车。**根因**:00 是高层导航,CHANGELOG 是流水账,流水账永远比导航新。**修法**:返工 part3a 一次 sed -i 替换 v2.3.3→v2.3.4(26 处)+ VERIFY-7 重跑。**立规则 59 诞生**:CHANGELOG 是版本号唯一真相源。
+- **立规则 50 第 1 项执行扩展**: VERIFY-7 第 1 项"语法验证"实质应扩展为"语法 + grep CHANGELOG 跨文件版本号一致性"两步。本版立 59 后,任何代码改动版本号前**先 grep CHANGELOG 前 3 个版本头**是强制动作。
+- **立规则 53 第 5 次自证**: part3a-fix 返工时**没**凭感觉喊配额超时,sed -i 一次性 26 处 + 重跑 VERIFY-7,~5 次工具调用搞定。立规则 53 真精神 = 别凭感觉喊停,继续干。
+
+---
+
 ## [v2.3.3-mvp] - 2026-04-25 (feature - 双客户端架构)
 
 **定位**:**知识工厂从"产品形态首次出现"进化到"产品形态物理隔离 + 商业化前置就绪"**。F055 在 v2.3.2 用 `?mode=friend` URL 参数做朋友模式,本版老唐识别到该方案的 5 个根本缺陷(CSS 隐藏 ≠ 物理隔离 / API 接口暴露 / 代码耦合污染 / 品牌缺失 / 未来云端化阻碍),决定**架构升级到双客户端**:后台 `review.html` 保留调试视角(QA 分数 / official 标签 / 板块N 前缀 / main badge),独立 `qa_public.html` 1395 行做朋友试用产品页(营销首屏 + 自然语言板块 + 客户视角洁净 + 移动端适配)。商业化前置同步落地:`friend_tag` URL `?u=张三` 朋友身份精准识别 / IP 限速 20 次/天/只成功才计数(防 API 钱包烧穿)/ V3-R1 主链可选(自用调试 R1 深度,朋友强制 V3 不烧钱)。

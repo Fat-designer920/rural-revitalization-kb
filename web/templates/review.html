@@ -2234,6 +2234,30 @@ function renderDashboard(d){
   h+='</div>';
   h+='</div>';
 
+  /* Card 15: 非主链救回 kp 数 (v2.3.4-hotfix1)
+   * 数据源 /api/dashboard 返回的 model_distribution 字段:
+   *   { by_model: {r1:N, kimi:N, r1_mirror:N, f057_recovery:N},
+   *     total: N, non_main_recovered: N, non_main_pct: N }
+   * 老唐肉眼监控 L1/L2/F057 救回 kp 比例,>5% 时考虑切换 L1 模型 */
+  var md=d.model_distribution||{};
+  var mdMap=md.by_model||{};
+  var mdNonMain=md.non_main_recovered||0;
+  var mdTotal=md.total||0;
+  var mdPct=md.non_main_pct||0;
+  var mdColor=mdNonMain>0?(mdPct>5?"#C97A2C":"#0A9B80"):"var(--text)";
+  h+='<div class="dash-card"><div class="dash-card-head">非主链救回 kp 数</div>';
+  h+='<div class="dash-big" style="color:'+mdColor+'">'+mdNonMain+'</div>';
+  h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:10px">'
+   +'占比 '+mdPct.toFixed(2)+'% (总 '+mdTotal+' 条)</div>';
+  h+=dRow("","","R1 主链",mdMap.r1||0);
+  h+=dRow("","","L1 Kimi 救回",mdMap.kimi||0);
+  h+=dRow("","","L2 R1镜像救回",mdMap.r1_mirror||0);
+  h+=dRow("","","F057 兜底",mdMap.f057_recovery||0);
+  h+='<hr class="dash-divider">';
+  h+='<div style="font-size:10px;color:var(--text-muted);line-height:1.5">'
+   +'非主链占比&gt;5% 时建议检查日志,可能 L1 模型不稳定</div>';
+  h+='</div>';
+
   /* Cards 12/13/14: Tag Distribution (v2.3.0 F049) */
   var tagDist=d.tag_distribution||{};
   h+=renderTagCard("A","业务领域分布",tagDist.A||[],"#0A9B80");
