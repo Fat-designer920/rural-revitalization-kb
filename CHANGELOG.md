@@ -8,6 +8,49 @@
 
 ---
 
+## [v2.3.4-hotfix2] - 2026-04-28 (hotfix - 强制重处理外键约束失败 + database is locked 连环修复 + 后台朋友试用快捷入口)
+
+**定位**:**老唐想用强制重处理对照 R1 主链 vs L1/L2 救回 kp 质量,跑不动暴露的潜伏 bug 一次根治 + 顺手补朋友试用快捷入口**。预处理日志清晰显示死结链条:`[强制重处理] 删除旧数据 → 已删除 0 条旧知识点 → ! 清理 source_files 记录失败:FOREIGN KEY constraint failed → ... AI 分析 → [FAIL] OperationalError: database is locked`。诊断:**source_files 通过 `operation_events.related_file_id` 外键被引用**(db_manager.py 行 387,v2.3.0-part3 init_tables 时就写好的事实),`PRAGMA foreign_keys=ON`(行 142)强制生效,但 preprocessor 3 处裸 `DELETE FROM source_files WHERE id=?` **没级联清 operation_events 历史记录** → 外键约束阻挡 → conn 泄漏未 ROLLBACK → WAL 写锁卡死 → 后续 AI 入库 `database is locked`。
+
+涉及 3 代码文件(db_manager.py / preprocessor.py / review.html)+ 4 项目文件。立规则 #3 推广(删 source_files 必级联 operation_events)+ 立规则 9 第 16 次应验。Phase 1-3 单对话内完成。
+
+### Added
+
+- **`db.purge_source_file_record(source_file_id)`**(db_manager.py): 完整级联清理 source_files 行的封装方法,放在 `delete_kps_by_source_file` 之后(行 945-973)。事务安全:`BEGIN IMMEDIATE` + `DELETE FROM operation_events WHERE related_file_id=?`(级联清)+ `DELETE FROM source_files WHERE id=?`(主体行)+ 全成功 COMMIT / 任意一步失败整体 ROLLBACK + finally close,避免半截事务卡 WAL 写锁(database is locked 根因)。返回 `(sf_deleted, events_purged)` 元组。**注意**:本方法不删 knowledge_points 及其 4 个 kp 关联表,调用方应先调 `delete_kps_by_source_file(source_file_id)`
+- **后台 header "朋友试用 ↗" pill**(review.html 行 719): `.stat-pill.clickable`,onclick `window.open('/qa','_blank')` 新标签页打开朋友试用产品页,title 鼠标悬停"新标签页打开朋友试用产品页"。复用现有 `.stat-pill.clickable` 样式(hover 变 primary-light 背景 + primary 颜色),零新 CSS。视觉位置:header-stats 末尾(待审核 / 已入库 / 分类概览 / API / 朋友试用,共 5 个 pill)
+- **立规则 #3 推广**(01 §二): 从"删 kp 必级联 annotations"扩展为"删 kp 必级联 annotations + 删 source_files 必级联 operation_events"。所有删 source_files 行的代码必须走 `db.purge_source_file_record()` 统一封装,严禁裸 DELETE FROM source_files
+
+### Fixed
+
+- **强制重处理 FOREIGN KEY constraint failed + database is locked 连环错**(preprocessor.py 3 处裸 DELETE):
+  - **第 1 处**(强制重处理分支,force_reprocess=True 且 e_status=="completed"): `try { conn=db.get_connection(); conn.execute("DELETE FROM source_files WHERE id=?",(e_id,)); conn.commit(); conn.close() } except` → `try { sf_del, ev_del = db.purge_source_file_record(e_id); if ev_del: print 已级联清理 N 条 } except`
+  - **第 2 处**(processing/failed 状态物理文件已不存在的清理): 同模式替换
+  - **第 3 处**(其他未知状态的清理): 同模式替换
+  - **影响**:任何带历史 operation_events 记录的 source_files 都不能删的潜伏 bug 一次清除(强制重处理 / 物理文件丢失重新处理 / 状态异常清理三种入口都通)
+- **conn 泄漏 + WAL 写锁卡死根因消除**: 旧裸 DELETE 失败后,`conn.execute()` 抛异常 → `conn.commit()` 没执行 + `conn.close()` 也没被调用(except 跳过) → connection 泄漏持有 WAL 写事务 → 后续 add_knowledge_point 入库报 `database is locked`。新封装 `purge_source_file_record` 用 `try/except/finally close`,任何路径都保证连接关闭与事务结束
+
+### Migration
+
+- **存量库**:**无 schema 变更**,无需重跑 `首次安装.bat`,只需替换 3 个代码文件(db_manager.py / preprocessor.py / review.html)
+- **新库**:同上,无需额外操作
+- **验证方法**(老唐 Phase 4 部署后):
+  1. 后台 header 应能看到"朋友试用 ↗"pill,点击新标签页打开 `/qa`
+  2. Tab 2 系统管理 → 提取管理,选一个曾经处理过的文件 → 勾选"强制重新处理"→ 处理新文件,日志应显示:
+     - `[强制重处理] 删除旧数据(#XX ...).docx)...`
+     - `已删除 N 条旧知识点`(N 可以是 0 或正数)
+     - `已级联清理 operation_events M 条`(M 通常 >0,因为该文件历史上必定有 preprocess_done / extract_done 等事件)
+     - `AI 分析中...`
+     - `[OK] -> ...` (成功完成,**不再有 FOREIGN KEY constraint failed 也不再有 database is locked**)
+
+### 立规则应验
+
+- **立规则 #3 推广(v2.3.4-hotfix2 立)**: 从单一 kp 路径扩展为 kp + source_files 双路径。**未来扩展规则**:每张表加新外键被引用关系时,删除路径都要同步检查级联清理。**统一封装**:`db.purge_<table>_record()` 模板已在 v2.3.4-hotfix2 落地一例,后续类似场景照搬即可
+- **立规则 9 第 16 次应验**:`REFERENCES source_files` 外键引用是 schema 早就写好的事实(v2.3.0-part3 起),但 preprocessor v2.2.0 凭"应该没事"裸 DELETE 没核查,潜伏自 preprocessor 上线但只在"曾经处理过的文件再走强制重处理"时触发,可观测概率低导致长期未暴露。**新增/修改 SQL 删除路径前必 grep `REFERENCES <表名>` 确认全部外键引用方** — 这条经验加入立规则 #3 的执行清单
+
+---
+
+---
+
 ## [v2.3.4-hotfix1] - 2026-04-28 (hotfix - 截断零提取多模型整段重提)
 
 **定位**:**v2.3.4 上线当天老唐喂料实测触发 prefix 续写主链的设计前提缺口,一次根治**。第 8/10 段(611 字小段)R1 思考爆 token → partial_kps==0 → prefix 空 → 续写跳过 → F057 也无 last_excerpt 可定位 → 整段 0 提取。诊断:任何思考型模型(R1/Kimi-Thinking/GLM-Thinking)都可能踩 max_tokens 共享上限,**跨模型概率冗余是唯一物理解**。Phase 2 经老唐三次纠正后(V3 救回不行→Qwen3-Instruct 不行→千问推演不行)锁定 L1 Kimi-K2.6 + L2 R1 跨厂商镜像方案。

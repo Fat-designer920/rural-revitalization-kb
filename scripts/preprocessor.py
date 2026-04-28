@@ -1,7 +1,21 @@
 """
 preprocessor.py - 智能预处理(重命名+标签)
 路径：scripts/preprocessor.py
-版本：v2.2.0 bugfix-6 - 强制重新处理已完成文件
+版本：v2.3.4-hotfix2 - source_files 删除路径加 operation_events 级联清理
+
+v2.3.4-hotfix2 修复(hotfix, 2026-04-28):
+  - 3 处裸 DELETE FROM source_files 替换为 db.purge_source_file_record() 调用
+    (强制重处理 / processing|failed 物理文件丢失清理 / 未知状态清理 共三处)
+  - 根因: source_files 被 operation_events.related_file_id 外键引用(立规则#3兄弟漏洞),
+    历史 operation_events 卡住 source_files 行删除 → FOREIGN KEY constraint failed
+    → try/except 吞异常但 conn 泄漏未 ROLLBACK → WAL 写锁卡死 → 后续 AI 入库
+    "database is locked" 全程失败
+  - 修法: db_manager 提供 purge_source_file_record(source_file_id) 完整封装
+    (BEGIN IMMEDIATE + 级联清 operation_events + DELETE source_files + 失败 ROLLBACK)
+  - 立规则#3 推广: 删 source_files 行必手动级联 operation_events 同源记录
+  - 不改 schema / 不改方法签名 / 无迁移
+
+v2.2.0 bugfix-6 历史: 强制重新处理已完成文件
 """
 import os,sys,json,shutil
 from pathlib import Path
@@ -86,11 +100,11 @@ class Preprocessor:
                             print(f"     [强制重处理] 删除旧数据(#{e_id} {ename})...")
                             deleted_count = self.db.delete_kps_by_source_file(e_id)
                             print(f"     已删除 {deleted_count} 条旧知识点")
+                            # v2.3.4-hotfix2: 用 purge 级联清 operation_events + 事务安全
                             try:
-                                conn = self.db.get_connection()
-                                conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
-                                conn.commit()
-                                conn.close()
+                                sf_del, ev_del = self.db.purge_source_file_record(e_id)
+                                if ev_del:
+                                    print(f"     已级联清理 operation_events {ev_del} 条")
                             except Exception as de:
                                 print(f"     ! 清理source_files记录失败: {de}")
                             self._clean_completed_file(ename)
@@ -108,21 +122,21 @@ class Preprocessor:
                             return result
                         # 物理文件已不存在,清理旧记录,允许重新处理
                         print(f"     旧记录#{e_id}物理文件已不存在,清理后重新处理")
+                        # v2.3.4-hotfix2: 用 purge 级联清 operation_events + 事务安全
                         try:
-                            conn = self.db.get_connection()
-                            conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
-                            conn.commit()
-                            conn.close()
+                            sf_del, ev_del = self.db.purge_source_file_record(e_id)
+                            if ev_del:
+                                print(f"     已级联清理 operation_events {ev_del} 条")
                         except Exception as de:
                             print(f"     ! 清理旧记录失败: {de}")
                     else:
                         # 其他未知状态,也清理旧记录
                         print(f"     旧记录#{e_id}状态异常({e_status}),清理后重新处理")
+                        # v2.3.4-hotfix2: 用 purge 级联清 operation_events + 事务安全
                         try:
-                            conn = self.db.get_connection()
-                            conn.execute("DELETE FROM source_files WHERE id=?", (e_id,))
-                            conn.commit()
-                            conn.close()
+                            sf_del, ev_del = self.db.purge_source_file_record(e_id)
+                            if ev_del:
+                                print(f"     已级联清理 operation_events {ev_del} 条")
                         except Exception as de:
                             print(f"     ! 清理旧记录失败: {de}")
 

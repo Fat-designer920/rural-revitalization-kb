@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:**v2.3.4-hotfix1**(截断零提取多模型整段重提:废弃 prefix 续写主链 + L1 Kimi-K2.6 整段重提 + L2 R1 跨厂商镜像整段重提 + F057 降为 L3 + extracted_by_model 字段 + 仪表盘 Card 15 老唐肉眼监控;PROMPT_VERSION 升 v2.3.4-hotfix1)
+> **当前版本**:**v2.3.4-hotfix2**(强制重处理 source_files 外键约束失败 + database is locked 连环修复:preprocessor 3 处裸 DELETE → db.purge_source_file_record 完整封装,事务安全 + 级联清 operation_events;后台 header 加朋友试用快捷入口 pill;立规则#3 推广 + 立规则 9 第 16 次应验)
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 做什么 | 验证什么 |
 |------|--------|---------|
-| 当前(v2.3.4-hotfix1 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa(?u=张三 精准追踪)+ 多思考型模型整段重提兜底** | 回答质量 / 体验 / 付费意愿 / 大文件提取截断率 / L1/L2 救回 kp 质量 |
+| 当前(v2.3.4-hotfix2 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa(?u=张三 精准追踪)+ 多思考型模型整段重提兜底 + 强制重处理流畅性根治** | 回答质量 / 体验 / 付费意愿 / 大文件提取截断率 / L1/L2 救回 kp 质量 |
 | 200 条精品+ | 政策解读文章发行业圈子 | 内容付费 |
 | 300 条精品+ | 云端问答助手产品化 | C 端订阅 |
 | 500 条精品+ | 投标辅助 / 培训 / 合规自检 | B 端高客单价 |
@@ -69,6 +69,14 @@
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
 
+**v2.3.4-hotfix2 关键交付**(2026-04-28):
+
+- **`db.purge_source_file_record(source_file_id)` 新方法**:完整级联清理 source_files 行的封装(BEGIN IMMEDIATE + 级联清 operation_events + DELETE source_files + 失败 ROLLBACK + finally close),事务安全替代裸 DELETE
+- **preprocessor 3 处裸 DELETE 全部替换**:强制重处理 / processing\|failed 物理文件丢失清理 / 未知状态清理三种入口都通,根治 FOREIGN KEY constraint failed + database is locked 连环错
+- **后台 header "朋友试用 ↗" pill**:点击新标签页打开 `/qa`,免每次手敲 URL,复用 `.stat-pill.clickable` 样式零新 CSS
+- **立规则#3 推广**:从"删 kp 必级联 annotations"扩展为"删 kp 必级联 annotations + 删 source_files 必级联 operation_events"
+- **立规则 9 第 16 次应验**:`REFERENCES source_files` 外键引用是 schema 早就写好的事实,但 preprocessor 凭"应该没事"裸 DELETE 没核查,潜伏自 v2.2.0,只在"曾经处理过的文件再走强制重处理"时触发,可观测概率低导致长期未暴露
+
 **v2.3.4-hotfix1 关键交付**(2026-04-28):
 
 - **5 层降级链彻底重写**:R1 → Kimi-K2.6 整段重提(硅基,256K context)→ R1 跨厂商镜像整段重提 → F057(若 partial>=1)→ 保留;**段内同步降级,不留事后批量重跑**;跨 3 模型同段全失败概率接近 0
@@ -105,8 +113,8 @@ rural-revitalization-kb/
 │   ├── api_server.py        # 管理后台 API（v2.3.0-part3.8，F048 8 + F062 8 + qc_rerun 3 路由 + 启动兜底 init_tables；part3.8 6 批量路由 errors 收集改造）
 │   ├── extractor.py         # 知识提取引擎（v2.3.0-part3.8，含 F057/F058，part3.8 冗余迁移 import 清理-21 行）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
-│   ├── preprocessor.py      # 文件预处理 + .md 缓存
-│   ├── db_manager.py        # 数据库管理（v2.3.0-part3.4，21 表，F048 12 方法 + F062 9 方法 + part3.2 新增 2 方法；part3.4 get_polish_candidates WHERE 修复）
+│   ├── preprocessor.py      # 文件预处理 + .md 缓存（v2.3.4-hotfix2，3 处裸 DELETE → db.purge_source_file_record，事务安全）
+│   ├── db_manager.py        # 数据库管理（v2.3.4-hotfix2，24 表，新增 purge_source_file_record 完整封装；F048 12 方法 + F062 9 方法 + F2 7 方法 + qa 6 方法）
 │   ├── experience_notes.py  # 经验速记
 │   ├── config_wizard.py     # 配置向导
 │   ├── check_system.py      # 系统检查（v2.5.2，19 项）
@@ -181,6 +189,7 @@ rural-revitalization-kb/
 | **v2.3.3-mvp** | **feature:双客户端架构(后台调试 + qa_public.html 朋友试用产品页 1395 行)+ friend_quota_daily 表 + qa_history.friend_tag + 立规则 58/60 新立** | ✅ 2026-04-25 |
 | **v2.3.4** | **feature:提取系统截断防御重构(R1/V3 max_tokens 8192 + JSON Mode + Chat Prefix Completion 续写主链 + JSON Lines 输出 + F057 降为 L2 兜底 + 控制台 📊 文件统计)+ 立规则 59 新立(CHANGELOG 是版本号唯一真相源)+ 立规则 9 第 14 次应验** | ✅ 2026-04-28 |
 | **v2.3.4-hotfix1** | **hotfix:截断零提取多模型整段重提(废弃 prefix 续写主链 + L1 Kimi-K2.6 + L2 R1 跨厂商镜像 + F057 降为 L3 + extracted_by_model 字段 + 仪表盘 Card 15)+ 立规则 16 改造 + 9 第 15 次应验 + 60 第 1 次正式落地** | ✅ 2026-04-28 |
+| **v2.3.4-hotfix2** | **hotfix:强制重处理 source_files 外键约束失败 + database is locked 连环修复(preprocessor 3 处裸 DELETE → db.purge_source_file_record 完整封装)+ 后台朋友试用快捷入口 pill + 立规则#3 推广 + 立规则 9 第 16 次应验** | ✅ 2026-04-28 |
 | v2.3.5 | F020 冲突检测 + F030 知识关联网络(原 v2.3.3 scope,顺延两次) | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
 | v3.x | 云端产品化 | 远期 |

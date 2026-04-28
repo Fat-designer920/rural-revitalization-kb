@@ -1,7 +1,18 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.0-part3.4 - hotfix: get_polish_candidates 允许 confirmed 条目进入打磨池
+版本：v2.3.4-hotfix2 - 新增 purge_source_file_record 级联清理 source_files
+
+v2.3.4-hotfix2 修复(hotfix, 2026-04-28):
+  - 新增 purge_source_file_record(source_file_id) 方法(立规则#3 推广):
+    DELETE source_files 行必手动级联 operation_events 同源记录,
+    与 delete_kps_by_source_file 内部清 4 个 kp 关联表同模式。
+    BEGIN IMMEDIATE + 失败 ROLLBACK + finally close,事务安全,
+    避免半截事务卡 WAL 写锁(database is locked 根因)。
+  - 根因: source_files 通过 operation_events.related_file_id 外键引用,
+    PRAGMA foreign_keys=ON 时,删 source_files 行被 operation_events
+    历史记录卡住 → preprocessor 裸 DELETE 报 FOREIGN KEY constraint failed。
+  - 不改 schema / 不动现有方法 / 不影响数据。
 
 v2.3.0-part3.4 修复（hotfix，2026-04-23）:
   - get_polish_candidates WHERE 去掉 review_status NOT IN ('confirmed')
@@ -927,6 +938,40 @@ class DatabaseManager:
             self.log_operation("reextract_delete", "knowledge_points", source_file_id,
                                {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
         return len(kp_ids)
+
+    # ================================================================
+    # v2.3.4-hotfix2: 完整级联清理 source_files 行
+    # ================================================================
+    def purge_source_file_record(self, source_file_id):
+        """
+        彻底清理一条 source_files 记录及其所有外键引用(立规则#3 推广:
+        删 source_files 必级联 operation_events.related_file_id)。
+
+        事务安全:BEGIN IMMEDIATE + 全成功 COMMIT + 任意一步失败整体 ROLLBACK,
+        避免半截事务卡 WAL 写锁(database is locked 的根因)。
+
+        注意:本方法不删 knowledge_points 及其 4 个 kp 关联表,调用方应先调
+              delete_kps_by_source_file(source_file_id)。
+
+        返回 (sf_deleted, events_purged) 元组,均为 int。
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("DELETE FROM operation_events WHERE related_file_id=?", (source_file_id,))
+            events_purged = c.rowcount
+            c.execute("DELETE FROM source_files WHERE id=?", (source_file_id,))
+            sf_deleted = c.rowcount
+            conn.commit()
+            return (sf_deleted, events_purged)
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
 
     # ================================================================
     # v2.3.0-part1 F059: 批量重跑仅删 pending，保留 confirmed 审核成果
