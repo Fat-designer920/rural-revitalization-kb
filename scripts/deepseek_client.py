@@ -1,7 +1,20 @@
 """
 deepseek_client.py - DeepSeek API封装 + 硅基流动OCR + 硅基流动文本兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.4-hotfix1 - 截断零提取多模型兜底(L1 Kimi-K2.6 + L2 R1 镜像)
+版本：v2.3.4-hotfix3 - 思考型模型识别修复 + JSON Lines 解析降级兼容
+
+变更说明(v2.3.4-hotfix3):
+  X1 BUG#1 修复:_is_r1 改造 + 新增 _is_thinking_model 模式匹配函数
+     根因:hotfix1 引入硅基思考型模型(Pro/deepseek-ai/DeepSeek-R1 / Pro/moonshotai/Kimi-K2.6)
+     但 R1_MODELS 集合只认 deepseek-reasoner → 硅基思考型走 120s timeout 而非 300s → 必超时
+     修法:_is_thinking_model 模式匹配 R1 / Thinking / K2.6 / K2.5 / reasoner 关键字
+     _is_r1 函数体改为调用 _is_thinking_model,语义自动覆盖思考型,3 处调用点零破坏
+  X2 BUG#2B 修复:chat_with_jsonl 解析 0 行 → 自动降级到 _extract_json_robust 7 步保险
+     根因:v2.3.4 改 JSON Lines 输出后,R1 偶尔回退老格式(JSON 数组)被严格逐行解析丢弃
+     第 2 段 958 字花了 0.099 元的 R1 输出全丢就是这个 bug
+     修法:逐行解析 0 行后调 _extract_json_robust,识别 JSON 数组 / 单 dict / 截断修复
+  立规则 9 第 17 次应验:新增模型加入降级链时,所有 model 名字判断点必须 grep 全 codebase 同步扩展
+  立规则 61 新立(候选):字符串集合 in 判等是脆弱模式,改为模式匹配函数,新增模型不必修改集合
 
 变更说明(v2.3.4-hotfix1):
   H1 _request 增加 api_key_override 参数(给硅基流动文本调用复用 retry 逻辑)
@@ -50,6 +63,10 @@ class DeepSeekClient:
         "Pro/zai-org/GLM-4.7": {"input": 4.0, "output": 16.0},
     }
 
+    # v2.3.4-hotfix3 改造:R1_MODELS 集合保留作为遗留字段,但实际判定逻辑已切换为
+    # _is_thinking_model 模式匹配函数(见下方 _is_thinking_model)。
+    # 历史 BUG:hotfix1 引入硅基模型后未同步扩展此集合,导致 timeout 漏判全军覆没。
+    # 立规则 61(候选):字符串集合 in 判等改为模式匹配函数。
     R1_MODELS = {"deepseek-reasoner"}
 
     # v2.3.4-hotfix1 H2:硅基流动文本调用 endpoint 与默认模型
@@ -109,8 +126,48 @@ class DeepSeekClient:
         p = self.PRICING.get(model, self.PRICING["deepseek-chat"])
         return round((inp / 1e6) * p["input"] + (out / 1e6) * p["output"], 6)
 
+    def _is_thinking_model(self, model):
+        """v2.3.4-hotfix3 新增:判断是否为思考型模型(R1/Thinking/K2.6/K2.5/reasoner)。
+
+        思考型模型特征:
+        - 输出 reasoning_content(占用大量 token + 时间)
+        - 推理时间长(常需 200-300 秒)
+        - 不能传 temperature 参数(立规则 15)
+
+        判定规则:模型名(大小写不敏感)包含以下任一关键字:
+        - "reasoner"        → DeepSeek 官方 R1(deepseek-reasoner)
+        - "R1" / "r1"       → R1 系列(Pro/deepseek-ai/DeepSeek-R1, deepseek-r1, etc)
+        - "thinking"        → Kimi K2 思考版(kimi-k2-thinking)
+        - "K2.6" / "K2.5"   → Kimi 默认启用思考能力的版本
+
+        立规则 61(候选,本版新立):字符串集合 in 判等是脆弱模式,改为模式匹配函数 ——
+        新增模型不必修改集合,只要模型名带特征关键字即自动适配。
+
+        参数 model:模型 ID 字符串
+        返回 bool
+        """
+        if not model:
+            return False
+        m = str(model)
+        m_lower = m.lower()
+        return ("reasoner" in m_lower
+                or "r1" in m_lower
+                or "thinking" in m_lower
+                or "K2.6" in m
+                or "K2.5" in m)
+
     def _is_r1(self, model):
-        return model in self.R1_MODELS
+        """v2.3.4-hotfix3 改造:历史名字保留为 _is_r1,实际语义已扩展为
+        "思考型模型判定"(R1 / Thinking / K2.6 / K2.5 / reasoner)。
+
+        3 处调用点(_request timeout 选择 / chat 跳过 temperature /
+        chat_continue_with_prefix 端点选择)语义不变,无需修改调用方。
+
+        历史 BUG:hotfix1 引入硅基思考型模型(Pro/deepseek-ai/DeepSeek-R1 /
+        Pro/moonshotai/Kimi-K2.6)后未同步扩展 R1_MODELS 集合 → 硅基思考型走
+        120s timeout 全部超时 → L1/L2 救援链全军覆没。立规则 9 第 17 次应验。
+        """
+        return self._is_thinking_model(model)
 
     def _request(self, endpoint, payload, use_model=None, base_url_override=None,
                  api_key_override=None):
@@ -476,6 +533,43 @@ class DeepSeekClient:
             prefix_for_continuation = "\n".join(completed_text_parts) + "\n"
         if last_broken_line:
             prefix_for_continuation += last_broken_line
+
+        # v2.3.4-hotfix3 X2:JSON Lines 解析 0 行 → 自动降级到 7 步保险解析
+        # 根因:R1 训练集 JSON 数组比 JSONL 常见,偶尔会回退到老格式输出
+        # (被严格逐行解析丢弃 = BUG#2B,老唐 0428 实测第 2 段 958 字 0.099 元全丢)
+        # 修法:_extract_json_robust 7 步保险包含数组/对象/截断修复全套,直接复用
+        if not parsed_lines and not meta_object and content.strip():
+            fallback_json, fb_err = self._extract_json_robust(content,
+                                                              was_truncated=was_truncated)
+            if fallback_json is not None:
+                # 救回结果可能是 3 种结构,按优先级提取:
+                # (a) {"knowledge_points": [...]} — 老 KP_EXTRACTION_PROMPT 标准格式
+                # (b) [...] — 直接 JSON 数组
+                # (c) {...} — 单条 dict(罕见)
+                candidates = []
+                if isinstance(fallback_json, dict):
+                    if ("knowledge_points" in fallback_json
+                            and isinstance(fallback_json["knowledge_points"], list)):
+                        candidates = fallback_json["knowledge_points"]
+                    elif fallback_json:
+                        candidates = [fallback_json]
+                elif isinstance(fallback_json, list):
+                    candidates = fallback_json
+
+                for obj in candidates:
+                    if isinstance(obj, dict):
+                        parsed_lines.append(obj)
+                        if obj.get("_meta") is True:
+                            meta_object = obj
+                        else:
+                            kp_objects.append(obj)
+
+                if kp_objects:
+                    print(f"     [JSONL 兼容降级] 7 步解析救回 {len(kp_objects)} 条 kp"
+                          f"(原本 0 行)")
+                    # 救回成功 → 清空截断标记,重置 prefix(避免误判截断触发救援链)
+                    last_broken_line = ""
+                    prefix_for_continuation = content
 
         result["parsed_lines"] = parsed_lines
         result["kp_objects"] = kp_objects

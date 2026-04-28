@@ -6,6 +6,52 @@
 
 ---
 
+## [v2.3.4-hotfix3] - 2026-04-28 (hotfix - 思考型模型识别 + JSON Lines 解析降级兼容)
+
+**定位**:v2.3.4-hotfix1 上线第二天老唐喂料实测翻车,救援链全部 timeout + 0 条 kp 误判为 L0 失败 + R1 输出 0.099 元全丢,**3 个独立 BUG 一次根治**。本版与 v2.3.5-part1 正交(知识关系网络不动),只修提取链。
+
+诊断 3 个独立 BUG:
+1. **BUG#1 timeout 漏判**(deepseek_client.py 第 53 行):`R1_MODELS = {"deepseek-reasoner"}` 集合只认 DeepSeek 官方一个名字,hotfix1 引入的硅基思考型模型(`Pro/deepseek-ai/DeepSeek-R1` / `Pro/moonshotai/Kimi-K2.6`)走 `_is_r1` 判定 False → timeout=120s(短)而非 300s → 思考型 reasoning_content 输出 200+ 秒**必然超时** → L1/L2 救援链全军覆没
+2. **BUG#2A 0 条 kp 误判**(extractor.py 第 340 行):`if not result["truncated"] and kps: return kps` 致命 `and kps`,导致 R1 合理判定"本段无可提取"(背景段/章节标题/空白页)被当成 L0 失败,触发不必要的 L1/L2 救援
+3. **BUG#2B JSONL 严格解析丢内容**(deepseek_client.py chat_with_jsonl):R1 偶尔回退老 JSON 数组格式,被严格逐行解析丢弃 → 老唐 0428 第 2 段 958 字 0.099 元 R1 输出全丢
+
+涉及 2 代码文件 + 4 项目文件。Phase 1-3 单对话完成。立规则 9 第 17/18 次应验 + 立规则 61 新立。
+
+### Added
+
+- `_is_thinking_model(model)`(deepseek_client.py): 模式匹配函数,识别 `R1` / `Thinking` / `K2.6` / `K2.5` / `reasoner` 关键字(大小写不敏感),自动覆盖未来新增思考型模型
+- `chat_with_jsonl` JSONL 兼容降级分支:逐行解析 0 行 + 0 _meta + content 非空 → 调用 `_extract_json_robust` 7 步保险(含 JSON 数组 / 单 dict / 截断修复全套),救回成功打印 `[JSONL 兼容降级] 7 步解析救回 N 条 kp(原本 0 行)`
+- 立规则 61 新立(候选,01 §二):字符串集合 in 判等改为模式匹配函数
+
+### Fixed
+
+- **BUG#1 timeout 漏判**:`R1_MODELS = {"deepseek-reasoner"}` 只认一个名字 → 硅基思考型走 120s timeout 必超时。`_is_r1` 函数体改为调用 `_is_thinking_model`,3 处调用点(`_request` timeout 选择 / `chat` 跳过 temperature / `chat_continue_with_prefix` 端点选择)零破坏自动覆盖
+- **BUG#2A 0 kp 误判**:`if not result["truncated"] and kps: return kps` 把 0 kp 误判为失败 → 改为 `if not result["truncated"]: ... return kps`,新增 `raw_parsed=True` 分支打印 `本段无可提取知识点(R1 合理判定,跳过救援链)`
+- **BUG#2B JSON 数组输出丢弃**:R1 偶尔回退老格式被 JSON Lines 严格解析丢弃 → `chat_with_jsonl` 解析 0 行后直接复用 `_extract_json_robust` 7 步保险
+
+### Changed
+
+- `R1_MODELS` 集合保留作为遗留字段(向下兼容),实际判定逻辑切换为 `_is_thinking_model`,代码注释明确说明改造原因
+- 控制台输出消息升级:0 条 kp 不再无脑打印 `[L0 失败]`,区分 3 类:`本段无可提取知识点(合理判定)` / `[L0 失败] R1 输出截断` / `[L0 失败] R1 输出格式异常 + 7 步降级未救回`
+
+### Migration
+
+- **无 schema 变更,无 .env 变更,无硅基账号操作**
+- **只替换 2 个 .py 文件**:`scripts/deepseek_client.py` + `scripts/extractor.py`
+- **验证步骤**:勾选 1 个有截断历史的文件强制重处理,日志应看到下列任一表现:
+  - 背景段/章节标题段:`本段无可提取知识点(R1 合理判定,跳过救援链)`(原本会跑 L1/L2 浪费 5+ 分钟)
+  - R1 输出 JSON 数组格式:`[JSONL 兼容降级] 7 步解析救回 N 条 kp`(原本 0 提取)
+  - 真截断:`[L1 Kimi 救回]` 或 `[L2 R1镜像 救回]`(原本 timeout × 9 全失败)
+
+### 立规则应验
+
+- **立规则 9 第 17 次应验**:hotfix1 新增硅基模型时未 grep 全 codebase 同步扩展所有 model 名字判断点(`R1_MODELS` / `_is_r1` / `model in {`),凭"硅基能调通"就推上线 → 第二天翻车。**新增模型加入降级链时必须 grep 三连**
+- **立规则 9 第 18 次应验**:`if not X and Y` 形式判定容易把"X 不成立"和"Y 不存在"混淆(本次第 340 行 BUG#2A 同根),应明确分支条件,prefer `if not X: return Y(可空)` 形式
+- **立规则 61 新立**:字符串集合 `in {const set}` 判等是脆弱模式,新增成员需修改集合(易漏)。改为模式匹配函数(关键字判定),新增成员不必修改集合即可自动适配
+- **立规则 49 第 N 次应用**:大文件小改动用"拷贝+局部替换",extractor.py 2360 行只改 30 行,4 次 str_replace 完成
+
+---
+
 ## [v2.3.5-part1] - 2026-04-28 (feature - 知识关系网络底座)
 
 **定位**:**重复检测从二态判别升级为六态关系判别 + 共识聚类**。老唐反馈"同一政策在多份文件反复重申不是噪声而是重要性信号,删了就丢失追溯能力"。方案 C 彻底重设计落地:从"删冗余"翻转为"识别关系类型 + 自动建簇 + 全部保留"。三阶段拆分(part1 底座 / part2 F055+F2 联动 / part3 可视化 / part4 投标证据链),本版 part1 是底座。

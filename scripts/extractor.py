@@ -1,7 +1,21 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.4-hotfix1 - 截断零提取多模型整段重提
+版本：v2.3.4-hotfix3 - 0 条 kp 不进降级链 + 配合 deepseek_client 的 JSONL 兼容降级
+
+变更说明（v2.3.4-hotfix3）：
+  X1 _extract_with_auto_split 第 340 行附近 BUG#2A 修复:
+    - 原:if not result["truncated"] and kps: return kps  ← 致命 and kps
+    - 改:未截断时一律 return kps,0 条 kp 也是 R1 合理判定(背景段/章节标题)
+    - 新增分支:0 kp + raw_parsed=True → "本段无可提取知识点(R1 合理判定,跳过救援)"
+    - 仅当 0 kp + raw_parsed=False(7 步降级也救不回)才进降级链
+  X2 配合 deepseek_client.chat_with_jsonl 的 X2:
+    - 上层不变,但 raw_parsed=True 的概率因 7 步保险大幅提升
+    - 老唐 0428 第 2 段 958 字 0.099 元 R1 输出全丢,本版起会被 7 步保险救回
+  根因:hotfix1 引入降级链时把"0 kp"和"截断"混为一谈,实际 R1 完成思考且未截断时
+       0 kp 是合法结果(背景段/章节标题/空白页),不应触发不必要救援链
+  立规则 9 第 18 次应验:if not X and Y 形式的判定容易把"X 不成立"和"Y 不存在"混淆,
+       应明确分支条件,prefer "if not X: return Y(可空)" 形式
 
 变更说明（v2.3.4-hotfix1）：
   H1 _extract_with_auto_split 降级链重写(段内同步,不留事后批量重跑):
@@ -336,11 +350,27 @@ class Extractor:
             if isinstance(k, dict):
                 k["_extracted_by_model"] = "r1"
 
-        # 未截断 + 有 kp:直接返回(主流场景)
-        if not result["truncated"] and kps:
-            return kps
+        # v2.3.4-hotfix3 BUG#2A 修复:未截断时一律返回,0 条 kp 也是合理结果
+        # ─────────────────────────────────────────────────────────────
+        # 修复前(BUG):if not result["truncated"] and kps: return kps
+        #   → 0 kp + 未截断 落入降级链,触发不必要的 L1/L2 救援
+        #   → 老唐 0428 实测第 1 段背景段 151 字本就无知识点,被错误启动救援链
+        # 修复后:
+        #   - 未截断 + 解析成功(raw_parsed=True):0 条也是 R1 合理判定 → return
+        #   - 未截断 + 解析失败(raw_parsed=False):格式异常 → 进降级链
+        #   - 已截断:任何 kp 数都进降级链(原逻辑)
+        # ─────────────────────────────────────────────────────────────
+        if not result["truncated"]:
+            if kps:
+                return kps
+            if result.get("raw_parsed"):
+                # R1 已成功解析 + 0 条 kp = 合理判定(背景段/章节标题/空白页)
+                # 不进降级链,直接返回空(不浪费时间和 token)
+                print(f"     本段无可提取知识点(R1 合理判定,跳过救援链)")
+                return []
+            # 未截断 + 0 条 + 解析失败:7 步保险也救不回 → 真正的格式异常,进降级链
 
-        # 已截断或 0 partial → 进入多模型整段重提
+        # 已截断 或 (未截断 + 0 条 + 解析失败) → 进入多模型整段重提
         truncated = result.get("truncated", False)
         if truncated:
             self._truncation_stats["truncations"] += 1
@@ -355,8 +385,9 @@ class Extractor:
             print(f"     [L0 失败] R1 输出截断且 0 完整 kp,启动 L1 Kimi 整段重提")
         elif truncated and kps:
             print(f"     [L0 部分] R1 截断但已解析{len(kps)}条,启动 L1 Kimi 整段重提补全")
-        elif not kps:
-            print(f"     [L0 失败] R1 解析失败,启动 L1 Kimi 整段重提")
+        else:
+            # 未截断 + 0 条 + 解析失败(走到这里说明 7 步保险也救不回)
+            print(f"     [L0 失败] R1 输出格式异常 + 7 步降级未救回,启动 L1 Kimi 整段重提")
 
         # ============= L1: Kimi-K2.6 整段重提 =============
         l1_kps = self._retry_via_siliconflow(
