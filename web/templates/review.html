@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.4-hotfix2</title>
+<title>乡村振兴知识库 v2.3.5-part1</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -81,6 +81,22 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .dup-rel-superseded{background:var(--info-bg);color:var(--info)}
 .dup-rel-complementary{background:var(--success-bg);color:#059669}
 .dup-rel-conflicting{background:var(--danger-bg);color:var(--danger)}
+/* v2.3.5-part1: 6 类型关系徽章配色 */
+.dup-rel-cross_file_consensus{background:#DCFCE7;color:#16A34A}
+.dup-rel-policy_evolution{background:#DBEAFE;color:#2563EB}
+.dup-rel-hierarchical_refinement{background:#F3E8FF;color:#9333EA}
+.dup-rel-same_file_redundancy{background:#FEF3C7;color:#B45309}
+.dup-rel-complementary{background:#F3F4F6;color:#4B5563}
+/* pending_human_review 红色高亮(决策3:AI 不确定时单独 high-light) */
+.dup-group-wrap.dup-human-review > .dup-group{border:2px solid var(--danger);box-shadow:0 0 0 1px rgba(239,68,68,.15)}
+.dup-rel-human-review-flag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:var(--danger-bg);color:var(--danger);margin-left:6px}
+/* 角色 badge */
+.dm-role{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600}
+.dm-role-core{background:#FEF3C7;color:#B45309}
+.dm-role-branch{background:#E0E7FF;color:#3730A3}
+.dm-role-derivative{background:#F3F4F6;color:#4B5563}
+.dup-cluster-topic{font-size:12px;color:var(--text-secondary);margin:4px 0;padding:6px 10px;background:var(--bg);border-radius:var(--radius);font-style:italic}
+.dup-strength{display:inline-block;padding:1px 8px;border-radius:4px;font-size:10px;font-weight:600;background:var(--primary-light);color:var(--primary);margin-left:6px}
 .dup-score{font-size:11px;color:var(--text-muted)}
 .dup-member{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius);font-size:12px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border-light)}
 .dup-member:last-child{margin-bottom:0}
@@ -705,7 +721,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span id="brandVersion">v2.3.4-hotfix2</span></div>
+  <div class="header-title">乡村振兴知识库 <span id="brandVersion">v2.3.5-part1</span></div>
   <!-- v2.3.3-mvp-part1c: 版本号每次发版务必同步更新 #brandVersion 文字
        (待未来改造为 /api/statistics 返回 version 字段, 立规则 60 第 1 次落地)
        v2.3.4-hotfix1 漏改后补:VERIFY-7 第 2 项升级为双向扫描(新版本号到位+旧版本号清理)
@@ -737,7 +753,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   保鲜提醒: <span class="fb-expired" id="fbExpired">0</span> 条已过期, <span class="fb-expiring" id="fbExpiring">0</span> 条即将到期 -- 点击查看
 </div>
 <div class="dup-bar" id="dupBar" onclick="toggleDupPanel()">
-  重复检测: <span class="db-count" id="dbPending">0</span> 组待处理<span id="dbConflictHint"></span> -- 点击展开处理
+  🔗 知识关系管理: <span class="db-count" id="dbPending">0</span> 组待处理<span id="dbConflictHint"></span> -- 点击展开处理
 </div>
 <div class="dup-panel" id="dupPanel"></div>
 
@@ -873,8 +889,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       </div>
       <div class="tool-card" id="tc-duplicateUnified" onclick="runTool('duplicateUnified')">
         <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">D</div>
-        <div class="tool-name">智能重复检测</div>
-        <div class="tool-desc">最近7天 / 全库扫描 / 彻底重扫</div>
+        <div class="tool-name">知识关系扫描</div>
+        <div class="tool-desc">最近7天 / 全库扫描 / 彻底重扫(六态判别)</div>
+      </div>
+      <div class="tool-card" id="tc-relationRescan" onclick="runTool('relationRescan')">
+        <div class="tool-icon" style="background:#DCFCE7;color:#16A34A">R</div>
+        <div class="tool-name">重扫全库关系 ★</div>
+        <div class="tool-desc">v2.3.5-part1: 强制重扫 + 备份 + AI 六态判别</div>
       </div>
       <div class="tool-card" id="tc-policy" onclick="runTool('policy')">
         <div class="tool-icon" style="background:var(--primary-light);color:var(--primary)">P</div>
@@ -1659,21 +1680,40 @@ function loadSuggestionCount(){apiGet("/api/architecture-suggestions").then(func
 
 function loadFreshnessSummary(){apiGet("/api/freshness/summary").then(function(s){if(s.error)return;var expired=s.expired||0;var expiring=s.expiring||0;if(expired>0||expiring>0){document.getElementById("fbExpired").textContent=expired;document.getElementById("fbExpiring").textContent=expiring;document.getElementById("freshnessBar").style.display="block"}else{document.getElementById("freshnessBar").style.display="none"}})}
 
-/* === Duplicate Detection === */
-var dupRelNames={duplicate:"重复",superseded:"版本更替",complementary:"互补",conflicting:"冲突",unrelated:"无关"};
+/* === v2.3.5-part1 知识关系管理(替代原重复检测,六态判别 + 共识聚类) ===
+   旧函数名 loadDuplicateSummary / loadDuplicateGroups / renderDupGroup / dupBatchAI 等保留以兼容
+   现有调用点(filterByType 'dup_pending' / 工具箱回调 / init 等),内部接 /api/relations/* */
+var dupRelNames={
+  cross_file_consensus:"🟢 跨文件共识",
+  policy_evolution:"🔵 政策演进",
+  hierarchical_refinement:"🟣 细化关系",
+  same_file_redundancy:"🟡 同源冗余",
+  conflicting:"🔴 矛盾冲突",
+  complementary:"⚪ 互补关系",
+  /* 旧标签向下兼容 */
+  duplicate:"重复",superseded:"版本更替",unrelated:"无关"
+};
+var dupClusterTypeNames={consensus:"共识簇",evolution_chain:"演进链",refinement_tree:"细化树"};
 var _dupGroups=[];
-function loadDuplicateSummary(){apiGet("/api/duplicate-groups/summary").then(function(s){if(!s||s.error)return;var p=s.pending||0;if(p>0){document.getElementById("dbPending").textContent=p;document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
+function loadDuplicateSummary(){apiGet("/api/relations/summary").then(function(s){if(!s||s.error)return;var p=s.total_pending||0;if(p>0){var hr=s.pending_human_review||0;document.getElementById("dbPending").textContent=p;var hint=document.getElementById("dbConflictHint");if(hint)hint.textContent=hr>0?(" (含 "+hr+" 组待研判)"):"";document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
 function toggleDupPanel(){var panel=document.getElementById("dupPanel");if(panel.classList.contains("open")){panel.classList.remove("open");panel.innerHTML=""}else{panel.classList.add("open");panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">加载中...</div>';loadDuplicateGroups()}}
-function loadDuplicateGroups(){apiGet("/api/duplicate-groups?status=pending").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){_dupGroups=[];panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的重复组</div>';return}_dupGroups=groups;groups.sort(function(a,b){var order={conflicting:0,duplicate:1,superseded:2,complementary:3};var oa=order[a.relation_type]!==undefined?order[a.relation_type]:9;var ob=order[b.relation_type]!==undefined?order[b.relation_type]:9;return oa-ob});var h='<div style="font-weight:600;font-size:14px;margin-bottom:4px;color:#C97A2C">待处理: '+groups.length+' 组 (冲突类型请优先处理)</div>';h+='<div class="dup-batch-bar"><label><input type="checkbox" id="dupSelectAll" onchange="dupToggleAll(this.checked)"> 全选</label>';h+='<button class="btn btn-sm btn-success" onclick="dupBatchAI()">批量按AI建议处理</button>';h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="dupBatchDismiss()">批量标记非重复</button>';h+='<span id="dupBatchCount" style="font-size:11px;color:var(--text-muted)"></span></div>';for(var i=0;i<groups.length;i++){h+=renderDupGroup(groups[i])}panel.innerHTML=h})}
-function renderDupGroup(g){var rt=g.relation_type||"duplicate";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var mergeNote=judgment.merge_note||"";var suggestKeep=judgment.suggested_keep_id;var members=g.members_detail||[];var score=g.similarity_score||0;var h='<div class="dup-group-wrap"><input type="checkbox" class="dup-gcb" value="'+g.id+'" onchange="dupUpdateBatchCount()"><div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+rt+'">'+esc(rtName)+'</span>';h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">组#'+g.id+'</span></div>';if(reason){h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>'}if(mergeNote){h+='<div class="dup-reason" style="border-left:3px solid var(--info)">合并建议: '+esc(mergeNote)+'</div>'}for(var i=0;i<members.length;i++){var m=members[i];var isSuggested=m.id===suggestKeep;h+='<div class="dup-member'+(isSuggested?" dm-suggested":"")+'">';h+='<input type="checkbox" class="dup-member-cb" data-gid="'+g.id+'" value="'+m.id+'" '+(isSuggested?"checked":"")+' title="勾选要保留的">';h+='<span class="dm-id">#'+m.id+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type)+'</span>';h+='<span class="dm-title">'+esc(m.title)+'</span>';if(m.source_file){h+='<span class="dm-src" title="'+esc(m.source_file)+'">'+esc(m.source_file)+'</span>'}if(isSuggested){h+='<span style="font-size:10px;color:var(--success);font-weight:600">AI建议保留</span>'}h+='</div>'}h+='<div class="dup-actions">';h+='<button class="btn btn-sm btn-success" onclick="resolveDupKeepChecked('+g.id+')">保留已勾选，删除其余</button>';h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="resolveDupDismiss('+g.id+')">全部保留(非重复)</button>';h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="toggleDupDetail(this)">查看详情</button>';h+='</div>';h+='<div class="dup-detail-content" style="display:none;margin-top:10px">';for(var k=0;k<members.length;k++){var mk=members[k];var aiC=mk.ai_extracted_content||"";if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}var excerpt=mk.original_excerpt||"";h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--primary)">#'+mk.id+' '+esc(mk.title)+'</div>';if(excerpt){h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><b>原文摘录:</b> '+esc(excerpt)+'</div>'}if(aiC&&typeof aiC==="object"){var coreC=aiC.core_conclusion||aiC.policy_content||aiC.case_summary||"";if(coreC){h+='<div style="font-size:12px;color:var(--text-secondary)"><b>核心内容:</b> '+esc(coreC)+'</div>'}}h+='</div>'}h+='</div></div></div>';return h}
-function resolveDupKeepChecked(gid){var cbs=document.querySelectorAll('.dup-member-cb[data-gid="'+gid+'"]:checked');if(!cbs.length){showToast("请至少勾选一条要保留的知识点","error");return}var keepIds=[];for(var i=0;i<cbs.length;i++)keepIds.push(parseInt(cbs[i].value));var allCbs=document.querySelectorAll('.dup-member-cb[data-gid="'+gid+'"]');var delCount=allCbs.length-cbs.length;if(delCount===0){resolveDupDismiss(gid);return}showConfirm("确认处理","保留 "+keepIds.length+" 条(#"+keepIds.join(",#")+")，删除 "+delCount+" 条。确认?",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/"+gid+"/resolve",{keep_ids:keepIds,action:"resolve"}).then(function(r){if(r.error){showToast("处理失败: "+r.error,"error");return}showToast("已处理: 保留"+keepIds.length+"条，删除"+(r.deleted||[]).length+"条","success");loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
-function resolveDupDismiss(gid){apiPost("/api/duplicate-groups/"+gid+"/resolve",{action:"dismiss"}).then(function(r){if(r.error){showToast("处理失败: "+r.error,"error");return}showToast("已标记为非重复","info");loadDuplicateGroups();loadDuplicateSummary()})}
+function loadDuplicateGroups(){apiGet("/api/relations/groups").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){_dupGroups=[];panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的关系组</div>';return}_dupGroups=groups;var typeCounts={};for(var i=0;i<groups.length;i++){var t=groups[i].relation_type||"unknown";typeCounts[t]=(typeCounts[t]||0)+1}var head='<div style="font-weight:600;font-size:14px;margin-bottom:4px;color:#C97A2C">待处理: '+groups.length+' 组';var typeOrder=["pending_human_review","cross_file_consensus","policy_evolution","hierarchical_refinement","same_file_redundancy","conflicting","complementary"];var labels=[];for(var k=0;k<typeOrder.length;k++){var tk=typeOrder[k];var lbl=tk==="pending_human_review"?"🔴待研判":(dupRelNames[tk]||tk);if(typeCounts[tk])labels.push(lbl+" "+typeCounts[tk])}if(labels.length)head+=' &nbsp;|&nbsp; '+labels.join(" / ");head+='</div>';head+='<div class="dup-batch-bar"><label><input type="checkbox" id="dupSelectAll" onchange="dupToggleAll(this.checked)"> 全选</label>';head+='<button class="btn btn-sm btn-success" onclick="dupBatchAI()">批量按AI建议处理</button>';head+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="dupBatchDismiss()">批量保持独立</button>';head+='<span id="dupBatchCount" style="font-size:11px;color:var(--text-muted)"></span></div>';for(var i=0;i<groups.length;i++){head+=renderDupGroup(groups[i])}panel.innerHTML=head})}
+function renderDupGroup(g){var rt=g.relation_type||"unknown";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var topic=g.cluster_topic||judgment.topic||"";var ctype=g.cluster_type||"";var strength=g.strength_score||0;var members=g.members_detail||[];var score=g.similarity_score||0;var status=g.status||"pending";var isHumanReview=status==="pending_human_review";var groupId=g.group_id;var wrapClass="dup-group-wrap"+(isHumanReview?" dup-human-review":"");var h='<div class="'+wrapClass+'"><input type="checkbox" class="dup-gcb" value="'+esc(groupId)+'" onchange="dupUpdateBatchCount()"><div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+esc(rt)+'">'+esc(rtName)+'</span>';if(isHumanReview)h+='<span class="dup-rel-human-review-flag">AI不确定·待研判</span>';if(score)h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';if(ctype)h+='<span class="dup-strength">'+esc(dupClusterTypeNames[ctype]||ctype)+(strength?" 强度"+Math.round(strength):"")+'</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">'+esc(groupId)+'</span></div>';if(topic)h+='<div class="dup-cluster-topic">主题: '+esc(topic)+'</div>';if(reason)h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>';for(var i=0;i<members.length;i++){var m=members[i];var role=m.role||"";var sf=m.renamed_filename||m.original_filename||m.source_file||"";h+='<div class="dup-member">';h+='<input type="checkbox" class="dup-member-cb" data-gid="'+esc(groupId)+'" value="'+m.kp_id+'" title="勾选(同源冗余合并时作 keep_id)">';h+='<span class="dm-id">#'+m.kp_id+'</span>';if(role)h+='<span class="dm-role dm-role-'+esc(role)+'">'+esc(role)+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type||"")+'</span>';h+='<span class="dm-title">'+esc(m.title||"")+'</span>';if(sf)h+='<span class="dm-src" title="'+esc(sf)+'">'+esc(sf)+'</span>';h+='</div>'}h+='<div class="dup-actions">';if(isHumanReview){h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);font-weight:600" onclick="relGroupManualClassify(\''+esc(groupId)+'\')">🎯 手动选关系类型</button>'}else{h+='<button class="btn btn-sm btn-success" onclick="relGroupBuildConsensus(\''+esc(groupId)+'\')">🟢 共识簇</button>';h+='<button class="btn btn-sm" style="background:#DBEAFE;color:#2563EB" onclick="relGroupBuildEvolution(\''+esc(groupId)+'\')">🔵 演进链</button>';h+='<button class="btn btn-sm" style="background:#F3E8FF;color:#9333EA" onclick="relGroupBuildRefinement(\''+esc(groupId)+'\')">🟣 细化树</button>';h+='<button class="btn btn-sm" style="background:#FEF3C7;color:#B45309" onclick="relGroupMerge(\''+esc(groupId)+'\')">🟡 合并</button>';h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger)" onclick="relGroupMarkConflict(\''+esc(groupId)+'\')">🔴 标记冲突</button>';h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="relGroupKeepIndependent(\''+esc(groupId)+'\')">⚪ 保持独立</button>'}h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="toggleDupDetail(this)">查看详情</button>';h+='</div>';h+='<div class="dup-detail-content" style="display:none;margin-top:10px">';for(var k=0;k<members.length;k++){var mk=members[k];var aiC=mk.ai_extracted_content||"";if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}var excerpt=mk.original_excerpt||"";h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--primary)">#'+mk.kp_id+' '+esc(mk.title||"")+'</div>';if(excerpt){h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><b>原文摘录:</b> '+esc(excerpt)+'</div>'}if(aiC&&typeof aiC==="object"){var coreC=aiC.core_conclusion||aiC.policy_content||aiC.case_summary||aiC.description||"";if(coreC){h+='<div style="font-size:12px;color:var(--text-secondary)"><b>核心内容:</b> '+esc(coreC)+'</div>'}}h+='</div>'}h+='</div></div></div>';return h}
+function _relGroupCall(gid,action,body,confirmText){if(confirmText){showConfirm("确认操作",confirmText,function(ok){if(!ok)return;_relGroupDoCall(gid,action,body)})}else{_relGroupDoCall(gid,action,body)}}
+function _relGroupDoCall(gid,action,body){apiPost("/api/relations/groups/"+encodeURIComponent(gid)+"/"+action,body||{}).then(function(r){if(r.error){showToast("处理失败: "+r.error,"error");return}showToast("已处理: "+action,"success");loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})}
+function relGroupBuildConsensus(gid){_relGroupCall(gid,"build_consensus",{},"建立🟢跨文件共识簇:全部保留 + 关系标 confirmed。确认?")}
+function relGroupBuildEvolution(gid){_relGroupCall(gid,"build_evolution",{},"建立🔵政策演进链:全部保留 + 按时间序加成员。确认?")}
+function relGroupBuildRefinement(gid){_relGroupCall(gid,"build_refinement",{},"建立🟣细化树:全部保留 + 父子关系。确认?")}
+function relGroupMerge(gid){var cbs=document.querySelectorAll('.dup-member-cb[data-gid="'+gid+'"]:checked');if(!cbs.length){showToast("请勾选要保留的(core)知识点(同源冗余合并时只保留这一条,其余删除)","error");return}var keepIds=[];for(var i=0;i<cbs.length;i++)keepIds.push(parseInt(cbs[i].value));var allCbs=document.querySelectorAll('.dup-member-cb[data-gid="'+gid+'"]');var delCount=allCbs.length-keepIds.length;if(delCount===0){showToast("勾选了所有成员,等于不删除。请取消勾选要删除的条目","info");return}_relGroupCall(gid,"merge",{keep_ids:keepIds},"🟡合并:保留 "+keepIds.length+" 条(#"+keepIds.join(",#")+"),删除 "+delCount+" 条。确认?")}
+function relGroupMarkConflict(gid){_relGroupCall(gid,"mark_conflict",{},"🔴标记为矛盾冲突:全部保留 + 进入冲突队列待研判。确认?")}
+function relGroupKeepIndependent(gid){_relGroupCall(gid,"keep_independent",{},"⚪保持独立:不建关系 + 不删除。确认?")}
+function relGroupManualClassify(gid){var rt=window.prompt("请选择关系类型(输入数字):\n1=🟢跨文件共识\n2=🔵政策演进\n3=🟣细化关系\n4=🟡同源冗余(需勾选要保留的条目)\n5=🔴矛盾冲突\n6=⚪互补关系\n7=完全无关","1");if(!rt)return;var map={"1":"cross_file_consensus","2":"policy_evolution","3":"hierarchical_refinement","4":"same_file_redundancy","5":"conflicting","6":"complementary","7":"unrelated"};var rtVal=map[rt];if(!rtVal){showToast("无效输入","error");return}var body={relation_type:rtVal};if(rtVal==="same_file_redundancy"){var cbs=document.querySelectorAll('.dup-member-cb[data-gid="'+gid+'"]:checked');if(!cbs.length){showToast("同源冗余需先勾选要保留的条目","error");return}var keepIds=[];for(var i=0;i<cbs.length;i++)keepIds.push(parseInt(cbs[i].value));body.keep_id=keepIds[0];body.keep_ids=keepIds}_relGroupCall(gid,"manual_classify",body,"按你选的关系类型(\""+(dupRelNames[rtVal]||rtVal)+"\")处理。确认?")}
 function toggleDupDetail(btn){var panel=btn.parentElement.nextElementSibling;if(panel&&panel.className==="dup-detail-content"){var show=panel.style.display==="none";panel.style.display=show?"block":"none";btn.textContent=show?"收起详情":"查看详情"}}
 function dupToggleAll(ck){var cbs=document.querySelectorAll(".dup-gcb");for(var i=0;i<cbs.length;i++)cbs[i].checked=ck;dupUpdateBatchCount()}
 function dupUpdateBatchCount(){var cbs=document.querySelectorAll(".dup-gcb:checked");var el=document.getElementById("dupBatchCount");if(el)el.textContent=cbs.length>0?"已选 "+cbs.length+" 组":""}
-function dupGetCheckedIds(){var cbs=document.querySelectorAll(".dup-gcb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));return ids}
-function dupBatchAI(){var ids=dupGetCheckedIds();if(!ids.length){showToast("请先勾选要处理的重复组","error");return}showConfirm("批量按AI建议处理","将对 "+ids.length+" 组执行AI建议的处理方案(保留AI推荐的知识点，删除其余)。无AI建议的组将跳过。确认?",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/batch-resolve",{group_ids:ids,action:"ai_suggest"}).then(function(r){if(r.error){showToast("批量处理失败: "+r.error,"error");return}var msg="已处理: "+r.resolved+"组解决";if(r.dismissed)msg+=", "+r.dismissed+"组标记非重复";if(r.errors&&r.errors.length)msg+=", "+r.errors.length+"组跳过";showToast(msg,"success");loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
-function dupBatchDismiss(){var ids=dupGetCheckedIds();if(!ids.length){showToast("请先勾选要处理的重复组","error");return}showConfirm("批量标记非重复","将 "+ids.length+" 组全部标记为非重复(保留所有知识点)。确认?",function(ok){if(!ok)return;apiPost("/api/duplicate-groups/batch-resolve",{group_ids:ids,action:"dismiss"}).then(function(r){if(r.error){showToast("批量处理失败: "+r.error,"error");return}showToast("已标记 "+r.dismissed+" 组为非重复","info");loadDuplicateGroups();loadDuplicateSummary()})})}
+function dupGetCheckedIds(){var cbs=document.querySelectorAll(".dup-gcb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(cbs[i].value);return ids}
+function dupBatchAI(){var ids=dupGetCheckedIds();if(!ids.length){showToast("请先勾选要处理的关系组","error");return}showConfirm("批量按AI建议处理","将对 "+ids.length+" 组按 AI 输出的关系类型自动选对应动作(共识簇/演进链/细化树自动建立;同源冗余按 AI 推荐的 core 保留删其余;互补/无关保持独立)。确认?",function(ok){if(!ok)return;apiPost("/api/relations/batch",{group_ids:ids}).then(function(r){if(r.error){showToast("批量处理失败: "+r.error,"error");return}var msg="已处理: "+r.processed+"组";if(r.errors&&r.errors.length)msg+=", "+r.errors.length+"组跳过";showToast(msg,"success");loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})})}
+function dupBatchDismiss(){var ids=dupGetCheckedIds();if(!ids.length){showToast("请先勾选要处理的关系组","error");return}showConfirm("批量保持独立","将 "+ids.length+" 组全部标记为保持独立(不建关系,不删除)。确认?",function(ok){if(!ok)return;apiPost("/api/relations/batch_keep_independent",{group_ids:ids}).then(function(r){if(r.error){showToast("批量处理失败: "+r.error,"error");return}showToast("已标记 "+r.rejected+" 组为保持独立","info");loadDuplicateGroups();loadDuplicateSummary()})})}
 function goToKp(kid){switchTab("review");window.scrollTo(0,0);currentSearch="";currentStatus=null;currentPage=1;document.getElementById("searchInput").value=""+kid;currentSearch=""+kid;loadKnowledgePoints()}
 
 /* === Categories === */
@@ -2470,9 +2510,35 @@ function runTool(name){
     });
   }
   else if(name==="duplicateUnified"){
-    /* v2.3.0 F049: 智能重复检测,弹三选一对话框,模式由 doDupUnified(mode) 继续 */
+    /* v2.3.0 F049: 智能重复检测,弹三选一对话框,模式由 doDupUnified(mode) 继续
+     * v2.3.5-part1: 后端改调 RelationAnalyzer 六态判别,旧路由保留向下兼容 */
     done();
     document.getElementById("dupModeDlg").classList.add("open");
+  }
+  else if(name==="relationRescan"){
+    /* v2.3.5-part1: 强制重扫全库关系(走 operation_hook 备份 + scan_full) */
+    done();
+    showConfirm("重扫全库关系","将对全库 confirmed/quotable/premium 的知识点做"+
+      "六态关系判别(V3 主链 + R1 兜底,不删除现有 pending)。"+
+      "API 估算成本 5-15 元,耗时 10-30 分钟。\n\n确认重扫?",function(ok){
+      if(!ok)return;
+      showToolResult("重扫全库关系","<div style='padding:20px;text-align:center;color:var(--text-secondary)'><div>正在扫描中...</div><div style='font-size:12px;margin-top:8px;color:var(--text-muted)'>请勿关闭页面,完成后会自动刷新</div></div>");
+      apiPost("/api/tools/relation_full_rescan").then(function(r){
+        if(r.error){showToolResult("重扫全库关系","<p style='color:var(--danger)'>失败: "+esc(r.error)+"</p>");return}
+        var sum=r.summary||{};
+        var h='<p style="color:var(--success);font-weight:600">重扫完成!</p>';
+        h+='<div style="margin-top:10px">本次新建关系组: <b>'+(r.new_groups||0)+'</b></div>';
+        h+='<div>当前 pending 总数: <b>'+(sum.total_pending||0)+'</b></div>';
+        if(sum.pending_human_review)h+='<div style="color:var(--danger)">其中 AI 不确定待研判: <b>'+sum.pending_human_review+'</b></div>';
+        if(sum.by_type){
+          h+='<div style="margin-top:8px;font-size:12px;color:var(--text-secondary)">按类型分布:</div>';
+          var types=sum.by_type;
+          for(var k in types){if(types.hasOwnProperty(k))h+=dRow("dot","#0A9B80",dupRelNames[k]||k,types[k])}
+        }
+        showToolResult("重扫全库关系结果",h);
+        loadDuplicateSummary();loadDashboard();
+      });
+    });
   }
   else if(name==="policy"){
     apiPost("/api/tools/policy-revalidate").then(function(r){done();
@@ -3409,19 +3475,17 @@ function _runDupUnified(mode,title,done){
   if(mode==="recent")body.days=7;
   apiPost("/api/tools/duplicate_unified",body).then(function(r){done();
     if(r.error){showToolResult(title,"<p style='color:var(--danger)'>执行失败: "+esc(r.error)+"</p>");return}
-    var s=r.summary||{};
     var newGroups=r.new_groups||0;
     var h='<p style="color:var(--success);font-weight:600;margin-bottom:10px">';
     if(mode==="reset_rescan"){
-      h+='已清理 '+(r.dismissed||0)+' 组假阳性，AI重扫发现 '+newGroups+' 组真实重复';
+      h+='已清理 '+(r.dismissed||0)+' 组旧表假阳性,AI 六态判别新发现 '+newGroups+' 组关系';
     }else if(mode==="recent"){
-      h+='最近7天扫描完成，新发现 '+newGroups+' 组';
+      h+='最近 7 天扫描完成,新发现 '+newGroups+' 组关系';
     }else{
-      h+='全库扫描完成，新发现 '+newGroups+' 组';
+      h+='全库扫描完成,新发现 '+newGroups+' 组关系';
     }
     h+='</p>';
-    h+=dRow("dot","#FF9500","待处理",s.pending||0);
-    h+=dRow("dot","#34C759","已处理",s.resolved||0);
+    h+='<div style="font-size:12px;color:var(--text-muted);margin-top:8px">提示: 新关系组在 Tab 1 顶部"🔗 知识关系管理"区处理</div>';
     h+=dRow("dot","#86868B","已排除",s.dismissed||0);
     showToolResult(title+" 结果",h);
     loadDuplicateSummary();loadDashboard();

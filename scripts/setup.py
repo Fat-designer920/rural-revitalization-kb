@@ -1,14 +1,14 @@
 """
 setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.4-hotfix1
+版本：v2.3.5-part1
 
 功能：
   1. 创建目录结构（9个目录）
-  2. 初始化数据库（25张表,全部字段,一次建成）
+  2. 初始化数据库（28张表,全部字段,一次建成 — v2.3.5-part1 新增 kp_relations / consensus_clusters / cluster_members）
   3. 写入27条默认分类 + 标签定义
   4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. [v2.3.1/v2.3.2/v2.3.3-mvp/v2.3.4-hotfix1 新增] 追齐存量库 schema（幂等,新库空跑）
+  5. [v2.3.1/v2.3.2/v2.3.3-mvp/v2.3.4-hotfix1/v2.3.5-part1 新增] 追齐存量库 schema（幂等,新库空跑）
   6. 创建桌面快捷方式
   7. 验证核心文件完整性
 
@@ -16,6 +16,18 @@ setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
       新用户首次安装 → init_tables() 一步到位拿最新 schema。
       存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
       同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
+
+v2.3.5-part1 变更:
+  - 知识关系网络底座(替代旧重复检测的二态判别)
+  - 3 张新表(kp_relations / consensus_clusters / cluster_members)
+    新表 CREATE TABLE IF NOT EXISTS 幂等,新库走 init_tables 一步建好,
+    老库走 _upgrade_schema_to_current 的 Step 11(_V235_NEW_TABLES)兜底建表
+  - 2 字段追加 knowledge_points: relation_count + consensus_strength
+    走 _upgrade Step 12(_V235_NEW_COLUMNS)立规则 60 落地
+  - 5 条新索引: idx_rel_source/idx_rel_target/idx_rel_type_status/idx_cluster_type/idx_cm_kp
+    新表新字段无 ALTER 风险,可放 init_tables 统一索引列表(已同步)
+  - duplicate_checker.py 退役删除,relation_analyzer.py 新建替代
+  - 立规则#3 推广到新表(purge_cluster_record / purge_kp_relations)
 
 v2.3.4-hotfix1 变更：
   - 截断零提取多模型兜底(L1 Kimi-K2.6 + L2 R1 跨厂商镜像)
@@ -215,6 +227,75 @@ _V234_NEW_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_kp_model ON knowledge_points(extracted_by_model)",
 ]
 
+# v2.3.5-part1: 知识关系网络底座(3 表 + 2 字段 + 5 索引)
+# 新表 CREATE TABLE IF NOT EXISTS 幂等,老库走 Step 11 兜底建表
+# (理论上新库 init_tables 已建,但老库可能 init 在更早版本运行过 → 二次保险)
+# 字段加在 knowledge_points: relation_count + consensus_strength
+# 索引依赖新字段(consensus_strength) 必须放 Step 12 后(立规则 60)
+_V235_NEW_TABLES = [
+    """CREATE TABLE IF NOT EXISTS kp_relations (
+        relation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_kp_id INTEGER NOT NULL,
+        target_kp_id INTEGER NOT NULL,
+        relation_type TEXT NOT NULL CHECK(relation_type IN (
+            'cross_file_consensus','policy_evolution','hierarchical_refinement',
+            'same_file_redundancy','conflicting','complementary'
+        )),
+        similarity_score REAL DEFAULT 0,
+        ai_judgment TEXT DEFAULT '{}',
+        created_by TEXT DEFAULT 'ai' CHECK(created_by IN ('ai','human')),
+        status TEXT DEFAULT 'pending'
+            CHECK(status IN ('pending','pending_human_review','confirmed','rejected')),
+        cluster_id INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        confirmed_at TEXT,
+        confirmed_by_user TEXT,
+        CHECK(source_kp_id != target_kp_id),
+        UNIQUE(source_kp_id, target_kp_id, relation_type),
+        FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
+        FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id),
+        FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS consensus_clusters (
+        cluster_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cluster_type TEXT NOT NULL CHECK(cluster_type IN (
+            'consensus','evolution_chain','refinement_tree'
+        )),
+        topic TEXT NOT NULL,
+        member_count INTEGER DEFAULT 0,
+        source_documents TEXT DEFAULT '[]',
+        source_doc_count INTEGER DEFAULT 0,
+        strength_score REAL DEFAULT 0,
+        status TEXT DEFAULT 'active' CHECK(status IN ('active','dismissed','merged')),
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        notes TEXT DEFAULT ''
+    )""",
+    """CREATE TABLE IF NOT EXISTS cluster_members (
+        cluster_id INTEGER NOT NULL,
+        kp_id INTEGER NOT NULL,
+        role TEXT DEFAULT 'branch' CHECK(role IN ('core','branch','derivative')),
+        sequence_order INTEGER DEFAULT 0,
+        added_at TEXT DEFAULT (datetime('now','localtime')),
+        PRIMARY KEY (cluster_id, kp_id),
+        FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id),
+        FOREIGN KEY (kp_id) REFERENCES knowledge_points(id)
+    )""",
+]
+
+_V235_NEW_COLUMNS = [
+    ("relation_count", "INTEGER DEFAULT 0"),
+    ("consensus_strength", "REAL DEFAULT 0"),
+]
+
+_V235_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_rel_source ON kp_relations(source_kp_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rel_target ON kp_relations(target_kp_id)",
+    "CREATE INDEX IF NOT EXISTS idx_rel_type_status ON kp_relations(relation_type, status)",
+    "CREATE INDEX IF NOT EXISTS idx_cluster_type ON consensus_clusters(cluster_type, status)",
+    "CREATE INDEX IF NOT EXISTS idx_cm_kp ON cluster_members(kp_id)",
+]
+
 
 def _upgrade_schema_to_current(db_path):
     """追齐存量库 schema 到 v2.3.3-mvp-part1a.
@@ -331,6 +412,45 @@ def _upgrade_schema_to_current(db_path):
 
         # Step 10: idx_kp_model 索引 (v2.3.4-hotfix1, 必须在 Step 9 后)
         for idx_sql in _V234_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 11: 知识关系网络 3 张新表 (v2.3.5-part1)
+        # CREATE TABLE IF NOT EXISTS 幂等,老库无表则建,有表则跳过
+        for tbl_sql in _V235_NEW_TABLES:
+            # 提取表名做 sqlite_master 存在性检查
+            tbl_name = tbl_sql.split("EXISTS")[1].strip().split()[0].strip("(")
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                      "AND name=?", (tbl_name,))
+            if c.fetchone():
+                summary["tables_skipped"].append(tbl_name)
+            else:
+                c.execute(tbl_sql)
+                summary["tables_created"].append(tbl_name)
+
+        # Step 12: knowledge_points 加 relation_count + consensus_strength 字段
+        # (v2.3.5-part1, 立规则 60 落地: ALTER 字段必须在 init_tables 之外的升级路径)
+        c.execute("PRAGMA table_info(knowledge_points)")
+        kp_cols_v235 = {r[1] for r in c.fetchall()}
+        for col_name, col_def in _V235_NEW_COLUMNS:
+            if col_name in kp_cols_v235:
+                summary["columns_skipped"].append(col_name)
+            else:
+                c.execute("ALTER TABLE knowledge_points ADD COLUMN %s %s"
+                          % (col_name, col_def))
+                summary["columns_added"].append(col_name)
+
+        # Step 13: 知识关系网络 5 条新索引 (v2.3.5-part1)
+        # 注意:idx_rel_*/idx_cluster_type/idx_cm_kp 都是基于新表的字段,不依赖
+        # knowledge_points 的新字段;idx_kp_consensus_strength(若有)才依赖 Step 12,
+        # 当前未引入此索引,所以 Step 13 与 Step 12 顺序无强制要求,但保持立规则 60 风格.
+        for idx_sql in _V235_NEW_INDEXES:
             idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
             c.execute("SELECT name FROM sqlite_master WHERE type='index' "
                       "AND name=?", (idx_name,))

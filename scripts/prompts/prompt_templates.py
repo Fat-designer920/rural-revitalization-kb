@@ -2090,4 +2090,116 @@ def get_all_prompt_names():
         {"id": "qa_retrieval_rank", "name": "问答-检索结果重排序(V3)", "version": PROMPT_VERSION},
         {"id": "qa_answer_gen", "name": "问答-4板块回答生成(V3主/R1备)", "version": PROMPT_VERSION},
         {"id": "qa_followup_gen", "name": "问答-延伸思考补救生成(V3)", "version": PROMPT_VERSION},
+        # --- v2.3.5-part1 知识关系六态判别 1 个 ---
+        {"id": "relation_judge", "name": "知识关系-六态判别(V3主+R1兜底)", "version": PROMPT_VERSION},
     ]
+
+
+# ================================================================
+# v2.3.5-part1: 知识点关系六态判别 Prompt(替代旧 DUPLICATE_JUDGE_PROMPT 二态)
+# 调用方: scripts/relation_analyzer.py
+# 主链 V3, confidence < 70 升级 R1 兜底
+# 关键差异 vs 旧 DUPLICATE_JUDGE_PROMPT:
+#   - 输入新增 source_filename / created_at 字段(关键判别依据!)
+#   - 输出从二态升级为六态 + confidence + cluster_suggestion + fallback_action
+#   - 默认倾向 cross_file_consensus 而非 same_file_redundancy(政策反复重申是信号不是噪声)
+# ================================================================
+RELATION_JUDGE_PROMPT = {
+    "system_prompt": """你是乡村振兴政策与知识管理领域的资深分析师。
+你的任务是分析一组疑似相关的知识点之间的真实关系,
+不是简单的"重复/不重复"二元判断,而是要识别它们的语义关系类型。
+
+【六种关系类型,按重要性排序】
+
+1. 🟢 cross_file_consensus(跨文件共识)— 多份不同政策文件反复重申同一政策
+   触发条件:source_filename 不同 + 内容核心一致 + 时间跨度通常较短
+   价值:这是国家或行业的高频共识政策,重要性极高,绝不能合并
+   示例:2024 一号文件 + 2025 农业强国规划 都讲"健全联农带农益农机制"
+
+2. 🔵 policy_evolution(政策演进)— 同一政策在不同时间的版本更迭
+   触发条件:source_filename 不同 + 时间有先后 + 表述演化(细化/扩展/调整)
+   价值:政策走向研判核心素材,投标方案的"政策延续性"论据
+   示例:2024 提"探索建立",2025 升级为"健全...机制"
+
+3. 🟣 hierarchical_refinement(细化关系)— 顶层政策 → 实施细则 → 落地方案
+   触发条件:同主题但抽象层级不同(中央 → 部委 → 地方 / 原则 → 操作)
+   价值:投标方案"从顶层到落地"完整证据链
+   示例:中央"健全机制" + 农业农村部"实施意见" + 县级"操作手册"
+
+4. 🟡 same_file_redundancy(同源冗余)— 同一文件不同段落讲同一件事
+   触发条件:source_filename 相同 + 内容高度重叠
+   价值:提取颗粒度问题,应合并保留信息量最大的一条
+   示例:同一份白皮书第 3 段和第 28 段都讲"产业融合"
+
+5. 🔴 conflicting(矛盾冲突)— 不同来源对同一问题给出矛盾结论
+   触发条件:同主题但结论/数据/路径相反
+   价值:政策研判的高价值发现,但需人工裁决
+   示例:A 文件说"补贴应直达农户",B 文件说"应通过合作社"
+
+6. ⚪ complementary(互补关系)— 同主题但角度互补,各有价值
+   触发条件:同主题但视角不同(机制/落实/考核 / 主体方/监管方)
+   价值:政策组合套餐生成的素材
+   示例:A 讲"补贴机制",B 讲"补贴考核",C 讲"补贴预算"
+
+7. ⚫ unrelated(无关)— 虽然标题/关键词相似,实际不是同一件事
+   触发条件:核心主题/适用对象不同
+   价值:不建关系,不需处理
+
+【输入】
+你将收到 N 条疑似相关的知识点,每条包含:
+  - kp_id, title, content_type
+  - 来源文件(关键判别依据!)
+  - 入库时间(时间序判别)
+  - 关键词, 内容摘要, 原文摘录(语义判别)
+
+【输出严格 JSON,不要任何其他文字】
+{
+  "relation_type": "cross_file_consensus | policy_evolution | hierarchical_refinement | same_file_redundancy | conflicting | complementary | unrelated",
+  "confidence": 0-100 整数 (你的判断置信度),
+  "topic": "20 字内核心主题(用于聚类节点命名,unrelated 时留空)",
+  "reason": "判断理由 50-150 字,要说出关键证据(看到了什么文件名差异/时间差/抽象层级差异)",
+  "evidence_signals": {
+    "source_diversity": "all_same | partial_same | all_different",
+    "temporal_pattern": "no_time_info | same_period | clear_evolution",
+    "abstraction_pattern": "same_level | hierarchical | mixed"
+  },
+  "cluster_suggestion": {
+    "should_cluster": true | false,
+    "core_kp_id": 建议作为 core 的 kp_id (信息量最大/最权威/最新),
+    "member_roles": [
+      {"kp_id": 数字, "role": "core|branch|derivative", "sequence_order": 演进链时填入0/1/2,其他类型填0}
+    ]
+  },
+  "fallback_action": "keep_all | merge_to_core | human_review",
+  "human_review_reason": "如 fallback_action=human_review,说明为什么不能 AI 决定;否则留空字符串"
+}
+
+【判定优先级 — 关键!】
+1. 先看 source_filename:
+   - 全部相同 → 优先 same_file_redundancy(should_cluster=false)
+   - 不同 → 进入第 2 步
+2. source_filename 不同时:
+   - 看入库时间跨度 + 表述变化:跨期 + 演化明显 → policy_evolution
+   - 同期 + 表述高度一致 → cross_file_consensus
+   - 抽象层级有差异(中央 vs 地方 / 原则 vs 操作) → hierarchical_refinement
+3. 看核心结论:
+   - 有矛盾 → conflicting (fallback_action=human_review)
+4. 都不像:
+   - 视角互补 → complementary
+   - 完全不相关 → unrelated
+
+【cluster_suggestion 规则】
+- 仅 cross_file_consensus / policy_evolution / hierarchical_refinement 三种关系建议建簇 (should_cluster=true)
+- same_file_redundancy / conflicting / complementary / unrelated 不建簇 (should_cluster=false)
+- core_kp_id 选择标准(优先级):内容最完整 > 来源最权威 > 时间最新 > excerpt 最长
+- policy_evolution 的 sequence_order 必须按时间排序(0=最早,n-1=最新)
+
+【重要原则】
+- **默认倾向 cross_file_consensus 而非 same_file_redundancy**。
+  理由:多份文件反复讲是政策的重要性信号,不是噪声。
+- 不确定时 fallback_action: human_review,不要硬下结论。
+- confidence 评分要诚实:依据充分给 80-95;依据不足给 30-65。
+- 不要输出 JSON 以外的任何内容。""",
+    "user_prompt_template": "{user_content}",
+    "description": "知识关系六态判别(V3主+R1兜底,F2 v2.3.5-part1)"
+}

@@ -101,7 +101,7 @@ STATIC_SCAN_TARGETS = None  # None → 使用 static_analyzer 内置默认清单
 # 启动就绪性自检的 5 个核心引擎(按模块路径)
 READINESS_CHECK_TARGETS = [
     ("scripts.extractor", "知识提取引擎"),
-    ("scripts.duplicate_checker", "重复检测引擎"),
+    ("scripts.relation_analyzer", "知识关系分析引擎"),
     ("scripts.preprocessor", "预处理引擎"),
     ("scripts.experience_notes", "经验速记引擎"),
     ("scripts.health_checker", "体检引擎"),
@@ -371,17 +371,13 @@ DIM6_KNOWN_FALSE_POSITIVES = {
     "6_code_smell|scripts/health_checker.py:1288|smell_silent_except",  # log_event fallback 的 fallback
     "6_code_smell|scripts/health_checker.py:1301|smell_silent_except",  # progress emit 失败
     # -----------------------------------------------------------------
-    # duplicate_checker.py silent_except 4 条 + client=None 1 条 + info 2 条
-    # part3.8 原 512 的 migrate ImportError 已删除;原 522 client=None 漂到 519;
-    # 原 543/545 info 漂到 540/542
+    # relation_analyzer.py(v2.3.5-part1 替代 duplicate_checker.py)
+    # silent_except 1 条(ai_extracted_content JSON 解析) + except_print_only 3 条
     # -----------------------------------------------------------------
-    "6_code_smell|scripts/duplicate_checker.py:183|smell_silent_except",   # JSON 解析 keywords
-    "6_code_smell|scripts/duplicate_checker.py:203|smell_silent_except",   # JSON obj 提取
-    "6_code_smell|scripts/duplicate_checker.py:258|smell_silent_except",   # 历史配对解析
-    "6_code_smell|scripts/duplicate_checker.py:466|smell_silent_except",   # ai_judgment JSON 解析
-    "6_code_smell|scripts/duplicate_checker.py:519|smell_try_except_none_import",  # client=None 降级(AI 客户端初始化失败降本地粗筛)
-    "6_code_smell|scripts/duplicate_checker.py:540|smell_except_print_only",  # KeyboardInterrupt 取消
-    "6_code_smell|scripts/duplicate_checker.py:542|smell_except_print_only",  # main Exception print
+    "6_code_smell|scripts/relation_analyzer.py:139|smell_silent_except",   # ai_extracted_content JSON 解析兜底
+    "6_code_smell|scripts/relation_analyzer.py:350|smell_except_print_only",  # AI 判别失败 print
+    "6_code_smell|scripts/relation_analyzer.py:447|smell_except_print_only",  # main DeepSeekClient 初始化失败 print
+    "6_code_smell|scripts/relation_analyzer.py:452|smell_except_print_only",  # main 整体兜底 print + traceback
     # -----------------------------------------------------------------
     # preprocessor.py info 级 except_print_only (6 条)
     # -----------------------------------------------------------------
@@ -410,7 +406,7 @@ WHITELIST_COVERAGE = {
     "scripts/api_server.py",
     "scripts/extractor.py",
     "scripts/health_checker.py",
-    "scripts/duplicate_checker.py",
+    "scripts/relation_analyzer.py",
     "scripts/preprocessor.py",
     "scripts/backup_manager.py",
 }
@@ -568,15 +564,13 @@ WHITELIST_REASONS = {
     "scripts/health_checker.py:1288": "log_event fallback 的 fallback (print 失败)",
     "scripts/health_checker.py:1301": "progress emit 失败",
     # -----------------------------------------------------------------
-    # dim6 duplicate_checker.py (4 warning + client=None + 2 info)
+    # dim6 relation_analyzer.py(v2.3.5-part1 替代 duplicate_checker.py)
+    # silent_except 1 + except_print_only 3 = 4 条
     # -----------------------------------------------------------------
-    "scripts/duplicate_checker.py:183": "JSON 解析 keywords 失败",
-    "scripts/duplicate_checker.py:203": "JSON obj 提取失败",
-    "scripts/duplicate_checker.py:258": "历史配对解析失败",
-    "scripts/duplicate_checker.py:466": "ai_judgment JSON 解析失败",
-    "scripts/duplicate_checker.py:519": "AI 客户端初始化失败降本地粗筛(规则前提误报)",
-    "scripts/duplicate_checker.py:540": "main KeyboardInterrupt 取消 print",
-    "scripts/duplicate_checker.py:542": "main Exception print",
+    "scripts/relation_analyzer.py:139": "ai_extracted_content JSON 解析兜底",
+    "scripts/relation_analyzer.py:350": "AI 判别失败 print",
+    "scripts/relation_analyzer.py:447": "main DeepSeekClient 初始化失败 print",
+    "scripts/relation_analyzer.py:452": "main 整体兜底 print + traceback",
     # -----------------------------------------------------------------
     # dim6 preprocessor.py (6 info)
     # -----------------------------------------------------------------

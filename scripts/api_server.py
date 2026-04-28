@@ -1266,6 +1266,481 @@ def batch_resolve_duplicates():
         traceback.print_exc()
         return jsonify({"error":str(e)}),500
 
+# ================================================================
+# v2.3.5-part1: 知识关系网络路由(12 个)
+# 替代旧 /api/duplicate-groups/* 系列(旧路由保留向下兼容)
+# ================================================================
+
+def _parse_group_id(group_id):
+    """解析 group_id 字符串
+    返回 ("cluster", N) 或 ("loose", N)
+    """
+    if not isinstance(group_id, str):
+        return (None, None)
+    if group_id.startswith("cluster-"):
+        try:
+            return ("cluster", int(group_id[len("cluster-"):]))
+        except ValueError:
+            return (None, None)
+    elif group_id.startswith("rel-"):
+        try:
+            return ("loose", int(group_id[len("rel-"):]))
+        except ValueError:
+            return (None, None)
+    return (None, None)
+
+
+def _confirm_relations_in_group(group_type, gid_int, user="system"):
+    """根据 group 类型批量 confirm 关系边
+    返回 confirmed_count
+    """
+    if group_type == "cluster":
+        # 该 cluster 下所有 pending/pending_human_review 关系全部 confirm
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT relation_id FROM kp_relations
+                      WHERE cluster_id=?
+                        AND status IN ('pending','pending_human_review')""", (gid_int,))
+        rids = [r[0] for r in c.fetchall()]
+        conn.close()
+    else:  # loose
+        rids = [gid_int]
+    n = 0
+    for rid in rids:
+        try:
+            db.update_kp_relation_status(rid, "confirmed", confirmed_by_user=user)
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
+def _reject_relations_in_group(group_type, gid_int):
+    """批量 reject 关系边"""
+    if group_type == "cluster":
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT relation_id FROM kp_relations
+                      WHERE cluster_id=?
+                        AND status IN ('pending','pending_human_review')""", (gid_int,))
+        rids = [r[0] for r in c.fetchall()]
+        conn.close()
+    else:
+        rids = [gid_int]
+    n = 0
+    for rid in rids:
+        try:
+            db.update_kp_relation_status(rid, "rejected")
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
+@app.route("/api/relations/groups", methods=["GET"])
+def relations_groups():
+    """获取所有 pending / pending_human_review 关系组列表(替代 /api/duplicate-groups)"""
+    try:
+        groups = db.get_relation_groups_pending()
+        return jsonify(groups)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/summary", methods=["GET"])
+def relations_summary():
+    """关系/簇头部统计"""
+    try:
+        return jsonify(db.get_relation_summary())
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/build_consensus", methods=["POST"])
+def relations_build_consensus(group_id):
+    """🟢 建立共识簇:全保留 + 关系标 confirmed
+    入参 JSON: {topic?: "用户编辑的主题", core_kp_id?: N}
+    """
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        d = request.get_json() or {}
+        topic = (d.get("topic") or "").strip()
+        core_kp_id = d.get("core_kp_id")
+        confirmed = _confirm_relations_in_group(gtype, gid_int, user="ui:build_consensus")
+        # cluster 类型: 已建簇,可选更新 topic
+        if gtype == "cluster":
+            updates = {}
+            if topic:
+                updates["topic"] = topic[:60]
+            updates["status"] = "active"
+            if updates:
+                db.update_cluster(gid_int, **updates)
+        else:
+            # loose 类型: 需要新建簇
+            rel = db.get_kp_relation(gid_int)
+            if not rel:
+                return jsonify({"error": "relation not found"}), 404
+            cid = db.create_consensus_cluster(
+                cluster_type="consensus",
+                topic=topic or "(未命名共识簇)",
+                member_count=2,
+                source_documents=[],
+                strength_score=40,
+            )
+            db.add_cluster_member(cid, rel["source_kp_id"], role="branch", sequence_order=0)
+            db.add_cluster_member(cid, rel["target_kp_id"], role="branch", sequence_order=0)
+            # 关系绑簇
+            conn = db.get_connection(); c = conn.cursor()
+            c.execute("UPDATE kp_relations SET cluster_id=? WHERE relation_id=?",
+                      (cid, gid_int))
+            conn.commit(); conn.close()
+        return jsonify({"success": True, "confirmed": confirmed,
+                         "action": "build_consensus"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/build_evolution", methods=["POST"])
+def relations_build_evolution(group_id):
+    """🔵 建立演进链:全保留 + 有时序"""
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        d = request.get_json() or {}
+        topic = (d.get("topic") or "").strip()
+        confirmed = _confirm_relations_in_group(gtype, gid_int, user="ui:build_evolution")
+        if gtype == "cluster":
+            updates = {"cluster_type": "evolution_chain", "status": "active"}
+            if topic:
+                updates["topic"] = topic[:60]
+            # cluster_type 不可更新(CHECK 约束)？检查:其实可以,只要值合规
+            db.update_cluster(gid_int, **updates)
+        else:
+            rel = db.get_kp_relation(gid_int)
+            if not rel:
+                return jsonify({"error": "relation not found"}), 404
+            cid = db.create_consensus_cluster(
+                cluster_type="evolution_chain",
+                topic=topic or "(未命名演进链)",
+                member_count=2,
+                source_documents=[],
+                strength_score=40,
+            )
+            db.add_cluster_member(cid, rel["source_kp_id"], role="branch", sequence_order=0)
+            db.add_cluster_member(cid, rel["target_kp_id"], role="branch", sequence_order=1)
+            conn = db.get_connection(); c = conn.cursor()
+            c.execute("UPDATE kp_relations SET cluster_id=? WHERE relation_id=?",
+                      (cid, gid_int))
+            conn.commit(); conn.close()
+        return jsonify({"success": True, "confirmed": confirmed,
+                         "action": "build_evolution"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/build_refinement", methods=["POST"])
+def relations_build_refinement(group_id):
+    """🟣 建立细化树:全保留 + 父子关系"""
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        d = request.get_json() or {}
+        topic = (d.get("topic") or "").strip()
+        confirmed = _confirm_relations_in_group(gtype, gid_int, user="ui:build_refinement")
+        if gtype == "cluster":
+            updates = {"cluster_type": "refinement_tree", "status": "active"}
+            if topic:
+                updates["topic"] = topic[:60]
+            db.update_cluster(gid_int, **updates)
+        else:
+            rel = db.get_kp_relation(gid_int)
+            if not rel:
+                return jsonify({"error": "relation not found"}), 404
+            cid = db.create_consensus_cluster(
+                cluster_type="refinement_tree",
+                topic=topic or "(未命名细化树)",
+                member_count=2,
+                source_documents=[],
+                strength_score=40,
+            )
+            db.add_cluster_member(cid, rel["source_kp_id"], role="core", sequence_order=0)
+            db.add_cluster_member(cid, rel["target_kp_id"], role="derivative", sequence_order=0)
+            conn = db.get_connection(); c = conn.cursor()
+            c.execute("UPDATE kp_relations SET cluster_id=? WHERE relation_id=?",
+                      (cid, gid_int))
+            conn.commit(); conn.close()
+        return jsonify({"success": True, "confirmed": confirmed,
+                         "action": "build_refinement"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/merge", methods=["POST"])
+def relations_merge(group_id):
+    """🟡 合并同源冗余: 删非 keep_id 的 kp(走 operation_hook + delete_knowledge_point)
+    入参: {keep_id: N (必填), keep_ids: [N,...] (兼容)}
+    """
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        d = request.get_json() or {}
+        keep_ids = d.get("keep_ids") or ([d.get("keep_id")] if d.get("keep_id") else [])
+        keep_ids = [int(x) for x in keep_ids if x]
+        if not keep_ids:
+            return jsonify({"error": "缺少 keep_id"}), 400
+        # 收集组内所有 kp_id
+        if gtype == "cluster":
+            members = db.get_cluster_members(gid_int)
+            all_kp_ids = [m["kp_id"] for m in members]
+        else:
+            rel = db.get_kp_relation(gid_int)
+            if not rel:
+                return jsonify({"error": "relation not found"}), 404
+            all_kp_ids = [rel["source_kp_id"], rel["target_kp_id"]]
+        will_delete = [kid for kid in all_kp_ids if kid not in keep_ids]
+        if will_delete:
+            try:
+                operation_hook("dup_merge")
+            except BackupFailedError as be:
+                return jsonify({"error": "备份失败,合并终止: " + str(be)}), 500
+        deleted = []
+        for kid in will_delete:
+            try:
+                db.delete_knowledge_point(kid)
+                deleted.append(kid)
+            except Exception:
+                pass
+        # 关系标 confirmed (合并完成,关系处理结束)
+        confirmed = _confirm_relations_in_group(gtype, gid_int, user="ui:merge")
+        # 若是 cluster,把 status 标 merged
+        if gtype == "cluster":
+            db.update_cluster(gid_int, status="merged",
+                              notes="\n[merge] 保留 kp_id=" + ",".join(str(k) for k in keep_ids))
+        return jsonify({"success": True, "kept": keep_ids, "deleted": deleted,
+                         "confirmed_relations": confirmed, "action": "merge"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/mark_conflict", methods=["POST"])
+def relations_mark_conflict(group_id):
+    """🔴 标记冲突待研判: 关系状态保持,加冲突 flag(写 cluster.notes 或独立 flag)
+    决策3: 仅修改 status 为 confirmed(承认是冲突),但不删任何东西.
+    """
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        confirmed = _confirm_relations_in_group(gtype, gid_int, user="ui:conflict")
+        if gtype == "cluster":
+            db.update_cluster(gid_int, notes="\n[mark_conflict] 老唐已标为冲突待研判")
+        return jsonify({"success": True, "confirmed": confirmed, "action": "mark_conflict"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/keep_independent", methods=["POST"])
+def relations_keep_independent(group_id):
+    """⚪ 保持独立: 关系标 rejected, 簇 dismissed, 不删 kp"""
+    try:
+        gtype, gid_int = _parse_group_id(group_id)
+        if not gtype:
+            return jsonify({"error": "invalid group_id"}), 400
+        rejected = _reject_relations_in_group(gtype, gid_int)
+        if gtype == "cluster":
+            db.dismiss_cluster(gid_int, reason="老唐手动:保持独立")
+        return jsonify({"success": True, "rejected": rejected, "action": "keep_independent"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/groups/<group_id>/manual_classify", methods=["POST"])
+def relations_manual_classify(group_id):
+    """human_review 队列专用: 老唐手动选关系类型
+    入参: {relation_type: "cross_file_consensus | policy_evolution | ..."}
+    实际转发到对应 build_xxx 路由
+    """
+    try:
+        d = request.get_json() or {}
+        rt = (d.get("relation_type") or "").strip()
+        topic = (d.get("topic") or "").strip()
+        action_map = {
+            "cross_file_consensus": "build_consensus",
+            "policy_evolution": "build_evolution",
+            "hierarchical_refinement": "build_refinement",
+            "same_file_redundancy": "merge",  # 需要额外提供 keep_id
+            "conflicting": "mark_conflict",
+            "complementary": "keep_independent",
+            "unrelated": "keep_independent",
+        }
+        action = action_map.get(rt)
+        if not action:
+            return jsonify({"error": "invalid relation_type"}), 400
+        # same_file_redundancy 必须传 keep_id
+        if rt == "same_file_redundancy" and not d.get("keep_id"):
+            return jsonify({"error": "same_file_redundancy 必须提供 keep_id"}), 400
+        # 同时把关系记录的 relation_type 改一下(老唐改判)
+        gtype, gid_int = _parse_group_id(group_id)
+        if gtype == "cluster":
+            conn = db.get_connection(); c = conn.cursor()
+            c.execute("UPDATE kp_relations SET relation_type=? WHERE cluster_id=?",
+                      (rt, gid_int))
+            conn.commit(); conn.close()
+        else:
+            conn = db.get_connection(); c = conn.cursor()
+            c.execute("UPDATE kp_relations SET relation_type=? WHERE relation_id=?",
+                      (rt, gid_int))
+            conn.commit(); conn.close()
+        # 转发
+        if action == "build_consensus":
+            return relations_build_consensus(group_id)
+        elif action == "build_evolution":
+            return relations_build_evolution(group_id)
+        elif action == "build_refinement":
+            return relations_build_refinement(group_id)
+        elif action == "merge":
+            return relations_merge(group_id)
+        elif action == "mark_conflict":
+            return relations_mark_conflict(group_id)
+        elif action == "keep_independent":
+            return relations_keep_independent(group_id)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/batch", methods=["POST"])
+def relations_batch():
+    """批量按 AI 建议处理: 入参 {group_ids: [...]} 按每组的 relation_type 自动选对应动作"""
+    try:
+        d = request.get_json() or {}
+        group_ids = d.get("group_ids", [])
+        if not group_ids:
+            return jsonify({"error": "请选择至少一个关系组"}), 400
+        try:
+            operation_hook("dup_merge")
+        except BackupFailedError as be:
+            return jsonify({"error": "备份失败,批量处理终止: " + str(be)}), 500
+        all_groups = db.get_relation_groups_pending()
+        gmap = {g["group_id"]: g for g in all_groups}
+        processed, errors = 0, []
+        for gid in group_ids:
+            g = gmap.get(gid)
+            if not g:
+                errors.append({"group_id": gid, "error": "组不存在或已处理"})
+                continue
+            rt = g.get("relation_type")
+            gtype, gid_int = _parse_group_id(gid)
+            try:
+                if rt in ("cross_file_consensus", "policy_evolution",
+                           "hierarchical_refinement"):
+                    _confirm_relations_in_group(gtype, gid_int, user="batch:ai")
+                    if gtype == "cluster":
+                        db.update_cluster(gid_int, status="active")
+                elif rt == "same_file_redundancy":
+                    # AI 建议 core 作为 keep
+                    ai_j = g.get("ai_judgment") or "{}"
+                    try:
+                        aij = json.loads(ai_j) if isinstance(ai_j, str) else ai_j
+                    except Exception:
+                        aij = {}
+                    cs = aij.get("cluster_suggestion") or {}
+                    keep_id = cs.get("core_kp_id")
+                    if not keep_id:
+                        # 取首个 kp 作 fallback
+                        kp_ids = g.get("kp_ids") or []
+                        keep_id = kp_ids[0] if kp_ids else None
+                    if keep_id:
+                        kp_ids = g.get("kp_ids") or []
+                        will_delete = [k for k in kp_ids if k != keep_id]
+                        for k in will_delete:
+                            try:
+                                db.delete_knowledge_point(k)
+                            except Exception:
+                                pass
+                        _confirm_relations_in_group(gtype, gid_int, user="batch:ai")
+                        if gtype == "cluster":
+                            db.update_cluster(gid_int, status="merged")
+                elif rt == "conflicting":
+                    _confirm_relations_in_group(gtype, gid_int, user="batch:ai")
+                    if gtype == "cluster":
+                        db.update_cluster(gid_int, notes="\n[batch:ai] 标为冲突")
+                else:
+                    # complementary / unrelated → keep_independent
+                    _reject_relations_in_group(gtype, gid_int)
+                    if gtype == "cluster":
+                        db.dismiss_cluster(gid_int, reason="batch:ai keep_independent")
+                processed += 1
+            except Exception as ex:
+                errors.append({"group_id": gid, "error": str(ex)[:200]})
+        return jsonify({"success": True, "processed": processed, "errors": errors,
+                         "failed_count": len(errors)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/relations/batch_keep_independent", methods=["POST"])
+def relations_batch_keep_independent():
+    """批量"保持独立"(全部 reject + 不删)"""
+    try:
+        d = request.get_json() or {}
+        group_ids = d.get("group_ids", [])
+        if not group_ids:
+            return jsonify({"error": "请选择至少一个关系组"}), 400
+        n, errors = 0, []
+        for gid in group_ids:
+            try:
+                gtype, gid_int = _parse_group_id(gid)
+                _reject_relations_in_group(gtype, gid_int)
+                if gtype == "cluster":
+                    db.dismiss_cluster(gid_int, reason="batch keep_independent")
+                n += 1
+            except Exception as ex:
+                errors.append({"group_id": gid, "error": str(ex)[:200]})
+        return jsonify({"success": True, "rejected": n, "errors": errors,
+                         "failed_count": len(errors)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tools/relation_full_rescan", methods=["POST"])
+def tool_relation_full_rescan():
+    """工具箱按钮: 重扫全库关系
+    决策4: 老唐手动触发,不自动跑.
+    """
+    try:
+        try:
+            operation_hook("full_rescan")
+        except BackupFailedError as be:
+            return jsonify({"error": "备份失败,重扫终止: " + str(be)}), 500
+        from scripts.relation_analyzer import RelationAnalyzer
+        from scripts.deepseek_client import DeepSeekClient
+        try:
+            client = DeepSeekClient()
+        except Exception as ce:
+            return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
+        analyzer = RelationAnalyzer(db=db, client=client)
+        new_groups = analyzer.scan_full()
+        summary = db.get_relation_summary()
+        return jsonify({"success": True, "new_groups": new_groups, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/knowledge-points/batch-restore-to-pending", methods=["POST"])
 def batch_restore_to_pending():
     """批量恢复到待审核"""
@@ -1741,14 +2216,14 @@ def tool_freshness_scan():
 def tool_duplicate_scan():
     """执行全库重复检测（含V3精判）"""
     try:
-        from scripts.duplicate_checker import DuplicateChecker
+        from scripts.relation_analyzer import RelationAnalyzer
         from scripts.deepseek_client import DeepSeekClient
         try:
             client = DeepSeekClient()
         except Exception as ce:
             return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
-        checker = DuplicateChecker(db=db, client=client)
-        new_groups = checker.scan_full()
+        analyzer = RelationAnalyzer(db=db, client=client)
+        new_groups = analyzer.scan_full()
         summary = db.get_duplicate_summary()
         return jsonify({"success": True, "new_groups": new_groups, "summary": summary})
     except Exception as e:
@@ -1766,15 +2241,15 @@ def tool_duplicate_reset_rescan():
             operation_hook("full_rescan")
         except BackupFailedError as be:
             return jsonify({"error": "备份失败，重扫终止: " + str(be)}), 500
-        from scripts.duplicate_checker import DuplicateChecker
+        from scripts.relation_analyzer import RelationAnalyzer
         from scripts.deepseek_client import DeepSeekClient
         try:
             client = DeepSeekClient()
         except Exception as ce:
             return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
-        checker = DuplicateChecker(db=db, client=client)
+        analyzer = RelationAnalyzer(db=db, client=client)
         dismissed = db.dismiss_all_pending_duplicates()
-        new_groups = checker.scan_full()
+        new_groups = analyzer.scan_full()
         summary = db.get_duplicate_summary()
         return jsonify({"success": True, "dismissed": dismissed,
                         "new_groups": new_groups, "summary": summary})
@@ -1815,13 +2290,19 @@ def tool_duplicate_unified():
             except BackupFailedError as be:
                 return jsonify({"error": "备份失败，重扫终止: " + str(be)}), 500
 
-        from scripts.duplicate_checker import DuplicateChecker
+        # v2.3.5-part1: 旧 DuplicateChecker 已退役,改用 RelationAnalyzer
+        # 旧路由 /api/tools/duplicate_unified 保留不动(向下兼容浏览器缓存的旧 review.html)
+        # 内部直接转发到新模块,行为映射:
+        #   recent → analyzer.scan_recent(days)
+        #   full → analyzer.scan_full()
+        #   reset_rescan → 全库 dismiss 旧 duplicate_groups + 新表也清 pending → scan_full
+        from scripts.relation_analyzer import RelationAnalyzer
         from scripts.deepseek_client import DeepSeekClient
         try:
             client = DeepSeekClient()
         except Exception as ce:
             return jsonify({"error": "AI客户端初始化失败: " + str(ce)}), 500
-        checker = DuplicateChecker(db=db, client=client)
+        analyzer = RelationAnalyzer(db=db, client=client)
 
         dismissed = None
         if mode == "recent":
@@ -1831,12 +2312,12 @@ def tool_duplicate_unified():
                 days = 7
             if days <= 0:
                 days = 7
-            new_groups = checker.scan_recent(days=days)
+            new_groups = analyzer.scan_recent(days=days)
         elif mode == "full":
-            new_groups = checker.scan_full()
+            new_groups = analyzer.scan_full()
         else:  # reset_rescan
             dismissed = db.dismiss_all_pending_duplicates()
-            new_groups = checker.scan_full()
+            new_groups = analyzer.scan_full()
 
         summary = db.get_duplicate_summary()
         resp = {"success": True, "mode": mode,
@@ -2976,7 +3457,7 @@ def task_batch_rerun():
               d. 累积 all_kps_info 与成功/跳过/失败计数，实时回调进度
               e. 费用上限则提前 break（与 run_headless 一致）
       Step 4 _check_category_suggestions(all_kps_info)  # 与 run_headless 行为对齐
-      Step 5 跨文件 AI 去重联动: checker.scan_incremental(new_kp_ids)
+      Step 5 跨文件 AI 去重联动: analyzer.scan_incremental(new_kp_ids)
               （scan_incremental 本身会与已 confirmed 的知识点比对；按"全部完成后统一跑一次"
                 节省 R1 开销，并避免逐文件跑时上一步的 pending 还没入库就被作为比对基线）
       Step 6 汇总写入 _task["result"]
@@ -3123,11 +3604,11 @@ def task_batch_rerun():
                                        "message": "对新增 %d 条知识点做 AI 去重联动..."
                                                   % len(new_kp_ids)})
                 try:
-                    from scripts.duplicate_checker import DuplicateChecker
+                    from scripts.relation_analyzer import RelationAnalyzer
                     from scripts.deepseek_client import DeepSeekClient
                     dup_client = DeepSeekClient()
-                    dup_checker = DuplicateChecker(db=db, client=dup_client)
-                    new_groups = dup_checker.scan_incremental(new_kp_ids)
+                    dup_analyzer = RelationAnalyzer(db=db, client=dup_client)
+                    new_groups = dup_analyzer.scan_incremental(new_kp_ids)
                     dup_result = {"new_groups": new_groups,
                                   "scanned_kps": len(new_kp_ids),
                                   "skipped": False}

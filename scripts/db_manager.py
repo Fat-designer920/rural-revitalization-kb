@@ -1,7 +1,29 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.4-hotfix2 - 新增 purge_source_file_record 级联清理 source_files
+版本：v2.3.5-part1 - 知识关系网络底座(3新表+2字段+16方法+2 purge封装)
+
+v2.3.5-part1 新增(feature, 2026-04-28):
+  - 3 张新表(init_tables 内建,与立规则#1 单一来源对齐):
+    * kp_relations: 关系边表(图的边),六态 CHECK 约束 + status 三态(pending/
+      pending_human_review/confirmed/rejected) + cluster_id 关联
+    * consensus_clusters: 聚类节点(共识簇/演进链/细化树三类型)
+    * cluster_members: 多对多成员表 + role(core/branch/derivative)
+  - 2 字段追加 knowledge_points: relation_count + consensus_strength
+  - 16 个新方法分组:
+    * 关系边读写(5):add_kp_relation / get_kp_relation / get_pending_relations /
+                    update_kp_relation_status / bump_kp_relation_count
+    * 共识簇读写(5):create_consensus_cluster / get_consensus_cluster /
+                    get_clusters_by_kp / update_cluster / dismiss_cluster
+    * 簇成员读写(2):add_cluster_member / get_cluster_members
+    * 关系列表读取(2):get_relation_groups_pending / get_relation_summary
+    * 立规则#3 推广 purge 封装(2):
+      - purge_cluster_record(cluster_id): 级联清 cluster_members + kp_relations.cluster_id 置空
+      - purge_kp_relations(kp_id): 删 kp 时同步清 kp_relations 全部边 + cluster_members 成员行
+  - delete_knowledge_point / delete_kps_by_source_file / delete_extracted_kps_by_source_file
+    三处级联删除路径加挂 kp_relations + cluster_members 清理(立规则#3)
+  - 5 条新索引: idx_rel_source / idx_rel_target / idx_rel_type_status /
+              idx_cluster_type / idx_cm_kp
 
 v2.3.4-hotfix2 修复(hotfix, 2026-04-28):
   - 新增 purge_source_file_record(source_file_id) 方法(立规则#3 推广):
@@ -534,6 +556,60 @@ class DatabaseManager:
             last_at TEXT DEFAULT (datetime('now','localtime')),
             PRIMARY KEY (ip, date)
         )""")
+        # --- v2.3.5-part1 知识关系网络底座(3 表) ---
+        # kp_relations: 关系边(图的 edge),六态 CHECK + status 四态 + cluster_id 软关联
+        # 与旧 knowledge_relations 表(v2.0.0 简陋 schema)并存,旧表保留向下兼容,新代码只写新表
+        c.execute("""CREATE TABLE IF NOT EXISTS kp_relations (
+            relation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_kp_id INTEGER NOT NULL,
+            target_kp_id INTEGER NOT NULL,
+            relation_type TEXT NOT NULL CHECK(relation_type IN (
+                'cross_file_consensus','policy_evolution','hierarchical_refinement',
+                'same_file_redundancy','conflicting','complementary'
+            )),
+            similarity_score REAL DEFAULT 0,
+            ai_judgment TEXT DEFAULT '{}',
+            created_by TEXT DEFAULT 'ai' CHECK(created_by IN ('ai','human')),
+            status TEXT DEFAULT 'pending'
+                CHECK(status IN ('pending','pending_human_review','confirmed','rejected')),
+            cluster_id INTEGER,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            confirmed_at TEXT,
+            confirmed_by_user TEXT,
+            CHECK(source_kp_id != target_kp_id),
+            UNIQUE(source_kp_id, target_kp_id, relation_type),
+            FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
+            FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id),
+            FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id)
+        )""")
+        # consensus_clusters: 聚类元数据(共识簇/演进链/细化树三类型)
+        # source_documents 存 JSON 文件名列表,strength_score 0-100 综合强度
+        c.execute("""CREATE TABLE IF NOT EXISTS consensus_clusters (
+            cluster_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cluster_type TEXT NOT NULL CHECK(cluster_type IN (
+                'consensus','evolution_chain','refinement_tree'
+            )),
+            topic TEXT NOT NULL,
+            member_count INTEGER DEFAULT 0,
+            source_documents TEXT DEFAULT '[]',
+            source_doc_count INTEGER DEFAULT 0,
+            strength_score REAL DEFAULT 0,
+            status TEXT DEFAULT 'active' CHECK(status IN ('active','dismissed','merged')),
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            notes TEXT DEFAULT ''
+        )""")
+        # cluster_members: 多对多 + role + sequence_order(演进链有时序)
+        c.execute("""CREATE TABLE IF NOT EXISTS cluster_members (
+            cluster_id INTEGER NOT NULL,
+            kp_id INTEGER NOT NULL,
+            role TEXT DEFAULT 'branch' CHECK(role IN ('core','branch','derivative')),
+            sequence_order INTEGER DEFAULT 0,
+            added_at TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (cluster_id, kp_id),
+            FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id),
+            FOREIGN KEY (kp_id) REFERENCES knowledge_points(id)
+        )""")
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -577,6 +653,12 @@ class DatabaseManager:
             # 老库走 init_tables 时 CREATE TABLE IF NOT EXISTS 跳过, friend_tag 字段不存在,
             # 此处创建索引会崩(立规则 60 应验). 该索引仅在 _upgrade_schema_to_current
             # 的 _V233_NEW_INDEXES 中创建(在 ALTER TABLE ADD COLUMN 之后,新库幂等触发).
+            # v2.3.5-part1 知识关系网络索引(5 条,新表新字段无 ALTER 风险,可放 init_tables)
+            "CREATE INDEX IF NOT EXISTS idx_rel_source ON kp_relations(source_kp_id)",
+            "CREATE INDEX IF NOT EXISTS idx_rel_target ON kp_relations(target_kp_id)",
+            "CREATE INDEX IF NOT EXISTS idx_rel_type_status ON kp_relations(relation_type, status)",
+            "CREATE INDEX IF NOT EXISTS idx_cluster_type ON consensus_clusters(cluster_type, status)",
+            "CREATE INDEX IF NOT EXISTS idx_cm_kp ON cluster_members(kp_id)",
         ]:
             c.execute(idx)
         conn.commit(); conn.close(); return True
@@ -892,12 +974,18 @@ class DatabaseManager:
         self.log_operation("restore_to_pending", "knowledge_points", kp_id)
 
     def delete_knowledge_point(self, kp_id):
-        """物理删除知识点及其关联数据（不可恢复）"""
+        """物理删除知识点及其关联数据（不可恢复）
+
+        v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
+        """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
         c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
         c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
         c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+        # v2.3.5-part1: 新表 kp_relations / cluster_members 级联清理
+        c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+        c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
         c.execute("DELETE FROM knowledge_points WHERE id=?", (kp_id,))
         conn.commit(); conn.close()
         self.log_operation("physical_delete", "knowledge_points", kp_id)
@@ -923,7 +1011,10 @@ class DatabaseManager:
         return rows
 
     def delete_kps_by_source_file(self, source_file_id):
-        """删除指定源文件的所有知识点及关联数据，返回删除数量"""
+        """删除指定源文件的所有知识点及关联数据，返回删除数量
+
+        v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
+        """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT id FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
         kp_ids = [r[0] for r in c.fetchall()]
@@ -932,6 +1023,9 @@ class DatabaseManager:
             c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
             c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+            # v2.3.5-part1: 新表级联清理
+            c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
         c.execute("DELETE FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
         conn.commit(); conn.close()
         if kp_ids:
@@ -981,8 +1075,10 @@ class DatabaseManager:
         仅删除指定源文件下 review_status='pending' 的知识点及其关联数据。
         已 confirmed 或 ignored 的条目（包括带注解/经验速记关联）保留，
         与 delete_kps_by_source_file 保持同样的级联风格（annotations/edit_history/
-        knowledge_relations/knowledge_usage_log 逐一清理）。
+        knowledge_relations/knowledge_usage_log/kp_relations/cluster_members 逐一清理）。
         返回实际删除数量。
+
+        v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
         """
         conn = self.get_connection(); c = conn.cursor()
         c.execute("""SELECT id FROM knowledge_points
@@ -993,6 +1089,9 @@ class DatabaseManager:
             c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
             c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+            # v2.3.5-part1: 新表级联清理
+            c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
         if kp_ids:
             qmarks = ",".join("?" * len(kp_ids))
             c.execute(f"DELETE FROM knowledge_points WHERE id IN ({qmarks})", kp_ids)
@@ -3415,3 +3514,379 @@ class DatabaseManager:
 
         conn.close()
         return out
+
+    # ================================================================
+    # v2.3.5-part1: 知识关系网络底座(16 方法 + 2 purge 封装)
+    # 职责:
+    #   关系边 CRUD(5) + 共识簇 CRUD(5) + 簇成员(2) + 列表读取(2) +
+    #   立规则#3 推广 purge 封装(2)
+    # 调用方:
+    #   - relation_analyzer.RelationAnalyzer 写入(AI 判别后)
+    #   - api_server /api/relations/* 系列读写(老唐 UI 操作)
+    # ================================================================
+
+    # ---- 关系边 CRUD ----
+    def add_kp_relation(self, source_kp_id, target_kp_id, relation_type,
+                         similarity_score=0, ai_judgment="{}",
+                         cluster_id=None, status="pending", created_by="ai"):
+        """新增/更新一条关系边
+        UNIQUE(source_kp_id, target_kp_id, relation_type) 冲突时 INSERT OR IGNORE,
+        相同三元组不重复建.
+        返回 relation_id 或 None(已存在)"""
+        # 规范化:source 始终小于 target,避免 (a,b) (b,a) 双向重复
+        a, b = sorted([int(source_kp_id), int(target_kp_id)])
+        if a == b:
+            return None
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("""INSERT OR IGNORE INTO kp_relations
+                         (source_kp_id, target_kp_id, relation_type,
+                          similarity_score, ai_judgment, cluster_id, status, created_by)
+                         VALUES (?,?,?,?,?,?,?,?)""",
+                      (a, b, relation_type, similarity_score, ai_judgment,
+                       cluster_id, status, created_by))
+            conn.commit()
+            rid = c.lastrowid if c.rowcount > 0 else None
+            return rid
+        finally:
+            conn.close()
+
+    def get_kp_relation(self, relation_id):
+        """读单条关系边"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM kp_relations WHERE relation_id=?", (relation_id,))
+        row = c.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_pending_relations(self, status_filter=None):
+        """读所有 pending / pending_human_review 关系(供 UI 列表)
+        status_filter 可选:'pending'|'pending_human_review'|None(两个都返回)"""
+        conn = self.get_connection(); c = conn.cursor()
+        if status_filter:
+            c.execute("""SELECT * FROM kp_relations
+                         WHERE status=?
+                         ORDER BY relation_type, similarity_score DESC, created_at DESC""",
+                      (status_filter,))
+        else:
+            c.execute("""SELECT * FROM kp_relations
+                         WHERE status IN ('pending','pending_human_review')
+                         ORDER BY status DESC, similarity_score DESC, created_at DESC""")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def update_kp_relation_status(self, relation_id, status, confirmed_by_user=""):
+        """更新关系状态(confirmed / rejected)"""
+        if status not in ("pending", "pending_human_review", "confirmed", "rejected"):
+            raise ValueError("invalid status: " + str(status))
+        conn = self.get_connection(); c = conn.cursor()
+        if status == "confirmed":
+            c.execute("""UPDATE kp_relations
+                          SET status=?, confirmed_at=datetime('now','localtime'),
+                              confirmed_by_user=?
+                        WHERE relation_id=?""",
+                      (status, confirmed_by_user, relation_id))
+        else:
+            c.execute("""UPDATE kp_relations SET status=? WHERE relation_id=?""",
+                      (status, relation_id))
+        conn.commit(); conn.close()
+        self.log_operation("relation_status_update", "kp_relations", relation_id,
+                           {"status": status})
+
+    def bump_kp_relation_count(self, kp_id, delta):
+        """更新 kp.relation_count(增量加 delta)"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE knowledge_points
+                      SET relation_count = COALESCE(relation_count, 0) + ?
+                    WHERE id=?""", (int(delta), int(kp_id)))
+        conn.commit(); conn.close()
+
+    # ---- 共识簇 CRUD ----
+    def create_consensus_cluster(self, cluster_type, topic, member_count=0,
+                                  source_documents=None, strength_score=0):
+        """创建一个共识簇/演进链/细化树,返回 cluster_id"""
+        if cluster_type not in ("consensus", "evolution_chain", "refinement_tree"):
+            raise ValueError("invalid cluster_type: " + str(cluster_type))
+        docs = source_documents or []
+        docs_json = json.dumps(docs, ensure_ascii=False)
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO consensus_clusters
+                     (cluster_type, topic, member_count, source_documents,
+                      source_doc_count, strength_score)
+                     VALUES (?,?,?,?,?,?)""",
+                  (cluster_type, topic[:60], member_count, docs_json,
+                   len(set(docs)), float(strength_score)))
+        cid = c.lastrowid
+        conn.commit(); conn.close()
+        self.log_operation("create_cluster", "consensus_clusters", cid,
+                           {"cluster_type": cluster_type, "topic": topic[:60]})
+        return cid
+
+    def get_consensus_cluster(self, cluster_id):
+        """读单个簇及其成员列表"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("SELECT * FROM consensus_clusters WHERE cluster_id=?", (cluster_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return None
+        cluster = dict(row)
+        # 读成员
+        c.execute("""SELECT cm.*, kp.title, kp.content_type, sf.renamed_filename
+                       FROM cluster_members cm
+                       LEFT JOIN knowledge_points kp ON cm.kp_id = kp.id
+                       LEFT JOIN source_files sf ON kp.source_file_id = sf.id
+                      WHERE cm.cluster_id=?
+                      ORDER BY cm.sequence_order, cm.added_at""", (cluster_id,))
+        cluster["members"] = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return cluster
+
+    def get_clusters_by_kp(self, kp_id):
+        """反查 kp 所属的所有 active 簇"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT cc.* FROM consensus_clusters cc
+                       JOIN cluster_members cm ON cm.cluster_id = cc.cluster_id
+                      WHERE cm.kp_id=? AND cc.status='active'""", (kp_id,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def update_cluster(self, cluster_id, **kwargs):
+        """更新簇字段(topic / strength_score / notes / status)"""
+        allowed = {"topic", "strength_score", "notes", "status",
+                   "member_count", "source_documents", "source_doc_count"}
+        sets, params = [], []
+        for k, v in kwargs.items():
+            if k not in allowed:
+                continue
+            if k == "source_documents" and isinstance(v, list):
+                v = json.dumps(v, ensure_ascii=False)
+            sets.append(k + "=?"); params.append(v)
+        if not sets:
+            return
+        sets.append("updated_at=datetime('now','localtime')")
+        params.append(cluster_id)
+        sql = "UPDATE consensus_clusters SET " + ",".join(sets) + " WHERE cluster_id=?"
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute(sql, params)
+        conn.commit(); conn.close()
+
+    def dismiss_cluster(self, cluster_id, reason=""):
+        """老唐手动 dismiss 一个簇(status='dismissed' + 关联关系边状态置 rejected)"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE consensus_clusters
+                      SET status='dismissed',
+                          updated_at=datetime('now','localtime'),
+                          notes=COALESCE(notes,'') || ?
+                    WHERE cluster_id=?""", ("\n[dismiss] " + reason, cluster_id))
+        c.execute("""UPDATE kp_relations SET status='rejected' WHERE cluster_id=?""",
+                  (cluster_id,))
+        conn.commit(); conn.close()
+        self.log_operation("dismiss_cluster", "consensus_clusters", cluster_id,
+                           {"reason": reason})
+
+    # ---- 簇成员 ----
+    def add_cluster_member(self, cluster_id, kp_id, role="branch", sequence_order=0):
+        """添加成员到簇(role: core/branch/derivative)"""
+        if role not in ("core", "branch", "derivative"):
+            role = "branch"
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("""INSERT OR IGNORE INTO cluster_members
+                         (cluster_id, kp_id, role, sequence_order)
+                         VALUES (?,?,?,?)""",
+                      (cluster_id, kp_id, role, int(sequence_order)))
+            # 同步 member_count
+            c.execute("""UPDATE consensus_clusters SET
+                          member_count = (SELECT COUNT(*) FROM cluster_members WHERE cluster_id=?)
+                          WHERE cluster_id=?""", (cluster_id, cluster_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_cluster_members(self, cluster_id):
+        """读簇成员列表"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT cm.*, kp.title, kp.content_type
+                       FROM cluster_members cm
+                       LEFT JOIN knowledge_points kp ON cm.kp_id = kp.id
+                      WHERE cm.cluster_id=?
+                      ORDER BY cm.sequence_order, cm.added_at""", (cluster_id,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    # ---- 关系列表读取(UI 用) ----
+    def get_relation_groups_pending(self):
+        """供前端 Tab 1 知识关系管理区使用:
+        把 pending/pending_human_review 的关系按 cluster_id 或独立边聚合为"关系组"返回.
+        返回结构:[{group_id, group_type=cluster|loose, relation_type, status, members:[{kp_id,title,...}],
+                   ai_judgment, similarity_score, ...}]
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        # 分两步:先取所有 pending/pending_human_review 关系,再按 cluster_id 分组
+        c.execute("""SELECT r.*, kp_a.title AS source_title, kp_b.title AS target_title,
+                            sf_a.renamed_filename AS source_file_a,
+                            sf_b.renamed_filename AS source_file_b
+                       FROM kp_relations r
+                       LEFT JOIN knowledge_points kp_a ON kp_a.id = r.source_kp_id
+                       LEFT JOIN knowledge_points kp_b ON kp_b.id = r.target_kp_id
+                       LEFT JOIN source_files sf_a ON sf_a.id = kp_a.source_file_id
+                       LEFT JOIN source_files sf_b ON sf_b.id = kp_b.source_file_id
+                      WHERE r.status IN ('pending','pending_human_review')
+                      ORDER BY r.created_at DESC""")
+        rels = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        # 聚合: 有 cluster_id 的按 cluster 合并; 没 cluster_id 的每对独立
+        groups = {}
+        loose = []
+        for r in rels:
+            cid = r.get("cluster_id")
+            if cid:
+                if cid not in groups:
+                    groups[cid] = {
+                        "group_id": "cluster-" + str(cid),
+                        "group_type": "cluster",
+                        "cluster_id": cid,
+                        "relation_type": r.get("relation_type"),
+                        "status": r.get("status"),
+                        "similarity_score": r.get("similarity_score") or 0,
+                        "ai_judgment": r.get("ai_judgment") or "{}",
+                        "relation_ids": [],
+                        "kp_ids": set(),
+                        "created_at": r.get("created_at"),
+                    }
+                groups[cid]["relation_ids"].append(r["relation_id"])
+                groups[cid]["kp_ids"].add(r["source_kp_id"])
+                groups[cid]["kp_ids"].add(r["target_kp_id"])
+            else:
+                loose.append({
+                    "group_id": "rel-" + str(r["relation_id"]),
+                    "group_type": "loose",
+                    "cluster_id": None,
+                    "relation_type": r.get("relation_type"),
+                    "status": r.get("status"),
+                    "similarity_score": r.get("similarity_score") or 0,
+                    "ai_judgment": r.get("ai_judgment") or "{}",
+                    "relation_ids": [r["relation_id"]],
+                    "kp_ids": [r["source_kp_id"], r["target_kp_id"]],
+                    "created_at": r.get("created_at"),
+                })
+
+        result = []
+        for cid, g in groups.items():
+            g["kp_ids"] = sorted(list(g["kp_ids"]))
+            cluster = self.get_consensus_cluster(cid)
+            if cluster:
+                g["cluster_topic"] = cluster.get("topic", "")
+                g["cluster_type"] = cluster.get("cluster_type", "")
+                g["strength_score"] = cluster.get("strength_score", 0)
+                g["members_detail"] = cluster.get("members") or []
+            else:
+                g["cluster_topic"] = ""
+                g["cluster_type"] = ""
+                g["strength_score"] = 0
+                g["members_detail"] = []
+            result.append(g)
+        # loose 组也要拉成员详情
+        if loose:
+            for g in loose:
+                kp_ids = g["kp_ids"]
+                qmarks = ",".join("?" * len(kp_ids))
+                conn2 = self.get_connection(); c2 = conn2.cursor()
+                c2.execute(f"""SELECT kp.id, kp.title, kp.content_type,
+                                      sf.renamed_filename, sf.original_filename
+                                 FROM knowledge_points kp
+                                 LEFT JOIN source_files sf ON sf.id = kp.source_file_id
+                                WHERE kp.id IN ({qmarks})""", kp_ids)
+                g["members_detail"] = [dict(r) for r in c2.fetchall()]
+                conn2.close()
+            result.extend(loose)
+        # 排序: pending_human_review 优先, 其次按 created_at desc
+        result.sort(key=lambda x: (
+            0 if x["status"] == "pending_human_review" else 1,
+            x.get("created_at") or "",
+        ), reverse=False)
+        return result
+
+    def get_relation_summary(self):
+        """关系/簇的概要统计(头部 dup-bar 用)"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT status, COUNT(*) AS cnt FROM kp_relations
+                      WHERE status IN ('pending','pending_human_review')
+                      GROUP BY status""")
+        status_counts = {r[0]: r[1] for r in c.fetchall()}
+        c.execute("""SELECT relation_type, COUNT(*) AS cnt FROM kp_relations
+                      WHERE status IN ('pending','pending_human_review')
+                      GROUP BY relation_type""")
+        type_counts = {r[0]: r[1] for r in c.fetchall()}
+        c.execute("""SELECT COUNT(*) AS cnt FROM consensus_clusters
+                      WHERE status='active'""")
+        active_clusters = c.fetchone()[0]
+        conn.close()
+        return {
+            "pending": status_counts.get("pending", 0),
+            "pending_human_review": status_counts.get("pending_human_review", 0),
+            "total_pending": sum(status_counts.values()),
+            "by_type": type_counts,
+            "active_clusters": active_clusters,
+        }
+
+    # ---- 立规则#3 推广 purge 封装 ----
+    def purge_cluster_record(self, cluster_id):
+        """彻底清理一个共识簇及其外键引用(立规则#3 推广)
+        - DELETE cluster_members WHERE cluster_id=?
+        - UPDATE kp_relations SET cluster_id=NULL WHERE cluster_id=? (软解绑,不删关系边)
+        - DELETE consensus_clusters WHERE cluster_id=?
+        事务安全,失败 ROLLBACK.
+        返回 (cluster_deleted, members_purged, relations_unbound) 三元组.
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("DELETE FROM cluster_members WHERE cluster_id=?", (cluster_id,))
+            members_purged = c.rowcount
+            c.execute("UPDATE kp_relations SET cluster_id=NULL WHERE cluster_id=?",
+                      (cluster_id,))
+            relations_unbound = c.rowcount
+            c.execute("DELETE FROM consensus_clusters WHERE cluster_id=?", (cluster_id,))
+            cluster_deleted = c.rowcount
+            conn.commit()
+            return (cluster_deleted, members_purged, relations_unbound)
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
+
+    def purge_kp_relations(self, kp_id):
+        """单独清理某 kp 的所有关系(独立外部入口,立规则#3 推广)
+        注意:delete_knowledge_point 已挂钩 cascade 清理,本方法仅供"删关系不删 kp"场景
+        返回 (relations_deleted, members_deleted) 元组.
+        """
+        conn = self.get_connection(); c = conn.cursor()
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("""DELETE FROM kp_relations
+                          WHERE source_kp_id=? OR target_kp_id=?""", (kp_id, kp_id))
+            relations_deleted = c.rowcount
+            c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
+            members_deleted = c.rowcount
+            # 同步 kp.relation_count 归零
+            c.execute("UPDATE knowledge_points SET relation_count=0 WHERE id=?", (kp_id,))
+            conn.commit()
+            return (relations_deleted, members_deleted)
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()

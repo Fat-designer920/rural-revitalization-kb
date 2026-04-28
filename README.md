@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:**v2.3.4-hotfix2**(强制重处理 source_files 外键约束失败 + database is locked 连环修复:preprocessor 3 处裸 DELETE → db.purge_source_file_record 完整封装,事务安全 + 级联清 operation_events;后台 header 加朋友试用快捷入口 pill;立规则#3 推广 + 立规则 9 第 16 次应验)
+> **当前版本**:**v2.3.5-part1**(知识关系网络底座:重复检测从二态升级为六态关系判别 + 共识聚类 + AI 不确定走待研判队列;3 新表 + 2 字段 + 12 路由 + 立规则 #3 第 2 次推广)
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 做什么 | 验证什么 |
 |------|--------|---------|
-| 当前(v2.3.4-hotfix2 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa(?u=张三 精准追踪)+ 多思考型模型整段重提兜底 + 强制重处理流畅性根治** | 回答质量 / 体验 / 付费意愿 / 大文件提取截断率 / L1/L2 救回 kp 质量 |
+| 当前(v2.3.5-part1 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa + 多思考型模型整段重提兜底 + 知识关系网络底座(六态判别 + 共识聚类)** | 关系判别准确率 / 待研判队列规模 / 共识强度对精品的提升 / 老唐处理新关系组体感 |
 | 200 条精品+ | 政策解读文章发行业圈子 | 内容付费 |
 | 300 条精品+ | 云端问答助手产品化 | C 端订阅 |
 | 500 条精品+ | 投标辅助 / 培训 / 合规自检 | B 端高客单价 |
@@ -53,7 +53,7 @@
 双击 首次安装.bat
 ```
 
-按提示完成 Python 环境检查、依赖安装、双 API Key 配置、数据库初始化（25 张表一次建成）。
+按提示完成 Python 环境检查、依赖安装、双 API Key 配置、数据库初始化（28 张表一次建成）。
 
 ### 日常使用
 
@@ -67,7 +67,20 @@
 
 ### Tab 2 工具箱（12 个按钮）
 
-系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / 智能重复检测 / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
+系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **知识关系扫描(六态)/ 重扫全库关系 ★** / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
+
+**v2.3.5-part1 关键交付**(2026-04-28):
+
+- **重复检测哲学翻转**:从二态判别"删冗余"升级为六态关系判别 + 共识聚类 + AI 不确定走待研判队列。**老唐反馈"同一政策在多份文件反复重申是重要性信号不是噪声,删了就丢失追溯"**,方案 C 彻底重设计落地
+- **六态关系判别**:🟢 跨文件共识(多份重申=政策重要性信号,全保留)/ 🔵 政策演进(版本更迭有时序)/ 🟣 细化关系(顶层→细则→落地有父子层级)/ 🟡 同源冗余(同一文件重复段落,合并)/ 🔴 矛盾冲突(全保留+人工裁决)/ ⚪ 互补关系(角度互补独立保留)
+- **`relation_analyzer.py` 新建**(460 行,替代 543 行 `duplicate_checker.py`):V3 主链 + R1 兜底(confidence < 70 升级)+ 自动建簇 + cluster_suggestion + fallback_action='human_review' 时关系标 'pending_human_review' 进待研判队列
+- **3 张新表 + 2 字段 + 5 索引**:`kp_relations`(关系边,UNIQUE 三元组)+ `consensus_clusters`(聚类节点,3 类型 consensus/evolution_chain/refinement_tree)+ `cluster_members`(多对多 + role:core/branch/derivative + sequence_order)+ knowledge_points 加 relation_count / consensus_strength
+- **db_manager 新增 16 方法 + 2 purge 封装**:关系边 CRUD(5)+ 共识簇 CRUD(5)+ 簇成员(2)+ 列表读取(2)+ `purge_cluster_record` / `purge_kp_relations`(立规则 #3 第 2 次推广模板)
+- **api_server 新增 12 路由 `/api/relations/*`**:groups / summary / build_consensus / build_evolution / build_refinement / merge / mark_conflict / keep_independent / manual_classify / batch / batch_keep_independent + tools/relation_full_rescan
+- **review.html UI 改造**:Tab 1 顶部"重复检测"区改"🔗 知识关系管理",6 类型徽章配色 + 6 处理按钮 + 待研判红色边框高亮 + 角色 badge + topic + strength 显示
+- **工具箱新增"重扫全库关系 ★"按钮**(决策 4 老唐手动触发):operation_hook 备份 + scan_full + 弹结果摘要(按类型分布展示)
+- **立规则 #3 第 2 次推广**:从"删 source_files 必级联 operation_events"扩展为"删 X 必级联 X 的所有外键引用方"(本次 X=knowledge_points,3 处删 kp 路径全部加挂 kp_relations + cluster_members 级联清理)
+- **CHANGELOG 瘦身 76%**(673 → 163 行):立规则 47 严格执行"近 3 版完整 + 早期折叠 ≤ 5 行/版"
 
 **v2.3.4-hotfix2 关键交付**(2026-04-28):
 
@@ -114,11 +127,12 @@ rural-revitalization-kb/
 │   ├── extractor.py         # 知识提取引擎（v2.3.0-part3.8，含 F057/F058，part3.8 冗余迁移 import 清理-21 行）
 │   ├── deepseek_client.py   # DeepSeek + 硅基流动 API 封装
 │   ├── preprocessor.py      # 文件预处理 + .md 缓存（v2.3.4-hotfix2，3 处裸 DELETE → db.purge_source_file_record，事务安全）
-│   ├── db_manager.py        # 数据库管理（v2.3.4-hotfix2，24 表，新增 purge_source_file_record 完整封装；F048 12 方法 + F062 9 方法 + F2 7 方法 + qa 6 方法）
+│   ├── db_manager.py        # 数据库管理（v2.3.5-part1，28 表，新增 3 关系网络表 + 2 字段 + 16 方法 + 2 purge 封装；F048 12 + F062 9 + F2 7 + qa 6 + relations 16 方法）
+│   ├── relation_analyzer.py # 知识关系六态判别 + 共识聚类（v2.3.5-part1，替代 duplicate_checker.py）
 │   ├── experience_notes.py  # 经验速记
 │   ├── config_wizard.py     # 配置向导
 │   ├── check_system.py      # 系统检查（v2.5.2，19 项）
-│   ├── duplicate_checker.py # 重复检测（v2.3.0-part3.8）
+│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.5-part1，~1639 行，白名单替代 duplicate_checker→relation_analyzer，DIM6 76 条）
 │   ├── policy_validator.py  # 政策依赖校验
 │   ├── freshness_checker.py # 保鲜扫描
 │   ├── backup_manager.py    # 备份恢复 + operation_hook（6 触发点）
@@ -128,12 +142,11 @@ rural-revitalization-kb/
 │   ├── setup.py             # 初始化（v2.3.0-part3）
 │   ├── upgrade_manager.py   # 架构升级
 │   ├── health_checker.py    # F048 体检引擎（~1360 行）
-│   ├── e2e_tester.py        # F062 端到端测试引擎（v2.3.0-part3.8，~1645 行，白名单 DIM4 75 / DIM6 79 / 覆盖 7 文件）
 │   ├── e2e_diagnosis_exporter.py  # F062 诊断包 Markdown 导出引擎（v2.3.0-part3.8，~1077 行，第三段按文件维度分类视图）
 │   ├── static_analyzer.py   # F062 静态规则库（v2.3.0-part3.7，~720 行，规则精度三连改）
 │   └── db_health_check.py   # 数据层只读体检（v1.2）
 ├── web/templates/
-│   └── review.html          # 管理后台（v2.3.0-part3.8，工具箱 12 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化 + 7 批量按钮混合策略 + #batchResultModal）
+│   └── review.html          # 管理后台（v2.3.5-part1，工具箱 14 卡 + 独立 QC 进度面板 + 审核统计 6 段结构化 + 7 批量按钮混合策略 + #batchResultModal + Tab 1 知识关系管理 6 类型徽章+6 处理按钮+待研判红色高亮）
 ├── data/                    # 数据目录
 ├── backups/                 # 备份目录
 ├── config/                  # 配置文件
@@ -190,7 +203,10 @@ rural-revitalization-kb/
 | **v2.3.4** | **feature:提取系统截断防御重构(R1/V3 max_tokens 8192 + JSON Mode + Chat Prefix Completion 续写主链 + JSON Lines 输出 + F057 降为 L2 兜底 + 控制台 📊 文件统计)+ 立规则 59 新立(CHANGELOG 是版本号唯一真相源)+ 立规则 9 第 14 次应验** | ✅ 2026-04-28 |
 | **v2.3.4-hotfix1** | **hotfix:截断零提取多模型整段重提(废弃 prefix 续写主链 + L1 Kimi-K2.6 + L2 R1 跨厂商镜像 + F057 降为 L3 + extracted_by_model 字段 + 仪表盘 Card 15)+ 立规则 16 改造 + 9 第 15 次应验 + 60 第 1 次正式落地** | ✅ 2026-04-28 |
 | **v2.3.4-hotfix2** | **hotfix:强制重处理 source_files 外键约束失败 + database is locked 连环修复(preprocessor 3 处裸 DELETE → db.purge_source_file_record 完整封装)+ 后台朋友试用快捷入口 pill + 立规则#3 推广 + 立规则 9 第 16 次应验** | ✅ 2026-04-28 |
-| v2.3.5 | F020 冲突检测 + F030 知识关联网络(原 v2.3.3 scope,顺延两次) | 规划 |
+| **v2.3.5-part1** | **feature:知识关系网络底座(替代二态重复检测的六态关系判别 + 共识聚类 + 待研判队列)— relation_analyzer.py 替代 duplicate_checker.py + 3 新表 + 2 字段 + 12 路由 + 立规则 #3 第 2 次推广** | ✅ 2026-04-28 |
+| v2.3.5-part2 | feature:F055 问答助手联动(依据卡片改为关系链证据 + 关系上下文召回) | 规划 |
+| v2.3.5-part3 | feature:F2 精品 + F056 导出联动(composite_score 加 consensus_strength + JSON 加 relations) | 规划 |
+| v2.3.5-part4 | feature:Tab 4 知识关联网络可视化 + 投标证据链生成器 | 规划 |
 | v2.4.0+ | 内容生产 / 采集（按需） | 远期 |
 | v3.x | 云端产品化 | 远期 |
 
