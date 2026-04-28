@@ -1,76 +1,28 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.0-part3.8 - 冗余迁移 import 清理（立规则 52 条首次应用）
+版本：v2.3.3 - 提取系统截断防御重构(D9+D10+D11 落地)
+
+变更说明（v2.3.3）：
+  D9 输出形态升级为 JSON Lines:
+    - _extract_single 改用 self.client.chat_with_jsonl()
+    - 返回 dict 增加 prefix_for_continuation / meta 两字段
+  D10 截断处理新流程(三级降级):
+    - L0/L1: prefix 续写(走 beta 端点 + V3,最多 2 次)
+    - L2 兜底: F057 老逻辑 excerpt 三级定位(从主补救降为兜底)
+    - L3 终态: 保留已提取 + warning 日志
+  D11 文件级控制台统计:
+    - extract_from_file 入口重置 self._truncation_stats
+    - 完成时控制台输出一行 📊 [文件统计] 截断N/Prefix续写M/F057兜底K/耗时Ts/估算Y元
 
 变更说明（v2.3.0-part3.8）：
-  立规则 52 条（代码审查兼做冗余清理）首次应用，删除两处迁移 import 冗余：
-  1. run_headless 内 5 个迁移 import 整段删除：
-     - 根因：api_server.py Step 2（2307-2315）已经统一调过这 5 个迁移脚本
-       （migrate_v210c / v210d_f028 / v211 / v211_dup / v223），run_headless
-       被 api_server 调用时是重复执行，产生 10 条 silent_except warning
-     - 删除前后：共减约 17 行
-  2. main 函数内双路径 fallback 简化：
-     - 根因：每块迁移都写了 scripts. 路径 + 裸路径兜底 fallback，裸路径是
-       历史遗留，当前项目 scripts/migrate_xxx.py 是标准位置
-     - 简化前后：每块 10 行 → 6 行，5 块共减 20 行
-  合计减 37 行，同时清掉 10 条 dim6 smell_silent_except issue（走删代码路径，
-  不进白名单，走冗余清理路径）。
+  立规则 52 条（代码审查兼做冗余清理）首次应用，删除两处迁移 import 冗余
+  (略,详见 git history)
 
-v2.3.0-part1 - Step 8 字段口径修正（顺手修）
-
-变更说明（v2.3.0-part1 对话1/2 交付）：
-  顺手修 Step 8 增量重复检测字段口径 bug：
-    - 原代码：new_ids = [info["id"] for info in kps_info if info.get("id")]
-    - 改为：  new_ids = [info["kp_id"] for info in kps_info if info.get("kp_id")]
-    - 根因：kps_info 字典存的字段名是 kp_id（见 Step 5 的 kps_info.append(...)），
-           但 Step 8 却用 "id" 取值，导致 new_ids 从 v2.1.1 F039 上线起**从未非空**，
-           增量重复检测每次提取后实际上一次都没真正触发过。
-    - 影响：v2.1.1 起所有提取完成后的"增量重复检测"分支都是空走（dup_count 恒=0），
-           不影响知识点入库，不影响后续全库/工具箱重复检测，属静默失效。
-    - v2.3.0 Part1 顺手修，F059 批量重跑与本修复配合后，重复检测闭环才真正成立。
-
-变更说明（v2.2.3 F057+F058 hotfix）：
-  F057 截断自动补救：
-    - R1输出截断时，用最后一条kp的excerpt定位安全分界线，取尾段重提
-    - 段长降级序列：current → current/2（最多3次，最小500字）
-    - 定位失败记warning事件并保留已提取部分，不再整段重来
-    - 每次触发调 db.increment_truncation_count(file_id) + log_operation_event
-    - 移除"截断后 early-return 保留残片"的冒进逻辑
-  F058 质检三级降级链：
-    - L0 批量15/批 → L1 小批3/批最多2轮 → L2 逐条(QC_CHECK_SINGLE_PROMPT) → L3 规则兜底
-    - 每条kp必有qa_score + qa_source，禁止"跳过"灰色地带
-    - qa_source 值域：batch / small_batch / single / rule_fallback
-    - 规则兜底3项：excerpt长度30-800字 / 必填字段 / excerpt在原文中存在性
-    - 守门员机制：整段结束前扫未处理kp强制兜底
-    - 顺手修v2.1.2分批质检残留bug：原代码内层循环 `for qr in results` 应为 `for qr in all_results`
-  新增辅助方法：
-    _recover_from_truncation / _locate_cut_boundary / _dedupe_kps_by_excerpt（F057）
-    _build_qc_items / _qc_batch_call / _qc_single_call / _qc_rule_fallback
-    _write_qc_result / _excerpt_in_source / _print_qc_summary（F058）
-  接口变更：
-    _extract_single 返回值由"kps列表 / 'TRUNCATED'"改为统一dict {kps,truncated,last_excerpt,raw_parsed,cost}
-    _extract_with_auto_split 签名增加 file_id 参数
-    _quality_check 签名增加 source_content 参数（供规则兜底做excerpt存在性检查）
-  类级常量：
-    QC_FLAG_MAP 从 _quality_check 内部提升到类级（三级降级共用）
-
-变更说明（v2.2.0 bugfix-5）：
-  - 从source_files记录读取doc_origin字段
-  - doc_origin='self'时：强制source_nature='personal_experience'，强制authority='firsthand'
-  - 覆盖V3预分析的source_nature判断，确保个人经验文档标注正确
-
-变更说明（v2.1.2 bugfix2）：
-  - QC质检分批调用(每批15条),防止知识点过多导致V3输出截断
-  - 批内kp_index自动还原为全局index
-
-变更说明（v2.1.1 F039）：
-  - 新增Step 8: 提取完成后增量重复检测(本地粗筛+V3精判)
-  - 导入并初始化DuplicateChecker
-  - 自动调用migrate_v211_dup迁移脚本
-  - 保留全部v2.1.1 F038功能不变
+变更说明（v2.3.0-part1）：
+  Step 8 字段口径修正(kps_info["id"] → ["kp_id"])
 """
-import os, sys, json, re, shutil, hashlib
+import os, sys, json, re, shutil, hashlib, time
 from pathlib import Path
 from datetime import datetime
 
@@ -272,50 +224,67 @@ class Extractor:
         return segs
 
     # ================================================================
-    # v2.2.3 F057: 单段提取（返回值契约变更）
+    # v2.3.3 D9: 单段提取 — JSON Lines 输出 + prefix 续写支持
     # ================================================================
     def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
-        """调用R1/V3提取单段内容，返回统一dict契约。
-        返回: {
-            "kps": [...],          # 已成功解析的知识点列表（可能为空）
-            "truncated": bool,     # 是否被截断
-            "last_excerpt": str,   # 最后一条kp的original_excerpt（供F057定位切分点）
-            "raw_parsed": bool,    # parsed是否为有效对象（False表示JSON完全损坏）
-            "cost": float          # 本次调用费用
+        """调用R1/V3提取单段内容,返回统一dict契约。
+
+        v2.3.3 改动:
+        - 改用 self.client.chat_with_jsonl()(JSON Lines 输出)
+        - 返回 dict 增加 prefix_for_continuation(供 prefix 续写) + meta(_meta 元数据)
+        - 兼容字段保留:kps / truncated / last_excerpt / raw_parsed / cost
+
+        返回:
+        {
+            "kps": [...],                    # 已成功解析的知识点列表
+            "truncated": bool,               # finish_reason=length
+            "last_excerpt": str,             # 最后一条 kp 的 excerpt(F057 兜底用)
+            "raw_parsed": bool,              # 是否有任意行解析成功
+            "cost": float,                   # 本次调用费用
+            "prefix_for_continuation": str,  # v2.3.3 新增:prefix 续写起点
+            "meta": dict or None,            # v2.3.3 新增:_meta 元数据(file_summary/extraction_notes)
+            "system_prompt": str,            # v2.3.3 新增:供续写时复用
+            "user_prompt": str,              # v2.3.3 新增:供续写时复用
         }
         """
         up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
         if relay_prefix:
             up = relay_prefix + "\n\n" + up
-        ai = self.client.chat_with_json(
-            prompt["system_prompt"], up, temperature=0.2,
+        sp = prompt["system_prompt"]
+
+        ai = self.client.chat_with_jsonl(
+            sp, up, temperature=0.2,
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
-        parsed = ai.get("parsed_json")
+
+        kp_objects = ai.get("kp_objects", []) or []
+        meta_object = ai.get("meta_object", None)
         was_truncated = ai.get("was_truncated", False)
         cost = ai.get("estimated_cost", 0)
+        prefix_for_continuation = ai.get("prefix_for_continuation", "") or ""
         cost_info = f"(花费约{cost:.4f}元)"
 
-        # 解析失败（JSON完全损坏）
-        if parsed is None:
-            err = ai.get("json_parse_error", "未知错误")
+        # 解析失败(0 行解析成功 + 0 _meta)
+        raw_parsed = bool(kp_objects or meta_object)
+        if not raw_parsed:
+            err = ai.get("json_parse_error", "JSONL 0 行解析成功")
             if was_truncated:
-                # 输出截断且无法解析任何对象 → 交给调用方决定（补救或放弃）
                 print(f"     ! 输出被截断且无完整知识点可解析 {cost_info}")
             else:
-                print(f"     ! JSON解析失败: {err} {cost_info}")
+                print(f"     ! JSON Lines 解析失败: {err} {cost_info}")
             return {"kps": [], "truncated": was_truncated, "last_excerpt": "",
-                    "raw_parsed": False, "cost": cost}
+                    "raw_parsed": False, "cost": cost,
+                    "prefix_for_continuation": prefix_for_continuation,
+                    "meta": meta_object,
+                    "system_prompt": sp, "user_prompt": up}
 
         # 解析成功
-        kps = []
-        if isinstance(parsed, dict):
-            kps = parsed.get("knowledge_points", []) or []
-            notes = parsed.get("extraction_notes", "")
-            if notes: print(f"     AI说明: {notes[:80]}")
-        elif isinstance(parsed, list):
-            kps = parsed
+        kps = kp_objects
+        if meta_object:
+            notes = meta_object.get("extraction_notes", "")
+            if notes:
+                print(f"     AI说明: {notes[:80]}")
 
-        # 定位 last_excerpt（供F057补救用）
+        # 定位 last_excerpt(F057 兜底链路用)
         last_excerpt = ""
         if kps:
             try:
@@ -329,12 +298,20 @@ class Extractor:
             print(f"     本段提取{len(kps)}个知识点 {cost_info}")
 
         return {"kps": kps, "truncated": was_truncated,
-                "last_excerpt": last_excerpt, "raw_parsed": True, "cost": cost}
+                "last_excerpt": last_excerpt, "raw_parsed": True, "cost": cost,
+                "prefix_for_continuation": prefix_for_continuation,
+                "meta": meta_object,
+                "system_prompt": sp, "user_prompt": up}
 
     def _extract_with_auto_split(self, content, filename, prompt, ctype,
                                  current_max_len=None, relay_prefix="", file_id=None):
-        """单段提取的外层调度：成功直接返回；截断则启动 F057 补救。
-        v2.2.3: 移除"段长减半整段重提"逻辑，改为"定位分界线+取尾段重提"。
+        """单段提取的外层调度。
+
+        v2.3.3 三级降级链(D10):
+          L0: chat_with_jsonl (R1) → 截断 ↓
+          L1: chat_continue_with_prefix (V3, beta 端点) 续写,最多 2 次 ↓
+          L2: F057 老逻辑 _recover_from_truncation(excerpt 三级定位) ↓
+          L3: 保留已提取,放弃尾段
         """
         if current_max_len is None:
             current_max_len = self.segment_max_len
@@ -342,11 +319,31 @@ class Extractor:
         result = self._extract_single(content, filename, prompt, ctype, relay_prefix)
         kps = result["kps"]
 
-        # 未截断：直接返回
+        # 未截断:直接返回
         if not result["truncated"]:
             return kps
 
-        # 截断：启动 F057 补救
+        # 截断 → 进入 L0/L1 prefix 续写
+        self._truncation_stats["truncations"] += 1
+        if file_id:
+            try:
+                self.db.increment_truncation_count(file_id)
+            except Exception:
+                pass
+
+        prefix_recovered = self._recover_via_prefix(
+            result, file_id=file_id, filename=filename)
+        if prefix_recovered is not None:
+            # prefix 续写成功
+            merged = self._dedupe_kps_by_excerpt(kps + prefix_recovered)
+            if len(merged) < len(kps) + len(prefix_recovered):
+                dup_n = len(kps) + len(prefix_recovered) - len(merged)
+                print(f"     [Prefix续写合并] 去重{dup_n}条疑似重复,最终{len(merged)}条")
+            return merged
+
+        # L2 兜底:降级到 F057 老逻辑
+        print(f"     [L2 兜底] Prefix 续写失败,降级到 F057 excerpt 定位")
+        self._truncation_stats["f057_fallbacks"] += 1
         next_max = current_max_len // 2
         recovered = self._recover_from_truncation(
             original_content=content,
@@ -365,8 +362,150 @@ class Extractor:
         merged = self._dedupe_kps_by_excerpt(kps + recovered)
         if len(merged) < len(kps) + len(recovered):
             dup_n = len(kps) + len(recovered) - len(merged)
-            print(f"     [补救合并] 去重{dup_n}条疑似重复知识点，最终{len(merged)}条")
+            print(f"     [F057 合并] 去重{dup_n}条疑似重复,最终{len(merged)}条")
+        if not recovered:
+            self._truncation_stats["lost_segments"] += 1
         return merged
+
+    # ================================================================
+    # v2.3.3 D10 L0/L1: Prefix 续写补救核心
+    # ================================================================
+    def _recover_via_prefix(self, init_result, file_id, filename, max_attempts=2):
+        """L0/L1 prefix 续写。
+
+        参数 init_result:_extract_single 返回的 dict(包含 prefix_for_continuation/system_prompt/user_prompt)
+        返回:
+          List[dict] 续写新增的 kp(成功);
+          None(续写失败,需走 L2 F057 兜底)
+        """
+        prefix_content = init_result.get("prefix_for_continuation", "") or ""
+        sp = init_result.get("system_prompt", "") or ""
+        up = init_result.get("user_prompt", "") or ""
+
+        if not prefix_content or not sp or not up:
+            print(f"     [Prefix续写跳过] prefix/system/user_prompt 缺失,直接降级")
+            return None
+
+        all_recovered = []
+        current_prefix = prefix_content
+
+        for attempt in range(1, max_attempts + 1):
+            print(f"     [L{attempt-1} Prefix续写] 第{attempt}次,prefix 末尾长度 {len(current_prefix)} 字符...")
+
+            try:
+                rc = self.client.chat_continue_with_prefix(
+                    system_prompt=sp,
+                    user_prompt=up,
+                    prefix_content=current_prefix,
+                    max_tokens=8192,
+                    call_type=f"extract_continue_{filename[:30]}",
+                    # D8 续写默认走 V3,内部已处理
+                )
+            except Exception as e:
+                print(f"     [Prefix续写异常] {type(e).__name__}: {e}")
+                self._safe_log_event(
+                    "prefix_recovery", "extractor", "warning",
+                    file_id=file_id,
+                    payload={"attempt": attempt, "reason": "exception",
+                             "error": f"{type(e).__name__}: {str(e)[:200]}",
+                             "filename": filename})
+                return None
+
+            new_content = rc.get("content", "") or ""
+            new_truncated = rc.get("was_truncated", False)
+            new_cost = rc.get("estimated_cost", 0)
+            self._truncation_stats["total_cost"] += new_cost
+
+            # 把"prefix + 续写内容"合并后整体走 jsonl 解析,
+            # 把已生成 + 新生成统一逐行 try parse
+            full_text = current_prefix + new_content
+            new_kps, new_meta, new_prefix_for_next, broken_line = self._parse_jsonl_text(full_text)
+
+            # 计算"新增"的 kp = 整体解析的 kp 减去之前已有的 kp
+            # 通过 (title, excerpt前100) 比对
+            already_seen_keys = set()
+            for k in init_result.get("kps", []) + all_recovered:
+                if not isinstance(k, dict):
+                    continue
+                t = (k.get("title", "") or "").strip()
+                e = (k.get("original_excerpt", "") or "").strip()[:100]
+                already_seen_keys.add((t, e))
+
+            this_round_new = []
+            for k in new_kps:
+                t = (k.get("title", "") or "").strip()
+                e = (k.get("original_excerpt", "") or "").strip()[:100]
+                key = (t, e)
+                if key in already_seen_keys:
+                    continue
+                already_seen_keys.add(key)
+                this_round_new.append(k)
+
+            all_recovered.extend(this_round_new)
+            print(f"     [Prefix续写成功 第{attempt}次] 新增{len(this_round_new)}条 ({new_cost:.4f}元)")
+            self._safe_log_event(
+                "prefix_recovery", "extractor", "info",
+                file_id=file_id,
+                payload={"attempt": attempt, "new_count": len(this_round_new),
+                         "still_truncated": new_truncated, "cost": new_cost,
+                         "filename": filename})
+
+            # 续写未截断 → 完成
+            if not new_truncated:
+                self._truncation_stats["prefix_recoveries"] += 1
+                return all_recovered
+
+            # 仍截断且还有重试次数 → 用合并后文本作为下次 prefix
+            if attempt < max_attempts:
+                current_prefix = full_text
+                continue
+
+        # 用完 max_attempts 仍截断
+        # 已有续写成果就回传,让上层合并;若 0 条则视为续写失败
+        if all_recovered:
+            self._truncation_stats["prefix_recoveries"] += 1
+            print(f"     [Prefix续写部分成功] 已尝试{max_attempts}次,仍截断,保留{len(all_recovered)}条")
+            return all_recovered
+        return None
+
+    def _parse_jsonl_text(self, text):
+        """对一段 JSON Lines 文本逐行 try parse。
+        返回 (kp_list, meta_dict, prefix_for_continuation_str, last_broken_line)
+        与 deepseek_client.chat_with_jsonl 内部解析逻辑一致。
+        """
+        cleaned = (text or "").strip()
+        cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
+        if cb:
+            cleaned = cb.group(1).strip()
+
+        kps = []
+        meta = None
+        completed_text_parts = []
+        last_broken_line = ""
+        for raw_line in cleaned.split("\n"):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    if obj.get("_meta") is True:
+                        meta = obj
+                    else:
+                        kps.append(obj)
+                    completed_text_parts.append(raw_line)
+                else:
+                    completed_text_parts.append(raw_line)
+            except json.JSONDecodeError:
+                last_broken_line = raw_line
+                break
+
+        prefix_for_next = ""
+        if completed_text_parts:
+            prefix_for_next = "\n".join(completed_text_parts) + "\n"
+        if last_broken_line:
+            prefix_for_next += last_broken_line
+        return kps, meta, prefix_for_next, last_broken_line
 
     # ================================================================
     # v2.2.3 F057: 截断补救核心
@@ -1485,6 +1624,40 @@ class Extractor:
             print(f"     [注意] {low_count}条知识点评分较低,建议审核时重点关注")
 
     # ================================================================
+    # v2.3.3 D11: 文件级截断统计输出
+    # ================================================================
+    def _print_truncation_stats(self, kp_count):
+        """提取完成时控制台输出一行截断统计 + 总耗时 + 单价估算。
+        老唐肉眼即看,不入库,不动 db。
+        """
+        stats = getattr(self, "_truncation_stats", None)
+        if not stats:
+            return
+        elapsed = time.time() - stats.get("start_time", time.time())
+        truncations = stats.get("truncations", 0)
+        prefix_recovs = stats.get("prefix_recoveries", 0)
+        f057_fallbacks = stats.get("f057_fallbacks", 0)
+        lost = stats.get("lost_segments", 0)
+        recovery_cost = stats.get("total_cost", 0.0)
+
+        if truncations == 0:
+            print(f"     📊 [文件统计] 一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s / Prompt {get_prompt_version()}")
+        else:
+            parts = [
+                f"截断{truncations}次",
+                f"Prefix续写成功{prefix_recovs}次",
+                f"F057兜底{f057_fallbacks}次",
+            ]
+            if lost > 0:
+                parts.append(f"放弃段{lost}")
+            parts.append(f"知识点{kp_count}条")
+            parts.append(f"耗时{int(elapsed)}s")
+            if recovery_cost > 0:
+                parts.append(f"补救额外费用{recovery_cost:.4f}元")
+            parts.append(f"Prompt {get_prompt_version()}")
+            print(f"     📊 [文件统计] " + " / ".join(parts))
+
+    # ================================================================
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
     # ================================================================
     def _check_category_suggestions(self, kps_info):
@@ -1588,6 +1761,15 @@ class Extractor:
         fn = rec.get("renamed_filename") or rec["original_filename"]
         original_fn = rec["original_filename"]
         fp = None
+        # v2.3.3 D11: 重置文件级截断统计
+        self._truncation_stats = {
+            "truncations": 0,
+            "prefix_recoveries": 0,
+            "f057_fallbacks": 0,
+            "lost_segments": 0,
+            "total_cost": 0.0,
+            "start_time": time.time()
+        }
         try:
             print(f"\n     >> 开始提取: {fn}")
             for f in self.processing.iterdir():
@@ -1848,7 +2030,7 @@ class Extractor:
                     print(f"     重复检测出错: {e}")
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
-            msg = f"{model_tag}提取{cnt}个知识点(v2.2.3)"
+            msg = f"{model_tag}提取{cnt}个知识点(v2.3.3)"
             if qc_count > 0:
                 msg += f" [已质检{qc_count}条]"
             if pv_count > 0:
@@ -1860,6 +2042,9 @@ class Extractor:
             self.db.update_source_file(fid, process_status="completed", process_message=msg)
             result.update({"success": True, "knowledge_count": cnt, "kps_info": kps_info})
             print(f"     [OK] {cnt}个知识点已存入待审核队列(Prompt:{get_prompt_version()})")
+
+            # v2.3.3 D11: 文件级截断统计输出
+            self._print_truncation_stats(cnt)
 
         except CostLimitExceeded as e:
             result["error"] = str(e)

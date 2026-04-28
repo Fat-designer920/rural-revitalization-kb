@@ -1,7 +1,18 @@
 """
 deepseek_client.py - DeepSeek API封装 + 硅基流动OCR
 路径：scripts/deepseek_client.py
-版本：v2.2.0 bugfix - 新增硅基流动视觉模型OCR(扫描件PDF+图片)
+版本：v2.3.3 - 提取系统截断防御重构(D1-D8 落地)
+
+变更说明(v2.3.3):
+  D1 R1 max_tokens 显式设 8192(原默认 4K)
+  D2 V3 max_tokens 默认从 4096 升 8192
+  D3 chat_with_json 启用 response_format={"type":"json_object"} (JSON Mode)
+  D4 双保险:同时保留 system_prompt 的"必须 JSON"硬话
+  D5 JSON Mode 启用后空 content/解析失败 → 自动降级一次不带 mode 重试
+  D7 新增 chat_continue_with_prefix() 走 https://api.deepseek.com/beta 端点
+  D8 续写默认走 V3(deepseek-chat),成本降 8 倍
+  新增 chat_with_jsonl() — JSON Lines 逐行解析容错,返回 prefix_for_continuation
+  保留 _repair_truncated_json — 作为 jsonl 解析失败的最终兜底
 """
 import os, sys, json, time, base64, re, requests, tempfile
 from pathlib import Path
@@ -32,6 +43,7 @@ class DeepSeekClient:
                 config = json.load(f)
         self.config = config
         self.base_url = config.get("deepseek_base_url", "https://api.deepseek.com")
+        self.beta_base_url = config.get("deepseek_beta_url", "https://api.deepseek.com/beta")
         self.model = config.get("deepseek_model", "deepseek-chat")
         self.daily_cost_limit = config.get("daily_cost_limit", 50)
         self.max_retries = 3
@@ -76,8 +88,9 @@ class DeepSeekClient:
     def _is_r1(self, model):
         return model in self.R1_MODELS
 
-    def _request(self, endpoint, payload, use_model=None):
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+    def _request(self, endpoint, payload, use_model=None, base_url_override=None):
+        base = base_url_override or self.base_url
+        url = f"{base}/{endpoint.lstrip('/')}"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         timeout = self.r1_timeout if self._is_r1(use_model or self.model) else self.timeout
         last_err = None
@@ -109,27 +122,49 @@ class DeepSeekClient:
                 raise
         raise Exception(f"API调用失败(重试{self.max_retries}次): {last_err}")
 
-    def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=4096,
-             call_type="general", model_override=None):
+    def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=8192,
+             call_type="general", model_override=None, response_format=None,
+             extra_messages=None, base_url_override=None, stop=None):
+        """v2.3.3 升级:
+        - max_tokens 默认 4096 → 8192(D1+D2 R1/V3 输出窗口上限)
+        - R1 分支显式传 max_tokens(原代码 pass 等于默认 4K,实测就是截断主因)
+        - 新增 response_format(D3 JSON Mode)
+        - 新增 extra_messages(D7 Prefix Completion 用,append 到 messages 末尾)
+        - 新增 base_url_override(D7 走 beta 端点)
+        - 新增 stop(可选停止符)
+        """
         self._check_cost()
         use_model = model_override or self.model
 
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        if extra_messages:
+            messages.extend(extra_messages)
+
         payload = {
             "model": use_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+            "messages": messages
         }
 
-        # R1模型：不传temperature（不支持），不设max_tokens（让R1写完为止）
+        # R1 模型:不传 temperature(立规则 15),max_tokens 显式设(D1)
         if self._is_r1(use_model):
-            pass
+            payload["max_tokens"] = max_tokens
         else:
             payload["temperature"] = temperature
             payload["max_tokens"] = max_tokens
 
-        resp = self._request("chat/completions", payload, use_model=use_model)
+        # D3 JSON Mode
+        if response_format is not None:
+            payload["response_format"] = response_format
+
+        # 可选停止符
+        if stop is not None:
+            payload["stop"] = stop
+
+        resp = self._request("chat/completions", payload, use_model=use_model,
+                             base_url_override=base_url_override)
 
         msg = resp["choices"][0]["message"]
         content = msg.get("content", "")
@@ -287,17 +322,24 @@ class DeepSeekClient:
         except Exception:
             pass
 
-    def chat_with_json(self, system_prompt, user_prompt, temperature=0.1, max_tokens=4096,
-                       call_type="json_extract", model_override=None):
-        """
-        聊天并解析JSON输出。
-        R1模型：不设人为token上限，通过控制输入段的长度来间接控制输出。
+    def chat_with_json(self, system_prompt, user_prompt, temperature=0.1, max_tokens=8192,
+                       call_type="json_extract", model_override=None, use_json_mode=True):
+        """v2.3.3 升级:
+        - max_tokens 默认 4096 → 8192(D2)
+        - 默认启用 response_format={"type":"json_object"}(D3 JSON Mode)
+        - 双保险:同时保留 system_prompt 的"必须 JSON"硬话(D4)
+        - JSON Mode 启用后空 content/解析失败 → 自动降级一次不带 mode 重试(D5)
+
+        参数:
+          use_json_mode: True 启用 JSON Mode(默认),False 走老逻辑
         """
         use_model = model_override or self.model
 
         json_sys = system_prompt + "\n\n【极其重要】你必须且只能输出一个JSON对象，不要输出任何其他文字、解释或说明。不要使用markdown代码块。直接以{开头，以}结尾。"
+        response_format = {"type": "json_object"} if use_json_mode else None
+
         result = self.chat(json_sys, user_prompt, temperature, max_tokens, call_type,
-                           model_override=use_model)
+                           model_override=use_model, response_format=response_format)
         content = result["content"]
         was_truncated = result.get("was_truncated", False)
 
@@ -305,6 +347,25 @@ class DeepSeekClient:
             print(f"       [注意] R1输出被截断(达到模型输出上限),尝试抢救...")
 
         parsed, error = self._extract_json_robust(content, was_truncated)
+
+        # D5:JSON Mode 启用但 content 异常(空/极短/解析失败) → 降级一次
+        if parsed is None and use_json_mode:
+            content_abnormal = (not content) or len(content.strip()) < 10
+            if content_abnormal:
+                print(f"       [JSON Mode 降级] content 异常(空/极短),回退普通模式重试...")
+                result_retry = self.chat(json_sys, user_prompt, temperature, max_tokens,
+                                         call_type=f"{call_type}_jsonmode_fallback",
+                                         model_override=use_model, response_format=None)
+                retry_content = result_retry["content"]
+                retry_truncated = result_retry.get("was_truncated", False)
+                retry_parsed, retry_error = self._extract_json_robust(retry_content, retry_truncated)
+                if retry_parsed is not None:
+                    result = result_retry
+                    content = retry_content
+                    was_truncated = retry_truncated
+                    parsed = retry_parsed
+                    error = retry_error
+                    print(f"       [JSON Mode 降级] 重试成功")
 
         if parsed is not None:
             result["parsed_json"] = parsed
@@ -315,6 +376,139 @@ class DeepSeekClient:
             preview = content[:300] if content else "(空)"
             print(f"       R1原始返回(前300字): {preview}")
 
+        return result
+
+    def chat_with_jsonl(self, system_prompt, user_prompt, temperature=0.2, max_tokens=8192,
+                        call_type="jsonl_extract", model_override=None):
+        """v2.3.3 新增(D9):JSON Lines 输出专用解析。
+
+        约定:模型每行输出一个独立完整的 JSON 对象,最后一行可选输出 {"_meta":true,...}
+        逐行 try parse,任一行解析失败 → 视为该行被截断,后续行丢弃。
+
+        返回 dict(在 chat() 返回基础上增加):
+          - parsed_lines: List[dict] 已成功解析的所有行(含 _meta)
+          - kp_objects: List[dict] 仅 kp 行(过滤 _meta)
+          - meta_object: dict 或 None
+          - last_broken_line: str 解析失败的最后一行原文(供 prefix 续写)
+          - prefix_for_continuation: str 已生成内容(完整解析行 + 失败行,作为 prefix 续写起点)
+
+        注意:不启用 response_format JSON Mode。JSON Mode 期望单一 JSON 对象,
+        与 JSON Lines 多行多对象冲突。靠 system_prompt 强约束 + 行级容错。
+        """
+        use_model = model_override or self.model
+        result = self.chat(system_prompt, user_prompt, temperature, max_tokens, call_type,
+                           model_override=use_model)
+        content = result.get("content", "") or ""
+        was_truncated = result.get("was_truncated", False)
+
+        # 清理 markdown 代码块包装(R1 偶尔会包 ```json ... ```)
+        cleaned = content.strip()
+        cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
+        if cb:
+            cleaned = cb.group(1).strip()
+
+        parsed_lines = []
+        kp_objects = []
+        meta_object = None
+        last_broken_line = ""
+        completed_text_parts = []  # 累积已完整解析的行原文(供 prefix 续写)
+
+        lines = cleaned.split("\n")
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    parsed_lines.append(obj)
+                    if obj.get("_meta") is True:
+                        meta_object = obj
+                    else:
+                        kp_objects.append(obj)
+                    completed_text_parts.append(raw_line)
+                else:
+                    # 非 dict 行:不计入 kp,但仍保留原文(防止 prefix 续写位置漂移)
+                    completed_text_parts.append(raw_line)
+            except json.JSONDecodeError:
+                # 单行解析失败 — 大概率是截断到行中间
+                last_broken_line = raw_line
+                break  # 后续若有行也丢弃,以截断点为界
+
+        # prefix_for_continuation = 已完整行(行尾换行)+ 失败行(原样,供续写补完)
+        prefix_for_continuation = ""
+        if completed_text_parts:
+            prefix_for_continuation = "\n".join(completed_text_parts) + "\n"
+        if last_broken_line:
+            prefix_for_continuation += last_broken_line
+
+        result["parsed_lines"] = parsed_lines
+        result["kp_objects"] = kp_objects
+        result["meta_object"] = meta_object
+        result["last_broken_line"] = last_broken_line
+        result["prefix_for_continuation"] = prefix_for_continuation
+        return result
+
+    def chat_continue_with_prefix(self, system_prompt, user_prompt, prefix_content,
+                                  max_tokens=8192, call_type="prefix_continue",
+                                  model_override=None, stop=None):
+        """v2.3.3 新增(D7):Chat Prefix Completion(走 beta 端点)。
+
+        DeepSeek 官方契约:
+        - 必须 base_url=https://api.deepseek.com/beta
+        - messages 最后一条必须 role=assistant + prefix=True
+        - 模型从 prefix_content 末尾续写
+
+        默认走 V3(deepseek-chat),续写是格式接力不是创造,V3 够用且成本降 8 倍(D8)。
+        调用方可通过 model_override 强制走 R1。
+
+        返回 dict 同 chat()(content 是续写部分,不含 prefix)。
+        """
+        self._check_cost()
+        # D8:续写默认走 V3
+        use_model = model_override or "deepseek-chat"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+            {"role": "assistant", "content": prefix_content, "prefix": True}
+        ]
+
+        payload = {
+            "model": use_model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if not self._is_r1(use_model):
+            payload["temperature"] = 0.2
+        if stop is not None:
+            payload["stop"] = stop
+
+        # 走 beta 端点(必需)
+        resp = self._request("chat/completions", payload, use_model=use_model,
+                             base_url_override=self.beta_base_url)
+
+        msg = resp["choices"][0]["message"]
+        content = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
+        u = resp.get("usage", {})
+        inp = u.get("prompt_tokens", 0)
+        out = u.get("completion_tokens", 0)
+        finish_reason = resp["choices"][0].get("finish_reason", "stop")
+        was_truncated = (finish_reason == "length")
+        cost = self._estimate_cost(use_model, inp, out)
+        self.db.log_api_call(call_type, use_model, inp, out, cost)
+
+        result = {
+            "content": content,
+            "input_tokens": inp,
+            "output_tokens": out,
+            "estimated_cost": cost,
+            "model": use_model,
+            "was_truncated": was_truncated
+        }
+        if reasoning:
+            result["reasoning_content"] = reasoning
         return result
 
     # ============================================================

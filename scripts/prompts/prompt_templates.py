@@ -108,7 +108,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.3.2"
+PROMPT_VERSION = "v2.3.3"
 
 
 def get_prompt_version():
@@ -457,8 +457,19 @@ _POLICY_EXTRACT_BASE = {
 "suggested_category_code":"分类编码如1.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字文件概述","extraction_notes":"提取过程说明"}
+## 输出格式（v2.3.3 升级:JSON Lines）
+逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
+最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字文件概述","extraction_notes":"提取过程说明"}
+
+正确示例(每行一个独立 JSON,行间换行,无数组语法):
+{"title":"...","original_excerpt":"...",...其他字段}
+{"title":"...","original_excerpt":"...",...其他字段}
+{"_meta":true,"file_summary":"...","extraction_notes":"..."}
+
+禁止输出:
+× {"knowledge_points":[...]} 数组结构
+× ```json ... ``` 代码块包装
+× 任何解释文字
 
 ## 特别注意
 - 一个政策文件通常应提取5-30个知识点
@@ -484,7 +495,7 @@ _POLICY_EXTRACT_BASE = {
 全文内容：
 {full_content}
 
-请逐段通读上述全文，提取每一个有实操价值的知识点，按JSON格式输出。"""
+请逐段通读上述全文，提取每一个有实操价值的知识点，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
 _CASE_EXTRACT_BASE = {
@@ -553,8 +564,16 @@ _CASE_EXTRACT_BASE = {
 "suggested_category_code":"如2.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
+## 输出格式（v2.3.3 升级:JSON Lines）
+逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
+最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
+
+正确示例:
+{"title":"...","original_excerpt":"...",...其他字段}
+{"title":"...","original_excerpt":"...",...其他字段}
+{"_meta":true,"file_summary":"...","extraction_notes":"..."}
+
+禁止输出 {"knowledge_points":[...]} 数组结构、```代码块、解释文字。
 
 ## 特别注意
 - 资金数据是案例的灵魂
@@ -579,7 +598,7 @@ _CASE_EXTRACT_BASE = {
 全文内容：
 {full_content}
 
-请逐段通读上述全文，提取每一个有参考价值的知识点，保留所有量化数据，按JSON格式输出。"""
+请逐段通读上述全文，提取每一个有参考价值的知识点，保留所有量化数据，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
 _EXPERIENCE_EXTRACT_BASE = {
@@ -647,8 +666,16 @@ _EXPERIENCE_EXTRACT_BASE = {
 "suggested_category_code":"如3.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
+## 输出格式（v2.3.3 升级:JSON Lines）
+逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
+最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
+
+正确示例:
+{"title":"...","original_excerpt":"...",...其他字段}
+{"title":"...","original_excerpt":"...",...其他字段}
+{"_meta":true,"file_summary":"...","extraction_notes":"..."}
+
+禁止输出 {"knowledge_points":[...]} 数组结构、```代码块、解释文字。
 
 ## 特别注意
 - 经验材料中往往有大量隐性知识，要主动挖掘
@@ -673,7 +700,7 @@ _EXPERIENCE_EXTRACT_BASE = {
 全文内容：
 {full_content}
 
-请逐段通读上述全文，提取每一条有复用价值的经验知识点，按JSON格式输出。"""
+请逐段通读上述全文，提取每一条有复用价值的经验知识点，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
 _TOOL_EXTRACT_BASE = {
@@ -725,8 +752,16 @@ _TOOL_EXTRACT_BASE = {
 "suggested_category_code":"如4.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
+## 输出格式（v2.3.3 升级:JSON Lines）
+逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
+最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
+
+正确示例:
+{"title":"...","original_excerpt":"...",...其他字段}
+{"title":"...","original_excerpt":"...",...其他字段}
+{"_meta":true,"file_summary":"...","extraction_notes":"..."}
+
+禁止输出 {"knowledge_points":[...]} 数组结构、```代码块、解释文字。
 """ + PRACTICAL_INSIGHTS_INSTRUCTION + SELF_CHECK_INSTRUCTION,
 
     "user_prompt_template": """请对以下工具/模板文件进行全文逐段分析，萃取所有可用于付费产品的知识点。
@@ -744,7 +779,7 @@ _TOOL_EXTRACT_BASE = {
 全文内容：
 {full_content}
 
-请逐段通读上述全文，提取每个关键结构和使用要点，按JSON格式输出。"""
+请逐段通读上述全文，提取每个关键结构和使用要点，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
 _DATA_EXTRACT_BASE = {
@@ -798,8 +833,16 @@ _DATA_EXTRACT_BASE = {
 "suggested_category_code":"如5.1",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
-## 输出格式
-{"knowledge_points":[所有知识点数组],"file_summary":"100字概述","extraction_notes":"提取说明"}
+## 输出格式（v2.3.3 升级:JSON Lines）
+逐行输出,每条知识点单独一行,行间用换行符分隔。每行必须是一个独立完整的 JSON 对象。
+最后一行(可选)输出元数据对象:{"_meta":true,"file_summary":"100字概述","extraction_notes":"提取说明"}
+
+正确示例:
+{"title":"...","original_excerpt":"...",...其他字段}
+{"title":"...","original_excerpt":"...",...其他字段}
+{"_meta":true,"file_summary":"...","extraction_notes":"..."}
+
+禁止输出 {"knowledge_points":[...]} 数组结构、```代码块、解释文字。
 
 ## 特别注意
 - 表格数据要逐行提取为独立知识点
@@ -823,7 +866,7 @@ _DATA_EXTRACT_BASE = {
 全文内容：
 {full_content}
 
-请逐段逐表通读上述全文，精确提取每一组有参考价值的数据，务必保留数值和单位，按JSON格式输出。"""
+请逐段逐表通读上述全文，精确提取每一组有参考价值的数据，务必保留数值和单位，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
 
