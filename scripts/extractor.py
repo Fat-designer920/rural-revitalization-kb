@@ -1,7 +1,34 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.5-part1.1 - 修复 part1 改造遗漏:duplicate_checker → relation_analyzer 调用方同步迁移
+版本：v2.3.5-part1.3 - L1 救援链双层互备(L1.1 硅基 K2.6 → L1.2 Kimi 官方 K2.6 → L2 R1 镜像)
+
+变更说明（v2.3.5-part1.3）：
+  E1 _extract_with_auto_split 降级链:L1 单层 → L1.1 + L1.2 双层互备(立规则 62 落地)
+     - L1.1: chat_jsonl_via_siliconflow (Kimi-K2.6, 硅基)        ← 原 L1, 优先尝试
+     - L1.2: chat_jsonl_via_kimi_official (kimi-k2.6, Moonshot 官方) ← 新增, 硅基挂时切此层
+     - L2 / L3 / L4 不变(R1 镜像 / F057 / 全失败)
+     根因:老唐 0429 实测 v2.3.5-part1.2 仍遇硅基 ConnectionError,L1+L2 共享硅基基础设施
+          的"逻辑冗余"在硅基整体抖动时同时挂掉。Kimi 官方直连作为 L1.2 形成跨厂商物理冗余。
+     行为:L1.1 抛任何 Exception → 立刻尝试 L1.2(参考 deepseek_client._request 的 max_retries=3
+          已经在硅基侧消化偶发抖动,L1.1 整体失败说明硅基厂商问题,切 Kimi 官方更经济)。
+          老唐选择"硅基优先"(成本低 60%),"任何异常立刻切",由 _retry_via_siliconflow 抛出
+          异常上层捕获即可,无需在循环内嵌套重试。
+  E2 新增 _retry_via_kimi_official 方法(参照 _retry_via_siliconflow 改写)
+     - 调用 client.chat_jsonl_via_kimi_official 而非 chat_jsonl_via_siliconflow
+     - 启动前 client.has_kimi_official() 探测,未配置 Kimi 官方 key 则跳过 L1.2
+     - 异常处理 / 解析判定 / 日志事件 与 _retry_via_siliconflow 完全对齐
+  E3 _truncation_stats 扩字段 kimi_official_recoveries
+     extracted_by_model 新增取值 "kimi_official"(原 r1/kimi/r1_mirror/f057_recovery)
+     仪表盘 Card 15 老唐肉眼监控 L1.2 救回比例
+  E4 _print_truncation_stats 加 L1.2 输出
+     "L1.1 硅基 Kimi 救" / "L1.2 官方 Kimi 救" / "L2 R1 镜像救"(原 L1/L2 重命名为 L1.1/L2)
+  E5 控制台日志区分 L1.1 / L1.2:
+     [L1.1 异常] connection 重试 3 次失败
+     [L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6
+     [L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2(老唐可在配置向导补填)
+     [L1.2 成功] kimi-k2.6 提取 N 条(完整) (X.XXXX元)
+  立规则 62 落地(part1.3 新立):多层降级链相邻两层不应共享同一供应商 endpoint(物理冗余 vs 逻辑冗余)
 
 变更说明（v2.3.5-part1.1）：
   P1 v2.3.5-part1 的"replace duplicate_checker by relation_analyzer"改造时,
@@ -403,31 +430,55 @@ class Extractor:
 
         # 输出原因到控制台
         if truncated and not kps:
-            print(f"     [L0 失败] R1 输出截断且 0 完整 kp,启动 L1 Kimi 整段重提")
+            print(f"     [L0 失败] R1 输出截断且 0 完整 kp,启动 L1.1 硅基 Kimi 整段重提")
         elif truncated and kps:
-            print(f"     [L0 部分] R1 截断但已解析{len(kps)}条,启动 L1 Kimi 整段重提补全")
+            print(f"     [L0 部分] R1 截断但已解析{len(kps)}条,启动 L1.1 硅基 Kimi 整段重提补全")
         else:
             # 未截断 + 0 条 + 解析失败(走到这里说明 7 步保险也救不回)
-            print(f"     [L0 失败] R1 输出格式异常 + 7 步降级未救回,启动 L1 Kimi 整段重提")
+            print(f"     [L0 失败] R1 输出格式异常 + 7 步降级未救回,启动 L1.1 硅基 Kimi 整段重提")
 
-        # ============= L1: Kimi-K2.6 整段重提 =============
+        # ============= L1.1: 硅基 Kimi-K2.6 整段重提(L1 双层互备第一层) =============
+        # v2.3.5-part1.3 E1:原 L1 重命名为 L1.1,L1.1 失败后插入 L1.2 Kimi 官方兜底
         l1_kps = self._retry_via_siliconflow(
             content, filename, prompt, ctype, relay_prefix, file_id,
             model_id=self.client.SILICONFLOW_TEXT_MODEL_L1,
-            model_tag="kimi", layer_label="L1")
+            model_tag="kimi", layer_label="L1.1")
 
-        if l1_kps is not None:  # L1 成功(有 kp 返回,即使 0 条但解析成功也算)
+        if l1_kps is not None:  # L1.1 成功(有 kp 返回,即使 0 条但解析成功也算)
             self._truncation_stats["kimi_recoveries"] += 1
             for k in l1_kps:
                 if isinstance(k, dict):
                     k["_extracted_by_model"] = "kimi"
-            # L1 是整段重提,理论上覆盖 L0 全部内容,但保留 L0 已成功 kp 防止漏掉
+            # L1.1 是整段重提,理论上覆盖 L0 全部内容,但保留 L0 已成功 kp 防止漏掉
             merged = self._dedupe_kps_by_excerpt(kps + l1_kps)
-            print(f"     [L1 Kimi 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条")
+            print(f"     [L1.1 Kimi 救回] L0:{len(kps)}条 + L1.1:{len(l1_kps)}条 = 去重后{len(merged)}条")
+            return merged
+
+        # ============= L1.2: Kimi 官方 K2.6 整段重提(L1 双层互备第二层,跨厂商) =============
+        # v2.3.5-part1.3 E1:硅基(L1.1)挂时立刻切 Kimi 官方,跨厂商物理冗余(立规则 62)
+        # 老唐选择"硅基优先"成本低 60%,"任何异常立刻切",L1.1 失败后无延迟进 L1.2
+        # 启动前探测 has_kimi_official(),未配置则跳过 L1.2 直接进 L2
+        print(f"     [L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6")
+        if not self.client.has_kimi_official():
+            print(f"     [L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2(可在配置向导补填)")
+            l1_2_kps = None
+        else:
+            l1_2_kps = self._retry_via_kimi_official(
+                content, filename, prompt, ctype, relay_prefix, file_id,
+                model_id=self.client.KIMI_OFFICIAL_MODEL_L1,
+                model_tag="kimi_official", layer_label="L1.2")
+
+        if l1_2_kps is not None:
+            self._truncation_stats["kimi_official_recoveries"] += 1
+            for k in l1_2_kps:
+                if isinstance(k, dict):
+                    k["_extracted_by_model"] = "kimi_official"
+            merged = self._dedupe_kps_by_excerpt(kps + l1_2_kps)
+            print(f"     [L1.2 官方 Kimi 救回] L0:{len(kps)}条 + L1.2:{len(l1_2_kps)}条 = 去重后{len(merged)}条")
             return merged
 
         # ============= L2: R1 跨厂商镜像整段重提 =============
-        print(f"     [L1 失败] Kimi 整段重提失败,启动 L2 R1 镜像")
+        print(f"     [L1.2 失败] Kimi 官方 K2.6 整段重提失败,启动 L2 R1 镜像")
         l2_kps = self._retry_via_siliconflow(
             content, filename, prompt, ctype, relay_prefix, file_id,
             model_id=self.client.SILICONFLOW_TEXT_MODEL_L2,
@@ -447,12 +498,12 @@ class Extractor:
         if not kps:
             # 0 partial,F057 没有 last_excerpt 可定位,跳过
             self._truncation_stats["total_failures"] += 1
-            print(f"     ❌ [L4 全失败] L0/L1/L2 均失败且 partial=0,F057 无锚点跳过")
+            print(f"     ❌ [L4 全失败] L0/L1.1/L1.2/L2 均失败且 partial=0,F057 无锚点跳过")
             self._safe_log_event(
                 "extract_full_fail", "extractor", "error",
                 file_id=file_id,
                 payload={"filename": filename,
-                         "reason": "L0/L1/L2 all failed, partial_kps=0",
+                         "reason": "L0/L1.1/L1.2/L2 all failed, partial_kps=0",
                          "last_attempted": "siliconflow_r1_mirror"})
             return []
 
@@ -551,6 +602,86 @@ class Extractor:
         print(f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)")
         self._safe_log_event(
             "siliconflow_retry", "extractor", "info",
+            file_id=file_id,
+            payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
+                     "kp_count": len(kp_objects), "was_truncated": was_truncated,
+                     "cost": cost, "filename": filename})
+        return kp_objects
+
+    # ================================================================
+    # v2.3.5-part1.3 E2: L1.2 Kimi 官方整段重提
+    # ----------------------------------------------------------------
+    # 与 _retry_via_siliconflow 唯一差别:走 client.chat_jsonl_via_kimi_official(走
+    # api.moonshot.cn endpoint + Kimi 官方 key)而非 chat_jsonl_via_siliconflow。
+    # 异常处理 / 解析判定 / 日志事件 完全对齐(立规则 53 第 N 次:照搬同名方法骨架,
+    # 仅替换变化的 1-2 行,不重新设计)。
+    # ================================================================
+    def _retry_via_kimi_official(self, content, filename, prompt, ctype, relay_prefix,
+                                  file_id, model_id, model_tag, layer_label):
+        """走 Kimi 官方文本模型整段重提(L1.2 兜底)。
+
+        参数:
+          model_id    Kimi 官方模型 ID(如 "kimi-k2.6")
+          model_tag   失败/成功事件日志中的标记(默认 "kimi_official")
+          layer_label 控制台输出标签(默认 "L1.2")
+
+        返回:
+          List[dict] 提取到的 kp 列表(可能为空 [],也算成功 — 表明该段确实没 kp)
+          None       接口异常 / 0 partial 且解析失败 — 进入下一层(L2)
+
+        与 _retry_via_siliconflow 唯一行为差异:
+          - 调用 chat_jsonl_via_kimi_official(走 api.moonshot.cn)
+          - 事件名前缀 "kimi_official_retry" 而非 "siliconflow_retry"(便于日志查询区分)
+        """
+        # 复用同一套 prompt 包(立规则 H3:prompt 100% 复用)
+        up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
+        if relay_prefix:
+            up = relay_prefix + "\n\n" + up
+        sp = prompt["system_prompt"]
+
+        try:
+            ai = self.client.chat_jsonl_via_kimi_official(
+                sp, up,
+                model=model_id,
+                temperature=0.2, max_tokens=8192,
+                call_type=f"extract_{model_tag}_{filename[:30]}"
+            )
+        except Exception as e:
+            err_msg = f"{type(e).__name__}: {str(e)[:200]}"
+            print(f"     [{layer_label} 异常] {err_msg}")
+            self._safe_log_event(
+                "kimi_official_retry", "extractor", "warning",
+                file_id=file_id,
+                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
+                         "reason": "exception", "error": err_msg, "filename": filename})
+            return None
+
+        kp_objects = ai.get("kp_objects", []) or []
+        was_truncated = ai.get("was_truncated", False)
+        cost = ai.get("estimated_cost", 0)
+        self._truncation_stats["total_cost"] += cost
+
+        # 判断结果:
+        # 1. 0 kp + 解析失败 → 视为失败,进入下一层
+        # 2. 0 kp + 解析成功(_meta 存在或全段无 kp 真实情况) → 视为成功,返回 []
+        # 3. >0 kp → 成功
+        meta_object = ai.get("meta_object", None)
+        raw_parsed = bool(kp_objects or meta_object)
+
+        if not raw_parsed:
+            print(f"     [{layer_label} 失败] {model_id} 解析 0 行 ({cost:.4f}元)")
+            self._safe_log_event(
+                "kimi_official_retry", "extractor", "warning",
+                file_id=file_id,
+                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
+                         "reason": "parse_failed", "was_truncated": was_truncated,
+                         "cost": cost, "filename": filename})
+            return None
+
+        trunc_note = "(截断但已解析)" if was_truncated else "(完整)"
+        print(f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)")
+        self._safe_log_event(
+            "kimi_official_retry", "extractor", "info",
             file_id=file_id,
             payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
                      "kp_count": len(kp_objects), "was_truncated": was_truncated,
@@ -1827,6 +1958,7 @@ class Extractor:
         老唐肉眼即看,不入库,不动 db。
 
         v2.3.4-hotfix1 H5 输出字段:截断/Kimi救/R1镜像救/F057兜底/全失败
+        v2.3.5-part1.3 E4:L1 拆 L1.1/L1.2,新增 L1.2 Kimi 官方救回字段
         """
         stats = getattr(self, "_truncation_stats", None)
         if not stats:
@@ -1834,6 +1966,7 @@ class Extractor:
         elapsed = time.time() - stats.get("start_time", time.time())
         truncations = stats.get("truncations", 0)
         kimi_recovs = stats.get("kimi_recoveries", 0)
+        kimi_official_recovs = stats.get("kimi_official_recoveries", 0)  # v2.3.5-part1.3 E4
         r1m_recovs = stats.get("r1_mirror_recoveries", 0)
         f057_fallbacks = stats.get("f057_fallbacks", 0)
         total_fails = stats.get("total_failures", 0)
@@ -1845,7 +1978,9 @@ class Extractor:
         else:
             parts = [f"截断{truncations}次"]
             if kimi_recovs > 0:
-                parts.append(f"L1 Kimi救{kimi_recovs}次")
+                parts.append(f"L1.1 硅基Kimi救{kimi_recovs}次")
+            if kimi_official_recovs > 0:
+                parts.append(f"L1.2 官方Kimi救{kimi_official_recovs}次")
             if r1m_recovs > 0:
                 parts.append(f"L2 R1镜像救{r1m_recovs}次")
             if f057_fallbacks > 0:
@@ -1969,7 +2104,8 @@ class Extractor:
         self._truncation_stats = {
             "truncations": 0,
             "prefix_recoveries": 0,  # DEPRECATED v2.3.4-hotfix1, 保留兼容
-            "kimi_recoveries": 0,    # v2.3.4-hotfix1 新增:L1 Kimi 救回次数
+            "kimi_recoveries": 0,    # v2.3.4-hotfix1 新增:L1.1 硅基 Kimi 救回次数(part1.3 起 L1 改为 L1.1)
+            "kimi_official_recoveries": 0,  # v2.3.5-part1.3 E3 新增:L1.2 Kimi 官方救回次数
             "r1_mirror_recoveries": 0,  # v2.3.4-hotfix1 新增:L2 R1 镜像救回次数
             "f057_fallbacks": 0,
             "lost_segments": 0,

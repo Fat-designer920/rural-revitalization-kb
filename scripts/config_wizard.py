@@ -1,7 +1,15 @@
 """
 config_wizard.py - 首次配置向导（图形界面）
 路径：scripts/config_wizard.py
-版本：v2.2.0 bugfix - 新增硅基流动API Key配置
+版本：v2.3.5-part1.3 - 新增 Kimi 官方 API Key 配置(L1.2 兜底)
+
+变更说明(v2.3.5-part1.3):
+  W1 新增第 5 项 Kimi 官方 API Key 输入框(选填,L1.2 兜底层)
+     已配置时显示掩码 ****;**** 不报错跳过(老唐可不填,L1.2 自动跳过直接进 L2)
+  W2 新增"测试 Kimi 官方"按钮 — 调 api.moonshot.cn 验证 key
+  W3 save() 加 kimi_official_api_key_encrypted / kimi_official_endpoint /
+     kimi_official_model 三字段持久化(后两者作为默认值,extractor 通过 KIMI_OFFICIAL_MODEL_L1
+     类常量优先取 .env 覆盖)
 """
 import os, sys, json, tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -48,11 +56,11 @@ class ConfigWizard:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("乡村振兴知识库搭建助手 - 配置向导")
-        self.root.geometry("680x680")
+        self.root.geometry("680x780")
         self.root.resizable(False, False)
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - 340
-        y = (self.root.winfo_screenheight() // 2) - 340
+        y = (self.root.winfo_screenheight() // 2) - 390
         self.root.geometry(f"+{x}+{y}")
         self.existing = load_config()
         self.create_widgets()
@@ -61,7 +69,7 @@ class ConfigWizard:
         tf = tk.Frame(self.root, bg="#2E75B6", height=70)
         tf.pack(fill="x"); tf.pack_propagate(False)
         tk.Label(tf, text="乡村振兴知识库搭建助手", font=("Microsoft YaHei",18,"bold"), fg="white", bg="#2E75B6").pack(pady=(12,2))
-        tk.Label(tf, text="配置向导  v2.2.0", font=("Microsoft YaHei",10), fg="#B0D4F1", bg="#2E75B6").pack()
+        tk.Label(tf, text="配置向导  v2.3.5-part1.3", font=("Microsoft YaHei",10), fg="#B0D4F1", bg="#2E75B6").pack()
 
         mf = tk.Frame(self.root, padx=30, pady=15); mf.pack(fill="both", expand=True)
 
@@ -102,17 +110,29 @@ class ConfigWizard:
             except: pass
         tk.Entry(mf, textvariable=self.sf_key_var, font=("Consolas",11), width=55).pack(fill="x", pady=(3,10))
 
-        # 5. Notion Token
-        tk.Label(mf, text="5. Notion Token (选填，暂未启用)", font=("Microsoft YaHei",11,"bold"), anchor="w", fg="#999").pack(fill="x", pady=(0,3))
+        # 5. Kimi 官方 API Key (v2.3.5-part1.3 W1 新增)
+        tk.Label(mf, text="5. Kimi 官方 API Key (选填，L1.2 兜底)", font=("Microsoft YaHei",11,"bold"), anchor="w").pack(fill="x", pady=(0,3))
+        tk.Label(mf, text="在 platform.moonshot.cn 申请。当硅基流动失败时,自动切此层重试。不填则跳过 L1.2", font=("Microsoft YaHei",9), fg="#666", anchor="w").pack(fill="x")
+        self.kimi_key_var = tk.StringVar()
+        if self.existing.get("kimi_official_api_key_encrypted"):
+            try:
+                d = decrypt_value(self.existing["kimi_official_api_key_encrypted"])
+                self.kimi_key_var.set(d[:8]+"****"+d[-4:] if len(d)>12 else "****(已配置)")
+            except: pass
+        tk.Entry(mf, textvariable=self.kimi_key_var, font=("Consolas",11), width=55).pack(fill="x", pady=(3,10))
+
+        # 6. Notion Token
+        tk.Label(mf, text="6. Notion Token (选填，暂未启用)", font=("Microsoft YaHei",11,"bold"), anchor="w", fg="#999").pack(fill="x", pady=(0,3))
         self.notion_var = tk.StringVar(value=self.existing.get("notion_token_display", ""))
         tk.Entry(mf, textvariable=self.notion_var, font=("Consolas",11), width=55, fg="#999").pack(fill="x", pady=(3,10))
 
         # 按钮
         bf = tk.Frame(mf); bf.pack(fill="x", pady=(10,0))
-        tk.Button(bf, text="测试DeepSeek", command=self.test_api, font=("Microsoft YaHei",10), width=13).pack(side="left")
-        tk.Button(bf, text="测试硅基流动", command=self.test_siliconflow, font=("Microsoft YaHei",10), width=13).pack(side="left", padx=(8,0))
-        tk.Button(bf, text="取消", command=self.root.destroy, font=("Microsoft YaHei",10), width=10).pack(side="right")
-        tk.Button(bf, text="保存配置", command=self.save, font=("Microsoft YaHei",10,"bold"), width=14, bg="#2E75B6", fg="white").pack(side="right", padx=(0,10))
+        tk.Button(bf, text="测试DeepSeek", command=self.test_api, font=("Microsoft YaHei",10), width=12).pack(side="left")
+        tk.Button(bf, text="测试硅基流动", command=self.test_siliconflow, font=("Microsoft YaHei",10), width=12).pack(side="left", padx=(6,0))
+        tk.Button(bf, text="测试Kimi官方", command=self.test_kimi_official, font=("Microsoft YaHei",10), width=12).pack(side="left", padx=(6,0))
+        tk.Button(bf, text="取消", command=self.root.destroy, font=("Microsoft YaHei",10), width=8).pack(side="right")
+        tk.Button(bf, text="保存配置", command=self.save, font=("Microsoft YaHei",10,"bold"), width=12, bg="#2E75B6", fg="white").pack(side="right", padx=(0,8))
 
     def browse_path(self):
         p = filedialog.askdirectory(title="选择知识库存放路径")
@@ -161,6 +181,26 @@ class ConfigWizard:
             else: messagebox.showerror("失败", f"错误码: {r.status_code}\n{r.text[:200]}")
         except Exception as e: messagebox.showerror("失败", str(e))
 
+    def test_kimi_official(self):
+        """v2.3.5-part1.3 W2:测试 Kimi 官方 API Key — 调 api.moonshot.cn 验证"""
+        key = self._resolve_api_key(self.kimi_key_var, "kimi_official_api_key_encrypted")
+        if not key:
+            messagebox.showwarning("提示","请先输入Kimi官方API Key"); return
+        try:
+            import requests
+            # Kimi 官方测试用便宜的 moonshot-v1-8k 模型(避免触发 K2.6 思考型,响应快)
+            r = requests.post("https://api.moonshot.cn/v1/chat/completions",
+                headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"},
+                json={"model":"moonshot-v1-8k","messages":[{"role":"user","content":"回复:连接成功"}],"max_tokens":20}, timeout=30)
+            if r.status_code == 200: messagebox.showinfo("成功","Kimi 官方API 连接成功!\n(测试用 moonshot-v1-8k,实际提取走 kimi-k2.6)")
+            elif r.status_code == 401: messagebox.showerror("失败","API Key 无效")
+            elif r.status_code == 404:
+                messagebox.showwarning("注意",
+                    "moonshot-v1-8k 测试模型不可用,但 API Key 可能是有效的。\n"
+                    "建议直接喂料触发 L1.2 实测验证。")
+            else: messagebox.showerror("失败", f"错误码: {r.status_code}\n{r.text[:200]}")
+        except Exception as e: messagebox.showerror("失败", str(e))
+
     def save(self):
         key = self.api_key_var.get().strip()
         if not key and not self.existing.get("deepseek_api_key_encrypted"):
@@ -191,6 +231,16 @@ class ConfigWizard:
         config.setdefault("siliconflow_base_url", "https://api.siliconflow.cn/v1")
         config.setdefault("siliconflow_model", "Qwen/Qwen2.5-VL-72B-Instruct")
 
+        # v2.3.5-part1.3 W3:Kimi 官方 API Key + endpoint + 默认模型
+        # 不填空字符串,留 setdefault 处理新字段(老配置升级时不破坏)
+        kimi_key = self.kimi_key_var.get().strip()
+        if kimi_key and "****" not in kimi_key:
+            config["kimi_official_api_key_encrypted"] = encrypt_value(kimi_key)
+        # endpoint / model 作为默认值持久化,extractor 通过 KIMI_OFFICIAL_MODEL_L1
+        # 类常量优先取 .env 覆盖(老唐想未来切 K2.7 改 .env 一行即可)
+        config.setdefault("kimi_official_base_url", "https://api.moonshot.cn/v1")
+        config.setdefault("kimi_official_model", "kimi-k2.6")
+
         # Notion Token
         notion = self.notion_var.get().strip()
         if notion:
@@ -201,12 +251,12 @@ class ConfigWizard:
         config.setdefault("deepseek_base_url","https://api.deepseek.com")
         config.setdefault("flask_port", 5000)
         config.setdefault("max_file_size_mb", 50)
-        config["version"] = "2.2.0"
+        config["version"] = "2.3.5-part1.3"
         config["last_configured_at"] = datetime.now().isoformat()
         config["allowed_paths"] = [str(Path(kb)/"data"), str(Path(kb)/"config"), str(Path(kb)/"logs"), str(Path(kb)/"backups")]
 
         save_config(config)
-        messagebox.showinfo("完成","配置已保存!\n\n如需处理扫描件PDF，请确保已配置硅基流动API Key。")
+        messagebox.showinfo("完成","配置已保存!\n\n如需处理扫描件PDF,请确保已配置硅基流动 API Key。\n如需 L1.2 兜底,请配置 Kimi 官方 API Key(可不填,会自动跳过 L1.2)。")
         self.root.destroy()
 
     def run(self):

@@ -6,6 +6,62 @@
 
 ---
 
+## [v2.3.5-part1.3] - 2026-04-29 (hotfix - L1 救援链跨厂商物理冗余:硅基 → Kimi 官方双 L1 互备)
+
+**定位**:v2.3.5-part1.2 把硅基思考型 timeout 从 300s 加宽到 1200s 后,老唐 0429 实测仍遇硅基 ConnectionError(`Exception: API调用失败(重试3次): connection`),硅基整体抖动时 L1 救援链直接挂掉。诊断发现 v2.3.4-hotfix1 设计的 L1(硅基 Kimi)+ L2(硅基 R1 镜像)是"逻辑冗余"而非"物理冗余" — 两层共享同一硅基厂商基础设施,硅基挂时同时挂。修法:加 Kimi 官方直连作为 L1.2 兜底层,硅基(L1.1)挂时立刻切 Kimi 官方,真正的跨厂商物理冗余(硅基 / Moonshot 两个独立故障域)。
+
+涉及 3 代码 + 4 项目文件(deepseek_client.py + extractor.py + config_wizard.py + 00 + 01 + README + CHANGELOG)。Phase 1-3 单对话完成。立规则 9 第 21 次应验 + 立规则 62 新立(候选)。
+
+### Added
+
+- **deepseek_client.py PRICING**:加 `"kimi-k2.6": {"input": 6.5, "output": 27.0}`(老唐 0429 截图 4 platform.moonshot.cn 官方文档确认价格,比硅基镜像贵约 60-70% 但作为兜底只在硅基挂时启用,长期成本影响有限)
+- **deepseek_client.py 类常量**:`KIMI_OFFICIAL_ENDPOINT = "https://api.moonshot.cn/v1/chat/completions"` + `KIMI_OFFICIAL_MODEL_L1 = os.getenv("KIMI_OFFICIAL_MODEL", "kimi-k2.6")`(模型字符串来自截图 4 官方文档示例 `model = "kimi-k2.6"`)
+- **deepseek_client.py 方法 `_get_kimi_api_key()`**:解密读取 `settings.json` 的 `kimi_official_api_key_encrypted`,**未配置时抛 ValueError 由 extractor 捕获跳过 L1.2**(降级链不断,只是少一层兜底)
+- **deepseek_client.py 方法 `has_kimi_official()`**:轻量探测(不解密、不调网络),返回 bool 给 extractor 决定是否启 L1.2
+- **deepseek_client.py 方法 `chat_via_kimi_official()`**:Kimi 官方文本通用调用,OpenAI 兼容协议,K2.6 默认跳过 temperature(思考型),复用 `_request` retry 逻辑
+- **deepseek_client.py 方法 `chat_jsonl_via_kimi_official()`**:JSON Lines 解析版,行为与 `chat_jsonl_via_siliconflow` 完全对齐
+- **extractor.py L1.2 调度块**(_extract_with_auto_split):L1.1 失败后插入 L1.2 Kimi 官方调用,启动前 `has_kimi_official()` 探测决定是否跳过
+- **extractor.py 方法 `_retry_via_kimi_official()`**:照搬 `_retry_via_siliconflow` 骨架,仅改 client 调用 + 事件名前缀(立规则 53 第 N 次:照搬同名方法骨架,仅替换变化的 1-2 行)
+- **extractor.py `_truncation_stats` 字段 `kimi_official_recoveries`**:统计 L1.2 救回次数,`extracted_by_model` 字段新增取值 `kimi_official`
+- **extractor.py `_print_truncation_stats` 输出**:截断统计行加 `L1.1 硅基Kimi救N次` / `L1.2 官方Kimi救N次` 两字段(原 `L1 Kimi救` 重命名为 `L1.1 硅基Kimi救`)
+- **config_wizard.py 第 5 项输入框**:Kimi 官方 API Key(选填),掩码显示已配置值,**不填时不阻塞保存**(L1.2 自动跳过)
+- **config_wizard.py 测试按钮**:"测试 Kimi 官方" 调 api.moonshot.cn 用 moonshot-v1-8k 验证 key(K2.6 思考型响应慢,测试用便宜模型)
+- **config_wizard.py save() 持久化**:`kimi_official_api_key_encrypted` + `kimi_official_base_url` + `kimi_official_model` 三字段
+- **settings.json 新字段**(由配置向导生成):`kimi_official_api_key_encrypted` / `kimi_official_base_url=https://api.moonshot.cn/v1` / `kimi_official_model=kimi-k2.6`
+
+### Changed
+
+- **顶部 docstring 版本号**:deepseek_client v2.3.5-part1.2 → v2.3.5-part1.3,extractor v2.3.5-part1.1 → v2.3.5-part1.3,config_wizard v2.2.0 → v2.3.5-part1.3
+- **降级链层级命名**:原 L1 → L1.1 (硅基 Kimi),新增 L1.2 (Kimi 官方),L2 / L3 / L4 不变
+- **控制台日志区分 L1.1 / L1.2**:`[L1.1 异常] / [L1.1 失败] / [L1.2 跳过] / [L1.2 成功]` 等区分标签
+- **deepseek_client._request timeout 选择从三档扩四档**:siliconflow / moonshot.cn 两 endpoint 共用 `siliconflow_thinking_timeout` (1200s),DeepSeek 官方 R1 / 普通模型分支不变
+- **错误日志事件名**:L1.2 失败用 `kimi_official_retry`(原 L1/L2 用 `siliconflow_retry`),便于查询区分
+
+### Migration
+
+- **零 schema 变更,零 .env 必改**(默认 KIMI_OFFICIAL_MODEL=kimi-k2.6 已能覆盖)
+- **设置 Kimi 官方 API Key**(必做,否则 L1.2 永远跳过):重跑 `首次安装.bat` 弹出配置向导 → 填第 5 项 Kimi 官方 API Key → 保存。settings.json 自动新增 3 字段
+- **替换 3 个 .py 文件**:`scripts/deepseek_client.py` + `scripts/extractor.py` + `scripts/config_wizard.py`
+- **验证步骤**:
+  1. 启动后台,看启动日志正常无报错
+  2. 配置向导测试 "测试 Kimi 官方" 按钮,看是否返回 "连接成功"
+  3. 喂料历史长文件(优先选 0429 触发过 ConnectionError 的那份),看处理日志
+  4. **观察点 1**:R1 截断时进入 `[L0 部分] R1 截断但已解析{N}条,启动 L1.1 硅基 Kimi 整段重提补全`
+  5. **观察点 2**:硅基挂时进入 `[L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6` → `[L1.2 成功] kimi-k2.6 提取 N 条`
+  6. **观察点 3**:Kimi 官方未配置时进入 `[L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2`(降级链不断)
+  7. **观察点 4**:文件统计行多出 `L1.2 官方Kimi救N次` 字段(原来无此字段)
+  8. **观察点 5**:仪表盘 Card 15 看 `kimi_official_recoveries` 计数 + `extracted_by_model="kimi_official"` 的 kp 占比
+- **回滚方案**:如有问题,恢复 v2.3.5-part1.2 的 deepseek_client.py + v2.3.5-part1.1 的 extractor.py + v2.2.0 的 config_wizard.py(假设老唐 git stash 还在)
+
+### 立规则应验
+
+- **立规则 9 第 21 次应验**:hotfix1 引入硅基镜像作为 L2 时,默认假设"硅基 + DeepSeek 跨厂商=物理冗余",但 L1+L2 均走 siliconflow.cn endpoint(只是模型不同),实际是逻辑冗余而非物理冗余 — 硅基整体抖动时两层同时挂。**根因 — 凭概念"R1 是 DeepSeek 模型 → L2 算 DeepSeek 厂商"听起来合理,与产品现实(硅基镜像走的就是硅基的服务器)脱节才露馅**。立规则升级:多层降级链设计时,每一层必须明确"独立故障域",不能仅看模型供应方,要看实际请求落在哪个 endpoint
+- **立规则 62 新立(候选)**:**跨厂商物理冗余原则 — 救援链相邻两层不应共享同一供应商 endpoint**。判断方法:列出每层的 endpoint 域名,相邻两层域名不同才算物理冗余。本版 L1.1 = api.siliconflow.cn,L1.2 = api.moonshot.cn,L2 = api.siliconflow.cn,L3 = (本地无网络) — L1.1/L1.2 跨厂商 ✅,L1.2/L2 跨厂商 ✅,L2/L3 跨厂商 ✅ 满足
+- **立规则 53 第 N 次自证(照搬模板)**:`_retry_via_kimi_official` 与 `_retry_via_siliconflow` 90% 代码相同,仅改 4 处(client 方法名 / 事件名前缀 / 注释 / docstring),没有重新设计调度逻辑 — 这种"照搬骨架仅替换变化点"的纪律避免了潜在的逻辑漂移
+- **反思方法论**:hotfix1 当时的"跨厂商概念"设计就埋了一个"模型供应方 ≠ 实际服务 endpoint"的假设。Phase 1 影响范围评估时主动列出"两层 endpoint 域名"才能秒级发现"L1+L2 都是 siliconflow.cn" — 本次评估时就用了这个方法,所以方案 C 一次写对
+
+---
+
 ## [v2.3.5-part1.2] - 2026-04-29 (hotfix - 硅基流动思考型 timeout 独立)
 
 **定位**:v2.3.4-hotfix3 用 `_is_thinking_model` 模式匹配修了"识别"漏判(BUG#1 — 硅基模型不再误走 120s timeout),但**所有思考型仍套用 r1_timeout=300s 这个策略假设没核对产品现实**。老唐 0429 喂料实测第 5/11 段(1034 字)R1 截断后 L1 Kimi-K2.6 整段重提 3 次超时全失败(`Exception: API调用失败(重试3次): timeout`),但硅基流动后台费用明细显示 Kimi-K2 调用确实发生(`B202604282...` 计费记录,服务端在生成,客户端先读超时),L2 R1 镜像兜底救回 9 条完整。诊断:硅基流动 Kimi-K2.6 思考型(256K 上下文 + 思考链 + 8192 输出)实测响应 5-15 分钟,300s 是临界值触发概率高。
@@ -15,13 +71,7 @@
 ### Fixed
 
 - **deepseek_client.py:91-113 `__init__`**:新增 `self.siliconflow_thinking_timeout = int(os.getenv("SILICONFLOW_THINKING_TIMEOUT", "1200"))`,默认 1200 秒(20 分钟),老唐可在 .env 或环境变量设 `SILICONFLOW_THINKING_TIMEOUT=1500` 覆盖
-- **deepseek_client.py:208-220 `_request` timeout 选择重写**:从"仅看模型 → 二档分支(r1_timeout / timeout)"升级为"看 endpoint + 模型 → 三档分支":
-  - `is_siliconflow = "siliconflow" in (endpoint or "").lower()` 判断 endpoint 维度
-  - `is_thinking = self._is_r1(m)` 复用 hotfix3 模式匹配函数
-  - `is_siliconflow and is_thinking` → `siliconflow_thinking_timeout`(1200s)
-  - 仅 `is_thinking` → `r1_timeout`(300s,DeepSeek 官方 R1 老逻辑保留)
-  - 其他 → `timeout`(120s,V3 / 普通模型老逻辑保留)
-  - **零破坏老调用方**:DeepSeek 官方 R1 / V3 / 普通模型走的分支完全不动
+- **deepseek_client.py:208-220 `_request` timeout 选择重写**:从"仅看模型 → 二档分支(r1_timeout / timeout)"升级为"看 endpoint + 模型 → 三档分支":siliconflow+thinking → 1200s,仅 thinking → 300s,其他 → 120s。零破坏老调用方
 
 ### Changed
 
@@ -29,23 +79,14 @@
 
 ### Migration
 
-- **零 schema 变更,零 .env 必改**(默认 1200s 已能覆盖 99% 硅基 Kimi 响应时间)
-- **老唐想调更高/更低**:`config/.env` 加一行 `SILICONFLOW_THINKING_TIMEOUT=1500`,重启后台生效。**没有这一行就用默认 1200**
+- **零 schema 变更,零 .env 必改**(默认 1200s 覆盖 99% 场景)
 - **只替换 1 个 .py 文件**:`scripts/deepseek_client.py`
-- **验证步骤**:
-  1. 启动后台,看启动日志正常无报错
-  2. 喂料(优先选历史上引发过截断的长文件,比如老唐 0429 那份),看处理日志
-  3. **观察点 1**:R1 截断时进入 `[L1 启动 Kimi 整段重提补全]`,L1 这步不再 timeout(等待时间最长 1200 秒 = 20 分钟,期间进度条 GET /api/tasks/progress 仍正常轮询)
-  4. **观察点 2**:`[L1 成功] Pro/moonshotai/Kimi-K2.6 提取 N 条` 出现,而非 `[L1 异常]`
-  5. **观察点 3**:仪表盘 Card 15 老唐肉眼监控,`kimi_recoveries > 0` 计数增加(原来此计数永远 0,因为 L1 全 timeout)
-  6. **如果仍 timeout**:.env 加 `SILICONFLOW_THINKING_TIMEOUT=1800`(30 分钟),再喂一次。极少数情况硅基 Kimi 抖动响应超 20 分钟,但通常这种情况让 L2 兜底更经济
-- **回滚方案**:如有问题,恢复 v2.3.4-hotfix3 的 deepseek_client.py(假设老唐 git stash 还在)
+- **验证步骤**:启动后台 → 喂料历史触发截断的长文件 → 观察 L1 Kimi 不再 timeout(最长等 1200s = 20 分钟)
+- **回滚方案**:恢复 v2.3.4-hotfix3 的 deepseek_client.py
 
 ### 立规则应验
 
-- **立规则 9 第 20 次应验**:**hotfix3 修了"识别"但没修"策略"**。`_is_thinking_model` 模式匹配函数把硅基思考型(Kimi-K2.6 / R1 镜像)正确识别为思考型并走 r1_timeout=300s,但所有思考型套用同一 300s 这个**策略假设**没核对产品现实。**根因 — 凭推理"思考型一律 300s"听起来合理,与产品现实(不同厂商基础设施性能差距大可达 5-10 倍)脱节才露馅**。**与第 14/15/17 次同根** — 都是"凭一个看似合理的假设直接编码"的 bug 温床。**立规则升级**:对外部 SaaS 调用,timeout 必须按 endpoint 独立调优,不假设"同类模型同 timeout"。性能基准在不同厂商基础设施下差距可达 5-10 倍。执行机制是立规则 50(改完拉通验证)+ 实际喂料压测
-- **反思方法论**:hotfix3 当时只关注"识别 BUG#1",没发散思考"修了识别后,如果硅基平台响应慢,300s 仍可能不够" — Phase 1 影响范围评估时应主动问"上一版修法是否形成新的隐藏假设"。本版 Phase 1 我把这条写进了影响范围评估,主动指出"hotfix3 修了识别但 300s 是统一假设"
-- **关于"L2 效果不行"的反驳**(老唐截图反馈):代码 76 行 `SILICONFLOW_TEXT_MODEL_L2 = "Pro/deepseek-ai/DeepSeek-R1"` 即同一份 R1 权重的硅基镜像,质量 = DeepSeek 官方 R1。**L2 的"效果不行"是错觉**。修了 L1 后 L2 走的概率会大降,但不能去掉 — v2.3.4-hotfix1 原始设计前提"思考型踩 max_tokens 是物理性的,跨厂商镜像是冗余底座"成立
+- **立规则 9 第 20 次应验**:**hotfix3 修了"识别"但没修"策略"**。`_is_thinking_model` 把硅基思考型正确识别并走 r1_timeout=300s,但所有思考型套用同一 300s 这个**策略假设**没核对产品现实。**立规则升级**:对外部 SaaS 调用,timeout 必须按 endpoint 独立调优,不假设"同类模型同 timeout"。性能基准在不同厂商基础设施下差距可达 5-10 倍
 
 ---
 

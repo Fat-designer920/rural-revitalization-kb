@@ -1,7 +1,31 @@
 """
-deepseek_client.py - DeepSeek API封装 + 硅基流动OCR + 硅基流动文本兜底
+deepseek_client.py - DeepSeek API封装 + 硅基流动OCR + 硅基流动文本兜底 + Kimi 官方文本兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.5-part1.2 - 硅基流动思考型 timeout 独立(L1 Kimi 整段重提客户端读超时根治)
+版本：v2.3.5-part1.3 - L1 救援链跨厂商互备(硅基 K2.6 → Kimi 官方 K2.6 → R1 镜像)
+
+变更说明(v2.3.5-part1.3):
+  K1 类顶部新增 KIMI_OFFICIAL_ENDPOINT / KIMI_OFFICIAL_MODEL_L1 + PRICING 加 kimi-k2.6 价
+     根因:老唐 0429 实测 v2.3.5-part1.2(timeout 已加宽到 1200s)仍遇硅基 ConnectionError
+          (`Exception: API调用失败(重试3次): connection`),硅基挂时整条 L1 救援链失效。
+          硅基 R1 镜像虽然能兜底(L2),但与硅基 Kimi 共享同一厂商基础设施,不算物理冗余。
+     修法:加 Kimi 官方直连作为 L1.2 兜底层,硅基(L1.1)挂时立刻切 Kimi 官方,
+          两个独立厂商故障域(硅基 / Moonshot 官方)。L2 硅基 R1 镜像保留作为最后兜底。
+  K2 新增 _get_kimi_api_key() 方法 — 解密读取 settings.json 的 kimi_official_api_key_encrypted
+     仿 _get_siliconflow_api_key() 模式,未配置时报清晰错误(用户可在配置向导填或跳过 L1.2)
+  K3 新增 chat_via_kimi_official() / chat_jsonl_via_kimi_official() 双方法
+     OpenAI 兼容协议(api.moonshot.cn/v1),复用 _request retry 逻辑(api_key_override + 完整 URL)
+     timeout 复用 self.siliconflow_thinking_timeout(同样思考型,假设响应时间相近)
+     reasoning_content 字段处理同 chat_via_siliconflow(若 Kimi 官方返回字段名不同会自动兼容)
+  K4 _request 第 213 行 timeout 选择四档分支:
+     siliconflow + thinking → 1200s
+     moonshot.cn + thinking → 1200s(共用同一变量名)
+     非 siliconflow / moonshot + thinking → 300s(DeepSeek 官方 R1 老逻辑保留)
+     其他 → 120s
+  立规则 9 第 21 次应验:hotfix1 引入硅基镜像作为 L2 时,默认假设"硅基 + DeepSeek 跨厂商=物理冗余",
+     但 L1+L2 均走硅基 endpoint(只是模型不同),实际是逻辑冗余而非物理冗余。
+     真正的物理冗余必须是不同公司不同基础设施。立规则升级:多层降级链设计时,每一层
+     必须明确"独立故障域"(谁挂了不影响谁),避免共享底层基础设施。
+  立规则 62 新立(候选):跨厂商物理冗余原则 — 救援链相邻两层不应共享同一供应商 endpoint。
 
 变更说明(v2.3.5-part1.2):
   T1 新增 self.siliconflow_thinking_timeout = 1200(秒,可被 .env SILICONFLOW_THINKING_TIMEOUT 覆盖)
@@ -77,6 +101,11 @@ class DeepSeekClient:
         # 候补(若主选不可用,extractor 可通过 model_override 切换)
         "Pro/moonshotai/Kimi-K2.5": {"input": 4.0, "output": 21.0},
         "Pro/zai-org/GLM-4.7": {"input": 4.0, "output": 16.0},
+        # v2.3.5-part1.3 K1:Kimi 官方 K2.6 直连(Moonshot 官方 endpoint)
+        # 截图 4(老唐 0429 platform.moonshot.cn 官方文档)确认 model 字符串为 "kimi-k2.6"
+        # 价格来自第三方文档引用的官方价(¥6.5 输入 / ¥27 输出 每百万 token)
+        # 比硅基镜像贵约 60-70%,但作为 L1.2 兜底仅在硅基挂时启用,长期成本影响有限
+        "kimi-k2.6": {"input": 6.5, "output": 27.0},
     }
 
     # v2.3.4-hotfix3 改造:R1_MODELS 集合保留作为遗留字段,但实际判定逻辑已切换为
@@ -90,6 +119,13 @@ class DeepSeekClient:
     SILICONFLOW_TEXT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
     SILICONFLOW_TEXT_MODEL_L1 = os.getenv("SILICONFLOW_TEXT_MODEL_L1", "Pro/moonshotai/Kimi-K2.6")
     SILICONFLOW_TEXT_MODEL_L2 = os.getenv("SILICONFLOW_TEXT_MODEL_L2", "Pro/deepseek-ai/DeepSeek-R1")
+
+    # v2.3.5-part1.3 K1:Kimi 官方 endpoint + 默认模型(L1.2 兜底层)
+    # 截图 4 老唐 0429 platform.moonshot.cn 官方文档示例 base_url + model 字符串
+    # 老唐 .env 可设 KIMI_OFFICIAL_MODEL 覆盖(如未来出 K2.7 可不改代码)
+    # 设计:硅基(L1.1)挂时立刻切此层,跨厂商物理冗余而非 L2 R1 镜像那种共享硅基基础设施的逻辑冗余
+    KIMI_OFFICIAL_ENDPOINT = "https://api.moonshot.cn/v1/chat/completions"
+    KIMI_OFFICIAL_MODEL_L1 = os.getenv("KIMI_OFFICIAL_MODEL", "kimi-k2.6")
 
     def __init__(self, config=None):
         if config is None:
@@ -135,6 +171,29 @@ class DeepSeekClient:
             )
         from scripts.config_wizard import decrypt_value
         return decrypt_value(enc)
+
+    def _get_kimi_api_key(self):
+        """v2.3.5-part1.3 K2:解密读取 Kimi 官方 API Key。
+
+        与 _get_siliconflow_api_key 区别:**未配置时不强制报错**,改为抛 ValueError 由
+        extractor._retry_via_kimi_official 捕获跳过 L1.2 → 直接走 L2(R1 镜像)。
+        这样老唐**未配置 Kimi 官方 key 时降级链不断**,只是少一层兜底。
+        """
+        enc = self.config.get("kimi_official_api_key_encrypted", "")
+        if not enc:
+            raise ValueError(
+                "未配置 Kimi 官方 API Key,L1.2 兜底层将跳过。\n"
+                "如需启用,请运行配置向导填入 Moonshot 开放平台申请的 API Key。"
+            )
+        from scripts.config_wizard import decrypt_value
+        return decrypt_value(enc)
+
+    def has_kimi_official(self):
+        """v2.3.5-part1.3 K2:轻量探测 Kimi 官方是否可用(extractor 用来决定是否启 L1.2)。
+        返回 True 表示 settings.json 已加密存储 kimi_official_api_key_encrypted。
+        不解密、不调网络,仅查 config 字段是否存在。
+        """
+        return bool(self.config.get("kimi_official_api_key_encrypted", ""))
 
     def _check_cost(self):
         cost = self.db.get_today_api_cost()
@@ -205,14 +264,17 @@ class DeepSeekClient:
             url = f"{base}/{endpoint.lstrip('/')}"
         api_key = api_key_override or self.api_key
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        # v2.3.5-part1.2 T2:timeout 三档分支 — endpoint + 模型双维度判断
-        # 硅基流动思考型(Kimi-K2.6 / R1 镜像) → 1200s(默认,可 .env 覆盖)
-        # DeepSeek 官方思考型(deepseek-reasoner)         → 300s(老逻辑保留)
-        # 其他(V3 / 普通模型)                            → 120s(老逻辑保留)
+        # v2.3.5-part1.3 K4:timeout 四档分支 — endpoint 维度扩到 siliconflow / moonshot 双覆盖
+        # 硅基流动思考型 → 1200s
+        # Kimi 官方思考型(api.moonshot.cn) → 1200s(共用同一变量,Kimi 官方思考型同样可能慢)
+        # DeepSeek 官方思考型(deepseek-reasoner) → 300s(老逻辑保留)
+        # 其他(V3 / 普通模型) → 120s(老逻辑保留)
         m = use_model or self.model
         is_thinking = self._is_r1(m)
-        is_siliconflow = "siliconflow" in (endpoint or "").lower()
-        if is_siliconflow and is_thinking:
+        ep_lower = (endpoint or "").lower()
+        is_siliconflow = "siliconflow" in ep_lower
+        is_kimi_official = "moonshot.cn" in ep_lower
+        if (is_siliconflow or is_kimi_official) and is_thinking:
             timeout = self.siliconflow_thinking_timeout
         elif is_thinking:
             timeout = self.r1_timeout
@@ -703,6 +765,155 @@ class DeepSeekClient:
         content = result.get("content", "") or ""
 
         # 清理 markdown 代码块包装
+        cleaned = content.strip()
+        cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
+        if cb:
+            cleaned = cb.group(1).strip()
+
+        parsed_lines = []
+        kp_objects = []
+        meta_object = None
+        last_broken_line = ""
+        completed_text_parts = []
+
+        lines = cleaned.split("\n")
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    parsed_lines.append(obj)
+                    if obj.get("_meta") is True:
+                        meta_object = obj
+                    else:
+                        kp_objects.append(obj)
+                    completed_text_parts.append(raw_line)
+                else:
+                    completed_text_parts.append(raw_line)
+            except json.JSONDecodeError:
+                last_broken_line = raw_line
+                break
+
+        prefix_for_continuation = ""
+        if completed_text_parts:
+            prefix_for_continuation = "\n".join(completed_text_parts) + "\n"
+        if last_broken_line:
+            prefix_for_continuation += last_broken_line
+
+        result["parsed_lines"] = parsed_lines
+        result["kp_objects"] = kp_objects
+        result["meta_object"] = meta_object
+        result["last_broken_line"] = last_broken_line
+        result["prefix_for_continuation"] = prefix_for_continuation
+        return result
+
+    # ================================================================
+    # v2.3.5-part1.3 K3:Kimi 官方文本调用(L1.2 兜底层,跨厂商物理冗余)
+    # ----------------------------------------------------------------
+    # 设计意图:硅基(L1.1)挂时立刻切此层。和 chat_via_siliconflow 的关系是
+    # "endpoint + key 不同,协议完全相同(都是 OpenAI 兼容 chat/completions)",
+    # 90% 代码可复用,因此本组方法照搬硅基同名方法骨架,仅替换 endpoint / key 来源。
+    # 模型字符串:"kimi-k2.6"(老唐 0429 截图 4 platform.moonshot.cn 官方文档确认)
+    # ================================================================
+    def chat_via_kimi_official(self, system_prompt, user_prompt, model,
+                               temperature=0.2, max_tokens=8192,
+                               call_type="extract_kimi_official",
+                               response_format=None, stop=None,
+                               extra_messages=None):
+        """v2.3.5-part1.3 K3:Kimi 官方文本模型通用调用。
+
+        endpoint 走 https://api.moonshot.cn/v1/chat/completions,
+        Authorization 用 Kimi 官方 API key(self._get_kimi_api_key()),
+        OpenAI 兼容格式,支持思考型模型(reasoning_content 字段会被一并接收,Kimi 官方
+        文档目前未明确该字段名,若返回字段不同会自动兼容为空)。
+
+        参数 model:Kimi 官方模型 ID,默认:
+          - kimi-k2.6  (L1.2 默认,思考型,256K 上下文)
+          - 老唐 .env 可设 KIMI_OFFICIAL_MODEL 覆盖
+
+        返回 dict 同 chat_via_siliconflow(content / input_tokens / output_tokens /
+        estimated_cost / model / was_truncated / 可选 reasoning_content)。
+
+        异常:
+          ValueError("未配置 Kimi 官方 API Key...") — settings.json 无加密 key 字段
+          其他异常(timeout/connection/HTTP) — 经 _request 三次重试后抛出
+        """
+        self._check_cost()
+        kimi_key = self._get_kimi_api_key()  # 未配置抛 ValueError,extractor 捕获跳过 L1.2
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        if extra_messages:
+            messages.extend(extra_messages)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        # 思考型模型(K2.6 默认 thinking)不传 temperature,让模型默认值
+        # 规则同 chat_via_siliconflow:模型名含 R1 / Thinking / K2.6 / K2.5 时跳过 temperature
+        is_thinking = ("R1" in model or "Thinking" in model or "thinking" in model
+                       or "K2.6" in model or "K2.5" in model
+                       or "k2.6" in model or "k2.5" in model)  # Kimi 官方用小写,做兼容
+        if not is_thinking:
+            payload["temperature"] = temperature
+        if response_format is not None:
+            payload["response_format"] = response_format
+        if stop is not None:
+            payload["stop"] = stop
+
+        # 复用 _request retry 逻辑,api_key_override=Kimi 官方 key
+        # endpoint 完整 URL,_request 检测 http(s):// 开头不再拼 base
+        # K4 timeout 选择:moonshot.cn + thinking → 1200s(同硅基思考型口径)
+        resp = self._request(self.KIMI_OFFICIAL_ENDPOINT, payload,
+                             use_model=model,
+                             api_key_override=kimi_key)
+
+        msg = resp["choices"][0]["message"]
+        content = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")  # Kimi 官方若无此字段返回空字符串,不报错
+
+        u = resp.get("usage", {})
+        inp = u.get("prompt_tokens", 0)
+        out = u.get("completion_tokens", 0)
+
+        finish_reason = resp["choices"][0].get("finish_reason", "stop")
+        was_truncated = (finish_reason == "length")
+
+        cost = self._estimate_cost(model, inp, out)
+        self.db.log_api_call(call_type, model, inp, out, cost)
+
+        result = {
+            "content": content,
+            "input_tokens": inp,
+            "output_tokens": out,
+            "estimated_cost": cost,
+            "model": model,
+            "was_truncated": was_truncated
+        }
+        if reasoning:
+            result["reasoning_content"] = reasoning
+        return result
+
+    def chat_jsonl_via_kimi_official(self, system_prompt, user_prompt, model,
+                                     temperature=0.2, max_tokens=8192,
+                                     call_type="extract_kimi_official_jsonl"):
+        """v2.3.5-part1.3 K3:Kimi 官方 JSON Lines 解析版,行为与 chat_jsonl_via_siliconflow 对齐。
+
+        与 chat_jsonl_via_siliconflow 唯一差别:走 chat_via_kimi_official 而非 chat_via_siliconflow。
+        返回字段同(parsed_lines/kp_objects/meta_object/last_broken_line/prefix_for_continuation)。
+        """
+        result = self.chat_via_kimi_official(system_prompt, user_prompt, model,
+                                             temperature=temperature, max_tokens=max_tokens,
+                                             call_type=call_type)
+        content = result.get("content", "") or ""
+
+        # 清理 markdown 代码块包装(逻辑同 chat_jsonl_via_siliconflow)
         cleaned = content.strip()
         cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
         if cb:
