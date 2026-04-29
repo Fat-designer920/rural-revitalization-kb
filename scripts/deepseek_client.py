@@ -1,7 +1,23 @@
 """
 deepseek_client.py - DeepSeek API封装 + 硅基流动OCR + 硅基流动文本兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.4-hotfix3 - 思考型模型识别修复 + JSON Lines 解析降级兼容
+版本：v2.3.5-part1.2 - 硅基流动思考型 timeout 独立(L1 Kimi 整段重提客户端读超时根治)
+
+变更说明(v2.3.5-part1.2):
+  T1 新增 self.siliconflow_thinking_timeout = 1200(秒,可被 .env SILICONFLOW_THINKING_TIMEOUT 覆盖)
+     根因:hotfix3 用 _is_thinking_model 修了"识别"漏判,但所有思考型仍套用 r1_timeout=300s。
+          硅基流动 Kimi-K2.6 思考型(256K context + 思考链 + 8192 输出)实测响应 5-15 分钟,
+          300s 是临界值,触发 timeout 概率高。老唐 0429 喂料第 5/11 段(1034 字)实测 3 次
+          超时全失败,但硅基后台费用明细显示 Kimi-K2 调用确实发生(服务端在生成,客户端先读超时)。
+     修法:_request 内 timeout 选择逻辑增加 endpoint 维度判断 — 硅基思考型走独立 1200s,
+          DeepSeek 官方 R1 仍走 300s,普通模型仍走 120s。三档分离,互不影响,零破坏。
+  T2 _request 第 187 行 timeout 选择改造:从"仅看模型"升级为"看 endpoint + 模型"
+     is_siliconflow = 'siliconflow' in endpoint(大小写不敏感) — 硅基流动 URL 域名永远含此关键字
+     is_thinking = self._is_r1(model) — 复用 hotfix3 的模式匹配函数
+     三档分支:siliconflow+thinking → 1200s;非 siliconflow+thinking → 300s;其他 → 120s
+  立规则 9 第 20 次应验:hotfix3 修了"识别"但没修"策略" — 不同厂商的思考型 endpoint
+     基础设施性能差距大(DeepSeek 官方推理 vs 硅基流动镜像),不能套用同一 timeout。
+     凭推理"思考型一律 300s"听起来合理,与产品现实(硅基 Kimi 实测 5-15 分钟)脱节才露馅。
 
 变更说明(v2.3.4-hotfix3):
   X1 BUG#1 修复:_is_r1 改造 + 新增 _is_thinking_model 模式匹配函数
@@ -90,6 +106,11 @@ class DeepSeekClient:
         self.max_retries = 3
         self.timeout = 120
         self.r1_timeout = 300
+        # v2.3.5-part1.2 T1:硅基流动思考型(Kimi-K2.6 / R1 跨厂商镜像)单独 timeout
+        # 根因 — DeepSeek 官方 R1 走 300s 经验证够用,但硅基流动思考型实测 5-15 分钟
+        # 老唐 .env 可设 SILICONFLOW_THINKING_TIMEOUT=1500 覆盖(秒,默认 1200=20 分钟)
+        self.siliconflow_thinking_timeout = int(
+            os.getenv("SILICONFLOW_THINKING_TIMEOUT", "1200"))
         if not self.base_url.startswith("https://"):
             raise ValueError("API地址必须HTTPS")
         self.api_key = self._get_api_key()
@@ -184,7 +205,19 @@ class DeepSeekClient:
             url = f"{base}/{endpoint.lstrip('/')}"
         api_key = api_key_override or self.api_key
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        timeout = self.r1_timeout if self._is_r1(use_model or self.model) else self.timeout
+        # v2.3.5-part1.2 T2:timeout 三档分支 — endpoint + 模型双维度判断
+        # 硅基流动思考型(Kimi-K2.6 / R1 镜像) → 1200s(默认,可 .env 覆盖)
+        # DeepSeek 官方思考型(deepseek-reasoner)         → 300s(老逻辑保留)
+        # 其他(V3 / 普通模型)                            → 120s(老逻辑保留)
+        m = use_model or self.model
+        is_thinking = self._is_r1(m)
+        is_siliconflow = "siliconflow" in (endpoint or "").lower()
+        if is_siliconflow and is_thinking:
+            timeout = self.siliconflow_thinking_timeout
+        elif is_thinking:
+            timeout = self.r1_timeout
+        else:
+            timeout = self.timeout
         last_err = None
         for attempt in range(1, self.max_retries + 1):
             try:

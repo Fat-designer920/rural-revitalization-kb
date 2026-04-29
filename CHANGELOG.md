@@ -2,7 +2,90 @@
 
 > 乡村振兴知识库搭建助手 — 版本变更记录
 >
-> 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。立规则与架构契约统一沉淀在 `01_工程手册.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/rural-revitalization-kb/releases)。
+> 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。立规则与架构契约统一沉淀在 `01_工程手册.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/repo/releases)。
+
+---
+
+## [v2.3.5-part1.2] - 2026-04-29 (hotfix - 硅基流动思考型 timeout 独立)
+
+**定位**:v2.3.4-hotfix3 用 `_is_thinking_model` 模式匹配修了"识别"漏判(BUG#1 — 硅基模型不再误走 120s timeout),但**所有思考型仍套用 r1_timeout=300s 这个策略假设没核对产品现实**。老唐 0429 喂料实测第 5/11 段(1034 字)R1 截断后 L1 Kimi-K2.6 整段重提 3 次超时全失败(`Exception: API调用失败(重试3次): timeout`),但硅基流动后台费用明细显示 Kimi-K2 调用确实发生(`B202604282...` 计费记录,服务端在生成,客户端先读超时),L2 R1 镜像兜底救回 9 条完整。诊断:硅基流动 Kimi-K2.6 思考型(256K 上下文 + 思考链 + 8192 输出)实测响应 5-15 分钟,300s 是临界值触发概率高。
+
+涉及 1 代码 + 4 项目文件(deepseek_client.py + 00 + 01 + README + CHANGELOG)。Phase 1-3 单对话完成。立规则 9 第 20 次应验。
+
+### Fixed
+
+- **deepseek_client.py:91-113 `__init__`**:新增 `self.siliconflow_thinking_timeout = int(os.getenv("SILICONFLOW_THINKING_TIMEOUT", "1200"))`,默认 1200 秒(20 分钟),老唐可在 .env 或环境变量设 `SILICONFLOW_THINKING_TIMEOUT=1500` 覆盖
+- **deepseek_client.py:208-220 `_request` timeout 选择重写**:从"仅看模型 → 二档分支(r1_timeout / timeout)"升级为"看 endpoint + 模型 → 三档分支":
+  - `is_siliconflow = "siliconflow" in (endpoint or "").lower()` 判断 endpoint 维度
+  - `is_thinking = self._is_r1(m)` 复用 hotfix3 模式匹配函数
+  - `is_siliconflow and is_thinking` → `siliconflow_thinking_timeout`(1200s)
+  - 仅 `is_thinking` → `r1_timeout`(300s,DeepSeek 官方 R1 老逻辑保留)
+  - 其他 → `timeout`(120s,V3 / 普通模型老逻辑保留)
+  - **零破坏老调用方**:DeepSeek 官方 R1 / V3 / 普通模型走的分支完全不动
+
+### Changed
+
+- **顶部 docstring 版本号**:v2.3.4-hotfix3 → v2.3.5-part1.2,追加变更说明 T1+T2 段落(根因 / 修法 / 立规则 9 第 20 次应验)
+
+### Migration
+
+- **零 schema 变更,零 .env 必改**(默认 1200s 已能覆盖 99% 硅基 Kimi 响应时间)
+- **老唐想调更高/更低**:`config/.env` 加一行 `SILICONFLOW_THINKING_TIMEOUT=1500`,重启后台生效。**没有这一行就用默认 1200**
+- **只替换 1 个 .py 文件**:`scripts/deepseek_client.py`
+- **验证步骤**:
+  1. 启动后台,看启动日志正常无报错
+  2. 喂料(优先选历史上引发过截断的长文件,比如老唐 0429 那份),看处理日志
+  3. **观察点 1**:R1 截断时进入 `[L1 启动 Kimi 整段重提补全]`,L1 这步不再 timeout(等待时间最长 1200 秒 = 20 分钟,期间进度条 GET /api/tasks/progress 仍正常轮询)
+  4. **观察点 2**:`[L1 成功] Pro/moonshotai/Kimi-K2.6 提取 N 条` 出现,而非 `[L1 异常]`
+  5. **观察点 3**:仪表盘 Card 15 老唐肉眼监控,`kimi_recoveries > 0` 计数增加(原来此计数永远 0,因为 L1 全 timeout)
+  6. **如果仍 timeout**:.env 加 `SILICONFLOW_THINKING_TIMEOUT=1800`(30 分钟),再喂一次。极少数情况硅基 Kimi 抖动响应超 20 分钟,但通常这种情况让 L2 兜底更经济
+- **回滚方案**:如有问题,恢复 v2.3.4-hotfix3 的 deepseek_client.py(假设老唐 git stash 还在)
+
+### 立规则应验
+
+- **立规则 9 第 20 次应验**:**hotfix3 修了"识别"但没修"策略"**。`_is_thinking_model` 模式匹配函数把硅基思考型(Kimi-K2.6 / R1 镜像)正确识别为思考型并走 r1_timeout=300s,但所有思考型套用同一 300s 这个**策略假设**没核对产品现实。**根因 — 凭推理"思考型一律 300s"听起来合理,与产品现实(不同厂商基础设施性能差距大可达 5-10 倍)脱节才露馅**。**与第 14/15/17 次同根** — 都是"凭一个看似合理的假设直接编码"的 bug 温床。**立规则升级**:对外部 SaaS 调用,timeout 必须按 endpoint 独立调优,不假设"同类模型同 timeout"。性能基准在不同厂商基础设施下差距可达 5-10 倍。执行机制是立规则 50(改完拉通验证)+ 实际喂料压测
+- **反思方法论**:hotfix3 当时只关注"识别 BUG#1",没发散思考"修了识别后,如果硅基平台响应慢,300s 仍可能不够" — Phase 1 影响范围评估时应主动问"上一版修法是否形成新的隐藏假设"。本版 Phase 1 我把这条写进了影响范围评估,主动指出"hotfix3 修了识别但 300s 是统一假设"
+- **关于"L2 效果不行"的反驳**(老唐截图反馈):代码 76 行 `SILICONFLOW_TEXT_MODEL_L2 = "Pro/deepseek-ai/DeepSeek-R1"` 即同一份 R1 权重的硅基镜像,质量 = DeepSeek 官方 R1。**L2 的"效果不行"是错觉**。修了 L1 后 L2 走的概率会大降,但不能去掉 — v2.3.4-hotfix1 原始设计前提"思考型踩 max_tokens 是物理性的,跨厂商镜像是冗余底座"成立
+
+---
+
+## [v2.3.5-part1.1] - 2026-04-28 (hotfix - part1 改造遗漏:extractor 内 duplicate_checker 调用方迁移)
+
+**定位**:v2.3.5-part1 的"replace duplicate_checker by relation_analyzer"改造时,api_server.py 完整迁移了所有调用方,但 **extractor.py 内 3 处引用未同步**(import / 实例化 / 调用)。老唐 0428 部署 v2.3.5-part1 + v2.3.4-hotfix3 后触发提取就 `ModuleNotFoundError: No module named 'scripts.duplicate_checker'` 暴露。
+
+立规则 9 第 19 次应验(同根第 17 次 hotfix1 漏扩 R1_MODELS 集合,同根第 14 次 R1 max_tokens 默认 4K):**改造模块时未 grep 全 codebase 同步替换调用方**。立规则 50 同步应验:交付前应跑一次 `python -c "import scripts.extractor"` 拉通验证,可秒级发现 import 死链。
+
+涉及 1 代码 + 4 项目文件。RelationAnalyzer 接口 drop-in 兼容(签名 + 返回值与 DuplicateChecker 完全一致),修复极简:仅类名/变量名替换 + 控制台文案对齐。
+
+### Fixed
+
+- **extractor.py 第 87 行 import**:`from scripts.duplicate_checker import DuplicateChecker` → `from scripts.relation_analyzer import RelationAnalyzer`
+- **extractor.py 第 152 行 实例化**:`self.duplicate_checker = DuplicateChecker(...)` → `self.relation_analyzer = RelationAnalyzer(...)`
+- **extractor.py 第 2234 行 Step 8 调用**:`self.duplicate_checker.scan_incremental(new_ids)` → `self.relation_analyzer.scan_incremental(new_ids)`
+
+### Changed
+
+- **变量名 + 控制台消息对齐 v2.3.5-part1 升级精神**(产品决策):
+  - Step 名:`Step 8/8 重复检测` → `Step 8/8 关系分析`
+  - 局部变量:`dup_count` → `rel_count`
+  - 入库 message:`[发现{N}组疑似重复]` → `[发现{N}组疑似关系]`
+  - 异常 print:`重复检测出错` → `关系分析出错`
+- 让老唐看仪表盘时直观知道走的是六态新引擎,不是把新结果包装成"重复"
+
+### Migration
+
+- **零 schema 变更,零 .env 变更,零依赖变更**(RelationAnalyzer 在 v2.3.5-part1 已部署到位)
+- **只替换 1 个 .py 文件**:`scripts/extractor.py`
+- **验证步骤**:
+  1. 启动后台,看启动日志无 `ModuleNotFoundError` 报错
+  2. 强制重处理任一文件,完成后看 process_message 末尾文案是 `[发现{N}组疑似关系]`(不再是"重复")
+  3. 后台日志看 `[关系分析] 增量扫描 N 条新知识点...`(relation_analyzer 内部 print)而非 `重复检测...`
+- **回滚方案**:如果 RelationAnalyzer 在线上有问题,恢复 v2.3.4-hotfix3 的 extractor.py + duplicate_checker.py(假设老唐 git stash 还在)
+
+### 立规则应验
+
+- **立规则 9 第 19 次应验**:v2.3.5-part1 改造模块时未 grep 全 codebase 同步替换调用方。同根第 14/15/16/17/18 次,**写代码改造靠"主调用方迁移完了"凭感觉就推上线,没核对所有引用点是 bug 温床**。立规则升级:**替换 / 删除模块时,必须 grep 三连 — 旧模块名 / 旧类名 / self.旧成员名,全 scripts/ 扫,列出所有调用方一次性同步**
+- **立规则 50 第 N 次应用扩**:第 7 项"改完拉通验证"应包含"模拟 import 验证"步骤。本次 hotfix3 交付时若跑了 `python -c "import scripts.extractor"` 即可秒级发现 — Claude 当时只跑了 `py_compile`(只查语法不查 import 解析),错过了暴露机会。立规则 50 第 7 项明确加上 import 验证
 
 ---
 

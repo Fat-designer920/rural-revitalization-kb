@@ -1,7 +1,28 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.4-hotfix3 - 0 条 kp 不进降级链 + 配合 deepseek_client 的 JSONL 兼容降级
+版本：v2.3.5-part1.1 - 修复 part1 改造遗漏:duplicate_checker → relation_analyzer 调用方同步迁移
+
+变更说明（v2.3.5-part1.1）：
+  P1 v2.3.5-part1 的"replace duplicate_checker by relation_analyzer"改造时,
+     api_server.py 完整迁移了所有调用方,但 extractor.py 内 3 处引用未同步:
+     - 第 66 行 import:  from scripts.duplicate_checker import DuplicateChecker
+     - 第 131 行 实例化: self.duplicate_checker = DuplicateChecker(...)
+     - 第 2213 行 调用: self.duplicate_checker.scan_incremental(new_ids)
+     部署 v2.3.5-part1 后老唐 0428 触发提取就 ModuleNotFoundError 暴露
+  P2 接口契约 drop-in 兼容:
+     - RelationAnalyzer(db=, client=) 与 DuplicateChecker(db=, client=) 签名一致
+     - scan_incremental(new_kp_ids) -> int(组数) 方法签名 + 返回值类型完全一致
+     - 仅"组数"语义从"疑似重复"扩展为"AI 六态判定后的关系组"
+  P3 三处替换 + 变量名 + 控制台文案对齐(产品决策):
+     - self.duplicate_checker → self.relation_analyzer(语义对齐 v2.3.5-part1 升级精神)
+     - dup_count 局部变量 → rel_count
+     - "[发现{N}组疑似重复]" → "[发现{N}组疑似关系]"(让老唐看仪表盘时知道走的是六态新引擎)
+  根因:**立规则 9 第 19 次应验**(同根第 17 次 hotfix1 漏扩 R1_MODELS 集合):
+     v2.3.5-part1 改造模块时未 grep 全 codebase 同步替换调用方。本次起执行规范升级:
+     **替换 / 删除模块时,必须 grep "旧模块名 / 旧类名 / self.旧成员名" 全 scripts/ 扫,
+     列出所有调用方一次性同步**。立规则 50 第 N 次应用(改完拉通验证 — 应跑一次
+     `python -c "import scripts.extractor"` 才能在交付前发现 import 死链)
 
 变更说明（v2.3.4-hotfix3）：
   X1 _extract_with_auto_split 第 340 行附近 BUG#2A 修复:
@@ -63,7 +84,7 @@ from scripts.prompts.prompt_templates import (
 )
 from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
 from scripts.policy_validator import PolicyValidator
-from scripts.duplicate_checker import DuplicateChecker
+from scripts.relation_analyzer import RelationAnalyzer
 
 
 class Extractor:
@@ -128,7 +149,7 @@ class Extractor:
         self.extraction_model_name = None
         self.segment_max_len = 3000  # v2.1.0-d: 默认值也改为3000
         self.policy_validator = PolicyValidator(db=self.db, client=self.client)
-        self.duplicate_checker = DuplicateChecker(db=self.db, client=self.client)
+        self.relation_analyzer = RelationAnalyzer(db=self.db, client=self.client)
         self._progress_callback = progress_callback
         self._headless = False  # v2.1.2 bugfix: headless模式跳过所有input()
 
@@ -2202,19 +2223,19 @@ class Extractor:
                 except Exception as e:
                     print(f"     政策校验出错: {e}")
 
-            # === Step 8: 增量重复检测（本地粗筛+V3精判） ===
-            dup_count = 0
+            # === Step 8: 增量关系分析(本地粗筛+V3 六态判别,v2.3.5-part1 起替代旧重复检测) ===
+            rel_count = 0
             if cnt > 0 and kps:
-                self._report_progress(current_step="Step 8/8 重复检测")
+                self._report_progress(current_step="Step 8/8 关系分析")
                 try:
                     # v2.3.0-part1 顺手修：kps_info 里字段名是 kp_id，不是 id
                     new_ids = [info["kp_id"] for info in kps_info if info.get("kp_id")]
                     if new_ids:
-                        dup_count = self.duplicate_checker.scan_incremental(new_ids)
+                        rel_count = self.relation_analyzer.scan_incremental(new_ids)
                 except CostLimitExceeded:
-                    print(f"     费用已达上限,跳过重复检测")
+                    print(f"     费用已达上限,跳过关系分析")
                 except Exception as e:
-                    print(f"     重复检测出错: {e}")
+                    print(f"     关系分析出错: {e}")
 
             model_tag = "R1" if "reasoner" in self.extraction_model else "V3"
             msg = f"{model_tag}提取{cnt}个知识点(v2.3.4)"
@@ -2222,8 +2243,8 @@ class Extractor:
                 msg += f" [已质检{qc_count}条]"
             if pv_count > 0:
                 msg += f" [已政策校验{pv_count}条]"
-            if dup_count > 0:
-                msg += f" [发现{dup_count}组疑似重复]"
+            if rel_count > 0:
+                msg += f" [发现{rel_count}组疑似关系]"
             if extraction_notes:
                 msg += " [有补漏建议]"
             self.db.update_source_file(fid, process_status="completed", process_message=msg)

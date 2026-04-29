@@ -4,7 +4,7 @@
 >
 > **知识工厂**：原料 → 加工 → 质检 → 产品 → 卖钱。底座是知识库，上面长出多种产品形态。
 >
-> **当前版本**:**v2.3.4-hotfix3**(提取链 3 BUG 一次根治:思考型模型识别 + JSON Lines 兼容降级 + 0 条 kp 不进救援链)/ **v2.3.5-part1**(知识关系网络底座:重复检测从二态升级为六态关系判别 + 共识聚类 + AI 不确定走待研判队列;3 新表 + 2 字段 + 12 路由 + 立规则 #3 第 2 次推广) — 两版正交并存,提取链 hotfix3 不动 v2.3.5 schema
+> **当前版本**:**v2.3.5-part1.2**(hotfix:硅基流动思考型 timeout 独立 — siliconflow_thinking_timeout=1200s 默认 + .env 可覆盖 + _request 三档分支,根治 L1 Kimi-K2.6 整段重提客户端读 timeout;立规则 9 第 20 次)/ **v2.3.5-part1.1**(hotfix:part1 改造遗漏修复 — extractor.py 内 3 处 duplicate_checker → relation_analyzer 调用方同步迁移 + 控制台文案对齐"关系分析";立规则 9 第 19 次 + 50 拉通验证升级)/ **v2.3.4-hotfix3**(提取链 3 BUG 一次根治:思考型模型识别 + JSON Lines 兼容降级 + 0 条 kp 不进救援链)/ **v2.3.5-part1**(知识关系网络底座:重复检测从二态升级为六态关系判别 + 共识聚类 + AI 不确定走待研判队列;3 新表 + 2 字段 + 12 路由 + 立规则 #3 第 2 次推广) — 四版并存,part1.2 修补 hotfix3 timeout 策略缺口 + part1.1 修补 part1 + hotfix3 修补 hotfix1,主线无 schema 冲突
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 做什么 | 验证什么 |
 |------|--------|---------|
-| 当前(v2.3.4-hotfix3 + v2.3.5-part1 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa + 多思考型模型整段重提兜底(timeout 漏判修复 + JSONL 兼容降级)+ 知识关系网络底座(六态判别 + 共识聚类)** | 关系判别准确率 / 待研判队列规模 / 共识强度对精品的提升 / 老唐处理新关系组体感 / 提取链 0 失败率 |
+| 当前(v2.3.4-hotfix3 + v2.3.5-part1 + part1.2 后) | **本地问答助手 + 双客户端朋友试用产品页 /qa + 多思考型模型整段重提兜底(timeout 漏判修复 + JSONL 兼容降级 + 硅基思考型 timeout 独立 1200s 根治 L1 Kimi 客户端读超时)+ 知识关系网络底座(六态判别 + 共识聚类)** | 关系判别准确率 / 待研判队列规模 / 共识强度对精品的提升 / 老唐处理新关系组体感 / 提取链 0 失败率 / L1 Kimi 整段重提成功率 |
 | 200 条精品+ | 政策解读文章发行业圈子 | 内容付费 |
 | 300 条精品+ | 云端问答助手产品化 | C 端订阅 |
 | 500 条精品+ | 投标辅助 / 培训 / 合规自检 | B 端高客单价 |
@@ -68,6 +68,14 @@
 ### Tab 2 工具箱（12 个按钮）
 
 系统检查 / 一键备份 / 恢复备份 / 保鲜扫描 / **知识关系扫描(六态)/ 重扫全库关系 ★** / 政策补跑 / 质检补跑 / **就绪度联动（R 橙，v2.3.0-part3.2 新增）** / 审核统计 / API 费用 / **知识库体检（F048）** / **端到端健康测试（F062）**
+
+**v2.3.5-part1.1 关键交付**(2026-04-28):
+
+- **修复 v2.3.5-part1 改造遗漏**:part1 改造 duplicate_checker → relation_analyzer 时,api_server.py 完整迁移但 **extractor.py 内 3 处引用未同步**(import / 实例化 / 调用),老唐 0428 部署后触发提取就 `ModuleNotFoundError` 暴露
+- **修复 3 处**:第 87 行 import / 第 152 行 实例化 / 第 2234 行 Step 8 调用,RelationAnalyzer 接口 drop-in 兼容(签名 + 返回值与 DuplicateChecker 完全一致)
+- **变量名 + 文案对齐**:`dup_count → rel_count`,`Step 8/8 重复检测 → 关系分析`,入库 message `疑似重复 → 疑似关系`
+- **立规则 9 第 19 次应验 + 立规则 50 拉通验证升级**:第 7 项明确加 `python -c "import scripts.X"` 拉通验证(`py_compile` 只查语法不查 import 解析)
+- **零 schema 变更 / 零依赖变更**:仅替换 1 个 .py 文件即生效
 
 **v2.3.4-hotfix3 关键交付**(2026-04-28):
 
@@ -215,6 +223,7 @@ rural-revitalization-kb/
 | **v2.3.4-hotfix2** | **hotfix:强制重处理 source_files 外键约束失败 + database is locked 连环修复(preprocessor 3 处裸 DELETE → db.purge_source_file_record 完整封装)+ 后台朋友试用快捷入口 pill + 立规则#3 推广 + 立规则 9 第 16 次应验** | ✅ 2026-04-28 |
 | **v2.3.5-part1** | **feature:知识关系网络底座(替代二态重复检测的六态关系判别 + 共识聚类 + 待研判队列)— relation_analyzer.py 替代 duplicate_checker.py + 3 新表 + 2 字段 + 12 路由 + 立规则 #3 第 2 次推广** | ✅ 2026-04-28 |
 | **v2.3.4-hotfix3** | **hotfix:提取链 3 BUG 一次根治(timeout 漏判 + 0 kp 误判 + JSONL 严格解析丢内容)— `_is_thinking_model` 模式匹配 + `_is_r1` 改造 + `chat_with_jsonl` 7 步保险降级 + extractor 第 340 行 `and kps` 删除 + 立规则 9 第 17/18 次 + 61 新立** | ✅ 2026-04-28 |
+| **v2.3.5-part1.1** | **hotfix:part1 改造遗漏修复 — extractor.py 第 87/152/2234 行 duplicate_checker → relation_analyzer 同步迁移 + 文案对齐"关系分析"+ 立规则 9 第 19 次 + 50 拉通验证升级** | ✅ 2026-04-28 |
 | v2.3.5-part2 | feature:F055 问答助手联动(依据卡片改为关系链证据 + 关系上下文召回) | 规划 |
 | v2.3.5-part3 | feature:F2 精品 + F056 导出联动(composite_score 加 consensus_strength + JSON 加 relations) | 规划 |
 | v2.3.5-part4 | feature:Tab 4 知识关联网络可视化 + 投标证据链生成器 | 规划 |
