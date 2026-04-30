@@ -79,7 +79,7 @@
 ## 8. DIET-CHECK 硬行数限制(立规则 65)
 
 ```
-CLAUDE.md ≤ 120 行(Claude Code 环境调整,原 100 行) / CHANGELOG 单版本 ≤ 30 行 / docs/00 CHANGELOG 摘要单条 ≤ 5 行
+CLAUDE.md 无限制(Claude Code 环境,以开发质量和效率为重) / CHANGELOG 单版本 ≤ 30 行 / docs/00 CHANGELOG 摘要单条 ≤ 5 行
 docs/01 立规则单条 ≤ 10 行(论证例证 ≤ 2 行) / docs/02 新增子章节 ≤ 15 行
 docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭代路线表单行 ≤ 2 行
 ```
