@@ -1,7 +1,7 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.5-part2 - V4-Pro 主链 + 跨段补漏闭环 + Kimi 兜底链全删 + F5 标签容错
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更说明（v2.3.5-part2, 2026-04-30）：
   D1 主链升级 R1 → V4-Pro thinking 模式:

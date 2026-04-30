@@ -1,7 +1,7 @@
 """
 relation_analyzer.py - 知识点关系分析模块(替代 duplicate_checker.py)
 路径：scripts/relation_analyzer.py
-版本：v2.3.5-part2 - chat_with_json kwarg 修复(F4) + V4-Pro 思考型识别
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 v2.3.5-part2 修复(hotfix, 2026-04-30):
   - F4 P0 BUG:_judge_one_group 调 chat_with_json 用了不存在的 model= 关键字

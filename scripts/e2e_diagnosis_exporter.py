@@ -2,7 +2,7 @@
 """
 e2e_diagnosis_exporter.py — F062 端到端测试诊断包导出引擎
 
-v2.3.0-part3.8(2026-04-24) - 第三段按文件维度可视化白名单覆盖范围
+版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
   配套 e2e_tester.py v2.3.0-part3.8 新增的 WHITELIST_COVERAGE 常量,
   第三段从"单一的失效自检警告"升级为"按文件分类展示":
     ✅ 白名单覆盖内但命中 X 条(可能漂移)  — 需要重扫对齐

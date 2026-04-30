@@ -1,7 +1,7 @@
 """
 static_analyzer.py - F062 端到端测试 Agent 静态分析模块
 路径：scripts/static_analyzer.py
-版本：v2.3.0-part3.7 - F062 规则精度三连改
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更历史:
   v2.3.0-part3-alpha1  初版(宁严勿漏姿态),signal-to-noise 偏低

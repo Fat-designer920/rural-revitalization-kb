@@ -1,7 +1,7 @@
 """
 upgrade_manager.py - 知识库架构升级迁移管理器
 路径：scripts/upgrade_manager.py
-版本：v2.1.0-b
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 功能：一键检查 + AI评估 + 补标签 + 重提取调度
 
 工作流程：

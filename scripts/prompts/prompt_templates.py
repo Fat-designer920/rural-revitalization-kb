@@ -1,7 +1,7 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.3.4-hotfix1 - 多模型整段重提 PROMPT 100% 复用
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更说明（v2.3.4-hotfix1）：
   - PROMPT_VERSION 从 v2.3.4 升到 v2.3.4-hotfix1

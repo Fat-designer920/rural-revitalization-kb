@@ -1,7 +1,7 @@
 """
 policy_validator.py - 政策依赖校验模块
 路径：scripts/policy_validator.py
-版本：v2.1.0-d（F028 政策依赖校验）
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 功能：
   - 扫描非政策类知识点中的政策引用（V3模型）

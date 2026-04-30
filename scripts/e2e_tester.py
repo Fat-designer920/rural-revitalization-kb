@@ -1,7 +1,7 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎层
 路径：scripts/e2e_tester.py
-版本：v2.3.0-part3.8 - hotfix: 白名单大扩展 + 文件覆盖范围常量
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更（v2.3.0-part3.8,2026-04-24）:
   - DIM4_KNOWN_FALSE_POSITIVES: 67 条 → 75 条

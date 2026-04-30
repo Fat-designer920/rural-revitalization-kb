@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-v2.3.1 F2 精品候选 AI 判定引擎
-================================
+premium_judge.py - 精品候选 AI 判定引擎
+
+版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 职责:对所有"可引用级"(content_readiness IN ('quotable','premium'))的 kp,
     分别从"客户视角"和"投标视角"调用 V3 AI 判定精品资格,结果写 premium_ai_cache 表。

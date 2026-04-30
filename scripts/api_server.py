@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.0-part3.8 - 6 批量路由 errors 收集改造(E2 方案)
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 v2.3.0-part3.8 变更(hotfix,2026-04-24):
     F062 白名单大扩展配套——6 批量路由改代码收集错误原因(立规则 A 禁止裸 except+pass 模式)

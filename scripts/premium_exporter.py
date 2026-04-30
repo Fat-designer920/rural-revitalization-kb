@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-v2.3.1 F6 精品导出引擎
+premium_exporter.py - 精品导出引擎
 =======================
+
+版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 职责:把已封神的精品条目导出为 Markdown 或 JSON,供老唐在
     咨询场景 / 投标场景 / 写文章场景直接使用。

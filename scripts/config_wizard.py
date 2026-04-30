@@ -1,7 +1,7 @@
 """
 config_wizard.py - 首次配置向导（图形界面）
 路径：scripts/config_wizard.py
-版本：v2.3.5-part1.3 - 新增 Kimi 官方 API Key 配置(L1.2 兜底)
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更说明(v2.3.5-part1.3):
   W1 新增第 5 项 Kimi 官方 API Key 输入框(选填,L1.2 兜底层)

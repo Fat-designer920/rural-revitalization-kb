@@ -1,7 +1,7 @@
 """
 setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
 路径：scripts/setup.py
-版本：v2.3.5-part2 (本版 schema 零变动,仅 V4 + 闭环 + Kimi 删 + F4/F5 修)
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 功能：
   1. 创建目录结构（9个目录）

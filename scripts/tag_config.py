@@ -1,7 +1,7 @@
 """
 tag_config.py - 标签体系配置
 路径：scripts/tag_config.py
-版本：v2.1.0-d
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 三层标签体系：
     第一层：分类标签（从固定清单中选，6组41个）
     第二层：属性标签（从限定维度中选）

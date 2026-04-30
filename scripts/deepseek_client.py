@@ -1,7 +1,7 @@
 """
 deepseek_client.py - DeepSeek API 封装 + 硅基流动 OCR + 硅基流动镜像兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.5-part2 - V4 主链 + Kimi 兜底链全删 + 立规则 16 改造
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 变更说明(v2.3.5-part2, 2026-04-30):
   V1 PRICING 加 V4 主力模型(deepseek-v4-pro / deepseek-v4-flash):

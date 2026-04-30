@@ -1,7 +1,7 @@
 """
-qa_assistant.py - F055 本地问答助手主引擎(v2.3.2)
+qa_assistant.py - F055 本地问答助手主引擎
 路径: scripts/qa_assistant.py
-版本: v2.3.2
+版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 模块定位:
   - 4 板块通用回答 + 检索 + 朋友试用模式

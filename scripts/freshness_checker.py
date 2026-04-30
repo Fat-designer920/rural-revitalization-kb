@@ -1,7 +1,7 @@
 """
 freshness_checker.py - 内容保鲜扫描引擎
 路径：scripts/freshness_checker.py
-版本：v2.1.0-d
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 功能：
     - 扫描所有已确认知识点的保鲜状态

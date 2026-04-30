@@ -2,7 +2,7 @@
 """
 health_checker.py - 知识库体检 Agent 引擎层（F048）
 
-版本: v2.3.0-part2.2
+版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 所属: 乡村振兴知识管理系统
 
 变更说明(v2.3.0-part2.2 对话A):

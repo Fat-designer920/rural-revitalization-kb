@@ -1,9 +1,9 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.5.1（v2.3.0-part2.2 对话 B 防护层扩展）
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
-v2.5.1 变更（v2.3.0-part2.2 对话 B）：
+v2.3.0-part2.2 变更（对话 B 防护层扩展）：
 v2.3.0-part3 变更（F062 对话 3/3 界面层收尾）：
   - 命令行版 [4] 数据库基础 expected 清单扩到 12 张（+api_endpoint_registry +e2e_test_reports +e2e_issues）
   - JSON 版 [4] 同扩（决策 Q1：F062 是核心业务,老库没升级该早暴露）

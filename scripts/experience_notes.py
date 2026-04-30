@@ -1,7 +1,7 @@
 """
 experience_notes.py - 经验速记模块
 路径：scripts/experience_notes.py
-版本：v2.2.0 F045
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 功能：接收老唐的速记内容 → 调用V3自动结构化 → 写入knowledge_points待审核
 
 使用方式：

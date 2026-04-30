@@ -1,7 +1,7 @@
 """
 preprocessor.py - 智能预处理(重命名+标签)
 路径：scripts/preprocessor.py
-版本：v2.3.4-hotfix2 - source_files 删除路径加 operation_events 级联清理
+版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
 
 v2.3.4-hotfix2 修复(hotfix, 2026-04-28):
   - 3 处裸 DELETE FROM source_files 替换为 db.purge_source_file_record() 调用
