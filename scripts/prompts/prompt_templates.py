@@ -114,7 +114,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.3.5-part2"
+PROMPT_VERSION = "v2.3.5-part2-hotfix1"
 
 
 def get_prompt_version():
@@ -460,7 +460,7 @@ _POLICY_EXTRACT_BASE = {
 "diff_from_previous":"与旧版或相关政策的差异（如有）",
 "source_page":"页码或章节号",
 "source_keyword":"定位关键词",
-"suggested_category_code":"分类编码如1.1",
+"suggested_category_code":"分类编码,从下方【第一层:分类标签】清单中选取(每条选 1 个最贴合的)",
 """ + COMMON_TAG_OUTPUT_DESC + """}
 
 ## 输出格式（v2.3.4 升级:JSON Lines）
@@ -494,7 +494,6 @@ _POLICY_EXTRACT_BASE = {
 6. 执行要点要站在操盘者角度写，回答"对我意味着什么"
 
 文件名：{filename}
-可用分类：1.1全域土地综合整治政策 1.2增减挂钩与占补平衡 1.3集体经营性建设用地入市 1.4专项债与资金政策 1.5川西林盘保护政策 1.6乡村振兴综合政策 1.7自然资源与规划政策
 
 {tag_reference}
 
@@ -597,8 +596,6 @@ _CASE_EXTRACT_BASE = {
 5. 核心策略必须是提炼出的可复用做法，不能是原文换个说法
 
 文件名：{filename}
-可用分类：2.1全域土地综合整治项目 2.2增减挂钩项目 2.3川西林盘修复运营项目 2.4资金整合与融资创新案例 2.5乡村产业与运营案例 2.6失败与风险案例
-
 {tag_reference}
 
 全文内容：
@@ -699,8 +696,6 @@ _EXPERIENCE_EXTRACT_BASE = {
 5. 核心结论必须是提炼，不能是原文换个说法
 
 文件名：{filename}
-可用分类：3.1策略判断类 3.2操盘方法类 3.3反常识洞察 3.4踩坑记录 3.5客户沟通与汇报经验
-
 {tag_reference}
 
 全文内容：
@@ -778,8 +773,6 @@ _TOOL_EXTRACT_BASE = {
 3. 原文摘录去掉章节编号，只截取实质性内容
 
 文件名：{filename}
-可用分类：4.1方案模板 4.2合同模板 4.3评审意见模板 4.4招标文件模板 4.5汇报材料模板 4.6申报材料模板
-
 {tag_reference}
 
 全文内容：
@@ -865,8 +858,6 @@ _DATA_EXTRACT_BASE = {
 4. 原文摘录去掉章节编号，只截取实质性内容
 
 文件名：{filename}
-可用分类：5.1资金测算数据 5.2指标数据 5.3地方政策对比 5.4项目规模与成效数据 5.5行业基准数据
-
 {tag_reference}
 
 全文内容：
@@ -889,7 +880,7 @@ PRE_ANALYSIS_PROMPT = {
   "quality_score": 1-5的整数（5=高价值必须提取，4=值得提取，3=有部分价值，2=价值较低，1=不值得提取）,
   "quality_reason": "打分理由（50字内）",
   "estimated_knowledge_count": 预估可提取的知识点数量,
-  "suggested_category": "建议的分类编码（如1.1/2.3/3.2等）",
+  "suggested_category": "建议的分类(从 LAYER1_TAGS 选,不要用 1.1/2.3 等老编号体系)",
   "category_reason": "分类理由（30字内）",
   "content_overview": "内容概述（100字内）",
   "content_type": "policy/case/experience/tool/data",
@@ -914,7 +905,7 @@ PRE_ANALYSIS_PROMPT = {
 文件名：{filename}
 文件大小：约{char_count}字
 可用分类：
-  1.政策库: 1.1-1.7 | 2.案例库: 2.1-2.6 | 3.经验库: 3.1-3.5 | 4.工具库: 4.1-4.6 | 5.数据库: 5.1-5.5
+  以三层标签体系为准(由 _build_tag_reference 注入,见 LAYER1_TAGS / LAYER2_DIMENSIONS),不要使用编号体系
 
 文件内容（前2000字）：
 {content_preview}

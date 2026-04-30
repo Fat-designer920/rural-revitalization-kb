@@ -6,6 +6,61 @@
 
 ---
 
+## [v2.3.5-part2-hotfix1] - 2026-04-30 (hotfix - V4-Pro 全链路切换 + 5 类系统性根因一次清除)
+
+**定位**:本版是 v2.3.5-part2 部署后老唐 0430 喂料实测 1 个文件暴露的 5 类系统性故障一次性根治。**主链 V4-Pro 升级范围补完**(part2 只切了主提取,本版补预分析/结构摘要/跨段补漏/质检/分类建议/关系判别共 7 处)+ **降级链 max_tokens 升级**(L1 硅基镜像 8192→32768 + 主提取 32768→65536,留 V4-Pro thinking headroom)+ **跨段补漏分批化**(>30 条 kp 自动按 30/批分,避免 coverage_analysis 输出超 max_tokens 中止闭环)+ **标签 prompt 与校验体系一致性**(5 个 _EXTRACT_BASE 老 1.X-5.X 编号清单删除 + _normalize_tag 加近义子串兜底)+ **AI 说明显示 80→300 字 + 多处 R1 文案改 V4-Pro/通用**。**立规则 9 第 23 次应验**(同根:升级主链时只看主链,L1 max_tokens=8192 没改、L1 model 没升、跨段补漏 max_tokens 默认 8192、5 个 _EXTRACT_BASE 老 1.X 清单同样体系不一致)。
+
+**Added**:
+- `extractor.py::CROSS_CHECK_BATCH_SIZE = 30` 类常量 + `_cross_segment_check_single_batch` 新方法(分批模式 helper)
+- `extractor.py::_normalize_tag` Case 5 近义子串匹配兜底(双向 substring 包含,len ≥ 4 才走避免短词误匹)
+- `deepseek_client.py::siliconflow_mirror_model` 实例属性(读 `settings.json::siliconflow_mirror_model`,空值回退类常量)
+- `deepseek_client.py::SILICONFLOW_TEXT_MODEL_FALLBACK = "Pro/deepseek-ai/DeepSeek-R1"` 类常量(V4-Pro 镜像不可用时兜底)
+- `extracted_by_model` 新取值 `"mirror_v4_pro"`(替代 `"r1_mirror"`,体现 L1 默认模型升级)
+- `relation_analyzer.py` 关系判别 confidence 低时 `fallback_action="human_review"` 写入待研判队列(替代原 V3→R1 二次升级)
+
+**Fixed(根因 5 类)**:
+- **A1-A6 类:V4-Pro 切换不彻底**(立规则 9 第 23 次应验子项 1):0430 实测预分析 0.0022 元 = V3 价格,确证 part2 仅主提取切了 V4-Pro。本版补全 6 处 model_override:`extractor.py:1014/1055/1342/1525/1557/2064`(预分析/结构摘要/跨段补漏/质检批量/质检单条/分类建议)及 `relation_analyzer.py:274/281/301`(关系判别主链 + 取消 R1 二次升级走 human_review)
+- **B2 类:V4-Pro thinking 输出截断**(L0 失败 4/10 段):V4-Pro thinking 模式 reasoning_content 与 content 共享 max_tokens 配额,32K 在某些段被思考链吃光致 JSONL 输出 0 行。修法:主提取 max_tokens 32768 → 65536(留思考链 30K headroom 给输出 35K)
+- **C1 类:第 7 段 L0+L1 全失败**(立规则 9 第 23 次应验子项 2):L1 硅基镜像 R1 走 max_tokens=8192(v2.3.4-hotfix1 hardcode 没在升级时同步),思考型 8K 全被思考吃光。修法:`_retry_via_siliconflow` max_tokens 8192 → 32768 + L1 默认 model 从 R1 镜像升 V4-Pro 镜像
+- **D1 类:跨段补漏闭环中止**(0430 调试 txt 实证 V4-Flash 输出 3782 字符 ≈ 7000 token 截断在`鼓励测土配方施肥与增施有机肥`):chat_with_json 默认 max_tokens=8192,109 条 kp 的 coverage_analysis 输出超额。修法:(a) max_tokens 显式传 32768;(b) kp 数 > 30 时按 30/批 分批检查,合并 missed_sections(按 section_title 去重)+ duplicate_suspects 合并 + overall_coverage 严重度优先投票(严重遗漏 > 有遗漏 > 基本完整 > 完整);(c) model 从 V4-Flash 升 V4-Pro
+- **E1+E2+E3 类:F5 标签 ~40 处误杀**(根本性历史债务):`prompt_templates.py` 5 个 `_EXTRACT_BASE` 的 user_prompt_template 硬编码"可用分类:1.1...1.7 / 2.1-2.6 / 3.1-3.5 / 4.1-4.6 / 5.1-5.5"老 v2.1.1 编号清单,但 `tag_config.LAYER1_TAGS` 真实清单已是 A/B/C/D/E/F+数字 体系 → 模型按老体系输出"1.6乡村振兴综合政策",F5 校验按新体系查不到全部过滤。F5 v2.3.5-part2 修了"格式不一致"但没修"体系不一致"。修法:(a) 5 处老编号清单整行删除(`_build_tag_reference` 注入的真实 LAYER1 清单是唯一真相);(b) 5 处字段说明"如1.1" → "从 LAYER1 清单中选";(c) `_normalize_tag` 加 Case 5 近义子串匹配兜底
+- **F1 类:AI 说明 print 截断**(0430 实测第 2/10 段 80 字被腰斩):`extractor.py:329` `notes[:80]` → `notes[:300]`
+- **G1+G2 类:R1 文案残留**:预估费用文案"R1提取约 + V3辅助" / 控制台"R1输出被截断" / "R1原始返回" / F057 prompt"本段因R1输出截断" / `_estimate_extraction_cost` docstring + 单价 ¥4/¥16 → V4-Pro ¥1.05/¥12.5 + 单段 output 估算 1500 → 5000 token(thinking 含思考链)
+
+**Changed(立规则 9 第 23 次应验同根 + 立规则升级)**:
+- 主提取 `chat_with_jsonl` max_tokens 32768 → 65536(给 V4-Pro thinking 30K + 输出 35K headroom)
+- L1 硅基镜像兜底:max_tokens 8192 → 32768 + model 默认值 R1 镜像 → V4-Pro 镜像(`SILICONFLOW_TEXT_MODEL_L2`)+ extracted_by_model 标记 `r1_mirror` → `mirror_v4_pro`
+- 跨段补漏 model `deepseek-v4-flash` → `deepseek-v4-pro`,默认 max_tokens 8192 → 32768
+- 跨段补漏架构:单批模式 → 单批 / 分批双模式(>30 条自动分批)
+- 关系判别主链 `deepseek-chat` → `deepseek-v4-pro`,confidence 低不再二次升级 R1(同思考型重跑无意义),改写 `fallback_action=human_review` 进待研判队列
+- 5 个 `_EXTRACT_BASE` 删除老 1.X-5.X 编号体系硬编码清单,统一由 `_build_tag_reference()` 动态注入真实 LAYER1_TAGS
+- `PROMPT_VERSION` v2.3.5-part2 → v2.3.5-part2-hotfix1
+- 立规则 9 第 23 次应验入档 + 立规则升级:**改造主链时必须同步扫降级链 max_tokens / model_id / 标记字段三处**(grep 维度补充)
+- 立规则 16 第 5 次改造确认:V4-Pro 主链 + 硅基 V4-Pro 镜像兜底(跨厂商物理冗余仍成立,立规则 62 通过)
+- 立规则 53 第 9 次自证(本版 Phase 3 中途因配额顾虑发出"喊停拆对话"建议,老唐"继续"督促才在原对话内完成全 4 文件 + 5 项目文件;立规则 53 教训记入 — 配额顾虑不是合法 break 理由)
+- 立规则 57 第 4 次应用:跨段补漏 D1 大改造工作量被低估(估 5 次 str_replace,实际带连锁改动 ~10 次),教训:"大改造"应给加权 2-3 倍
+
+**Migration**:
+- 数据库零变动(本版无 schema 改动)
+- 老用户:替换 4 文件即可(extractor / deepseek_client / relation_analyzer / prompt_templates)
+- **可选 settings.json 新字段**:`siliconflow_mirror_model`(字符串,默认值 `Pro/deepseek-ai/DeepSeek-V4-Pro`)— 老唐查到硅基真实 V4-Pro 模型 ID 后填入即生效;不填或空字符串自动用类常量默认值;若硅基暂无 V4-Pro 老唐可手动填 `Pro/deepseek-ai/DeepSeek-R1` 暂回退到 R1 镜像
+- 已入库 kp 的 `extracted_by_model="r1_mirror"` 不需迁移(历史标记保留可读性);新入库 L1 救回 kp 标记 `mirror_v4_pro`
+
+**单文件预期效果**(改完后,实测前理论估算):
+
+| 指标 | v2.3.5-part2 实测 | hotfix1 预期 |
+|------|------------------|-------------|
+| L0 V4-Pro 截断率 | 4/10 段(40%) | ≤ 5%(max_tokens 65536 + thinking headroom) |
+| 第 7 段类 L0+L1 全失败 | 偶发 | 0(L1 max_tokens 32K + V4-Pro 镜像) |
+| 跨段补漏闭环 | 中止(8K 装不下 109 kp) | 1-2 轮收敛(分批 + 32K) |
+| F5 标签误杀 | ~40 处/文件 | < 5 处/文件(体系一致 + 子串兜底) |
+| AI 说明显示完整度 | 80 字截断 | 300 字基本不截 |
+| 单文件耗时 | 60 分钟 | 2-3 小时(全 V4-Pro thinking,纯 A 档) |
+| 单文件成本 | ¥1.2(part2 仅主链 V4-Pro) | ¥3-5(全 V4-Pro 含质检批量) |
+| 知识点提取数 | 109 条 | 130-160 条(V4-Pro 推理深 + 补漏闭环救回) |
+
+---
+
 ## [v2.3.5-part2] - 2026-04-30 (feature + hotfix - V4-Pro 主链 + 跨段补漏闭环 + Kimi 兜底链全删 + F4/F5 修)
 
 **定位**:本版是知识工厂"批量跑知识"前的最后一次系统性重构 — 主链从 R1 升级到 V4-Pro thinking 模式(384K max_output 直接根治 30% 截断率),跨段补漏从"建议老唐审核时关注"升级为"自动 5 轮重提取闭环",Kimi 兜底链(L1.1 硅基 Kimi / L1.2 Kimi 官方)整体废弃 — 0429 实测 L1.1+L1.2 三段截断 0/3 救回,真正救回都是 L2 R1 镜像。降级链 5 层简化为 3 层。同时修复 F4 关系判别 100% 失败的 P0 BUG(立规则 9 第 22 次应验)+ F5 标签校验 ~80% 误杀的格式不兼容问题。

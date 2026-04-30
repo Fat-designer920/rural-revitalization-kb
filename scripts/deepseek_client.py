@@ -69,9 +69,16 @@ class DeepSeekClient:
     # v2.3.4-hotfix1 H2:硅基流动文本调用 endpoint 与默认模型
     # v2.3.5-part2: SILICONFLOW_TEXT_MODEL_L1 不再使用(Kimi 兜底链整体废弃),
     # 只保留 L2(R1 镜像)作为新降级链的 L1 兜底入口,变量名沿用以最小化代码改动
+    # v2.3.5-part2-hotfix1 C1:L1 镜像默认升级为 V4-Pro 跨厂商镜像
+    # 立规则 9 第 23 次应验同根:升级主链时只看主链没看降级链,L1 max_tokens=8192 + R1 镜像
+    # 在 0430 实测第 7 段 727 字 L0+L1 全失败(R1 思考型 8K 全被思考链吃光,输出 0 行)
+    # 修法:默认值改 V4-Pro 镜像(384K max_output);settings.json 可覆盖供老唐查到真实 ID 后切换
+    # 兜底回退路径:_get_siliconflow_mirror_model() 实例方法读 config 优先,类常量保底
     SILICONFLOW_TEXT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
     SILICONFLOW_TEXT_MODEL_L1 = os.getenv("SILICONFLOW_TEXT_MODEL_L1", "Pro/moonshotai/Kimi-K2.6")  # 历史保留,代码不调
-    SILICONFLOW_TEXT_MODEL_L2 = os.getenv("SILICONFLOW_TEXT_MODEL_L2", "Pro/deepseek-ai/DeepSeek-R1")
+    SILICONFLOW_TEXT_MODEL_L2 = os.getenv("SILICONFLOW_TEXT_MODEL_L2", "Pro/deepseek-ai/DeepSeek-V4-Pro")
+    # v2.3.5-part2-hotfix1: V4-Pro 镜像不可用时的回退选择(老硅基存量保证)
+    SILICONFLOW_TEXT_MODEL_FALLBACK = "Pro/deepseek-ai/DeepSeek-R1"
 
     # v2.3.5-part2: Kimi 官方 endpoint / model 类常量整体删除
     # (原 v2.3.5-part1.3 引入,本版废除整条 L1.2 兜底链)
@@ -96,6 +103,13 @@ class DeepSeekClient:
         # 老唐 .env 可设 SILICONFLOW_THINKING_TIMEOUT=1500 覆盖(秒,默认 1200=20 分钟)
         self.siliconflow_thinking_timeout = int(
             os.getenv("SILICONFLOW_THINKING_TIMEOUT", "1200"))
+        # v2.3.5-part2-hotfix1 C1:硅基镜像 L1 兜底模型可由 settings.json 覆盖
+        # 默认 Pro/deepseek-ai/DeepSeek-V4-Pro,老唐查到硅基真实 V4-Pro 模型 ID 后改一行即生效
+        # 配置不存在或为空字符串 → 自动回退 SILICONFLOW_TEXT_MODEL_FALLBACK(R1 镜像)
+        sf_mirror = config.get("siliconflow_mirror_model", "")
+        if not sf_mirror or not isinstance(sf_mirror, str) or not sf_mirror.strip():
+            sf_mirror = self.SILICONFLOW_TEXT_MODEL_L2
+        self.siliconflow_mirror_model = sf_mirror.strip()
         if not self.base_url.startswith("https://"):
             raise ValueError("API地址必须HTTPS")
         self.api_key = self._get_api_key()
@@ -165,6 +179,8 @@ class DeepSeekClient:
                 or "r1" in m_lower
                 or "thinking" in m_lower
                 or "v4-pro" in m_lower
+                or "deepseek-v4-pro" in m_lower
+                or "v4_pro" in m_lower
                 or "K2.6" in m
                 or "K2.5" in m)
 
@@ -463,7 +479,7 @@ class DeepSeekClient:
         was_truncated = result.get("was_truncated", False)
 
         if was_truncated:
-            print(f"       [注意] R1输出被截断(达到模型输出上限),尝试抢救...")
+            print(f"       [注意] 模型输出被截断(达到模型输出上限),尝试抢救...")
 
         parsed, error = self._extract_json_robust(content, was_truncated)
 
@@ -493,7 +509,7 @@ class DeepSeekClient:
             result["json_parse_error"] = error
             self._save_debug_output(content, call_type)
             preview = content[:300] if content else "(空)"
-            print(f"       R1原始返回(前300字): {preview}")
+            print(f"       模型原始返回(前300字): {preview}")
 
         return result
 

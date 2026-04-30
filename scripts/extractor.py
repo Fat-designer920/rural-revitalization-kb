@@ -297,7 +297,7 @@ class Extractor:
         sp = prompt["system_prompt"]
 
         ai = self.client.chat_with_jsonl(
-            sp, up, temperature=0.2, max_tokens=32768,
+            sp, up, temperature=0.2, max_tokens=65536,
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
 
         kp_objects = ai.get("kp_objects", []) or []
@@ -326,7 +326,8 @@ class Extractor:
         if meta_object:
             notes = meta_object.get("extraction_notes", "")
             if notes:
-                print(f"     AI说明: {notes[:80]}")
+                # v2.3.5-part2-hotfix1 F1:80 → 300 防 AI 说明被腰斩(0430 实测第 2/10 段被截到 80 字)
+                print(f"     AI说明: {notes[:300]}")
 
         # 定位 last_excerpt(F057 兜底链路用)
         last_excerpt = ""
@@ -337,7 +338,7 @@ class Extractor:
                 last_excerpt = ""
 
         if was_truncated:
-            print(f"     [注意] R1输出被截断,已解析{len(kps)}条完整知识点 {cost_info}")
+            print(f"     [注意] V4-Pro输出被截断,已解析{len(kps)}条完整知识点 {cost_info}")
         else:
             print(f"     本段提取{len(kps)}个知识点 {cost_info}")
 
@@ -415,18 +416,19 @@ class Extractor:
             print(f"     [L0 失败] V4-Pro 输出格式异常 + 7 步降级未救回,启动 L1 镜像兜底(硅基)")
 
         # ============= L1: 硅基镜像兜底(跨厂商物理冗余,立规则 62) =============
-        # 复用 _retry_via_siliconflow + SILICONFLOW_TEXT_MODEL_L2(原 L2 R1 镜像 model_id)
-        # 命名沿用 model_tag="r1_mirror" + layer_label="L1",入库字段 extracted_by_model="r1_mirror"
+        # v2.3.5-part2-hotfix1 C1:model_id 从类常量 SILICONFLOW_TEXT_MODEL_L2 改为
+        # 实例属性 siliconflow_mirror_model(默认 V4-Pro 镜像,settings.json 可覆盖)
+        # extracted_by_model 标记升级 r1_mirror → mirror_v4_pro 体现镜像模型版本
         l1_kps = self._retry_via_siliconflow(
             content, filename, prompt, ctype, relay_prefix, file_id,
-            model_id=self.client.SILICONFLOW_TEXT_MODEL_L2,
-            model_tag="r1_mirror", layer_label="L1")
+            model_id=self.client.siliconflow_mirror_model,
+            model_tag="mirror_v4_pro", layer_label="L1")
 
         if l1_kps is not None:
             self._truncation_stats["r1_mirror_recoveries"] += 1
             for k in l1_kps:
                 if isinstance(k, dict):
-                    k["_extracted_by_model"] = "r1_mirror"
+                    k["_extracted_by_model"] = "mirror_v4_pro"
             merged = self._dedupe_kps_by_excerpt(kps + l1_kps)
             print(f"     [L1 镜像 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条")
             return merged
@@ -442,7 +444,7 @@ class Extractor:
                 file_id=file_id,
                 payload={"filename": filename,
                          "reason": "L0/L1 all failed, partial_kps=0",
-                         "last_attempted": "siliconflow_v32_mirror"})
+                         "last_attempted": "siliconflow_mirror"})
             return []
 
         self._truncation_stats["f057_fallbacks"] += 1
@@ -496,10 +498,13 @@ class Extractor:
         sp = prompt["system_prompt"]
 
         try:
+            # v2.3.5-part2-hotfix1 C1:max_tokens 8192 → 32768(思考型不能 8K,会被思考链全吃光)
+            # 立规则 9 第 23 次应验同根:升级主链时只看主链没看降级链
+            # model_id 由调用方传入(self.client.siliconflow_mirror_model 已读 settings.json)
             ai = self.client.chat_jsonl_via_siliconflow(
                 sp, up,
                 model=model_id,
-                temperature=0.2, max_tokens=8192,
+                temperature=0.2, max_tokens=32768,
                 call_type=f"extract_{model_tag}_{filename[:30]}"
             )
         except Exception as e:
@@ -808,7 +813,7 @@ class Extractor:
         ) or "  (无)"
         recovery_relay = (base_relay_prefix or "") + (
             "\n\n=== 截断补救上下文 ===\n"
-            f"本段因R1输出截断已启动补救,前序已提取 {len(partial_kps)} 条知识点:\n"
+            f"本段因模型输出截断已启动补救,前序已提取 {len(partial_kps)} 条知识点:\n"
             f"{titles_preview}\n"
             "请从以下内容继续提取,不要重复已提取过的知识点。\n"
         )
@@ -907,7 +912,13 @@ class Extractor:
     # 日志中老唐 0429 文件遇到 ~80% 被过滤的标签实际都是格式 2/3/4 的合法标签误杀
     @classmethod
     def _normalize_tag(cls, raw):
-        """把 AI 输出的标签字符串标准化为合法 name(若不合法返回 None)"""
+        """把 AI 输出的标签字符串标准化为合法 name(若不合法返回 None)
+
+        v2.3.5-part2-hotfix1 E3:加 Case 5 子串近义匹配兜底
+        例:AI 自创"乡村振兴综合政策"(不在清单),若清单中存在含此名的合法 layer1
+        (如"C00 乡村振兴综合政策"),救回为合法 name;实在匹配不上才返回 None
+        立规则:严苛"白名单 in" 检查 → 升级为"白名单优先 + 近义兜底"
+        """
         if not isinstance(raw, str):
             return None
         s = raw.strip()
@@ -931,6 +942,20 @@ class Extractor:
             # 退而用 code 反查
             if code in cls.LAYER1_CODE_TO_NAME:
                 return cls.LAYER1_CODE_TO_NAME[code]
+        # v2.3.5-part2-hotfix1 E3 Case 5: 近义子串匹配兜底
+        # 老 prompt 的"1.6乡村振兴综合政策" / 模型自创"乡村振兴综合政策"
+        # 若清单中存在含 raw 子串 或 raw 含清单 name 子串(双向),救回首个匹配
+        # 限制:raw 长度 ≥ 4 才走近义,避免"政策"两字误匹配大半个清单
+        if len(s) >= 4:
+            for valid_name in cls.VALID_LAYER1_NAMES:
+                if not isinstance(valid_name, str) or len(valid_name) < 4:
+                    continue
+                # raw 是 valid_name 子串(如 raw="乡村振兴综合政策" valid_name="C00 乡村振兴综合政策")
+                if s in valid_name:
+                    return valid_name
+                # valid_name 是 raw 子串(如 raw="1.6乡村振兴综合政策" 含 valid_name 名)
+                if valid_name in s:
+                    return valid_name
         return None
 
     def _sanitize_tags(self, kp):
@@ -1011,7 +1036,7 @@ class Extractor:
             try:
                 ai = self.client.chat_with_json(
                     prompt["system_prompt"], up, temperature=0.2,
-                    call_type="pre_analysis", model_override="deepseek-chat")
+                    call_type="pre_analysis", model_override="deepseek-v4-pro")
                 parsed = ai.get("parsed_json")
                 if parsed and isinstance(parsed, dict):
                     cost = ai.get("estimated_cost", 0)
@@ -1052,7 +1077,7 @@ class Extractor:
         try:
             ai = self.client.chat_with_json(
                 prompt["system_prompt"], up, temperature=0.2,
-                call_type="segment_summary", model_override="deepseek-chat")
+                call_type="segment_summary", model_override="deepseek-v4-pro")
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
                 cost = ai.get("estimated_cost", 0)
@@ -1322,14 +1347,16 @@ class Extractor:
     # ================================================================
     # v2.1.0-c 新增：跨段补漏检查
     # v2.3.5-part2 升级:model 从 deepseek-chat → deepseek-v4-flash(7/24 后 deepseek-chat 退役)
+    # v2.3.5-part2-hotfix1 D1+A3:model 升 deepseek-v4-pro + max_tokens=32768 +
+    #                              kp 数 > 30 时分批检查(避免 coverage_analysis 输出超 max_tokens)
     # ================================================================
-    def _cross_segment_check(self, filename, file_structure, all_kps):
-        """V4-Flash 检查分段提取是否有遗漏。返回遗漏信息 dict 或 None。"""
-        if not file_structure:
-            print(f"     无结构摘要,跳过补漏检查")
-            return None
+    CROSS_CHECK_BATCH_SIZE = 30  # 单次检查最多多少条 kp(超过则分批)
 
-        all_titles = "\n".join(f"  {i+1}. {kp.get('title', '')}" for i, kp in enumerate(all_kps))
+    def _cross_segment_check_single_batch(self, filename, file_structure, batch_kps, batch_label=""):
+        """跨段补漏单批 V4-Pro 调用。返回 dict 或 None。
+        batch_label: "" 表示单批模式;"1/3" 等表示多批模式(仅控制台显示用)
+        """
+        all_titles = "\n".join(f"  {i+1}. {kp.get('title', '')}" for i, kp in enumerate(batch_kps))
         prompt = CROSS_SEGMENT_CHECK_PROMPT
         up = prompt["user_prompt_template"].format(
             filename=filename,
@@ -1338,31 +1365,118 @@ class Extractor:
 
         try:
             ai = self.client.chat_with_json(
-                prompt["system_prompt"], up, temperature=0.2,
-                call_type="cross_segment_check", model_override="deepseek-v4-flash")
+                prompt["system_prompt"], up, temperature=0.2, max_tokens=32768,
+                call_type="cross_segment_check", model_override="deepseek-v4-pro")
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
                 cost = ai.get("estimated_cost", 0)
-                missed = parsed.get("missed_sections", [])
-                coverage = parsed.get("overall_coverage", "未知")
-                dupes = parsed.get("duplicate_suspects", [])
-                print(f"     补漏检查完成(花费{cost:.4f}元) | 覆盖评估: {coverage}")
-                if missed:
-                    important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
-                    if important_missed:
-                        print(f"     发现{len(important_missed)}个重要性=高/中 的可能遗漏章节:")
-                        for m in important_missed[:3]:
-                            print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
-                if dupes:
-                    print(f"     [提示] 发现{len(dupes)}组疑似重复知识点")
-                # 把 cost 注入返回值,供闭环统计累加
                 parsed["_cost"] = cost
+                if batch_label:
+                    print(f"     [跨段补漏 批{batch_label}] 完成(花费{cost:.4f}元) | 覆盖: {parsed.get('overall_coverage','未知')}")
                 return parsed
         except CostLimitExceeded:
-            print(f"     费用已达上限,跳过补漏检查")
+            raise  # 跨段批次中遇到费用上限,向上抛出
         except Exception as e:
-            print(f"     补漏检查失败: {e}")
+            print(f"     [跨段补漏 批{batch_label or '单批'}] AI 调用失败: {type(e).__name__}: {str(e)[:100]}")
         return None
+
+    def _cross_segment_check(self, filename, file_structure, all_kps):
+        """V4-Pro 检查分段提取是否有遗漏。返回遗漏信息 dict 或 None。
+
+        v2.3.5-part2-hotfix1 D1:kp 数 > CROSS_CHECK_BATCH_SIZE 时自动分批
+        每批独立检查 → 合并 missed_sections(去重)+ 合并 duplicate_suspects + overall_coverage 投票
+        根因:0430 实测 109 条 kp 单次 V4-Flash 输出 coverage_analysis 超 8K 截断,中止闭环
+        修法:分批 30 条 + 切 V4-Pro + max_tokens 32K(双保险)
+        """
+        if not file_structure:
+            print(f"     无结构摘要,跳过补漏检查")
+            return None
+
+        n = len(all_kps)
+        # 单批模式
+        if n <= self.CROSS_CHECK_BATCH_SIZE:
+            try:
+                parsed = self._cross_segment_check_single_batch(filename, file_structure, all_kps, batch_label="")
+            except CostLimitExceeded:
+                print(f"     费用已达上限,跳过补漏检查")
+                return None
+            if not parsed:
+                return None
+            cost = parsed.get("_cost", 0)
+            missed = parsed.get("missed_sections", []) or []
+            coverage = parsed.get("overall_coverage", "未知")
+            dupes = parsed.get("duplicate_suspects", []) or []
+            print(f"     补漏检查完成(花费{cost:.4f}元) | 覆盖评估: {coverage}")
+            if missed:
+                important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
+                if important_missed:
+                    print(f"     发现{len(important_missed)}个重要性=高/中 的可能遗漏章节:")
+                    for m in important_missed[:3]:
+                        print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
+            if dupes:
+                print(f"     [提示] 发现{len(dupes)}组疑似重复知识点")
+            return parsed
+
+        # 分批模式(>30 条)
+        import math
+        batch_n = math.ceil(n / self.CROSS_CHECK_BATCH_SIZE)
+        print(f"     [跨段补漏] kp 数 {n} > {self.CROSS_CHECK_BATCH_SIZE},分 {batch_n} 批检查...")
+        batches = [all_kps[i:i+self.CROSS_CHECK_BATCH_SIZE] for i in range(0, n, self.CROSS_CHECK_BATCH_SIZE)]
+        all_missed = []
+        all_dupes = []
+        coverage_votes = {}
+        total_cost = 0.0
+        for i, batch in enumerate(batches, 1):
+            batch_label = f"{i}/{batch_n}"
+            try:
+                single = self._cross_segment_check_single_batch(
+                    filename, file_structure, batch, batch_label=batch_label)
+            except CostLimitExceeded:
+                print(f"     [跨段补漏] 批{batch_label}遇费用上限,中止后续批次")
+                break
+            if not single:
+                continue
+            total_cost += single.get("_cost", 0)
+            for m in single.get("missed_sections", []) or []:
+                all_missed.append(m)
+            for d in single.get("duplicate_suspects", []) or []:
+                all_dupes.append(d)
+            cov = single.get("overall_coverage", "未知")
+            coverage_votes[cov] = coverage_votes.get(cov, 0) + 1
+
+        # 合并 missed_sections(按 section_title 去重)
+        seen = set()
+        deduped_missed = []
+        for m in all_missed:
+            key = (m.get("section_title", "") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                deduped_missed.append(m)
+
+        # overall_coverage 投票:优先取"严重遗漏"/"有遗漏"等悲观值
+        # 排序:严重遗漏 > 有遗漏 > 基本完整 > 完整(覆盖度从低到高)
+        severity_order = {"严重遗漏": 4, "有遗漏": 3, "基本完整": 2, "完整": 1, "未知": 0}
+        if coverage_votes:
+            # 按严重度优先,严重度相同则按票数
+            best_cov = max(coverage_votes.keys(),
+                           key=lambda c: (severity_order.get(c, 0), coverage_votes[c]))
+        else:
+            best_cov = "未知"
+
+        important_missed = [m for m in deduped_missed if m.get("importance") in ("高", "中")]
+        print(f"     [跨段补漏] 分批合并完成(总花费{total_cost:.4f}元) | 覆盖评估: {best_cov} | 高/中遗漏: {len(important_missed)}")
+        if important_missed:
+            for m in important_missed[:3]:
+                print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
+        if all_dupes:
+            print(f"     [提示] 共发现{len(all_dupes)}组疑似重复知识点")
+
+        return {
+            "missed_sections": deduped_missed,
+            "duplicate_suspects": all_dupes,
+            "overall_coverage": best_cov,
+            "_cost": total_cost,
+        }
 
     # ================================================================
     # v2.3.5-part2 新增:补漏闭环 — 针对 missed_sections 重新提取
@@ -1468,14 +1582,19 @@ class Extractor:
     # v2.1.0-c 新增：费用预估
     # ================================================================
     def _estimate_extraction_cost(self, segments):
-        """估算R1提取费用（粗略估算，给用户一个量级参考）"""
-        # R1定价：输入4元/百万token，输出16元/百万token
-        # 粗估：1000中文字 ≈ 800 token
+        """估算 V4-Pro 提取费用（粗略估算，给用户一个量级参考）
+
+        v2.3.5-part2-hotfix1 G1:R1 价格(¥4/¥16) → V4-Pro 价格(¥1.05/¥12.5)
+        thinking 模式 output 含思考链,实际 output token ≈ 估算 × 2-3 倍
+        """
+        # V4-Pro 定价：输入 ¥1.05/百万 token，输出 ¥12.5/百万 token
+        # 粗估：1000 中文字 ≈ 800 token
         total_chars = sum(len(s) for s in segments)
-        est_input_tokens = int(total_chars * 0.8)  # 输入（含system prompt约3000字）
-        est_input_tokens += len(segments) * 3000 * 0.8  # 每段的system prompt
-        est_output_tokens = len(segments) * 1500  # 每段估算输出1500 token
-        cost = (est_input_tokens / 1e6) * 4.0 + (est_output_tokens / 1e6) * 16.0
+        est_input_tokens = int(total_chars * 0.8)  # 输入（含 system prompt 约 3000 字）
+        est_input_tokens += len(segments) * 3000 * 0.8  # 每段的 system prompt
+        # V4-Pro thinking 模式 output 含思考链,粗估 5000 token/段(R1 时代是 1500)
+        est_output_tokens = len(segments) * 5000
+        cost = (est_input_tokens / 1e6) * 1.05 + (est_output_tokens / 1e6) * 12.5
         return round(cost, 2)
 
     # ================================================================
@@ -1522,7 +1641,7 @@ class Extractor:
             )
             ai = self.client.chat_with_json(
                 QC_CHECK_PROMPT["system_prompt"], up, temperature=0.2,
-                call_type="qc_check", model_override="deepseek-chat")
+                call_type="qc_check", model_override="deepseek-v4-pro")
             parsed = ai.get("parsed_json")
             cost = ai.get("estimated_cost", 0) or 0
 
@@ -1554,7 +1673,7 @@ class Extractor:
             )
             ai = self.client.chat_with_json(
                 QC_CHECK_SINGLE_PROMPT["system_prompt"], up, temperature=0.2,
-                call_type="qc_check_single", model_override="deepseek-chat")
+                call_type="qc_check_single", model_override="deepseek-v4-pro")
             parsed = ai.get("parsed_json")
             cost = ai.get("estimated_cost", 0) or 0
 
@@ -2061,7 +2180,7 @@ class Extractor:
             ai = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.3, call_type="architecture_suggestion",
-                model_override="deepseek-chat"
+                model_override="deepseek-v4-pro"
             )
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
@@ -2244,7 +2363,7 @@ class Extractor:
             # === Step 3: 费用预估(大文件) ===
             if len(segs) >= 3:
                 est_cost = self._estimate_extraction_cost(segs)
-                print(f"     预估费用: R1提取约{est_cost:.2f}元 + V3辅助<0.2元")
+                print(f"     预估费用: V4-Pro 提取约{est_cost:.2f}元 + V4-Pro 辅助调用(预分析/质检/补漏/分类)")
                 if est_cost > 5.0:
                     if self._headless:
                         print(f"     [headless] 费用较高({est_cost:.1f}元)，自动继续")

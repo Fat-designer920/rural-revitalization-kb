@@ -271,20 +271,17 @@ class RelationAnalyzer:
             members = group["members"][:MAX_GROUP_SIZE_FOR_AI]
             max_score = group["max_score"]
             print(f"  [{idx}/{len(groups)}] 判别组 (members={members}, score={max_score:.2f})")
-            judgment = self._call_ai_judge(members, kp_map, model="deepseek-chat")
+            judgment = self._call_ai_judge(members, kp_map, model="deepseek-v4-pro")
             if not judgment:
                 continue
             confidence = judgment.get("confidence", 0)
-            # confidence 低 → 升级 R1
+            judgment["_source_model"] = "v4pro_main"
+            # v2.3.5-part2-hotfix1 A7:V4-Pro 主链已是顶级思考型,confidence 低不再二次升级
+            # (原 V3→R1 升级是因为 V3 非思考,V4-Pro 自带思考链;低 confidence 走 human_review)
             if confidence < CONFIDENCE_UPGRADE_THRESHOLD:
-                print(f"     V3 confidence={confidence} < {CONFIDENCE_UPGRADE_THRESHOLD}, 升级 R1...")
-                r1_judgment = self._call_ai_judge(members, kp_map, model="deepseek-reasoner")
-                if r1_judgment:
-                    r1_judgment["_source_model"] = "r1_fallback"
-                    judgment = r1_judgment
-                    confidence = judgment.get("confidence", 0)
-            else:
-                judgment["_source_model"] = "v3_main"
+                print(f"     V4-Pro confidence={confidence} < {CONFIDENCE_UPGRADE_THRESHOLD}, "
+                      f"标记待研判(fallback_action=human_review)")
+                judgment["fallback_action"] = "human_review"
 
             relation_type = judgment.get("relation_type", "unrelated")
             # unrelated → 不建关系
@@ -298,7 +295,7 @@ class RelationAnalyzer:
 
         return created
 
-    def _call_ai_judge(self, member_ids, kp_map, model="deepseek-chat"):
+    def _call_ai_judge(self, member_ids, kp_map, model="deepseek-v4-pro"):
         """调 AI 判别一组关系,返回规范化 dict 或 None"""
         try:
             kp_descriptions = []
