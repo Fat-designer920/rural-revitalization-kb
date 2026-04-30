@@ -75,7 +75,7 @@ def run_analytics():
                 total_edit_records += 1
                 for field_name in fields.keys():
                     field_counts[field_name] = field_counts.get(field_name, 0) + 1
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     FIELD_LABELS = {
@@ -213,7 +213,7 @@ def run_analytics():
                 for flag in flags:
                     if isinstance(flag, str) and flag:
                         flag_counts[flag] = flag_counts.get(flag, 0) + 1
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     FLAG_LABELS = {
@@ -313,7 +313,7 @@ def get_analytics_json():
                 total_edit_records += 1
                 for fn in fields.keys():
                     field_counts[fn] = field_counts.get(fn, 0) + 1
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
     field_list = []
     for fn, cnt in sorted(field_counts.items(), key=lambda x: -x[1]):
@@ -376,7 +376,7 @@ def get_analytics_json():
                 for fl in flags:
                     if isinstance(fl, str) and fl:
                         flag_counts[fl] = flag_counts.get(fl, 0) + 1
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
     flag_list = []
     for fl, cnt in sorted(flag_counts.items(), key=lambda x: -x[1]):

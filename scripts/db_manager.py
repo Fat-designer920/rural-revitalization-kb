@@ -1207,7 +1207,7 @@ class DatabaseManager:
         rows = [dict(r) for r in c.fetchall()]; conn.close()
         for row in rows:
             try: row["edited_fields"] = json.loads(row["edited_fields"]) if isinstance(row["edited_fields"], str) else row["edited_fields"]
-            except: pass
+            except (json.JSONDecodeError, ValueError): pass
         return rows
 
     def restore_from_history(self, kp_id, history_id):
@@ -1216,7 +1216,7 @@ class DatabaseManager:
         h = c.fetchone(); conn.close()
         if not h: return False, "历史记录不存在"
         try: fields = json.loads(h["edited_fields"]) if isinstance(h["edited_fields"], str) else h["edited_fields"]
-        except: return False, "历史记录格式错误"
+        except (json.JSONDecodeError, ValueError): return False, "历史记录格式错误"
         current_kp = self.get_knowledge_point(kp_id)
         if not current_kp: return False, "知识点不存在"
         restore_changes, update_kw = {}, {}
@@ -1316,7 +1316,7 @@ class DatabaseManager:
         rows = [dict(r) for r in c.fetchall()]; conn.close()
         for r in rows:
             try: r["related_knowledge_ids"] = json.loads(r["related_knowledge_ids"]) if isinstance(r["related_knowledge_ids"], str) else r["related_knowledge_ids"]
-            except: r["related_knowledge_ids"] = []
+            except (json.JSONDecodeError, ValueError): r["related_knowledge_ids"] = []
         return rows
 
     def update_suggestion_status(self, suggestion_id, status):
@@ -1533,7 +1533,7 @@ class DatabaseManager:
         try:
             c.execute("SELECT COUNT(*) as cnt FROM duplicate_groups WHERE status='pending'")
             stats["pending_duplicates"] = c.fetchone()["cnt"]
-        except:
+        except Exception:
             stats["pending_duplicates"] = 0
         conn.close(); return stats
 
@@ -1591,7 +1591,7 @@ class DatabaseManager:
             for row in c.fetchall():
                 if row["status"] in summary:
                     summary[row["status"]] = row["cnt"]
-        except:
+        except Exception:
             pass  # 表可能不存在
         conn.close()
         return summary
@@ -1607,7 +1607,7 @@ class DatabaseManager:
                          WHERE status='pending'""")
             count = c.rowcount
             conn.commit()
-        except:
+        except Exception:
             count = 0
         conn.close()
         if count > 0:
@@ -1642,7 +1642,7 @@ class DatabaseManager:
             if isinstance(r.get("tags"), str):
                 try:
                     r["tags"] = json.loads(r["tags"])
-                except:
+                except (json.JSONDecodeError, ValueError):
                     r["tags"] = []
         return rows
 
@@ -1671,7 +1671,7 @@ class DatabaseManager:
             c.execute("SELECT annotation_type, COUNT(*) FROM annotations GROUP BY annotation_type")
             for row in c.fetchall():
                 summary["by_type"][row[0]] = row[1]
-        except:
+        except Exception:
             pass
         conn.close()
         return summary

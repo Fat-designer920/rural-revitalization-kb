@@ -184,7 +184,7 @@ class Extractor:
         if self._progress_callback:
             try:
                 self._progress_callback(kw)
-            except:
+            except Exception:
                 pass
 
     @staticmethod
@@ -1119,7 +1119,7 @@ class Extractor:
                         self.db.update_source_file(
                             self._current_file_id,
                             segment_plan=json.dumps(structure_result, ensure_ascii=False))
-                    except:
+                    except Exception:
                         pass
                     return segs, struct_text
             print(f"     V3分段建议不可用,切换到本地规则分段")

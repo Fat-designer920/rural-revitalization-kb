@@ -45,7 +45,7 @@ def _load_config():
     try:
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception:
         return None
 
 def _get_db_path(config):
@@ -78,7 +78,7 @@ def check_deps():
         try:
             __import__(m)
             print(f"    OK {n}")
-        except:
+        except Exception:
             print(f"    FAIL {n}")
             ok = False
     return ok
@@ -182,7 +182,7 @@ def check_disk():
             return False
         print(f"    OK")
         return True
-    except:
+    except Exception:
         return True
 
 # ================================================================
@@ -347,11 +347,11 @@ def check_prompt_version():
     try:
         from scripts.prompts.prompt_templates import get_prompt_version
         current = get_prompt_version()
-    except:
+    except ImportError:
         try:
             from prompts.prompt_templates import get_prompt_version
             current = get_prompt_version()
-        except:
+        except Exception:
             print(f"    WARN 无法加载prompt_templates")
             return True
     print(f"    当前版本: {current}")
@@ -445,12 +445,12 @@ def check_backup_status():
         from scripts.backup_manager import BackupManager
         bm = BackupManager()
         status = bm.get_backup_status()
-    except:
+    except ImportError:
         try:
             from backup_manager import BackupManager
             bm = BackupManager()
             status = bm.get_backup_status()
-        except:
+        except Exception:
             backup_dir = PROJECT_ROOT / "data" / "backups"
             if backup_dir.exists():
                 backups = list(backup_dir.glob("*.db"))
@@ -880,7 +880,7 @@ def run_checks_json():
     for m, n in mods.items():
         try:
             __import__(m)
-        except:
+        except Exception:
             missing.append(n)
     results.append({
         "name": "依赖库",
@@ -929,7 +929,7 @@ def run_checks_json():
         _, _, f = shutil.disk_usage(str(PROJECT_ROOT))
         fg = f / (1024 ** 3)
         results.append({"name": "磁盘空间", "ok": fg >= 1, "detail": "%.1fGB剩余" % fg})
-    except:
+    except Exception:
         results.append({"name": "磁盘空间", "ok": True, "detail": "无法检测"})
 
     # [6-15] 数据库相关检查（需要数据库存在）
@@ -986,11 +986,11 @@ def run_checks_json():
         try:
             from scripts.prompts.prompt_templates import get_prompt_version
             current_pv = get_prompt_version()
-        except:
+        except ImportError:
             try:
                 from prompts.prompt_templates import get_prompt_version
                 current_pv = get_prompt_version()
-            except:
+            except Exception:
                 current_pv = None
         if current_pv and total_kp > 0:
             cur.execute("SELECT COUNT(*) FROM knowledge_points WHERE prompt_version IS NOT NULL AND prompt_version != ? AND prompt_version != ''", (current_pv,))
@@ -1026,7 +1026,7 @@ def run_checks_json():
             blatest = bs.get("latest", "无") if bs else "无"
             results.append({"name": "备份状态", "ok": bcount > 0,
                             "detail": "%d个备份, 最近: %s" % (bcount, blatest)})
-        except:
+        except Exception:
             backup_dir = PROJECT_ROOT / "data" / "backups"
             bcount = len(list(backup_dir.glob("*.db"))) if backup_dir.exists() else 0
             results.append({"name": "备份状态", "ok": bcount > 0,

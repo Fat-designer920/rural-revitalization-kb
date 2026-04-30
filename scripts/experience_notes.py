@@ -118,11 +118,11 @@ class ExperienceNotes:
         try:
             from scripts.prompts.prompt_templates import get_prompt_version
             prompt_version = get_prompt_version()
-        except:
+        except ImportError:
             try:
                 from prompts.prompt_templates import get_prompt_version
                 prompt_version = get_prompt_version()
-            except:
+            except Exception:
                 prompt_version = "v2.2.0"
 
         # 写入knowledge_points

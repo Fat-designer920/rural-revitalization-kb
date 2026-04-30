@@ -30,7 +30,7 @@ def _load_config():
     try:
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception:
         return None
 
 
@@ -189,13 +189,13 @@ def scan_freshness(db_path=None):
         if check_time:
             try:
                 base = datetime.strptime(check_time, "%Y-%m-%d %H:%M:%S")
-            except:
+            except (ValueError, TypeError):
                 base = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S")
         else:
             # 从未检查过，以created_at为起算点
             try:
                 base = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S")
-            except:
+            except (ValueError, TypeError):
                 continue
 
         days_since = (now - base).days

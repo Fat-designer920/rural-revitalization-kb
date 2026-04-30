@@ -633,7 +633,7 @@ def _parse(v):
     if v is None or isinstance(v,(dict,list)): return v
     if isinstance(v,str):
         try: return json.loads(v)
-        except: return v
+        except (json.JSONDecodeError, ValueError): return v
     return v
 
 def _safe(item):
@@ -1002,7 +1002,7 @@ def revalidate_policy(kid):
         raw = kp.get("ai_extracted_content", "{}")
         if isinstance(raw, str):
             try: ai_content = json.loads(raw)
-            except: pass
+            except (json.JSONDecodeError, ValueError): pass
         elif isinstance(raw, dict):
             ai_content = raw
         kps_mock = [{
@@ -1075,7 +1075,7 @@ def get_annotation_tags():
         try:
             from experience_notes import ANNOTATION_TAGS
             return jsonify(ANNOTATION_TAGS)
-        except:
+        except Exception:
             return jsonify(["老唐实战验证","有实战案例佐证","需要现场确认","已过时需更新",
                            "四川特有经验","可直接用于培训","可用于投标方案","需要补充政策依据",
                            "客户常问的问题","反常识但正确"])
@@ -1766,7 +1766,7 @@ def batch_restore_to_pending():
 @app.route("/api/knowledge-points/<int:kid>/history", methods=["GET"])
 def get_history(kid):
     try: return jsonify(db.get_edit_history(kid))
-    except: return jsonify([])
+    except Exception: return jsonify([])
 
 @app.route("/api/knowledge-points/<int:kid>/restore-version/<int:hid>", methods=["POST"])
 def restore_version(kid, hid):
@@ -1799,17 +1799,17 @@ def add_cat():
 @app.route("/api/categories/stats", methods=["GET"])
 def cat_stats():
     try: return jsonify(db.get_category_stats())
-    except: return jsonify([])
+    except Exception: return jsonify([])
 
 @app.route("/api/categories")
 def cats():
     try: return jsonify(db.get_all_categories())
-    except: return jsonify([])
+    except Exception: return jsonify([])
 
 @app.route("/api/categories/tree")
 def tree():
     try: return jsonify(db.get_categories_tree())
-    except: return jsonify({})
+    except Exception: return jsonify({})
 
 # ================================================================
 # AI建议
@@ -1817,7 +1817,7 @@ def tree():
 @app.route("/api/architecture-suggestions", methods=["GET"])
 def get_suggestions():
     try: return jsonify(db.get_pending_suggestions())
-    except: return jsonify([])
+    except Exception: return jsonify([])
 
 @app.route("/api/architecture-suggestions/<int:sid>/approve", methods=["POST"])
 def approve_suggestion(sid):
@@ -1878,16 +1878,16 @@ def get_all_tags():
                             t = t.strip()
                             if t and _is_valid_tag(t):
                                 tag_count[t] = tag_count.get(t, 0) + 1
-                except: pass
+                except Exception: pass
         conn.close()
         sorted_tags = sorted(tag_count.items(), key=lambda x: -x[1])
         return jsonify([{"tag": t, "count": c} for t, c in sorted_tags])
-    except: traceback.print_exc(); return jsonify([])
+    except Exception: traceback.print_exc(); return jsonify([])
 
 @app.route("/api/statistics")
 def stats():
     try: return jsonify(db.get_statistics())
-    except: return jsonify({"files":{},"knowledge_points":{},"by_type":{},"today_api_cost":0,"total_confirmed":0,"total_pending":0,"pending_suggestions":0})
+    except Exception: return jsonify({"files":{},"knowledge_points":{},"by_type":{},"today_api_cost":0,"total_confirmed":0,"total_pending":0,"pending_suggestions":0})
 
 @app.route("/api/files")
 def files():
@@ -1897,7 +1897,7 @@ def files():
         if s: c.execute("SELECT * FROM source_files WHERE process_status=? ORDER BY created_at DESC",(s,))
         else: c.execute("SELECT * FROM source_files ORDER BY created_at DESC")
         rows=[dict(r) for r in c.fetchall()];conn.close();return jsonify(rows)
-    except: return jsonify([])
+    except Exception: return jsonify([])
 
 @app.route("/api/system/health")
 def health(): return jsonify({"status":"ok"})
@@ -1960,7 +1960,7 @@ def dashboard():
             if cfg_p2.exists():
                 with open(cfg_p2, "r", encoding="utf-8") as f2:
                     data["daily_limit"] = json.load(f2).get("daily_cost_limit", 0)
-        except:
+        except Exception:
             data["daily_limit"] = 0
 
         # 今日按类型统计(保留供API详情弹窗使用)
@@ -2008,7 +2008,7 @@ def dashboard():
             for row in c.fetchall():
                 qa_src_map[row[0] or "batch"] = row[1]
             data["qa_source_distribution"] = qa_src_map
-        except:
+        except Exception:
             data["qa_source_distribution"] = {}
 
         # 保鲜摘要
@@ -2017,31 +2017,31 @@ def dashboard():
             # 已设保鲜周期的知识点数
             c.execute("SELECT COUNT(*) FROM knowledge_points WHERE freshness_interval_days IS NOT NULL AND freshness_interval_days > 0")
             data["freshness"]["managed"] = c.fetchone()[0]
-        except:
+        except Exception:
             data["freshness"] = {"expired": 0, "expiring": 0, "fresh": 0, "managed": 0}
 
         # 政策校验摘要
         try:
             data["policy"] = db.get_policy_validation_summary()
-        except:
+        except Exception:
             data["policy"] = {}
 
         # 重复检测摘要
         try:
             data["duplicates"] = db.get_duplicate_summary()
-        except:
+        except Exception:
             data["duplicates"] = {"pending": 0}
 
         # v2.2.3 F057: 截断补救摘要（供仪表盘"截断补救"卡）
         try:
             data["truncation"] = db.get_truncation_summary()
-        except:
+        except Exception:
             data["truncation"] = {"affected_files": 0, "total_truncations": 0, "total_recovery_runs": 0}
 
         # v2.2.3 F061: 质检补跑候选摘要（供工具箱"质检补跑"按钮角标）
         try:
             data["qc_rerun"] = db.get_qc_rerun_summary()
-        except:
+        except Exception:
             data["qc_rerun"] = {"total_candidates": 0}
 
         # v2.3.0-part1 F049: 标签分布（A/C/D 组，供仪表盘卡片+穿透跳转）
@@ -2090,7 +2090,7 @@ def dashboard():
             if cfg_p.exists():
                 with open(cfg_p, "r", encoding="utf-8") as f:
                     base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
-        except:
+        except Exception:
             pass
         for d in ["pending", "processing", "completed", "failed"]:
             dd = base / "data" / d
@@ -2106,7 +2106,7 @@ def dashboard():
         # v2.2.0: 注解统计
         try:
             data["annotations"] = db.get_annotation_summary()
-        except:
+        except Exception:
             data["annotations"] = {"annotated_kps": 0, "total_annotations": 0, "by_type": {}}
 
         # v2.2.0: 手动录入统计
@@ -2114,7 +2114,7 @@ def dashboard():
             c2 = conn.cursor()
             c2.execute("SELECT COUNT(*) FROM knowledge_points WHERE source_type='experience_note'")
             data["manual_kps"] = c2.fetchone()[0]
-        except:
+        except Exception:
             data["manual_kps"] = 0
 
         conn.close()
@@ -2344,7 +2344,7 @@ def _load_source_content(sf):
         if cfg_p.exists():
             with open(cfg_p, "r", encoding="utf-8") as f:
                 base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
-    except:
+    except Exception:
         pass
     fn = sf.get("renamed_filename") or sf.get("original_filename") or ""
     if not fn:
@@ -2357,7 +2357,7 @@ def _load_source_content(sf):
         if p.exists():
             try:
                 return p.read_text(encoding="utf-8")
-            except:
+            except Exception:
                 continue
     # 再尝试文本原文件
     for d in ["processing", "completed", "failed"]:
@@ -2365,7 +2365,7 @@ def _load_source_content(sf):
         if p.exists() and p.suffix.lower() in (".txt", ".md"):
             try:
                 return p.read_text(encoding="utf-8")
-            except:
+            except Exception:
                 continue
     return ""
 
@@ -2380,7 +2380,7 @@ def _qc_rerun_core(progress_cb=None):
     def _report(d):
         if progress_cb:
             try: progress_cb(d)
-            except: pass
+            except Exception: pass
 
     try:
         candidates = db.get_qc_rerun_candidates()
@@ -2431,7 +2431,7 @@ def _qc_rerun_core(progress_cb=None):
             aic = k.get("ai_extracted_content") or "{}"
             if isinstance(aic, str):
                 try: aic = json.loads(aic)
-                except: aic = {}
+                except (json.JSONDecodeError, ValueError): aic = {}
             if not isinstance(aic, dict):
                 aic = {}
             kp_data = dict(aic)
@@ -2440,7 +2440,7 @@ def _qc_rerun_core(progress_cb=None):
             pi = k.get("practical_insights") or "[]"
             if isinstance(pi, str):
                 try: pi = json.loads(pi)
-                except: pi = []
+                except (json.JSONDecodeError, ValueError): pi = []
             if not isinstance(pi, list):
                 pi = []
             kp_data["practical_insights"] = pi
@@ -2499,7 +2499,7 @@ def _qc_rerun_core(progress_cb=None):
     summary_after = {}
     try:
         summary_after = db.get_qc_rerun_summary()
-    except:
+    except Exception:
         pass
 
     # v2.3.0-hotfix: 补跑尾阶段顺手跑一次就绪度联动（qa>=4 且 draft → quotable）
@@ -3085,7 +3085,7 @@ def api_events():
             pj = item.get("payload_json")
             if isinstance(pj, str):
                 try: item["payload"] = json.loads(pj)
-                except: item["payload"] = {}
+                except (json.JSONDecodeError, ValueError): item["payload"] = {}
             elif isinstance(pj, dict):
                 item["payload"] = pj
             else:
@@ -3150,7 +3150,7 @@ def tool_file_pipeline():
             if cfg_p.exists():
                 with open(cfg_p, "r", encoding="utf-8") as f:
                     base = Path(json.load(f).get("knowledge_base_path", str(PROJECT_ROOT)))
-        except:
+        except Exception:
             pass
         pipeline = {}
         for d, desc in [("pending", "待分析"), ("processing", "处理中"),
@@ -3202,7 +3202,7 @@ def tool_api_cost():
             try:
                 with open(cfg_p, "r", encoding="utf-8") as f:
                     limit = json.load(f).get("daily_cost_limit", 0)
-            except:
+            except Exception:
                 pass
         conn.close()
         return jsonify({
@@ -3331,11 +3331,11 @@ def reextract_scan():
         try:
             from scripts.prompts.prompt_templates import get_prompt_version
             current_pv = get_prompt_version()
-        except:
+        except ImportError:
             try:
                 from prompts.prompt_templates import get_prompt_version
                 current_pv = get_prompt_version()
-            except:
+            except Exception:
                 current_pv = "unknown"
         rows = db.get_reextract_scan(current_pv)
         return jsonify({"current_version": current_pv, "files": rows})

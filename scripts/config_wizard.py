@@ -81,7 +81,7 @@ class ConfigWizard:
             try:
                 d = decrypt_value(self.existing["deepseek_api_key_encrypted"])
                 self.api_key_var.set(d[:8]+"****"+d[-4:] if len(d)>12 else "****(已配置)")
-            except: pass
+            except Exception: pass
         tk.Entry(mf, textvariable=self.api_key_var, font=("Consolas",11), width=55).pack(fill="x", pady=(3,10))
 
         # 2. 知识库路径
@@ -107,7 +107,7 @@ class ConfigWizard:
             try:
                 d = decrypt_value(self.existing["siliconflow_api_key_encrypted"])
                 self.sf_key_var.set(d[:8]+"****"+d[-4:] if len(d)>12 else "****(已配置)")
-            except: pass
+            except Exception: pass
         tk.Entry(mf, textvariable=self.sf_key_var, font=("Consolas",11), width=55).pack(fill="x", pady=(3,10))
 
         # 5. Kimi 官方 API Key (v2.3.5-part1.3 W1 新增)
@@ -118,7 +118,7 @@ class ConfigWizard:
             try:
                 d = decrypt_value(self.existing["kimi_official_api_key_encrypted"])
                 self.kimi_key_var.set(d[:8]+"****"+d[-4:] if len(d)>12 else "****(已配置)")
-            except: pass
+            except Exception: pass
         tk.Entry(mf, textvariable=self.kimi_key_var, font=("Consolas",11), width=55).pack(fill="x", pady=(3,10))
 
         # 6. Notion Token
@@ -148,7 +148,7 @@ class ConfigWizard:
             if enc:
                 try:
                     return decrypt_value(enc)
-                except:
+                except Exception:
                     return None
             return None
         return key
@@ -210,7 +210,7 @@ class ConfigWizard:
         try:
             cost = float(self.cost_var.get().strip())
             if cost <= 0: raise ValueError
-        except: messagebox.showwarning("提示","费用上限须为正数"); return
+        except (ValueError, TypeError): messagebox.showwarning("提示","费用上限须为正数"); return
 
         config = load_config()
         if key and "****" not in key:

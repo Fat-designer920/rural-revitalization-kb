@@ -385,7 +385,7 @@ class PolicyValidator:
                 raw = row.get("ai_extracted_content", "{}")
                 if isinstance(raw, str):
                     ai_content = json.loads(raw)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 pass
 
             kps.append({
