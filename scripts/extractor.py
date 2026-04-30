@@ -1,97 +1,48 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.5-part1.3 - L1 救援链双层互备(L1.1 硅基 K2.6 → L1.2 Kimi 官方 K2.6 → L2 R1 镜像)
+版本：v2.3.5-part2 - V4-Pro 主链 + 跨段补漏闭环 + Kimi 兜底链全删 + F5 标签容错
 
-变更说明（v2.3.5-part1.3）：
-  E1 _extract_with_auto_split 降级链:L1 单层 → L1.1 + L1.2 双层互备(立规则 62 落地)
-     - L1.1: chat_jsonl_via_siliconflow (Kimi-K2.6, 硅基)        ← 原 L1, 优先尝试
-     - L1.2: chat_jsonl_via_kimi_official (kimi-k2.6, Moonshot 官方) ← 新增, 硅基挂时切此层
-     - L2 / L3 / L4 不变(R1 镜像 / F057 / 全失败)
-     根因:老唐 0429 实测 v2.3.5-part1.2 仍遇硅基 ConnectionError,L1+L2 共享硅基基础设施
-          的"逻辑冗余"在硅基整体抖动时同时挂掉。Kimi 官方直连作为 L1.2 形成跨厂商物理冗余。
-     行为:L1.1 抛任何 Exception → 立刻尝试 L1.2(参考 deepseek_client._request 的 max_retries=3
-          已经在硅基侧消化偶发抖动,L1.1 整体失败说明硅基厂商问题,切 Kimi 官方更经济)。
-          老唐选择"硅基优先"(成本低 60%),"任何异常立刻切",由 _retry_via_siliconflow 抛出
-          异常上层捕获即可,无需在循环内嵌套重试。
-  E2 新增 _retry_via_kimi_official 方法(参照 _retry_via_siliconflow 改写)
-     - 调用 client.chat_jsonl_via_kimi_official 而非 chat_jsonl_via_siliconflow
-     - 启动前 client.has_kimi_official() 探测,未配置 Kimi 官方 key 则跳过 L1.2
-     - 异常处理 / 解析判定 / 日志事件 与 _retry_via_siliconflow 完全对齐
-  E3 _truncation_stats 扩字段 kimi_official_recoveries
-     extracted_by_model 新增取值 "kimi_official"(原 r1/kimi/r1_mirror/f057_recovery)
-     仪表盘 Card 15 老唐肉眼监控 L1.2 救回比例
-  E4 _print_truncation_stats 加 L1.2 输出
-     "L1.1 硅基 Kimi 救" / "L1.2 官方 Kimi 救" / "L2 R1 镜像救"(原 L1/L2 重命名为 L1.1/L2)
-  E5 控制台日志区分 L1.1 / L1.2:
-     [L1.1 异常] connection 重试 3 次失败
-     [L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6
-     [L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2(老唐可在配置向导补填)
-     [L1.2 成功] kimi-k2.6 提取 N 条(完整) (X.XXXX元)
-  立规则 62 落地(part1.3 新立):多层降级链相邻两层不应共享同一供应商 endpoint(物理冗余 vs 逻辑冗余)
+变更说明（v2.3.5-part2, 2026-04-30）：
+  D1 主链升级 R1 → V4-Pro thinking 模式:
+     - MODEL_OPTIONS 重写,选项 1=deepseek-v4-pro / 2=deepseek-v4-flash
+     - 老 R1/V3 model 名作 1_legacy/2_legacy 保留供逃生回滚
+     - 主提取 max_tokens 从默认 8192 → 32768,充分利用 V4 384K 输出能力
+     - 截断概率预期从 30% 降到 ~0%(V4 Max-Output 47 倍于 R1)
+     - Prompt 内容完全不动(同一套 prompt 喂 V4-Pro thinking 模式)
+  D2 截断救援链 5 层 → 3 层(立规则 16 改造):
+     - L0 V4-Pro 主提取 → L1 硅基镜像兜底 → L2 F057(若 partial>=1)→ L3 保留
+     - 删除 L1.1 硅基 Kimi-K2.6(原 L1) + L1.2 Kimi 官方 K2.6(part1.3 引入)
+     - 删除 _retry_via_kimi_official 方法 + _truncation_stats 中 kimi_* 字段
+     - L1 复用 _retry_via_siliconflow + SILICONFLOW_TEXT_MODEL_L2 model_id
+     - 立规则 62 仍成立(V4-Pro=api.deepseek.com / 镜像=api.siliconflow.cn 跨厂商)
+     - 日志铁证(0429 实测): L1.1+L1.2 三段截断全失败,真正救回都是原 L2(硅基镜像)
+  D3 跨段补漏闭环(F1 核心新功能,老唐 0430 拍板:5 轮上限 + "基本完整"即合格):
+     - 新增 _supplementary_extract 方法:针对 missed_sections 高/中重要性章节重新提取
+     - Step 5 状态机:首轮检查 → 不合格 → 补提 → 再检查 → 直到合格或 5 轮上限
+     - V4-Pro 1M context 装得下完整原文,无需切片;Prompt 加"已提取标题清单"避免重复
+     - extracted_by_model 新取值 "supplementary"(供审计区分首轮 / 补漏轮)
+  D4 F5 标签校验容错(立规则 10 第 N 次应验):
+     - _sanitize_tags 加 _normalize_tag 函数,剥离 code 前缀 + code↔name 双向映射
+     - AI 输出 "A10 乡村产业运营" / "A10乡村产业运营" / "A10" 等格式都映射到合法 name
+     - 日志中老唐 0429 文件 ~80% 被过滤标签实为格式误杀,本版起恢复入库
+  D5 _cross_segment_check model 升级 deepseek-chat → deepseek-v4-flash
+  D6 立规则 9 第 22 次应验联动:relation_analyzer.py:330 chat_with_json model= 关键字漏改修复
 
-变更说明（v2.3.5-part1.1）：
-  P1 v2.3.5-part1 的"replace duplicate_checker by relation_analyzer"改造时,
-     api_server.py 完整迁移了所有调用方,但 extractor.py 内 3 处引用未同步:
-     - 第 66 行 import:  from scripts.duplicate_checker import DuplicateChecker
-     - 第 131 行 实例化: self.duplicate_checker = DuplicateChecker(...)
-     - 第 2213 行 调用: self.duplicate_checker.scan_incremental(new_ids)
-     部署 v2.3.5-part1 后老唐 0428 触发提取就 ModuleNotFoundError 暴露
-  P2 接口契约 drop-in 兼容:
-     - RelationAnalyzer(db=, client=) 与 DuplicateChecker(db=, client=) 签名一致
-     - scan_incremental(new_kp_ids) -> int(组数) 方法签名 + 返回值类型完全一致
-     - 仅"组数"语义从"疑似重复"扩展为"AI 六态判定后的关系组"
-  P3 三处替换 + 变量名 + 控制台文案对齐(产品决策):
-     - self.duplicate_checker → self.relation_analyzer(语义对齐 v2.3.5-part1 升级精神)
-     - dup_count 局部变量 → rel_count
-     - "[发现{N}组疑似重复]" → "[发现{N}组疑似关系]"(让老唐看仪表盘时知道走的是六态新引擎)
-  根因:**立规则 9 第 19 次应验**(同根第 17 次 hotfix1 漏扩 R1_MODELS 集合):
-     v2.3.5-part1 改造模块时未 grep 全 codebase 同步替换调用方。本次起执行规范升级:
-     **替换 / 删除模块时,必须 grep "旧模块名 / 旧类名 / self.旧成员名" 全 scripts/ 扫,
-     列出所有调用方一次性同步**。立规则 50 第 N 次应用(改完拉通验证 — 应跑一次
-     `python -c "import scripts.extractor"` 才能在交付前发现 import 死链)
+立规则 16 改造(v2.3.5-part2):截断兜底链从"5 层(R1→Kimi硅基→Kimi官方→R1镜像→F057)"
+  改为"3 层(V4-Pro→V3.2镜像→F057)"。Kimi 物理冗余目标实测不达预期(L1.1+L1.2 三段全失败),
+  V4 max_output 直接根治截断从源头消除"必须思考型概率冗余"的需求。
 
-变更说明（v2.3.4-hotfix3）：
-  X1 _extract_with_auto_split 第 340 行附近 BUG#2A 修复:
-    - 原:if not result["truncated"] and kps: return kps  ← 致命 and kps
-    - 改:未截断时一律 return kps,0 条 kp 也是 R1 合理判定(背景段/章节标题)
-    - 新增分支:0 kp + raw_parsed=True → "本段无可提取知识点(R1 合理判定,跳过救援)"
-    - 仅当 0 kp + raw_parsed=False(7 步降级也救不回)才进降级链
-  X2 配合 deepseek_client.chat_with_jsonl 的 X2:
-    - 上层不变,但 raw_parsed=True 的概率因 7 步保险大幅提升
-    - 老唐 0428 第 2 段 958 字 0.099 元 R1 输出全丢,本版起会被 7 步保险救回
-  根因:hotfix1 引入降级链时把"0 kp"和"截断"混为一谈,实际 R1 完成思考且未截断时
-       0 kp 是合法结果(背景段/章节标题/空白页),不应触发不必要救援链
-  立规则 9 第 18 次应验:if not X and Y 形式的判定容易把"X 不成立"和"Y 不存在"混淆,
-       应明确分支条件,prefer "if not X: return Y(可空)" 形式
+立规则 63 首次正式落地(v2.3.5-part2):Phase 1 信息齐全度自检 INFO-CHECK
+  本版 Phase 1 输出三张清单(待补传文件 / 待 web_search / 待用户决策)清空后才进 Phase 2。
 
-变更说明（v2.3.4-hotfix1）：
-  H1 _extract_with_auto_split 降级链重写(段内同步,不留事后批量重跑):
-    - L0: chat_with_jsonl (R1, deepseek-reasoner) 主提取 → 截断/0 partial/解析失败 ↓
-    - L1: chat_jsonl_via_siliconflow (Kimi-K2.6, 思考型, 256K) 整段重提 → 仍失败 ↓
-    - L2: chat_jsonl_via_siliconflow (Pro/deepseek-ai/DeepSeek-R1, R1 跨厂商镜像) 整段重提 ↓
-    - L3: F057 老逻辑(若 partial_kps>=1 时尾段补救) ↓
-    - L4: 保留已提取 + error 事件 + 控制台 ❌
-  H2 废弃 prefix 续写主链(_recover_via_prefix 整体不再被调用,代码保留作未来重启)
-  H3 每条 kp 在生成时打 _extracted_by_model 标记(r1/kimi/r1_mirror/f057_recovery)
-     入库 add_knowledge_point 透传 extracted_by_model 字段(老唐肉眼仪表盘监控)
-  H4 _truncation_stats 扩字段:kimi_recoveries / r1_mirror_recoveries / total_failures
-  H5 控制台 📊 [文件统计] 字段升级:截断/Kimi救/R1镜像救/F057兜底/全失败
-  根因:v2.3.4 prefix 续写假设 partial_kps>=1, R1 思考爆 token 时 partial==0 直接失效。
-  老唐 2026-04-28 喂料实测第 8/10 段(611字)触发缺口,整段失败 0 提取。
-  新方案:多思考型模型整段重提,跨模型概率冗余压低截断概率到接近 0。
-
-变更说明（v2.3.4）：
-  D9 输出形态升级为 JSON Lines:
-    - _extract_single 改用 self.client.chat_with_jsonl()
-    - 返回 dict 增加 prefix_for_continuation / meta 两字段
-  D10 截断处理新流程(三级降级):
-    - L0/L1: prefix 续写(走 beta 端点 + V3,最多 2 次) [v2.3.4-hotfix1 起 DEPRECATED]
-    - L2 兜底: F057 老逻辑 excerpt 三级定位
-    - L3 终态: 保留已提取 + warning 日志
-  D11 文件级控制台统计:
-    - extract_from_file 入口重置 self._truncation_stats
-    - 完成时控制台输出一行 📊 [文件统计]
+============================================================
+旧版本变更说明已迁移至 CHANGELOG.md(立规则 51 做减法)
+v2.3.5-part1.x:L1 救援链双层互备 → 本版整体废弃
+v2.3.4-hotfix1/2/3:R1 截断防御 → 本版被 V4-Pro 384K 输出根治
+v2.3.4:JSON Lines + Chat Prefix Completion → 保留(JSON Lines 仍是输出形态)
+v2.2.x 及更早:F057 截断补救 / F058 三级质检 → 保留
+============================================================
 """
 import os, sys, json, re, shutil, hashlib, time
 from pathlib import Path
@@ -109,7 +60,7 @@ from scripts.prompts.prompt_templates import (
     SEGMENT_SUMMARY_PROMPT, CROSS_SEGMENT_CHECK_PROMPT,
     QC_CHECK_PROMPT, QC_CHECK_SINGLE_PROMPT  # v2.2.3 F058
 )
-from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY
+from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY, LAYER1_TAGS
 from scripts.policy_validator import PolicyValidator
 from scripts.relation_analyzer import RelationAnalyzer
 
@@ -122,21 +73,43 @@ class Extractor:
 
     MODEL_OPTIONS = {
         "1": {
-            "model": "deepseek-reasoner",
-            "name": "R1 深度推理",
-            "desc": "最精准,逐段深度分析,速度较慢,费用较高",
-            "segment_max": 3000  # v2.1.0-d: 从4000降到3000,减少截断
+            "model": "deepseek-v4-pro",   # v2.3.5-part2: V4-Pro Thinking 主链(替代 R1)
+            "name": "V4-Pro 深度推理",
+            "desc": "V4-Pro thinking 模式,384K max_output 根治截断,1M context,推理能力比 R1 更强",
+            "segment_max": 3000  # 段长保持不变(V4 max_output 大但单段上限我们仍用 R1 时代标定)
         },
         "2": {
+            "model": "deepseek-v4-flash",  # v2.3.5-part2: V4-Flash Non-Thinking 辅助(替代 V3)
+            "name": "V4-Flash 快速提取",
+            "desc": "速度快,性价比极高(输入 ¥1/百万 输出 ¥2/百万),适合批量草稿",
+            "segment_max": 6000
+        },
+        # 老 model 保留作"逃生回滚"档(7/24 退役前 DeepSeek 路由到 V4-Flash 兼容)
+        "1_legacy": {
+            "model": "deepseek-reasoner",
+            "name": "R1(legacy,7/24 退役)",
+            "desc": "v2.3.5-part2 前主链;若 V4 行为异常可临时回滚",
+            "segment_max": 3000
+        },
+        "2_legacy": {
             "model": "deepseek-chat",
-            "name": "V3 快速提取",
-            "desc": "速度快,性价比高,适合批量处理",
+            "name": "V3(legacy,7/24 退役)",
+            "desc": "v2.3.5-part2 前辅助",
             "segment_max": 6000
         }
     }
 
     # 第一层标签的合法名称清单（启动时从tag_config加载）
     VALID_LAYER1_NAMES = set(get_layer1_tag_names())
+
+    # v2.3.5-part2 F5:code→name 映射,容错 AI 输出 "A10" / "A10 乡村产业运营" / "A10乡村产业运营" 等格式
+    # 立规则 9 + 10:从 LAYER1_TAGS 写入侧拿真相,不另存重复字典
+    LAYER1_CODE_TO_NAME = {
+        tag["code"]: tag["name"]
+        for group in LAYER1_TAGS.values()
+        for tag in group["tags"]
+    }
+    LAYER1_NAME_TO_CODE = {v: k for k, v in LAYER1_CODE_TO_NAME.items()}
 
     # 元数据合法值
     VALID_READINESS = set(CONTENT_READINESS.keys())
@@ -324,7 +297,7 @@ class Extractor:
         sp = prompt["system_prompt"]
 
         ai = self.client.chat_with_jsonl(
-            sp, up, temperature=0.2,
+            sp, up, temperature=0.2, max_tokens=32768,
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
 
         kp_objects = ai.get("kp_objects", []) or []
@@ -429,82 +402,47 @@ class Extractor:
                     pass
 
         # 输出原因到控制台
+        # v2.3.5-part2 D2:降级链从 5 层简化为 3 层(L0 V4 → L1 镜像 → L2 F057 → L3 保留)
+        # Kimi 兜底链(L1.1 硅基 Kimi / L1.2 Kimi 官方)整体废弃,日志铁证 0429 三段截断
+        # L1.1+L1.2 全失败,真正救回都是 L2 R1 镜像。V4-Pro 384K max_output 几乎根治截断,
+        # 镜像 V3.2 走硅基 endpoint 与 V4 主链(deepseek 官方)跨厂商物理冗余,立规则 62 仍成立
         if truncated and not kps:
-            print(f"     [L0 失败] R1 输出截断且 0 完整 kp,启动 L1.1 硅基 Kimi 整段重提")
+            print(f"     [L0 失败] V4-Pro 输出截断且 0 完整 kp,启动 L1 镜像兜底(硅基)")
         elif truncated and kps:
-            print(f"     [L0 部分] R1 截断但已解析{len(kps)}条,启动 L1.1 硅基 Kimi 整段重提补全")
+            print(f"     [L0 部分] V4-Pro 截断但已解析{len(kps)}条,启动 L1 镜像兜底补全(硅基)")
         else:
             # 未截断 + 0 条 + 解析失败(走到这里说明 7 步保险也救不回)
-            print(f"     [L0 失败] R1 输出格式异常 + 7 步降级未救回,启动 L1.1 硅基 Kimi 整段重提")
+            print(f"     [L0 失败] V4-Pro 输出格式异常 + 7 步降级未救回,启动 L1 镜像兜底(硅基)")
 
-        # ============= L1.1: 硅基 Kimi-K2.6 整段重提(L1 双层互备第一层) =============
-        # v2.3.5-part1.3 E1:原 L1 重命名为 L1.1,L1.1 失败后插入 L1.2 Kimi 官方兜底
+        # ============= L1: 硅基镜像兜底(跨厂商物理冗余,立规则 62) =============
+        # 复用 _retry_via_siliconflow + SILICONFLOW_TEXT_MODEL_L2(原 L2 R1 镜像 model_id)
+        # 命名沿用 model_tag="r1_mirror" + layer_label="L1",入库字段 extracted_by_model="r1_mirror"
         l1_kps = self._retry_via_siliconflow(
             content, filename, prompt, ctype, relay_prefix, file_id,
-            model_id=self.client.SILICONFLOW_TEXT_MODEL_L1,
-            model_tag="kimi", layer_label="L1.1")
+            model_id=self.client.SILICONFLOW_TEXT_MODEL_L2,
+            model_tag="r1_mirror", layer_label="L1")
 
-        if l1_kps is not None:  # L1.1 成功(有 kp 返回,即使 0 条但解析成功也算)
-            self._truncation_stats["kimi_recoveries"] += 1
+        if l1_kps is not None:
+            self._truncation_stats["r1_mirror_recoveries"] += 1
             for k in l1_kps:
                 if isinstance(k, dict):
-                    k["_extracted_by_model"] = "kimi"
-            # L1.1 是整段重提,理论上覆盖 L0 全部内容,但保留 L0 已成功 kp 防止漏掉
-            merged = self._dedupe_kps_by_excerpt(kps + l1_kps)
-            print(f"     [L1.1 Kimi 救回] L0:{len(kps)}条 + L1.1:{len(l1_kps)}条 = 去重后{len(merged)}条")
-            return merged
-
-        # ============= L1.2: Kimi 官方 K2.6 整段重提(L1 双层互备第二层,跨厂商) =============
-        # v2.3.5-part1.3 E1:硅基(L1.1)挂时立刻切 Kimi 官方,跨厂商物理冗余(立规则 62)
-        # 老唐选择"硅基优先"成本低 60%,"任何异常立刻切",L1.1 失败后无延迟进 L1.2
-        # 启动前探测 has_kimi_official(),未配置则跳过 L1.2 直接进 L2
-        print(f"     [L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6")
-        if not self.client.has_kimi_official():
-            print(f"     [L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2(可在配置向导补填)")
-            l1_2_kps = None
-        else:
-            l1_2_kps = self._retry_via_kimi_official(
-                content, filename, prompt, ctype, relay_prefix, file_id,
-                model_id=self.client.KIMI_OFFICIAL_MODEL_L1,
-                model_tag="kimi_official", layer_label="L1.2")
-
-        if l1_2_kps is not None:
-            self._truncation_stats["kimi_official_recoveries"] += 1
-            for k in l1_2_kps:
-                if isinstance(k, dict):
-                    k["_extracted_by_model"] = "kimi_official"
-            merged = self._dedupe_kps_by_excerpt(kps + l1_2_kps)
-            print(f"     [L1.2 官方 Kimi 救回] L0:{len(kps)}条 + L1.2:{len(l1_2_kps)}条 = 去重后{len(merged)}条")
-            return merged
-
-        # ============= L2: R1 跨厂商镜像整段重提 =============
-        print(f"     [L1.2 失败] Kimi 官方 K2.6 整段重提失败,启动 L2 R1 镜像")
-        l2_kps = self._retry_via_siliconflow(
-            content, filename, prompt, ctype, relay_prefix, file_id,
-            model_id=self.client.SILICONFLOW_TEXT_MODEL_L2,
-            model_tag="r1_mirror", layer_label="L2")
-
-        if l2_kps is not None:
-            self._truncation_stats["r1_mirror_recoveries"] += 1
-            for k in l2_kps:
-                if isinstance(k, dict):
                     k["_extracted_by_model"] = "r1_mirror"
-            merged = self._dedupe_kps_by_excerpt(kps + l2_kps)
-            print(f"     [L2 R1镜像 救回] L0:{len(kps)}条 + L2:{len(l2_kps)}条 = 去重后{len(merged)}条")
+            merged = self._dedupe_kps_by_excerpt(kps + l1_kps)
+            print(f"     [L1 镜像 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条")
             return merged
 
-        # ============= L3: F057 老逻辑兜底(仅当 partial_kps>=1) =============
-        print(f"     [L2 失败] R1 镜像也失败,启动 L3 F057 兜底")
+        # ============= L2: F057 老逻辑兜底(仅当 partial_kps>=1) =============
+        print(f"     [L1 失败] 硅基镜像兜底失败,启动 L2 F057 续写补救")
         if not kps:
             # 0 partial,F057 没有 last_excerpt 可定位,跳过
             self._truncation_stats["total_failures"] += 1
-            print(f"     ❌ [L4 全失败] L0/L1.1/L1.2/L2 均失败且 partial=0,F057 无锚点跳过")
+            print(f"     ❌ [L3 全失败] L0/L1 均失败且 partial=0,F057 无锚点跳过")
             self._safe_log_event(
                 "extract_full_fail", "extractor", "error",
                 file_id=file_id,
                 payload={"filename": filename,
-                         "reason": "L0/L1.1/L1.2/L2 all failed, partial_kps=0",
-                         "last_attempted": "siliconflow_r1_mirror"})
+                         "reason": "L0/L1 all failed, partial_kps=0",
+                         "last_attempted": "siliconflow_v32_mirror"})
             return []
 
         self._truncation_stats["f057_fallbacks"] += 1
@@ -602,86 +540,6 @@ class Extractor:
         print(f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)")
         self._safe_log_event(
             "siliconflow_retry", "extractor", "info",
-            file_id=file_id,
-            payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                     "kp_count": len(kp_objects), "was_truncated": was_truncated,
-                     "cost": cost, "filename": filename})
-        return kp_objects
-
-    # ================================================================
-    # v2.3.5-part1.3 E2: L1.2 Kimi 官方整段重提
-    # ----------------------------------------------------------------
-    # 与 _retry_via_siliconflow 唯一差别:走 client.chat_jsonl_via_kimi_official(走
-    # api.moonshot.cn endpoint + Kimi 官方 key)而非 chat_jsonl_via_siliconflow。
-    # 异常处理 / 解析判定 / 日志事件 完全对齐(立规则 53 第 N 次:照搬同名方法骨架,
-    # 仅替换变化的 1-2 行,不重新设计)。
-    # ================================================================
-    def _retry_via_kimi_official(self, content, filename, prompt, ctype, relay_prefix,
-                                  file_id, model_id, model_tag, layer_label):
-        """走 Kimi 官方文本模型整段重提(L1.2 兜底)。
-
-        参数:
-          model_id    Kimi 官方模型 ID(如 "kimi-k2.6")
-          model_tag   失败/成功事件日志中的标记(默认 "kimi_official")
-          layer_label 控制台输出标签(默认 "L1.2")
-
-        返回:
-          List[dict] 提取到的 kp 列表(可能为空 [],也算成功 — 表明该段确实没 kp)
-          None       接口异常 / 0 partial 且解析失败 — 进入下一层(L2)
-
-        与 _retry_via_siliconflow 唯一行为差异:
-          - 调用 chat_jsonl_via_kimi_official(走 api.moonshot.cn)
-          - 事件名前缀 "kimi_official_retry" 而非 "siliconflow_retry"(便于日志查询区分)
-        """
-        # 复用同一套 prompt 包(立规则 H3:prompt 100% 复用)
-        up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
-        if relay_prefix:
-            up = relay_prefix + "\n\n" + up
-        sp = prompt["system_prompt"]
-
-        try:
-            ai = self.client.chat_jsonl_via_kimi_official(
-                sp, up,
-                model=model_id,
-                temperature=0.2, max_tokens=8192,
-                call_type=f"extract_{model_tag}_{filename[:30]}"
-            )
-        except Exception as e:
-            err_msg = f"{type(e).__name__}: {str(e)[:200]}"
-            print(f"     [{layer_label} 异常] {err_msg}")
-            self._safe_log_event(
-                "kimi_official_retry", "extractor", "warning",
-                file_id=file_id,
-                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                         "reason": "exception", "error": err_msg, "filename": filename})
-            return None
-
-        kp_objects = ai.get("kp_objects", []) or []
-        was_truncated = ai.get("was_truncated", False)
-        cost = ai.get("estimated_cost", 0)
-        self._truncation_stats["total_cost"] += cost
-
-        # 判断结果:
-        # 1. 0 kp + 解析失败 → 视为失败,进入下一层
-        # 2. 0 kp + 解析成功(_meta 存在或全段无 kp 真实情况) → 视为成功,返回 []
-        # 3. >0 kp → 成功
-        meta_object = ai.get("meta_object", None)
-        raw_parsed = bool(kp_objects or meta_object)
-
-        if not raw_parsed:
-            print(f"     [{layer_label} 失败] {model_id} 解析 0 行 ({cost:.4f}元)")
-            self._safe_log_event(
-                "kimi_official_retry", "extractor", "warning",
-                file_id=file_id,
-                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                         "reason": "parse_failed", "was_truncated": was_truncated,
-                         "cost": cost, "filename": filename})
-            return None
-
-        trunc_note = "(截断但已解析)" if was_truncated else "(完整)"
-        print(f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)")
-        self._safe_log_event(
-            "kimi_official_retry", "extractor", "info",
             file_id=file_id,
             payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
                      "kp_count": len(kp_objects), "was_truncated": was_truncated,
@@ -1038,18 +896,67 @@ class Extractor:
     # ================================================================
     # v2.0.0 新增：标签数据校验
     # ================================================================
+    # v2.3.5-part2 F5:标签标准化 — 剥离 code 前缀 + code↔name 双向映射
+    # 处理 AI 输出的 5 种格式:
+    #   "乡村产业运营"          → 直接通过(纯 name)
+    #   "A10"                   → 通过(code→name 映射 → "乡村产业运营")
+    #   "A10 乡村产业运营"      → 通过(剥离前缀 → "乡村产业运营")
+    #   "A10乡村产业运营"       → 通过(剥离前缀 → "乡村产业运营")
+    #   "乡村振兴综合政策"      → 仍过滤(分类名,不是标签 — 正确行为)
+    #
+    # 日志中老唐 0429 文件遇到 ~80% 被过滤的标签实际都是格式 2/3/4 的合法标签误杀
+    @classmethod
+    def _normalize_tag(cls, raw):
+        """把 AI 输出的标签字符串标准化为合法 name(若不合法返回 None)"""
+        if not isinstance(raw, str):
+            return None
+        s = raw.strip()
+        if not s:
+            return None
+        # Case 1: 已经是合法 name
+        if s in cls.VALID_LAYER1_NAMES:
+            return s
+        # Case 2: 纯 code 形式(如 "A10")
+        if s in cls.LAYER1_CODE_TO_NAME:
+            return cls.LAYER1_CODE_TO_NAME[s]
+        # Case 3/4: code 前缀 + name(支持空格 / 无空格 / 任意空白)
+        # 匹配 ^[A-F]\d{1,3}\s* 这类前缀,剥离后再查表
+        import re
+        m = re.match(r"^([A-F]\d{1,3})\s*(.*)$", s)
+        if m:
+            code, rest = m.group(1), m.group(2).strip()
+            # 优先用剥离后的 name 部分
+            if rest and rest in cls.VALID_LAYER1_NAMES:
+                return rest
+            # 退而用 code 反查
+            if code in cls.LAYER1_CODE_TO_NAME:
+                return cls.LAYER1_CODE_TO_NAME[code]
+        return None
+
     def _sanitize_tags(self, kp):
-        """校验并清理AI返回的三层标签数据，确保格式正确、值合法。"""
+        """校验并清理AI返回的三层标签数据，确保格式正确、值合法。
+
+        v2.3.5-part2 F5:第一层分类标签从 strict equality 升级为 _normalize_tag 容错,
+        AI 输出 "A10 乡村产业运营" / "A10乡村产业运营" / "A10" 等格式都能正确映射到 name。
+        日志中真正不合法(如分类名当标签用)仍正常过滤,但格式误杀消除 ~80%。
+        """
         # --- 第一层：分类标签 ---
         raw_cat_tags = kp.get("suggested_category_tags", [])
         if not isinstance(raw_cat_tags, list):
             raw_cat_tags = []
-        # 只保留在合法清单中的标签名
-        clean_cat_tags = [t for t in raw_cat_tags if isinstance(t, str) and t in self.VALID_LAYER1_NAMES]
-        if len(clean_cat_tags) < len(raw_cat_tags):
-            removed = set(raw_cat_tags) - set(clean_cat_tags)
-            if removed:
-                print(f"     [标签校验] 过滤了{len(removed)}个不在清单中的分类标签: {', '.join(list(removed)[:3])}")
+        # v2.3.5-part2 F5:容错标准化 + 去重(同一标签的 code 形式和 name 形式映射后重复)
+        clean_cat_tags = []
+        seen_cat = set()
+        truly_removed = []
+        for raw in raw_cat_tags:
+            normalized = self._normalize_tag(raw)
+            if normalized and normalized not in seen_cat:
+                seen_cat.add(normalized)
+                clean_cat_tags.append(normalized)
+            elif normalized is None and isinstance(raw, str) and raw.strip():
+                truly_removed.append(raw)
+        if truly_removed:
+            print(f"     [标签校验] 过滤了{len(truly_removed)}个不在清单中的分类标签: {', '.join(truly_removed[:3])}")
 
         # --- 第二层：属性标签 ---
         raw_attr_tags = kp.get("suggested_attribute_tags", {})
@@ -1414,9 +1321,10 @@ class Extractor:
 
     # ================================================================
     # v2.1.0-c 新增：跨段补漏检查
+    # v2.3.5-part2 升级:model 从 deepseek-chat → deepseek-v4-flash(7/24 后 deepseek-chat 退役)
     # ================================================================
     def _cross_segment_check(self, filename, file_structure, all_kps):
-        """V3检查分段提取是否有遗漏。返回遗漏信息dict或None。"""
+        """V4-Flash 检查分段提取是否有遗漏。返回遗漏信息 dict 或 None。"""
         if not file_structure:
             print(f"     无结构摘要,跳过补漏检查")
             return None
@@ -1431,30 +1339,130 @@ class Extractor:
         try:
             ai = self.client.chat_with_json(
                 prompt["system_prompt"], up, temperature=0.2,
-                call_type="cross_segment_check", model_override="deepseek-chat")
+                call_type="cross_segment_check", model_override="deepseek-v4-flash")
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
                 cost = ai.get("estimated_cost", 0)
                 missed = parsed.get("missed_sections", [])
                 coverage = parsed.get("overall_coverage", "未知")
                 dupes = parsed.get("duplicate_suspects", [])
-                print(f"     补漏检查完成(花费{cost:.4f}元)")
-                print(f"     覆盖评估: {coverage}")
+                print(f"     补漏检查完成(花费{cost:.4f}元) | 覆盖评估: {coverage}")
                 if missed:
                     important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
                     if important_missed:
-                        print(f"     [注意] 发现{len(important_missed)}个可能遗漏的章节:")
+                        print(f"     发现{len(important_missed)}个重要性=高/中 的可能遗漏章节:")
                         for m in important_missed[:3]:
                             print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
-                        print(f"     建议在审核时重点关注相关知识点的完整性")
                 if dupes:
                     print(f"     [提示] 发现{len(dupes)}组疑似重复知识点")
+                # 把 cost 注入返回值,供闭环统计累加
+                parsed["_cost"] = cost
                 return parsed
         except CostLimitExceeded:
             print(f"     费用已达上限,跳过补漏检查")
         except Exception as e:
             print(f"     补漏检查失败: {e}")
         return None
+
+    # ================================================================
+    # v2.3.5-part2 新增:补漏闭环 — 针对 missed_sections 重新提取
+    # ----------------------------------------------------------------
+    # 状态机:
+    #   首轮 _cross_segment_check → 发现遗漏 → 调本方法重提 → 合并去重 →
+    #   再跑 _cross_segment_check → 直到 overall_coverage="完整/基本完整" 或 N 轮上限
+    #
+    # Prompt 复用 EXTRACTION_PROMPT(get_extraction_prompt),user_prompt 改为
+    # "完整原文 + 已提取标题清单 + 待补章节清单",让 V4-Pro 自己定位章节内容
+    # (V4 1M context 可放下完整原文,无需切片)
+    # ================================================================
+    def _supplementary_extract(self, content, filename, content_type, missed_sections,
+                                existing_kps, file_id, source_nature=""):
+        """对 missed_sections 中的高/中重要性章节重新提取知识点。
+
+        参数:
+          content        完整原文
+          filename       文件名
+          content_type   policy / case / experience / tool / data
+          missed_sections [{"section_title": ..., "importance": "高/中/低", ...}, ...]
+          existing_kps   已提取的全部 kp(用于让 AI 避免重复,只补遗漏)
+          file_id        DB 行 id(供事件日志)
+          source_nature  "official_policy" 等
+
+        返回:
+          List[dict] 新增的 kp 列表(已剔除与 existing_kps 重复的)
+          [] 若 AI 失败 / 0 高中重要性遗漏 / 全部重复
+        """
+        # 只补 重要性=高/中 的章节
+        important = [m for m in missed_sections if m.get("importance") in ("高", "中")]
+        if not important:
+            return []
+
+        # 构造"已提取标题清单 + 待补章节清单"提示
+        existing_titles = "\n".join(f"  - {kp.get('title','')}" for kp in existing_kps if isinstance(kp, dict))
+        missing_lines = "\n".join(
+            f"  - 章节: {m.get('section_title','')} | 重要性: {m.get('importance','')} | 原因: {m.get('reason','')}"
+            for m in important)
+
+        # 复用提取 prompt 包,在 user_prompt 前面加一段"补漏指令"
+        prompt = get_extraction_prompt(content_type)
+        supp_instruction = (
+            f"⚠️ 这是补漏轮次提取(第 N 轮)。前面已经提取了一批知识点,现在需要补出**遗漏的章节**对应的知识点。\n\n"
+            f"【已提取知识点标题清单 — 不要重复提取这些】\n{existing_titles}\n\n"
+            f"【待补提取的章节清单 — 请只针对这些章节提取知识点】\n{missing_lines}\n\n"
+            f"【提取要求】\n"
+            f"1. 严格只提取上述\"待补章节\"对应的知识点,已提取过的概念不要再出\n"
+            f"2. 标题用具体规定/数字/时间节点,不用章节标题\n"
+            f"3. 颗粒度、原文摘录精度等其他要求,与首轮提取完全一致\n"
+            f"4. 输出格式:JSON Lines(每行一个独立 JSON 对象,与首轮一致)\n\n"
+            f"---\n\n"
+        )
+        sp = prompt["system_prompt"]
+        up = supp_instruction + prompt["user_prompt_template"].format(
+            filename=filename, full_content=content)
+
+        try:
+            ai = self.client.chat_with_jsonl(
+                sp, up,
+                temperature=None,  # V4-Pro thinking 不传 temperature(立规则 15)
+                max_tokens=32768,  # V4 max_output 巨大,这里给个安全值,够补漏
+                call_type=f"supp_extract_{filename[:30]}",
+                model_override="deepseek-v4-pro"
+            )
+        except CostLimitExceeded:
+            print(f"     [补漏轮] 费用已达上限,中止补漏")
+            return []
+        except Exception as e:
+            print(f"     [补漏轮] AI 调用失败: {type(e).__name__}: {str(e)[:100]}")
+            self._safe_log_event(
+                "supp_extract_fail", "extractor", "warning",
+                file_id=file_id,
+                payload={"filename": filename, "error": str(e)[:200]})
+            return []
+
+        new_kps = ai.get("kp_objects", []) or []
+        cost = ai.get("estimated_cost", 0)
+        self._truncation_stats["total_cost"] += cost
+
+        if not new_kps:
+            print(f"     [补漏轮] AI 返回 0 条新知识点(花费{cost:.4f}元)")
+            return []
+
+        # 标记 extracted_by_model = supplementary,与首轮区分(便于审计)
+        for kp in new_kps:
+            if isinstance(kp, dict):
+                kp["_extracted_by_model"] = "supplementary"
+
+        # 用现有 _dedupe_kps_by_excerpt 去重(与首轮 kp 比对,排除重复)
+        merged = self._dedupe_kps_by_excerpt(existing_kps + new_kps)
+        net_added = merged[len(existing_kps):]  # 真正新增的
+        print(f"     [补漏轮] AI 新提取{len(new_kps)}条 → 去重后净增{len(net_added)}条 (花费{cost:.4f}元)")
+        self._safe_log_event(
+            "supp_extract_round", "extractor", "info",
+            file_id=file_id,
+            payload={"filename": filename,
+                     "raw_count": len(new_kps), "net_added": len(net_added),
+                     "cost": cost})
+        return net_added
 
     # ================================================================
     # v2.1.0-c 新增：费用预估
@@ -1957,40 +1965,43 @@ class Extractor:
         """提取完成时控制台输出一行截断统计 + 总耗时 + 单价估算。
         老唐肉眼即看,不入库,不动 db。
 
-        v2.3.4-hotfix1 H5 输出字段:截断/Kimi救/R1镜像救/F057兜底/全失败
-        v2.3.5-part1.3 E4:L1 拆 L1.1/L1.2,新增 L1.2 Kimi 官方救回字段
+        v2.3.5-part2 D2 简化:Kimi 兜底链整体废弃,字段精简为
+            截断/L1 镜像救/L2 F057 兜底/全失败 + 跨段补漏轮数
         """
         stats = getattr(self, "_truncation_stats", None)
         if not stats:
             return
         elapsed = time.time() - stats.get("start_time", time.time())
         truncations = stats.get("truncations", 0)
-        kimi_recovs = stats.get("kimi_recoveries", 0)
-        kimi_official_recovs = stats.get("kimi_official_recoveries", 0)  # v2.3.5-part1.3 E4
-        r1m_recovs = stats.get("r1_mirror_recoveries", 0)
+        l1_recovs = stats.get("r1_mirror_recoveries", 0)  # v2.3.5-part2:沿用字段名,语义改为 L1 镜像救回
         f057_fallbacks = stats.get("f057_fallbacks", 0)
         total_fails = stats.get("total_failures", 0)
         lost = stats.get("lost_segments", 0)
         recovery_cost = stats.get("total_cost", 0.0)
+        supp_rounds = stats.get("supplementary_rounds", 0)
+        supp_added = stats.get("supplementary_kps_added", 0)
+
+        # 跨段补漏闭环统计行
+        supp_part = ""
+        if supp_rounds > 0:
+            supp_part = f" / 跨段补漏{supp_rounds}轮(新增{supp_added}条)"
 
         if truncations == 0:
-            print(f"     📊 [文件统计] 一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s / Prompt {get_prompt_version()}")
+            print(f"     📊 [文件统计] 一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
         else:
             parts = [f"截断{truncations}次"]
-            if kimi_recovs > 0:
-                parts.append(f"L1.1 硅基Kimi救{kimi_recovs}次")
-            if kimi_official_recovs > 0:
-                parts.append(f"L1.2 官方Kimi救{kimi_official_recovs}次")
-            if r1m_recovs > 0:
-                parts.append(f"L2 R1镜像救{r1m_recovs}次")
+            if l1_recovs > 0:
+                parts.append(f"L1 镜像救{l1_recovs}次")
             if f057_fallbacks > 0:
-                parts.append(f"L3 F057兜底{f057_fallbacks}次")
+                parts.append(f"L2 F057兜底{f057_fallbacks}次")
             if total_fails > 0:
                 parts.append(f"❌ 全失败{total_fails}次")
             if lost > 0:
                 parts.append(f"放弃段{lost}")
             parts.append(f"知识点{kp_count}条")
             parts.append(f"耗时{int(elapsed)}s")
+            if supp_rounds > 0:
+                parts.append(f"跨段补漏{supp_rounds}轮(新增{supp_added}条)")
             if recovery_cost > 0:
                 parts.append(f"补救额外费用{recovery_cost:.4f}元")
             parts.append(f"Prompt {get_prompt_version()}")
@@ -2100,18 +2111,21 @@ class Extractor:
         fn = rec.get("renamed_filename") or rec["original_filename"]
         original_fn = rec["original_filename"]
         fp = None
-        # v2.3.4-hotfix1 H4: 重置文件级截断统计(扩字段)
+        # v2.3.5-part2 D1: 重置文件级截断统计(简化字段)
+        # 旧: kimi_recoveries / kimi_official_recoveries 已删 — Kimi 兜底链整体废弃
+        # 新降级链: L0 V4-Pro → L1 V3.2 镜像(原 R1 mirror,沿用字段)→ L2 F057
         self._truncation_stats = {
             "truncations": 0,
             "prefix_recoveries": 0,  # DEPRECATED v2.3.4-hotfix1, 保留兼容
-            "kimi_recoveries": 0,    # v2.3.4-hotfix1 新增:L1.1 硅基 Kimi 救回次数(part1.3 起 L1 改为 L1.1)
-            "kimi_official_recoveries": 0,  # v2.3.5-part1.3 E3 新增:L1.2 Kimi 官方救回次数
-            "r1_mirror_recoveries": 0,  # v2.3.4-hotfix1 新增:L2 R1 镜像救回次数
+            "r1_mirror_recoveries": 0,  # v2.3.4-hotfix1 新增,v2.3.5-part2 改名义为 L1 V3.2/R1 镜像救回
             "f057_fallbacks": 0,
             "lost_segments": 0,
-            "total_failures": 0,     # v2.3.4-hotfix1 新增:L4 全失败次数
+            "total_failures": 0,
             "total_cost": 0.0,
-            "start_time": time.time()
+            "start_time": time.time(),
+            # v2.3.5-part2 跨段补漏闭环统计
+            "supplementary_rounds": 0,    # 总执行的补漏轮数(含首轮+所有重提轮)
+            "supplementary_kps_added": 0, # 补提取阶段新增的 kp 数(去重后)
         }
         try:
             print(f"\n     >> 开始提取: {fn}")
@@ -2266,14 +2280,58 @@ class Extractor:
                 result["error"] = "未提取到知识点"
                 print(f"     [注意] 未提取到知识点"); return result
 
-            # === Step 5: 跨段补漏检查(多段文件) ===
+            # === Step 5: 跨段补漏闭环(v2.3.5-part2 新增) ===
+            # 闭环逻辑(老唐 0430 拍板:5 轮上限 + "基本完整"即合格):
+            #   首轮 _cross_segment_check → 看 overall_coverage
+            #     - "完整" / "基本完整"  → 合格,跳出
+            #     - "有遗漏" / "严重遗漏" + 有高/中重要性 missed → 调 _supplementary_extract 重提 → 合并 → 再循环
+            #     - 无高/中重要性 missed(都是低重要性)→ 算合格,跳出
+            #   5 轮上限触底 → 不再循环,记日志,带"未达完全合格"标注入库
             extraction_notes = ""
+            CHECK_MAX_ROUNDS = 5  # 老唐 0430 拍板:补漏轮数上限
+            ACCEPTABLE_COVERAGE = ("完整", "基本完整")  # 合格判定
             if len(segs) > 1:
-                print(f"\n     [Step 5] 跨段补漏检查...")
-                self._report_progress(current_step="Step 5/8 跨段补漏")
-                missed = self._cross_segment_check(fn, file_structure, kps)
-                if missed:
-                    extraction_notes = json.dumps(missed, ensure_ascii=False)
+                print(f"\n     [Step 5] 跨段补漏闭环(最多{CHECK_MAX_ROUNDS}轮)...")
+                self._report_progress(current_step="Step 5/8 跨段补漏闭环")
+                round_idx = 0
+                last_check = None
+                while round_idx < CHECK_MAX_ROUNDS:
+                    round_idx += 1
+                    print(f"\n     --- 补漏检查 第 {round_idx}/{CHECK_MAX_ROUNDS} 轮 (当前 {len(kps)} 条 kp) ---")
+                    self._truncation_stats["supplementary_rounds"] = round_idx
+                    last_check = self._cross_segment_check(fn, file_structure, kps)
+                    if not last_check:
+                        # AI 调用失败或费用超限,中止闭环
+                        print(f"     [跨段补漏] 检查异常,中止闭环")
+                        break
+                    coverage = last_check.get("overall_coverage", "未知")
+                    missed = last_check.get("missed_sections", [])
+                    important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
+                    # 合格判定 1:覆盖评估直接达标
+                    if coverage in ACCEPTABLE_COVERAGE:
+                        print(f"     [跨段补漏] 覆盖评估={coverage},合格,闭环结束")
+                        break
+                    # 合格判定 2:无高/中重要性遗漏(全是低重要性,不补)
+                    if not important_missed:
+                        print(f"     [跨段补漏] 无高/中重要性遗漏(仅低重要性),合格,闭环结束")
+                        break
+                    # 不合格 + 有重要遗漏 → 重提
+                    if round_idx >= CHECK_MAX_ROUNDS:
+                        print(f"     [跨段补漏] 已达 {CHECK_MAX_ROUNDS} 轮上限,仍有 {len(important_missed)} 个高/中重要遗漏,停止重提(可在审核时关注)")
+                        break
+                    print(f"     [跨段补漏] 调 V4-Pro 补提取 {len(important_missed)} 个高/中重要章节...")
+                    new_kps = self._supplementary_extract(
+                        content, fn, ctype, missed, kps, fid, source_nature=source_nature)
+                    if not new_kps:
+                        # AI 没补出新东西,本轮无效,跳出避免死循环
+                        print(f"     [跨段补漏] 本轮 AI 未提取出新知识点,中止闭环(避免死循环)")
+                        break
+                    kps.extend(new_kps)
+                    self._truncation_stats["supplementary_kps_added"] += len(new_kps)
+                    # 继续下一轮检查
+                # 把最后一次检查结果存入 extraction_notes(供审核界面查看)
+                if last_check:
+                    extraction_notes = json.dumps(last_check, ensure_ascii=False)
 
             # === 写入数据库（v2.1.1: 三层标签 + 元数据 + prompt_version + practical_insights） ===
             print(f"\n     写入{len(kps)}个知识点到数据库...")

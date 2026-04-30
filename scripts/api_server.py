@@ -5198,9 +5198,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.2-part3a")
-    print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答(后端 ready, 前端 part3b 启用)")
-    print(f"  v2.3.2-part3a: F055 问答助手后端 7 路由 + _qa_task 槽 + readiness_check")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.5-part2")
+    print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答")
+    print(f"  v2.3.5-part2: V4-Pro 主链 + 跨段补漏闭环(5轮) + Kimi 兜底链全删 + F4/F5 修")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

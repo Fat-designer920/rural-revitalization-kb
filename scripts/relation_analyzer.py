@@ -1,7 +1,15 @@
 """
 relation_analyzer.py - 知识点关系分析模块(替代 duplicate_checker.py)
 路径：scripts/relation_analyzer.py
-版本：v2.3.5-part1 - 从二态重复检测升级为六态关系判别 + 共识聚类
+版本：v2.3.5-part2 - chat_with_json kwarg 修复(F4) + V4-Pro 思考型识别
+
+v2.3.5-part2 修复(hotfix, 2026-04-30):
+  - F4 P0 BUG:_judge_one_group 调 chat_with_json 用了不存在的 model= 关键字
+    真实签名是 model_override=(deepseek_client.py:512),老唐 0429 实测 7 组关系判别
+    全部 TypeError 失败 → v2.3.5-part1 主功能瘫痪
+    立规则 9 第 22 次应验 — 凭记忆写 kwarg,不 grep 真实签名
+  - 同时把"reasoner not in model"这种历史思考型判定升级为支持 V4-Pro
+    (v4-pro / r1 / reasoner / thinking 任一关键字命中即跳过 temperature)
 
 v2.3.5-part1 重设计(feature, 2026-04-28):
   - 替代 duplicate_checker.py(改名+重写,旧文件删除)
@@ -323,14 +331,20 @@ class RelationAnalyzer:
                 + "\n\n".join(kp_descriptions)
             )
 
-            # R1 不传 temperature(R1 不支持)
+            # R1/V4-Pro 思考型不传 temperature(立规则 15)
+            # v2.3.5-part2 修复:chat_with_json 真实签名是 model_override=,不是 model=
+            # (立规则 9 第 22 次应验 — relation_analyzer 凭记忆写错 kwarg,7 组关系判别全失败)
             kwargs = {
                 "system_prompt": RELATION_JUDGE_PROMPT["system_prompt"],
                 "user_prompt": user_content,
-                "model": model,
+                "model_override": model,
                 "call_type": "relation_judge",
             }
-            if "reasoner" not in model:
+            # 思考型(reasoner / r1 / thinking / v4-pro)不传 temperature
+            m_lower = str(model).lower()
+            is_thinking = ("reasoner" in m_lower or "r1" in m_lower
+                           or "thinking" in m_lower or "v4-pro" in m_lower)
+            if not is_thinking:
                 kwargs["temperature"] = 0.1
 
             result = self.client.chat_with_json(**kwargs)

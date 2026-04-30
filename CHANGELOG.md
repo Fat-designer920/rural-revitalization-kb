@@ -6,7 +6,54 @@
 
 ---
 
-## [v2.3.5-part1.3] - 2026-04-29 (hotfix - L1 救援链跨厂商物理冗余:硅基 → Kimi 官方双 L1 互备)
+## [v2.3.5-part2] - 2026-04-30 (feature + hotfix - V4-Pro 主链 + 跨段补漏闭环 + Kimi 兜底链全删 + F4/F5 修)
+
+**定位**:本版是知识工厂"批量跑知识"前的最后一次系统性重构 — 主链从 R1 升级到 V4-Pro thinking 模式(384K max_output 直接根治 30% 截断率),跨段补漏从"建议老唐审核时关注"升级为"自动 5 轮重提取闭环",Kimi 兜底链(L1.1 硅基 Kimi / L1.2 Kimi 官方)整体废弃 — 0429 实测 L1.1+L1.2 三段截断 0/3 救回,真正救回都是 L2 R1 镜像。降级链 5 层简化为 3 层。同时修复 F4 关系判别 100% 失败的 P0 BUG(立规则 9 第 22 次应验)+ F5 标签校验 ~80% 误杀的格式不兼容问题。
+
+**Added**:
+- `extractor.py::_supplementary_extract` 新方法 — 针对跨段补漏检查发现的高/中重要性 missed_sections 自动重新提取 kp,V4-Pro 1M context 装得下完整原文 + 已提取标题清单,无需切片
+- `extractor.py::_normalize_tag` classmethod — 标签字符串标准化函数(剥离 code 前缀 + code↔name 双向映射),`LAYER1_CODE_TO_NAME` / `LAYER1_NAME_TO_CODE` 类常量
+- `MODEL_OPTIONS["1"]` 升 V4-Pro / `["2"]` 升 V4-Flash;`["1_legacy"]` / `["2_legacy"]` 保留旧 R1/V3 作"逃生回滚"档
+- `PRICING` 加 `deepseek-v4-pro` / `deepseek-v4-flash` 价格
+- `_truncation_stats` 加 `supplementary_rounds` / `supplementary_kps_added` 字段(文件级闭环统计)
+- `extracted_by_model` 新取值 `"supplementary"`(供审计区分首轮 vs 补漏轮 kp)
+
+**Fixed**:
+- **F4 P0 BUG(立规则 9 第 22 次应验)**:`relation_analyzer.py:330` 调 `chat_with_json` 用了不存在的 `model=` 关键字,真实签名是 `model_override=`,老唐 0429 实测 7 组关系判别全部 TypeError 失败 → v2.3.5-part1 主功能瘫痪。修法:1 字符 `model` → `model_override`,同时把"reasoner not in model"思考型判定升级为支持 V4-Pro
+- **F5 标签校验 ~80% 误杀**:`_sanitize_tags` 从 strict equality `t in VALID_LAYER1_NAMES` 升级为 `_normalize_tag` 容错,AI 输出 `"A10"` / `"A10 乡村产业运营"` / `"A10乡村产业运营"` 等格式都映射到合法 name,日志中过滤数量预期从平均 5 个/kp 降到 0-1 个/kp
+
+**Changed(立规则 16 改造 + 立规则 61 第 2 次应用)**:
+- 截断救援链 5 层 → 3 层:`L0 V4-Pro → L1 硅基镜像兜底 → L2 F057 → L3 保留`(原 L1.1 硅基 Kimi / L1.2 Kimi 官方 / L2 R1 镜像 三层合并为新 L1)
+- 删除 `extractor.py::_retry_via_kimi_official` 整方法(78 行)
+- 删除 `deepseek_client.py::chat_via_kimi_official` + `chat_jsonl_via_kimi_official` 两大方法(149 行)
+- 删除 `deepseek_client.py::_get_kimi_api_key` + `has_kimi_official` 两方法 + `KIMI_OFFICIAL_ENDPOINT` / `KIMI_OFFICIAL_MODEL_L1` 类常量
+- 删除 `_truncation_stats` 中 `kimi_recoveries` / `kimi_official_recoveries` 字段
+- `_is_thinking_model` 加 `"v4-pro"` 关键字(V4-Pro 默认 thinking 模式,自动跳 temperature + 走 300s timeout)
+- `_cross_segment_check` model 从 `deepseek-chat` → `deepseek-v4-flash`
+- 主提取 `chat_with_jsonl` 显式传 `max_tokens=32768`(充分利用 V4 输出能力,V4 上限 384K)
+- `_print_truncation_stats` 简化字段(去 Kimi 输出 + 加跨段补漏轮数)
+- `Step 5 跨段补漏检查` 改造为状态机闭环(5 轮上限 + 基本完整即合格)
+
+**Migration**:
+- 数据库零变动(extracted_by_model 字段 v2.3.4-hotfix1 已加,新取值 `supplementary` 复用现字段)
+- 老用户:替换 6 文件即可(无需重跑 `首次安装.bat`)
+- `settings.json` 中老用户的 `kimi_official_api_key_encrypted` 字段保留无害,代码不再读取
+- **首次启动喂料前先验证**:`python -c "from scripts.deepseek_client import DeepSeekClient; c=DeepSeekClient(); r=c.chat('你是助手','说你好',max_tokens=200,model_override='deepseek-v4-pro'); print(r['content'][:50])"`,看是否返回 V4 正常响应
+
+**已知小债务(v2.3.5-part2.1 顺手清)**:
+- `web/templates/review.html` Card 15 文案仍显示旧字段(L1.1 硅基 Kimi 救 / L1.2 官方 Kimi 救 / L2 R1 镜像救),后端不再推这些字段 → Card 显示 0(不会崩,UX 略奇怪)
+- `scripts/config_wizard.py` 第 5 项"Kimi 官方 API Key"输入仍存在,新用户走配置向导多答一个无效问题
+- 两项都是纯 cosmetic,不影响功能,下版顺手清
+
+**立规则联动**:
+- **立规则 16 改造(本版第 4 次)**:截断兜底链从"5 层(R1→Kimi硅基→Kimi官方→R1镜像→F057)"改为"3 层(V4-Pro→V3.2镜像→F057)"。Kimi 物理冗余目标实测不达预期(L1.1+L1.2 三段全失败),V4 max_output 47 倍于 R1 直接根治截断,从源头消除"必须思考型概率冗余"的需求
+- **立规则 61 第 2 次应用**:`_is_thinking_model` 加 `"v4-pro"` 关键字 — 字符串模式匹配函数自动适配 V4 思考型,无需修改任何调用点,完美自证"集合 in 判等→模式匹配函数"的设计优势
+- **立规则 62 仍成立**:V4-Pro 主链走 `api.deepseek.com` / 镜像兜底走 `api.siliconflow.cn`,跨厂商物理冗余仍是两个独立故障域
+- **立规则 63 首次正式落地**:Phase 1 信息齐全度自检 INFO-CHECK,本版 Phase 1 输出三张清单(待补传文件 / 待 web_search / 待用户决策)清空后才进 Phase 2;Phase 3 中 review.html / config_wizard.py 未补传时透明告知后变通处理(不假设、不猜代码)
+- **立规则 9 第 22 次应验**:relation_analyzer 凭记忆写 `chat_with_json(model=...)` 关键字,真实签名是 `model_override=`。已成立的 22 条应验,根因都是"写代码靠记忆不 grep 真实签名"
+- **立规则 53 第 8 次自证**:Phase 3 中途 Claude 又一次"工具配额顾虑"喊停拆对话,老唐"继续"督促才一气呵成完成。立规则 57 工作量预评估对单次大段 str_replace 应给加权(整段 docstring 重写 = 3 次普通 str_replace 配额),记入 v2.3.5-part2 的工程纪律债务
+
+
 
 **定位**:v2.3.5-part1.2 把硅基思考型 timeout 从 300s 加宽到 1200s 后,老唐 0429 实测仍遇硅基 ConnectionError(`Exception: API调用失败(重试3次): connection`),硅基整体抖动时 L1 救援链直接挂掉。诊断发现 v2.3.4-hotfix1 设计的 L1(硅基 Kimi)+ L2(硅基 R1 镜像)是"逻辑冗余"而非"物理冗余" — 两层共享同一硅基厂商基础设施,硅基挂时同时挂。修法:加 Kimi 官方直连作为 L1.2 兜底层,硅基(L1.1)挂时立刻切 Kimi 官方,真正的跨厂商物理冗余(硅基 / Moonshot 两个独立故障域)。
 
@@ -59,6 +106,12 @@
 - **立规则 62 新立(候选)**:**跨厂商物理冗余原则 — 救援链相邻两层不应共享同一供应商 endpoint**。判断方法:列出每层的 endpoint 域名,相邻两层域名不同才算物理冗余。本版 L1.1 = api.siliconflow.cn,L1.2 = api.moonshot.cn,L2 = api.siliconflow.cn,L3 = (本地无网络) — L1.1/L1.2 跨厂商 ✅,L1.2/L2 跨厂商 ✅,L2/L3 跨厂商 ✅ 满足
 - **立规则 53 第 N 次自证(照搬模板)**:`_retry_via_kimi_official` 与 `_retry_via_siliconflow` 90% 代码相同,仅改 4 处(client 方法名 / 事件名前缀 / 注释 / docstring),没有重新设计调度逻辑 — 这种"照搬骨架仅替换变化点"的纪律避免了潜在的逻辑漂移
 - **反思方法论**:hotfix1 当时的"跨厂商概念"设计就埋了一个"模型供应方 ≠ 实际服务 endpoint"的假设。Phase 1 影响范围评估时主动列出"两层 endpoint 域名"才能秒级发现"L1+L2 都是 siliconflow.cn" — 本次评估时就用了这个方法,所以方案 C 一次写对
+
+---
+
+## [v2.3.5-part1.3] - 2026-04-29 (hotfix - L1 救援链跨厂商物理冗余:硅基 → Kimi 官方双 L1 互备)
+
+**完整条目内容已迁移至 v2.3.5-part2 上方诸条**(立规则 51 做减法 — part1.3 引入的 Kimi 兜底链在 v2.3.5-part2 整体废弃,具体改动详情已被 part2 的 Removed 段覆盖);v2.3.5-part2 立规则 16 第 4 次改造把 5 层降级链简化为 3 层。
 
 ---
 

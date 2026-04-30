@@ -114,7 +114,7 @@ except ImportError:
 # extractor.py提取时记录此版本号到knowledge_points表
 # ============================================================
 
-PROMPT_VERSION = "v2.3.4-hotfix1"
+PROMPT_VERSION = "v2.3.5-part2"
 
 
 def get_prompt_version():
