@@ -93,14 +93,13 @@ class TurboExtractor(object):
                 filename=fp.name,
             )
 
-            resp, usage = self.client.chat_with_jsonl(
+            resp = self.client.chat_with_jsonl(
                 system_prompt, user_prompt,
                 temperature=0.0, model_override="deepseek-v4-flash",
                 call_type="turbo_extract",
                 max_tokens=32768,
             )
-
-            kps = self._parse_kps(resp)
+            kps = resp.get("kp_objects", []) if isinstance(resp, dict) else []
             if not kps:
                 return {"success": True, "kp_count": 0, "message": "未提取到知识点"}
 

@@ -144,7 +144,7 @@ class AuditEngine(object):
         user_prompt = f"KP: {kp.get('title','')[:100]}\n内容: {(kp.get('original_excerpt') or '')[:200]}\n\nAgent评分分歧:\n" + "\n".join(perspectives)
 
         try:
-            resp, _ = self.client.chat_with_json(system_prompt, user_prompt,
+            resp = self.client.chat_with_json(system_prompt, user_prompt,
                                                   temperature=0.1, model_override="deepseek-v4-flash",
                                                   call_type="agent_debate")
             return resp.get("parsed_json") if isinstance(resp, dict) else None
@@ -238,7 +238,7 @@ class AuditEngine(object):
 请严格按 JSON 格式输出评分结果。"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.1, model_override="deepseek-v4-flash",
                 call_type="agent_audit",

@@ -39,7 +39,7 @@ class ReaderAutoTagger(object):
                 excerpt=excerpt,
                 category_tags=json.dumps(tags, ensure_ascii=False),
             )
-            resp, usage = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 READER_TAGGING_PROMPT["system_prompt"],
                 user_prompt,
                 temperature=0.1,
