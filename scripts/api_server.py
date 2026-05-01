@@ -1,7 +1,7 @@
 """
 api_server.py - Flask API + 管理后台
 路径：scripts/api_server.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 版本统一
 
 v2.3.0-part3.8 变更(hotfix,2026-04-24):
     F062 白名单大扩展配套——6 批量路由改代码收集错误原因(立规则 A 禁止裸 except+pass 模式)
@@ -5198,9 +5198,9 @@ def main():
     if p.exists():
         with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.5-part2")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.6-part1")
     print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答")
-    print(f"  v2.3.5-part2: V4-Pro 主链 + 跨段补漏闭环(5轮) + Kimi 兜底链全删 + F4/F5 修")
+    print(f"  v2.3.6-part1: 并行双模型提取(V4-Flash 全覆盖 + V4-Pro 深挖核心段 + 合并去重)")
     print("="*60)
     print(f"  地址: http://localhost:{port}")
     print(f"  诊断: http://localhost:{port}/api/debug")

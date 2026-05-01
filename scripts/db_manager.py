@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 版本统一
 
 v2.3.5-part1 新增(feature, 2026-04-28):
   - 3 张新表(init_tables 内建,与立规则#1 单一来源对齐):

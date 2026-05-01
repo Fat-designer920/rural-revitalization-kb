@@ -2627,7 +2627,7 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.2.3")
+        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.3.6-part1")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")

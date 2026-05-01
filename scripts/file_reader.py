@@ -1,7 +1,7 @@
 """
 file_reader.py - 多格式文件读取
 路径：scripts/file_reader.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 版本统一
 """
 import os, sys, json, hashlib, chardet
 from pathlib import Path

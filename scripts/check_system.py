@@ -1,7 +1,7 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 版本统一
 
 v2.3.0-part2.2 变更（对话 B 防护层扩展）：
 v2.3.0-part3 变更（F062 对话 3/3 界面层收尾）：

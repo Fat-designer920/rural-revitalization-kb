@@ -1,13 +1,12 @@
 """
 prompt_templates.py - Prompt模板库
 路径：scripts/prompts/prompt_templates.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 并行双模型提取架构
 
-变更说明（v2.3.4-hotfix1）：
-  - PROMPT_VERSION 从 v2.3.4 升到 v2.3.4-hotfix1
-  - Prompt 内容**完全不动**:同一套 prompt 同时喂 R1 / Kimi-K2.6(思考型) / R1 跨厂商镜像
-  - 不为 Qwen3 / Kimi 单独适配:OpenAI 兼容格式 + JSON Lines 输出 + 思考型默认开启
-  - extractor.py L1/L2 通过 chat_via_siliconflow 调用,prompt 包字面相同
+变更说明（v2.3.6-part1）：
+  - 并行双模型架构:同一套 Prompt 同时喂 V4-Flash + V4-Pro
+  - Prompt 内容完全不动(仅提取架构升级,Prompt 体系改造留 v2.3.6-part2)
+  - PROMPT_VERSION 保持 v2.3.5-part2-hotfix1(提取 prompt 未改动)
 
 变更说明（v2.3.0-part3-alpha1 对话 1/3）：
   - 新增 1 个 F062 体检 Prompt 正式版文本:
