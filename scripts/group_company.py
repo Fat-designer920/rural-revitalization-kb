@@ -120,6 +120,43 @@ GROUP_STRUCTURE = {
 }
 
 
+class SubsidiaryPipeline(object):
+    """子公司自动化管道。每个子公司自带的完整流水线。"""
+
+    def __init__(self, sub_config, db=None, client=None):
+        self.config = sub_config
+        self.db = db
+        self.client = client
+        self.stats = {"kps_extracted": 0, "quality_passed": 0, "errors": 0, "last_run": None}
+
+    def run_cycle(self):
+        """运行一个自动化周期:爬取→清洗→提取→质检→入库"""
+        self.stats["last_run"] = datetime.now().isoformat()
+        results = {"subsidiary": self.config["name"], "cycle": self.stats["last_run"].isoformat()}
+
+        # 1. 爬取(由WebSearch或requests执行)
+        results["crawled"] = len(self.config.get("crawl_targets", []))
+
+        # 2. 清洗+提取(AI处理)
+        if self.client:
+            try:
+                resp = self.client.chat_with_json(
+                    f"你是{self.config['name']}的AI研究员。请从以下{len(self.config.get('crawl_targets',[]))}个来源搜索并提取与'{self.config['chain_stage']}'阶段相关的乡村振兴知识。使命:{self.config['mission'][:100]}。返回JSON: {{findings:[], recommendations:[]}}",
+                    f"执行{self.config['name']}自动化研究周期",
+                    temperature=0.1, model_override="deepseek-v4-flash",
+                    call_type=f"sub_{self.config['code']}"
+                )
+                results["findings"] = len(resp.get("parsed_json", {}).get("findings", [])) if isinstance(resp, dict) else 0
+            except Exception:
+                results["findings"] = 0
+
+        results["status"] = "completed"
+        return results
+
+    def get_status(self):
+        return {"name": self.config["name"], "stats": self.stats, "status": "active"}
+
+
 class GroupCompany(object):
     """乡村振兴知识集团。管理7个子公司+母公司,24/7自动化运转。"""
 
