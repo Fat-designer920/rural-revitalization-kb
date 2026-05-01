@@ -3822,7 +3822,7 @@ class DatabaseManager:
                      ai_extracted_content, qa_score, source_authority,
                      content_readiness, target_reader, reader_scenario,
                      knowledge_depth, quality_score_json, suggested_category_tags
-                     FROM knowledge_points WHERE review_status='confirmed'
+                     FROM knowledge_points WHERE review_status IN ('confirmed','pending')
                      ORDER BY RANDOM() LIMIT ?""", (n,))
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
@@ -3876,7 +3876,7 @@ class DatabaseManager:
         c.execute("""SELECT id, title, content_type, original_excerpt,
                      ai_extracted_content, suggested_category_tags
                      FROM knowledge_points
-                     WHERE review_status='confirmed'
+                     WHERE review_status IN ('confirmed','pending')
                        AND (target_reader='[]' OR target_reader IS NULL
                             OR reader_scenario='' OR reader_scenario IS NULL)
                      ORDER BY qa_score DESC LIMIT ?""", (limit,))
