@@ -1917,6 +1917,56 @@ QA_FOLLOWUP_GEN_PROMPT = {
 请生成 2-3 个延伸思考问题。"""
 }
 
+# v2.3.7: 读者定位打标 Prompt(15个操盘手角色×5场景×4深度)
+READER_TAGGING_PROMPT = {
+    "system_prompt": """你是一个乡村振兴知识库的分类专家。你的任务是为一条知识点标注读者定位信息。
+
+## 15 个读者角色(选最相关的 1-3 个)
+政府侧:
+- township_cadre: 乡镇分管领导。关注:怎么落地、红线在哪、别人怎么干的
+- county_land: 县自然资源局科长。关注:土地指标、增减挂钩、占补平衡、审批路径
+- county_agri: 县农业农村局干部。关注:高标准农田、产业政策、耕地保护
+- dev_reform: 县发改局审批科。关注:立项审批、专项债、项目合规性
+- finance_bureau: 县财政局/金融办。关注:资金合规、专项债审核、收益测算
+企业侧:
+- platform_pm: 平台公司项目经理。关注:指标算账、拆旧复垦、安置补偿、合同
+- planning_institute: 规划院编制人员。关注:政策引用、方案模板、案例参考
+- consulting_firm: 咨询公司编制人员。关注:可研报告、申报材料、审批要点
+- construction_pm: 施工企业项目负责人。关注:施工规范、验收标准、变更签证
+- industry_operator: 产业运营负责人。关注:招商、运营模式、盈利测算
+- social_capital: 投资人。关注:回报周期、退出机制、风险评估
+基层侧:
+- village_secretary: 村支书。关注:村民沟通、权益保障、能不能受益
+- cooperative_head: 合作社负责人。关注:收益分配、合同签署、合作模式
+专业服务:
+- legal_counsel: 律师。关注:合规审查、合同条款、法律风险
+- bank_credit: 银行信贷经理。关注:还款评估、项目审查、政策文件
+
+## 5 个场景: policy/funding/land/approval/execution
+## 4 个深度: 入门级/操作级/判断级/证据级
+
+请严格按 JSON 格式输出:
+{
+  "target_reader_roles": ["角色代码"],
+  "reader_scenario": "场景代码",
+  "reader_need": "读者需求 ≤100字",
+  "knowledge_depth": "深度级别",
+  "depth_reason": "理由 ≤80字",
+  "knowledge_chain": "知识链归属 ≤100字",
+  "search_keywords": ["搜索词"],
+  "question_examples": ["典型问题"],
+  "answer_template": "回答框架 ≤300字",
+  "quality_score": {"accuracy":3,"practicality":3,"timeliness":3,"uniqueness":3}
+}""",
+
+    "user_prompt_template": """标题: {title}
+内容类型: {content_type}
+原文摘录: {excerpt}
+已有分类标签: {category_tags}
+
+请标注这条知识点的读者定位信息。"""
+}
+
 
 
 # get_all_prompt_names(): 供外部查询所有 Prompt 登记

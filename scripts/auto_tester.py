@@ -94,6 +94,16 @@ MODULE_TESTFILE_MAP = {
         "reason": "端到端测试引擎自身健康(不需要测试文件)",
         "min_files": 0,
     },
+    "reader_tagger": {
+        "categories": ["顶层综合类指导文件/中央1号文件", "农业农村领域有关信息"],
+        "reason": "验证读者定位打标准确性(15角色×5场景×4深度)",
+        "min_files": 2,
+    },
+    "audit_engine": {
+        "categories": ["顶层综合类指导文件/中央1号文件"],
+        "reason": "Agent 审计引擎就绪度(17 Agent 定义+抽样评分+任务生成)",
+        "min_files": 0,
+    },
 }
 
 # 通用兜底:改动多个模块或未匹配时,每类挑1个代表文件
@@ -127,6 +137,8 @@ CORE_MODULES = [
     ("scripts.check_system", "CheckSystem"),
     ("scripts.backup_manager", "BackupManager"),
     ("scripts.config_wizard", "ConfigWizard"),
+    ("scripts.reader_tagger", "ReaderAutoTagger"),
+    ("scripts.audit_engine", "AuditEngine"),
 ]
 
 

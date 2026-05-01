@@ -197,6 +197,57 @@ _V235_NEW_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cm_kp ON cluster_members(kp_id)",
 ]
 
+# v2.3.7: 读者定位字段 + Agent 审计表
+_V237_NEW_COLUMNS = [
+    ("target_reader", "TEXT DEFAULT '[]'"),
+    ("reader_scenario", "TEXT DEFAULT ''"),
+    ("reader_need", "TEXT DEFAULT ''"),
+    ("knowledge_depth", "TEXT DEFAULT ''"),
+    ("depth_reason", "TEXT DEFAULT ''"),
+    ("knowledge_chain", "TEXT DEFAULT ''"),
+    ("search_keywords", "TEXT DEFAULT '[]'"),
+    ("question_examples", "TEXT DEFAULT '[]'"),
+    ("answer_template", "TEXT DEFAULT ''"),
+    ("quality_score_json", "TEXT DEFAULT '{}'"),
+]
+
+_V237_NEW_TABLES = [
+    """CREATE TABLE IF NOT EXISTS agent_definitions (
+        agent_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_code TEXT UNIQUE NOT NULL,
+        agent_name TEXT NOT NULL,
+        agent_type TEXT NOT NULL CHECK(agent_type IN ('role','bug','ui')),
+        identity_text TEXT NOT NULL,
+        core_questions TEXT DEFAULT '[]',
+        quality_standards TEXT DEFAULT '[]',
+        scoring_dimensions TEXT DEFAULT '[]',
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')))""",
+    """CREATE TABLE IF NOT EXISTS audit_cycles (
+        cycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_label TEXT NOT NULL,
+        kp_sample_ids TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+        report_json TEXT DEFAULT '{}',
+        feed_tasks TEXT DEFAULT '[]',
+        structure_gaps TEXT DEFAULT '[]',
+        code_tasks TEXT DEFAULT '[]',
+        started_at TEXT DEFAULT NULL,
+        completed_at TEXT DEFAULT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')))""",
+]
+
+_V237_NEW_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_kp_target_reader ON knowledge_points(target_reader)",
+    "CREATE INDEX IF NOT EXISTS idx_kp_knowledge_depth ON knowledge_points(knowledge_depth)",
+    "CREATE INDEX IF NOT EXISTS idx_kp_reader_scenario ON knowledge_points(reader_scenario)",
+    "CREATE INDEX IF NOT EXISTS idx_kp_quality_score ON knowledge_points(quality_score_json)",
+    "CREATE INDEX IF NOT EXISTS idx_kp_knowledge_chain ON knowledge_points(knowledge_chain)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)",
+]
+
 
 def _upgrade_schema_to_current(db_path):
     """追齐存量库 schema 到 v2.3.3-mvp-part1a.
@@ -352,6 +403,61 @@ def _upgrade_schema_to_current(db_path):
         # knowledge_points 的新字段;idx_kp_consensus_strength(若有)才依赖 Step 12,
         # 当前未引入此索引,所以 Step 13 与 Step 12 顺序无强制要求,但保持立规则 60 风格.
         for idx_sql in _V235_NEW_INDEXES:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 14: v2.3.7 读者定位 10 个新字段 (knowledge_points)
+        for col_name, col_def in _V237_NEW_COLUMNS:
+            c.execute("PRAGMA table_info(knowledge_points)")
+            existing_cols = [r[1] for r in c.fetchall()]
+            if col_name in existing_cols:
+                summary["columns_skipped"].append(col_name)
+            else:
+                c.execute("ALTER TABLE knowledge_points ADD COLUMN {} {}".format(
+                    col_name, col_def))
+                summary["columns_added"].append(col_name)
+
+        # Step 15: v2.3.7 agent_definitions + audit_cycles 新表
+        for create_sql in _V237_NEW_TABLES:
+            tbl_name = create_sql.split("IF NOT EXISTS")[1].split("(")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                      "AND name=?", (tbl_name,))
+            if c.fetchone():
+                summary["tables_skipped"].append(tbl_name)
+            else:
+                c.execute(create_sql)
+                summary["tables_created"].append(tbl_name)
+
+        # Step 16: v2.3.7 读者定位索引 (3 条,基于新字段)
+        for idx_sql in _V237_NEW_INDEXES[:3]:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 17: v2.3.7 quality_score + knowledge_chain 索引 (2 条)
+        for idx_sql in _V237_NEW_INDEXES[3:5]:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' "
+                      "AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
+        # Step 18: v2.3.7 audit + agent 索引 (2 条,需 Step 15 建表先完成)
+        for idx_sql in _V237_NEW_INDEXES[5:]:
             idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
             c.execute("SELECT name FROM sqlite_master WHERE type='index' "
                       "AND name=?", (idx_name,))

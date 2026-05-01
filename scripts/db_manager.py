@@ -137,6 +137,17 @@ class DatabaseManager:
             used_for TEXT DEFAULT NULL,
             premium_freshness_status TEXT DEFAULT NULL
                 CHECK(premium_freshness_status IS NULL OR premium_freshness_status IN ('fresh','warning','expired')),
+            -- v2.3.7: 读者定位字段(10 个新字段,服务 15 个操盘手角色画像)
+            target_reader TEXT DEFAULT '[]',
+            reader_scenario TEXT DEFAULT '',
+            reader_need TEXT DEFAULT '',
+            knowledge_depth TEXT DEFAULT '',
+            depth_reason TEXT DEFAULT '',
+            knowledge_chain TEXT DEFAULT '',
+            search_keywords TEXT DEFAULT '[]',
+            question_examples TEXT DEFAULT '[]',
+            answer_template TEXT DEFAULT '',
+            quality_score_json TEXT DEFAULT '{}',
             -- 时间戳
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
@@ -510,8 +521,42 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_rel_type_status ON kp_relations(relation_type, status)",
             "CREATE INDEX IF NOT EXISTS idx_cluster_type ON consensus_clusters(cluster_type, status)",
             "CREATE INDEX IF NOT EXISTS idx_cm_kp ON cluster_members(kp_id)",
+            # v2.3.7: 读者定位索引(5条)
+            "CREATE INDEX IF NOT EXISTS idx_kp_target_reader ON knowledge_points(target_reader)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_knowledge_depth ON knowledge_points(knowledge_depth)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_reader_scenario ON knowledge_points(reader_scenario)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_quality_score ON knowledge_points(quality_score_json)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_knowledge_chain ON knowledge_points(knowledge_chain)",
         ]:
             c.execute(idx)
+        # v2.3.7: Agent 定义表
+        c.execute("""CREATE TABLE IF NOT EXISTS agent_definitions (
+            agent_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_code TEXT UNIQUE NOT NULL,
+            agent_name TEXT NOT NULL,
+            agent_type TEXT NOT NULL CHECK(agent_type IN ('role','bug','ui')),
+            identity_text TEXT NOT NULL,
+            core_questions TEXT DEFAULT '[]',
+            quality_standards TEXT DEFAULT '[]',
+            scoring_dimensions TEXT DEFAULT '[]',
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+        # v2.3.7: 审计周期表
+        c.execute("""CREATE TABLE IF NOT EXISTS audit_cycles (
+            cycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_label TEXT NOT NULL,
+            kp_sample_ids TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
+            report_json TEXT DEFAULT '{}',
+            feed_tasks TEXT DEFAULT '[]',
+            structure_gaps TEXT DEFAULT '[]',
+            code_tasks TEXT DEFAULT '[]',
+            started_at TEXT DEFAULT NULL,
+            completed_at TEXT DEFAULT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime')))""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)")
         conn.commit(); conn.close(); return True
 
     def init_default_categories(self):
@@ -3726,3 +3771,138 @@ class DatabaseManager:
             raise
         finally:
             conn.close()
+
+    # ================================================================
+    # v2.3.7 读者定位 + Agent 审计
+    # ================================================================
+    def seed_agent_definitions(self, agents):
+        """插入 Agent 定义(幂等,agent_code 已存在则跳过)。agents 为 [{agent_code,agent_name,agent_type,identity_text,core_questions,quality_standards,scoring_dimensions},...]"""
+        conn = self.get_connection(); c = conn.cursor()
+        inserted = 0
+        for ag in agents:
+            try:
+                c.execute("""INSERT OR IGNORE INTO agent_definitions
+                    (agent_code, agent_name, agent_type, identity_text,
+                     core_questions, quality_standards, scoring_dimensions)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (ag["agent_code"], ag["agent_name"], ag["agent_type"],
+                     ag["identity_text"], json.dumps(ag.get("core_questions",[]), ensure_ascii=False),
+                     json.dumps(ag.get("quality_standards",[]), ensure_ascii=False),
+                     json.dumps(ag.get("scoring_dimensions",[]), ensure_ascii=False)))
+                if c.rowcount > 0:
+                    inserted += 1
+            except Exception:
+                pass
+        conn.commit(); conn.close()
+        return inserted
+
+    def get_active_agents(self, agent_type=None):
+        """获取活跃的 Agent 定义列表。agent_type 可选: role/bug/ui"""
+        conn = self.get_connection(); c = conn.cursor()
+        if agent_type:
+            c.execute("SELECT * FROM agent_definitions WHERE is_active=1 AND agent_type=? ORDER BY agent_id", (agent_type,))
+        else:
+            c.execute("SELECT * FROM agent_definitions WHERE is_active=1 ORDER BY agent_id")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            for f in ("core_questions","quality_standards","scoring_dimensions"):
+                val = r.get(f)
+                if isinstance(val, str):
+                    try:
+                        r[f] = json.loads(val)
+                    except Exception:
+                        pass
+        return rows
+
+    def get_kp_sample_for_audit(self, n=20):
+        """随机抽取 n 条 confirmed 知识点供审计"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT id, title, content_type, original_excerpt,
+                     ai_extracted_content, qa_score, source_authority,
+                     content_readiness, target_reader, reader_scenario,
+                     knowledge_depth, quality_score_json, suggested_category_tags
+                     FROM knowledge_points WHERE review_status='confirmed'
+                     ORDER BY RANDOM() LIMIT ?""", (n,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        for r in rows:
+            ai = r.get("ai_extracted_content")
+            if isinstance(ai, str):
+                try:
+                    r["ai_extracted_content"] = json.loads(ai)
+                except Exception:
+                    r["ai_extracted_content"] = {}
+        return rows
+
+    def save_audit_report(self, report):
+        """保存审计报告。report 含 cycle_label/kp_sample_ids/report_json/feed_tasks/structure_gaps/code_tasks。返回 cycle_id"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""INSERT INTO audit_cycles (cycle_label, kp_sample_ids, status, report_json,
+                     feed_tasks, structure_gaps, code_tasks, started_at, completed_at)
+                     VALUES (?,?,?,?,?,?,?,datetime('now','localtime'),datetime('now','localtime'))""",
+                  (report["cycle_label"],
+                   json.dumps(report.get("kp_sample_ids",[]), ensure_ascii=False),
+                   report.get("status","completed"),
+                   json.dumps(report.get("report_json",{}), ensure_ascii=False),
+                   json.dumps(report.get("feed_tasks",[]), ensure_ascii=False),
+                   json.dumps(report.get("structure_gaps",[]), ensure_ascii=False),
+                   json.dumps(report.get("code_tasks",[]), ensure_ascii=False)))
+        cycle_id = c.lastrowid
+        conn.commit(); conn.close()
+        return cycle_id
+
+    def get_latest_audit_report(self):
+        """获取最近一次审计报告"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT * FROM audit_cycles ORDER BY created_at DESC LIMIT 1""")
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None
+        r = dict(row)
+        for f in ("report_json","feed_tasks","structure_gaps","code_tasks","kp_sample_ids"):
+            val = r.get(f)
+            if isinstance(val, str):
+                try:
+                    r[f] = json.loads(val)
+                except Exception:
+                    pass
+        return r
+
+    def get_kps_missing_reader_fields(self, limit=100):
+        """获取缺少读者定位字段的知识点"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""SELECT id, title, content_type, original_excerpt,
+                     ai_extracted_content, suggested_category_tags
+                     FROM knowledge_points
+                     WHERE review_status='confirmed'
+                       AND (target_reader='[]' OR target_reader IS NULL
+                            OR reader_scenario='' OR reader_scenario IS NULL)
+                     ORDER BY qa_score DESC LIMIT ?""", (limit,))
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def batch_update_reader_fields(self, kp_id, reader_tags):
+        """更新一条知识点的读者定位字段。reader_tags 含 10 个字段"""
+        conn = self.get_connection(); c = conn.cursor()
+        c.execute("""UPDATE knowledge_points SET
+            target_reader=?, reader_scenario=?, reader_need=?,
+            knowledge_depth=?, depth_reason=?, knowledge_chain=?,
+            search_keywords=?, question_examples=?, answer_template=?,
+            quality_score_json=?, updated_at=datetime('now','localtime')
+            WHERE id=?""", (
+            json.dumps(reader_tags.get("target_reader",[]), ensure_ascii=False),
+            reader_tags.get("reader_scenario",""),
+            reader_tags.get("reader_need",""),
+            reader_tags.get("knowledge_depth",""),
+            reader_tags.get("depth_reason",""),
+            reader_tags.get("knowledge_chain",""),
+            json.dumps(reader_tags.get("search_keywords",[]), ensure_ascii=False),
+            json.dumps(reader_tags.get("question_examples",[]), ensure_ascii=False),
+            reader_tags.get("answer_template",""),
+            json.dumps(reader_tags.get("quality_score",{}), ensure_ascii=False),
+            kp_id))
+        conn.commit(); conn.close()
+        return True

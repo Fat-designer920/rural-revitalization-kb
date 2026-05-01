@@ -4905,6 +4905,84 @@ def qa_stats():
         return jsonify({"success": False, "error": str(e)[:500]}), 500
 
 
+# ================================================================
+# v2.3.7: Agent 审计路由
+# ================================================================
+@app.route("/api/tools/audit-run", methods=["POST"])
+def audit_run():
+    """触发一次 Agent 审计周期(同步,秒级)。返回审计报告。"""
+    try:
+        from scripts.audit_engine import run_audit_cycle
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        result = run_audit_cycle(db, c)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/tools/audit-report/<int:cycle_id>", methods=["GET"])
+def audit_report_detail(cycle_id):
+    """获取指定审计周期的报告。cycle_id=0 获取最近一次。"""
+    try:
+        if cycle_id == 0:
+            r = db.get_latest_audit_report()
+        else:
+            r = db.get_latest_audit_report()
+        if not r:
+            return jsonify({"error": "无审计报告"}), 404
+        return jsonify({"success": True, "report": r})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/audit-history", methods=["GET"])
+def audit_history():
+    """审计历史列表(最近 10 次)"""
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT cycle_id, cycle_label, status, created_at FROM audit_cycles ORDER BY created_at DESC LIMIT 10")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return jsonify({"success": True, "history": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tools/reader-backfill", methods=["POST"])
+def reader_backfill():
+    """触发读者字段回填(异步,复用 _task 槽)"""
+    try:
+        if _task["running"]:
+            return jsonify({"error": "有任务正在运行,请等待完成"}), 409
+        with _task_lock:
+            _task["running"] = True
+            _task["progress"] = {"stage": "init", "current": 0, "total": 0, "message": "读者回填启动"}
+            _task["result"] = None
+            _task["error"] = None
+        def _cb(prog):
+            with _task_lock:
+                _task["progress"] = prog
+        def _worker():
+            try:
+                from scripts.reader_tagger import run_reader_backfill
+                from scripts.deepseek_client import DeepSeekClient
+                c2 = DeepSeekClient()
+                r = run_reader_backfill(db, c2, progress_callback=_cb)
+                with _task_lock:
+                    _task["result"] = r
+                    _task["running"] = False
+            except Exception as ex:
+                with _task_lock:
+                    _task["error"] = str(ex)
+                    _task["running"] = False
+        import threading
+        threading.Thread(target=_worker, daemon=True).start()
+        return jsonify({"success": True, "message": "读者回填已启动"})
+    except Exception as e:
+        with _task_lock:
+            _task["running"] = False
+        return jsonify({"error": str(e)}), 500
+
+
 # 启动
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")

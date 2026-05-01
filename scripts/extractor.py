@@ -2515,6 +2515,32 @@ class Extractor:
             result.update({"success": True, "knowledge_count": cnt, "kps_info": kps_info})
             print(f"     [OK] {cnt}个知识点已存入待审核队列(Prompt:{get_prompt_version()})")
 
+            # v2.3.7: 读者定位自动打标(非阻塞,失败不影响提取结果)
+            if kps_info and cnt > 0:
+                try:
+                    from scripts.reader_tagger import ReaderAutoTagger
+                    tagger = ReaderAutoTagger(client=self.client, db=self.db)
+                    tagged = 0
+                    for info in kps_info:
+                        kp_id = info.get("kp_id")
+                        if not kp_id:
+                            continue
+                        kp_data = {
+                            "kp_id": kp_id,
+                            "title": info.get("title", ""),
+                            "content_type": ctype,
+                            "excerpt": "",
+                            "category_tags": info.get("category_tags", []),
+                        }
+                        reader_tags = tagger.tag_single(kp_data)
+                        if reader_tags and reader_tags.get("target_reader"):
+                            self.db.batch_update_reader_fields(kp_id, reader_tags)
+                            tagged += 1
+                    if tagged > 0:
+                        print(f"     [读者定位] {tagged}/{cnt}条知识点已自动打标")
+                except Exception:
+                    pass  # 读者打标失败不阻塞主提取流程
+
             # v2.3.4 D11: 文件级截断统计输出
             self._print_truncation_stats(cnt)
 
