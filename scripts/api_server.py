@@ -1,180 +1,7 @@
 """
-api_server.py - Flask API + 管理后台
+api_server.py - Flask 后台 API 服务器
 路径：scripts/api_server.py
-版本：v2.3.6-part1 - 版本统一
-
-v2.3.0-part3.8 变更(hotfix,2026-04-24):
-    F062 白名单大扩展配套——6 批量路由改代码收集错误原因(立规则 A 禁止裸 except+pass 模式)
-      - batch-confirm (行 ~541) 改为 except Exception as e: errors.append({id, error})
-      - batch-ignore (行 ~558) 同上
-      - batch-delete (行 ~570) 同上
-      - batch-renew-freshness (行 ~620) 同上
-      - batch-mark-outdated (行 ~646) 同上
-      - batch-restore-to-pending (行 ~970) 同上
-    返回 JSON 新增 2 字段:
-      - errors: [{"id": ..., "error": ...}] 失败条目列表(error 限 200 字符)
-      - failed_count: len(errors)
-    保留兼容:n (confirmed/ignored/deleted/renewed/marked/restored) 仍为成功计数
-    前端:review.html v2.3.0-part3.8 同步改造 6 个批量按钮的 fetch 回调,
-          失败列表通过新增 #batchResultModal 展示(复用既有 batch_resolve_duplicates 模式)
-
-v2.3.0-part3.5 变更(新功能,2026-04-24):
-    Feature: F062 配套——E2E 端到端测试诊断包导出
-      - 新增路由 GET /api/tools/e2e/export/<rid>
-        返回 Markdown 格式的完整诊断包(元数据+六维分+白名单+issue 聚合清单+
-        近 7 天 warn/error 事件日志摘要+诊断说明+版本上下文),供发给 Claude 做异地诊断
-      - 路由内部委托 scripts/e2e_diagnosis_exporter.build_e2e_diagnosis_markdown
-      - Response 带 Content-Disposition: attachment,浏览器直接下载
-      - 纯读功能,不写 DB、不调 AI、不占 _task 锁槽
-    配套:
-      - 新模块 scripts/e2e_diagnosis_exporter.py(~500 行,聚合+渲染 Markdown)
-      - review.html E2E 报告弹窗 footer 新增"导出诊断包"按钮 + 1 个 JS 函数
-
-v2.3.0-part3.4 版本号同步(2026-04-23):
-    本文件代码无改动。同版本 hotfix 集中在 db_manager.py 和 e2e_tester.py:
-      - db_manager.get_polish_candidates: WHERE 横向边界去掉 'confirmed' 排除
-        (修复体检维度⑤永久 100 分 / 跳过打磨的 bug)
-      - e2e_tester._write_issues: 签名加 report_id + 对齐 upsert_e2e_issue 真实签名
-      - e2e_tester._run_pipeline: 调用顺序调整为 save_report → write_issues
-        (修复"报告显示 185 个 issue / 列表显示 0 条"的幻觉数字 bug)
-    立规则第 9 条(签名)第三次应验 + 第 40 条(横向边界)补注。
-    详见 CHANGELOG.md v2.3.0-part3.4 条目。
-
-v2.3.0-part3.2 变更(hotfix,2026-04-23)：
-    Bug A 修复(仪表盘三张标签分布卡"暂无数据" / "展开全部 0 个")：
-      - db_manager.get_tag_distribution: pattern 改用 tag_name 匹配(原 tag_code 永不匹配)
-      - db_manager.get_tag_distribution: 新增 count>0 过滤,杜绝"N 个标签在使用中"虚假宣传
-      - review.html.renderTagCard.getName: 补 tag_name 字段兼容（原仅认 name/tag/label）
-      - review.html.toggleTagCardMore: 改用 data-total 属性替代 DOM 计数反推
-      - 根因：extractor._sanitize_tags 存 tag_name(中文)入 DB,但
-        get_tag_distribution 用 tag_code 做 LIKE 永远查不到;
-        旧版把 count=0 也塞入结果,靠"凑数"把假象覆盖掉;
-        一旦加 count>0 过滤真相暴露 → "暂无数据"
-    Bug B 修复(质检分数口径与"待补跑"打架:未质检 0 vs 待补跑 2043)：
-      - /api/dashboard qa_distribution: 将 qa_score=0.0 归入 unscored,与
-        get_qc_rerun_summary("待补跑=NULL 或 0.0")口径对齐
-      - review.html 删除两处硬编码版本号 span (v2.2.3 F057 / v2.3.0 F049)
-    Feature(v2.3.1 批量重算成熟度 的保守前置版本,不替代完整迭代):
-      - db_manager.promote_readiness_by_qa_score: qa>=4 且 draft → quotable
-        (只升不降,不碰 premium,editorial 轴与 qa 轴解耦)
-      - db_manager.get_readiness_promote_preview: dry-run 预览给前端确认弹窗
-      - POST /api/tools/readiness_promote + GET /preview: 独立工具触发
-      - 质检补跑 _qc_rerun_core 尾部自动调联动,result 返回 readiness_promote
-      - review.html 工具箱新增"就绪度联动"按钮(R 橙),独立 runTool 分支
-    Feature(质检补跑异步化,解决"刷新即失+无进度+不可并发"三连)：
-      - 新增 _qc_task / _qc_task_lock / _qc_task_update_progress,**独立于 _task**
-        (故意不进 _task 单例锁槽,允许与预处理/提取/体检/E2E 并发)
-      - _qc_rerun_core(progress_cb=None): 逐文件上报进度
-      - POST /api/tools/qc_rerun: 改异步,立即返回 202,后台线程执行
-      - GET /api/tools/qc_rerun/progress: 独立进度查询
-      - 新增 _qc_readiness_check(): 对齐 F048/F062 四项自检模板
-        (虽用独立锁理论不受"_task_lock 前置"字面约束,仍按精神对齐)
-      - review.html 新增独立 #qcTaskProgress 面板 + qcStartPolling 三函数,
-        admin tab 切入时 qcCheckRunningTask() 自动恢复刷新后的进度条
-    并发写兜底：
-      - db_manager.get_connection: PRAGMA busy_timeout=10000
-        (WAL 已开,补这个兜 10 秒等锁,应用层不再需要 retry)
-    关键教训(写入 01 工程手册新立规则 §二数据层第 10 条)：
-      - 新增 SQL 查询同一 JSON 字段前,必须对照存储侧的写入逻辑确认字段格式
-      - 本次:get_tag_distribution 用 tag_code,extractor._sanitize_tags 存 tag_name,
-        潜伏 2 个月(从 v2.1.0 三层标签体系上线起),靠"count=0 也塞入"掩盖
-
-v2.3.0-part3.1 变更(hotfix,2026-04-24)：
-    Bug A 修复(F061 质检补跑全线崩溃)：
-      - _qc_rerun_core 两处 ext._quality_check() 调用补齐 filename/content_summary 参数
-      - 根因：F058(v2.2.3)重构 _quality_check 强制 5 参,F061 的调用保留旧 2 参签名
-      - 影响：潜伏 2 个月,首次触发质检补跑立刻 TypeError 全线崩
-    Bug B 修复(F062 三表老库未建,500 错误):
-      - 模块顶层 DatabaseManager() 实例化后追加 db.init_tables() 兜底
-      - 根因：part3 升级只替换代码不重跑首次安装,init_tables() 无机会执行
-      - 影响：立规则"api_server 启动兜底 init_tables"写入 01 工程手册 §二
-
-v2.3.0-part3 变更(F062 界面层)：
-    新增 7 个 F062 端到端测试路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
-      GET  /api/tools/e2e/latest                      —— 工具箱第 11 卡显示"最近一次"+ 软提醒徽章
-      POST /api/tools/e2e/start                       —— 启动端到端测试（后台线程，_task type="e2e"）
-      GET  /api/tools/e2e/history                     —— 历史报告列表（走 db.get_e2e_test_report_list）
-      GET  /api/tools/e2e/report/<rid>                —— 单份报告详情（含 full_report_json 自动 parse）
-      GET  /api/tools/e2e/issues                      —— issue 四态列表（含 by_status 分组 + 筛选 status/dim_code）
-      POST /api/tools/e2e/issues/<iid>/status         —— 四态切换（走 db.set_e2e_issue_status）
-    新增 2 个辅助函数（模块级，路由前声明）：
-      _e2e_readiness_check()      —— 启动就绪性 4 项自检（对齐 F048 模板，对话 B 立的 _task_lock 前置规则）
-      _e2e_progress_adapter()     —— E2ETester 进度回调 → _task["progress"] 映射（9 stage，对齐对话 2 VALID_STAGES）
-    关键契约（与 v2.3.0-part3-alpha2 对话 2 e2e_tester 引擎层对齐）：
-      - _task["type"] = "e2e"（前后端口径锁定，review.html checkRunningTask titles["e2e"]）
-      - scan_depth 白名单 quick/deep，非白名单值兜底 quick（不 400）
-      - /latest 接口 total_score 从 full_report_json 解出（不回改 db，遵守对话 3 纪律）
-      - /issues 按 status 分组排序（pending > intermittent > fixed > ignored + last_seen_at DESC）
-      - /issues/<iid>/status 支持无限四态切换（给老唐逃生口）
-      - progress_adapter total_files=9 固定（对齐 e2e_tester VALID_STAGES 9 种）
-
-v2.3.0-part2.2 变更（F048 防护层）：
-    新增 1 个模块级辅助函数（api_server 顶部 import 段后）：
-      _health_readiness_check()  —— 启动就绪性 4 项自检，返回 (ok, errors)
-    /api/tools/health/start 路由在 with _task_lock 之前插入前置自检调用：
-      自检失败 → HTTP 400 带 details 故障清单，不占用 _task 单例
-      自检通过 → 进入原有后台线程逻辑
-    自检 4 项（对齐对话 A 发现的 4 类系统性 bug + 对话 B 字段契约）：
-      [1] 6 个 F048 Prompt 顶层可 import（对话 A 缺陷 1：Prompt 未落地）
-      [2] 6 个 F048 Prompt 非 None 且为 dict（对话 A 缺陷 2：import 静默降级）
-      [3] 每个 Prompt dict 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4：key 错配）
-      [4] db.get_kp_for_health_scan() 返回 dict 含 category / subcategory 两 key（对话 B 缺陷 3：字段契约）
-    设计纪律：
-      - 自检放 _task_lock 之前：失败不占用单例锁，避免"自检失败但抢了 _task"脏状态
-      - 自检耗时 <100ms（读第 1 条 kp）：用户感知 "点了秒回 400" 远优于 "2 秒后 500"
-      - 空库时 [4] 跳过（不算失败）：新部署首次体检无 kp 数据允许通过
-
-v2.3.0-part2 变更（F048 界面层）：
-    新增 8 个体检路由（全部追加在文件末尾 main() 之前，既有代码零改动）：
-      GET  /api/tools/health/latest                    —— 工具箱卡片显示"最近一次"用
-      POST /api/tools/health/start                     —— 启动体检（后台线程，_task type="health"）
-      GET  /api/tools/health/history                   —— 历史报告列表
-      GET  /api/tools/health/report/<rid>              —— 单份报告详情
-      GET  /api/tools/health/suggestions/<rid>         —— 该报告的 Review 清单
-      POST /api/tools/health/suggestions/<sid>/adopt   —— L1/L2 采纳（三步原子：备份→update_kp→apply）
-      POST /api/tools/health/suggestions/<sid>/drop    —— drop 独立路由（走 ignore_knowledge_point）
-      POST /api/tools/health/suggestions/<sid>/reject  —— 驳回（仅标 rejected）
-    新增 3 个辅助函数（模块级，路由前声明）：
-      _get_suggestion_by_id(sid)          —— 按 sid 查单条 polish_suggestion，两个 JSON 字段手动解析
-      _merge_ai_content(kp_row, sc)       —— suggested_content 字段合并为 update_knowledge_point 参数
-      _health_progress_adapter(payload)   —— HealthChecker 进度回调 → _task["progress"] 映射
-    关键契约（与 v2.3.0-part2-alpha2 引擎层 + 对话3 需求锁定对齐）：
-      - _merge_ai_content：tags.layer1→final_category_tags / layer2→final_attribute_tags /
-        layer3→final_keywords（三者仅非空时覆盖）；description/polish_notes 存进
-        ai_extracted_content 新键（polished_description/polish_notes）不覆盖原主字段；
-        title 直接覆盖；practical_insights 直接覆盖（list）；content_readiness **不传**保留原值
-      - split 语义：isinstance(sc, list) and len(sc)>1 时只取 sc[0]，响应带 split_note 提示
-        "AI 建议拆分为 N 条，已采纳第 1 条，其余 N-1 条请到 Tab 1 手动创建"
-      - drop 独立路由：不走 _merge_ai_content，走 db.ignore_knowledge_point(kp_id,
-        reason="health_drop: " + diagnosis[:200])，三步与 adopt 对齐
-      - L3_manual 采纳返 400："L3 建议仅支持驳回或略过，请到 Tab 1 手工修订"
-      - 采纳/drop 三步任一失败返 500，附 step 标识（backup / update_kp / apply）
-      - _health_progress_adapter 映射表 total_files=8 固定，stage→current_file 序号为
-        init=1 / dim1=2 / dim2=3 / dim3=4 / dim4_island=5 / dim5_polish=6 /
-        dim6_monetize=7 / done=8 / failed=8
-      - 打磨阶段（dim5_polish）把 HealthChecker 回调里的 current/total 拼接进 message
-        显示"打磨中 X/Y"
-
-v2.3.0-part1 变更：
-    F049 仪表盘工具箱优化（后端）：
-      - /api/knowledge-points 和 /api/knowledge-points/ids 新增 layer1_tag 参数（穿透跳转用）
-      - /api/dashboard 新增 data["tag_distribution"] = {"A":[...], "C":[...], "D":[...]}
-      - 新增 POST /api/tools/duplicate_unified：合并"增量重复/最近一周/全量扫描/清理重扫"为一个接口
-        旧路由 /api/tools/duplicate-scan 和 /api/tools/duplicate-reset-rescan 保留不动（向下兼容）
-    F059 批量重跑与AI去重联动（后端）：
-      - 新增 GET /api/tools/batch-rerun-scan：返回候选文件列表（kp 计数 + 是否含注解）
-      - 新增 POST /api/tasks/batch_rerun：批量重跑任务（复用 task_reextract 大框架）
-        差异：type="batch_rerun" / operation_hook("batch_rerun") /
-             用 delete_extracted_kps_by_source_file 而非 delete_kps_by_source_file
-    顺手修（仅 db 层）：get_all_knowledge_points 补齐 qa_source_filter 签名
-        （本文件 v2.2.3 已在传此参数，但 db 层签名当时漏改，导致该筛选始终无效）
-
-v2.2.3 - 界面层 hotfix
-    F060 关键操作强制备份（3 触发点接入：版本重提取 / 重复合并单条与批量 / 全库重扫）
-    F061 历史质检补跑 API（/api/tools/qc_rerun 走 F058 降级链）
-    新增 /api/events 事件日志查询、/api/tools/truncation_summary 截断摘要
-    dashboard 聚合截断摘要供仪表盘"截断补救"卡使用
-    旧 /api/tools/qa-backfill 保留为向下兼容转发（内部调新降级链）
+版本：v2.3.6-part1
 """
 import os,sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
@@ -209,9 +36,7 @@ try:
 except Exception as _e:
     print("[WARN] init_tables 启动兜底失败(将继续启动): %s" % str(_e))
 
-# ================================================================
 # v2.1.2 F047: 长任务管理器
-# ================================================================
 _task_lock = threading.Lock()
 _task = {
     "running": False,
@@ -236,9 +61,7 @@ def _task_update_progress(data):
             if k in _task["progress"]:
                 _task["progress"][k] = v
 
-# ================================================================
 # v2.3.0-hotfix: 质检补跑独立任务槽（可与 _task 并发）
-# ----------------------------------------------------------------
 # 设计动机：
 #   - _task 是全局单例锁(同时只能跑一个长任务)，用于预处理/提取/重提取/批量重跑
 #     /体检/端到端测试 这几条互斥的管线
@@ -246,7 +69,6 @@ def _task_update_progress(data):
 #     任务实际上数据不冲突，按"并发"设计
 #   - 给它单开 _qc_task，和 _task 物理隔离；两次质检补跑本身仍互斥(没意义并发)
 #   - SQLite 并发写极少数情况下可能出 "database is locked"，需要时在核心加 retry
-# ================================================================
 _qc_task_lock = threading.Lock()
 _qc_task = {
     "running": False,
@@ -353,9 +175,7 @@ def _qc_readiness_check():
     return (len(errors) == 0), errors
 
 
-# ================================================================
 # v2.3.1 F2 精品候选 AI 判定独立任务槽(对齐 _qc_task 模式)
-# ----------------------------------------------------------------
 # 设计动机:
 #   - F2 AI 刷新是长任务(40-60 分钟),必须异步
 #   - 只写 premium_ai_cache 表,与其他任务数据不冲突,允许并发
@@ -364,7 +184,6 @@ def _qc_readiness_check():
 #       A. last_completed_at 冷却期 10 分钟
 #       C. 前端弹确认框"预估 7-10 元"(前端实现)
 #   - cancel_requested 标志供引擎 cancel_check 协作式退出
-# ================================================================
 PREMIUM_COOLDOWN_SECONDS = 600  # A 保护:10 分钟冷却
 
 _premium_task_lock = threading.Lock()
@@ -473,16 +292,13 @@ def _premium_readiness_check():
     return (len(errors) == 0), errors
 
 
-# ================================================================
 # v2.3.2 F055 本地问答助手独立任务槽(对齐 _premium_task 模式)
-# ----------------------------------------------------------------
 # 设计动机:
 #   - 单次问答 ~10-30 秒(短任务),但仍走异步以支持取消 + 进度查看
 #   - 与 _qc_task / _premium_task 物理隔离,允许并发
 #     (老唐自测的同时朋友试用,互不干扰)
 #   - cancel_requested 标志供 qa_assistant 引擎 cancel_check 协作式退出
 #   - 端到端硬上限 60 秒,超时由前端发起 /cancel
-# ================================================================
 _qa_task_lock = threading.Lock()
 _qa_task = {
     "running": False,
@@ -684,9 +500,7 @@ def qa_public_page():
     """
     return Response(QA_PUBLIC_HTML, mimetype="text/html; charset=utf-8")
 
-# ================================================================
 # 知识点 CRUD
-# ================================================================
 @app.route("/api/knowledge-points", methods=["GET"])
 def get_kps():
     try:
@@ -802,9 +616,7 @@ def update(kid):
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # 批量操作
-# ================================================================
 @app.route("/api/knowledge-points/ids", methods=["GET"])
 def get_kp_ids():
     """返回当前筛选条件下的所有知识点ID（用于全选全部）"""
@@ -890,9 +702,7 @@ def restore_to_pending(kid):
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.1.0-d 新增：保鲜管理
-# ================================================================
 @app.route("/api/freshness/summary", methods=["GET"])
 def freshness_summary():
     """返回保鲜状态摘要（供审核界面顶部提示栏使用）"""
@@ -959,9 +769,7 @@ def batch_mark_outdated():
         return jsonify({"success":True,"marked":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.1.0-d F028: 政策依赖校验
-# ================================================================
 @app.route("/api/policy-validation/summary", methods=["GET"])
 def policy_validation_summary():
     """返回政策校验状态摘要"""
@@ -1019,9 +827,7 @@ def revalidate_policy(kid):
         return jsonify({"success":True,"validated":count})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.2.0 F029: 专家注解
-# ================================================================
 @app.route("/api/knowledge-points/<int:kid>/annotations", methods=["GET"])
 def get_annotations(kid):
     """获取某知识点的全部注解"""
@@ -1080,9 +886,7 @@ def get_annotation_tags():
                            "四川特有经验","可直接用于培训","可用于投标方案","需要补充政策依据",
                            "客户常问的问题","反常识但正确"])
 
-# ================================================================
 # v2.2.0 F045: 经验速记
-# ================================================================
 @app.route("/api/quicknote", methods=["POST"])
 def quicknote():
     """经验速记：接收表单 → V3结构化 → 入库"""
@@ -1111,9 +915,7 @@ def quicknote():
         traceback.print_exc()
         return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.1.1 F039: 重复检测
-# ================================================================
 @app.route("/api/duplicate-groups", methods=["GET"])
 def get_duplicate_groups():
     """获取重复检测结果列表（默认只返回pending）"""
@@ -1266,10 +1068,8 @@ def batch_resolve_duplicates():
         traceback.print_exc()
         return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.3.5-part1: 知识关系网络路由(12 个)
 # 替代旧 /api/duplicate-groups/* 系列(旧路由保留向下兼容)
-# ================================================================
 
 def _parse_group_id(group_id):
     """解析 group_id 字符串
@@ -1760,9 +1560,7 @@ def batch_restore_to_pending():
         return jsonify({"success":True,"restored":n,"errors":errors,"failed_count":len(errors)})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # 编辑历史
-# ================================================================
 @app.route("/api/knowledge-points/<int:kid>/history", methods=["GET"])
 def get_history(kid):
     try: return jsonify(db.get_edit_history(kid))
@@ -1776,9 +1574,7 @@ def restore_version(kid, hid):
         return jsonify({"error":msg}),400
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # 分类管理
-# ================================================================
 @app.route("/api/categories/add", methods=["POST"])
 def add_cat():
     try:
@@ -1811,9 +1607,7 @@ def tree():
     try: return jsonify(db.get_categories_tree())
     except Exception: return jsonify({})
 
-# ================================================================
 # AI建议
-# ================================================================
 @app.route("/api/architecture-suggestions", methods=["GET"])
 def get_suggestions():
     try: return jsonify(db.get_pending_suggestions())
@@ -1833,9 +1627,7 @@ def reject_suggestion(sid):
         return jsonify({"success":True})
     except Exception as e: traceback.print_exc(); return jsonify({"error":str(e)}),500
 
-# ================================================================
 # v2.0.0 新增：标签定义API（供前端标签选择器使用）
-# ================================================================
 @app.route("/api/tag-definitions")
 def get_tag_defs():
     """返回三层标签体系的完整定义
@@ -1859,9 +1651,7 @@ def get_tag_defs():
         traceback.print_exc()
         return jsonify({"error":str(e)}),500
 
-# ================================================================
 # 标签、统计、文件、系统
-# ================================================================
 @app.route("/api/tags")
 def get_all_tags():
     try:
@@ -1918,9 +1708,7 @@ def debug():
     except Exception as e: info["status"]="error"; info["errors"].append(str(e))
     return jsonify(info)
 
-# ================================================================
 # v2.1.2 F046+F033: 管理后台 - 仪表盘
-# ================================================================
 @app.route("/api/dashboard", methods=["GET"])
 def dashboard():
     """聚合仪表盘全部数据，一次返回"""
@@ -2123,9 +1911,7 @@ def dashboard():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ================================================================
 # v2.1.2 F046: 管理后台 - 工具箱
-# ================================================================
 @app.route("/api/tools/system-check", methods=["POST"])
 def tool_system_check():
     """执行系统检查，返回结构化结果"""
@@ -2257,9 +2043,7 @@ def tool_duplicate_reset_rescan():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ================================================================
 # v2.3.0-part1 F049: 智能重复检测统一接口（三选一）
-# ================================================================
 @app.route("/api/tools/duplicate_unified", methods=["POST"])
 def tool_duplicate_unified():
     """F049: 工具箱"智能重复检测"合并接口，前端弹窗三选一调用同一后端。
@@ -2329,9 +2113,7 @@ def tool_duplicate_unified():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ================================================================
 # v2.2.3 F061: 历史质检补跑（走 F058 三级降级链）
-# ================================================================
 def _load_source_content(sf):
     """F061 辅助：加载源文件内容（优先读.md缓存，再尝试文本原文件）
     用于给 _quality_check 的规则兜底做 excerpt 存在性检查（反幻觉）
@@ -2622,13 +2404,10 @@ def qc_rerun_progress_api():
             "error": _qc_task["error"]
         })
 
-# ================================================================
 # v2.3.0-hotfix: 就绪度联动（原 v2.3.1 单开批量按钮需求）
-# ----------------------------------------------------------------
 # 规则：qa_score>=4 AND readiness='draft' → 'quotable' （只升不降）
 # - 质检补跑完成后会自动触发一次（见 _qc_rerun_core 尾部）
 # - 也可以用下面两个端点独立触发（preview 先看要升多少，promote 真升）
-# ================================================================
 @app.route("/api/tools/readiness_promote/preview", methods=["GET"])
 def readiness_promote_preview_api():
     """预览：如果现在跑联动，会升多少条"""
@@ -2649,9 +2428,7 @@ def readiness_promote_api():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ================================================================
 # v2.3.1 F2 精品候选 AI 判定路由(7 条)
-# ----------------------------------------------------------------
 # 设计对齐 Phase 2 冻结档案 §5.1/5.2:
 #   POST   /api/tools/premium_pool/refresh          启动 AI 刷新(异步 202)
 #   POST   /api/tools/premium_pool/refresh/cancel   取消刷新
@@ -2660,7 +2437,6 @@ def readiness_promote_api():
 #   POST   /api/tools/premium_pool/bless            封神(单条或批量)
 #   POST   /api/tools/premium_pool/unbless          撤销(单条)
 #   POST   /api/tools/premium_pool/skip             跳过(仅埋点)
-# ================================================================
 
 @app.route("/api/tools/premium_pool/refresh", methods=["POST"])
 def premium_pool_refresh():
@@ -2955,9 +2731,7 @@ def premium_pool_skip():
     return jsonify({"success": True, "kp_id": kp_id, "view": view})
 
 
-# ================================================================
 # v2.3.1 F6 精品导出路由(1 条)
-# ================================================================
 @app.route("/api/tools/premium_export", methods=["GET"])
 def premium_export():
     """精品导出(Markdown 或 JSON, 直接下载).
@@ -3023,10 +2797,8 @@ def premium_export():
     return resp
 
 
-# ================================================================
 # 旧 /api/tools/qa-backfill 接口（v2.2.2 F054）
 # v2.2.3 起：向下兼容转发到新的三级降级链，字段映射保持原响应格式
-# ================================================================
 @app.route("/api/tools/qa-backfill", methods=["POST"])
 def tool_qa_backfill():
     """v2.2.3 F061: 向下兼容转发到 _qc_rerun_core()
@@ -3054,9 +2826,7 @@ def tool_qa_backfill():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ================================================================
 # v2.2.3 新增：事件日志查询
-# ================================================================
 @app.route("/api/events", methods=["GET"])
 def api_events():
     """查询 operation_events 结构化事件日志
@@ -3096,9 +2866,7 @@ def api_events():
         traceback.print_exc()
         return jsonify([])
 
-# ================================================================
 # v2.2.3 F057 辅助：截断摘要
-# ================================================================
 @app.route("/api/tools/truncation_summary", methods=["GET"])
 def truncation_summary_api():
     """F057 截断摘要：供仪表盘"截断补救"卡使用"""
@@ -3114,9 +2882,7 @@ def truncation_summary_api():
             "total_recovery_runs": 0
         }), 500
 
-# ================================================================
 # 工具箱其余端点（续）
-# ================================================================
 @app.route("/api/tools/policy-revalidate", methods=["POST"])
 def tool_policy_revalidate():
     """对未校验知识点补跑政策校验"""
@@ -3215,9 +2981,7 @@ def tool_api_cost():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ================================================================
 # v2.1.2 F047: 长任务端点(预处理/提取/进度)
-# ================================================================
 @app.route("/api/tasks/progress", methods=["GET"])
 def task_progress():
     """获取当前任务进度"""
@@ -3321,9 +3085,7 @@ def task_extract():
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"success": True, "message": "提取任务已启动"})
 
-# ================================================================
 # v2.1.2 F044: 版本重提取
-# ================================================================
 @app.route("/api/tools/reextract-scan", methods=["GET"])
 def reextract_scan():
     """扫描旧Prompt版本的知识点，按源文件分组"""
@@ -3421,9 +3183,7 @@ def task_reextract():
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"success": True, "message": "重提取任务已启动", "file_count": len(file_ids)})
 
-# ================================================================
 # v2.3.0-part1 F059: 批量重跑候选扫描 + 批量重跑任务 + AI 去重联动
-# ================================================================
 @app.route("/api/tools/batch-rerun-scan", methods=["GET"])
 def batch_rerun_scan():
     """F059: 批量重跑候选文件扫描。
@@ -3647,13 +3407,10 @@ def task_batch_rerun():
     return jsonify({"success": True, "message": "批量重跑已启动",
                     "file_count": len(file_ids)})
 
-# ================================================================
 # v2.3.0-part2 F048 知识库体检 Agent（界面层，对话3/3）
-# ----------------------------------------------------------------
 # 8 个路由 + 3 个辅助函数
 # 所有路由零改动既有代码，仅在文件末尾追加。
 # 辅助函数 3 个：_get_suggestion_by_id / _merge_ai_content / _health_progress_adapter
-# ================================================================
 
 # ------ 辅助函数 1：按 sid 查单条 polish_suggestion（db 层未提供该粒度方法） ------
 def _get_suggestion_by_id(sid):
@@ -3803,9 +3560,7 @@ def _health_progress_adapter(payload):
     })
 
 
-# ================================================================
 # v2.3.0-part2.2 新增：F048 启动就绪性自检（对话 B 防护层）
-# ================================================================
 def _health_readiness_check():
     """F048 体检启动前置自检。返回 (ok: bool, errors: list[str])。
 
@@ -3882,9 +3637,7 @@ def _health_readiness_check():
     return ok, errors
 
 
-# ================================================================
 # F048 路由 1：工具箱卡片用 —— 最近一次体检概要
-# ================================================================
 @app.route("/api/tools/health/latest", methods=["GET"])
 def health_latest():
     """返回最新一份 completed 报告的概要（工具箱第 10 张卡展示用）。
@@ -3913,9 +3666,7 @@ def health_latest():
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F048 路由 2：启动体检（后台线程）
-# ================================================================
 @app.route("/api/tools/health/start", methods=["POST"])
 def health_start():
     """启动全库体检。
@@ -4024,9 +3775,7 @@ def health_start():
                     "polish_max": polish_max})
 
 
-# ================================================================
 # F048 路由 3：历史报告列表
-# ================================================================
 @app.route("/api/tools/health/history", methods=["GET"])
 def health_history():
     """历史报告列表，默认最多 20 份。
@@ -4045,9 +3794,7 @@ def health_history():
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F048 路由 4：单份报告详情（含 full_report_json）
-# ================================================================
 @app.route("/api/tools/health/report/<int:rid>", methods=["GET"])
 def health_report_detail(rid):
     """单份报告详情，full_report_json 已在 db 层解析为 dict。"""
@@ -4061,9 +3808,7 @@ def health_report_detail(rid):
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F048 路由 5：该报告的 Review 清单
-# ================================================================
 @app.route("/api/tools/health/suggestions/<int:rid>", methods=["GET"])
 def health_suggestions_list(rid):
     """拉取某报告的打磨建议列表。
@@ -4097,9 +3842,7 @@ def health_suggestions_list(rid):
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F048 路由 6：采纳（L1/L2，三步原子）
-# ================================================================
 @app.route("/api/tools/health/suggestions/<int:sid>/adopt", methods=["POST"])
 def health_suggestion_adopt(sid):
     """L1/L2 采纳。
@@ -4237,9 +3980,7 @@ def health_suggestion_adopt(sid):
     return jsonify(resp)
 
 
-# ================================================================
 # F048 路由 7：drop 独立路由（走 ignore_knowledge_point）
-# ================================================================
 @app.route("/api/tools/health/suggestions/<int:sid>/drop", methods=["POST"])
 def health_suggestion_drop(sid):
     """drop 类型建议专用路由。
@@ -4335,9 +4076,7 @@ def health_suggestion_drop(sid):
     })
 
 
-# ================================================================
 # F048 路由 8：驳回（仅标 rejected）
-# ================================================================
 @app.route("/api/tools/health/suggestions/<int:sid>/reject", methods=["POST"])
 def health_suggestion_reject(sid):
     """驳回建议。无备份、无 kp 变更，只改 polish_suggestion 行状态。
@@ -4385,16 +4124,13 @@ def health_suggestion_reject(sid):
     })
 
 
-# ================================================================
 # v2.3.0-part3 新增：F062 端到端健康测试 Agent 界面层（对话 3/3）
-# ================================================================
 #
 # 设计原则（严格对齐对话 2 e2e_tester 引擎层契约 + F048 对话 B 规则）：
 #   - _task["type"] = "e2e"（前后端锁定，review.html checkRunningTask 必须用 "e2e"）
 #   - _e2e_readiness_check() 在 with _task_lock 之前执行（对话 B 立规则）
 #   - progress_adapter 9 stage 完全对齐 e2e_tester.VALID_STAGES
 #   - /latest total_score 从 full_report_json 解出（遵守对话 3 不回改 db 纪律）
-# ================================================================
 
 # ---- 进度 stage 映射表（与 e2e_tester.VALID_STAGES 严格对齐 9 种）----
 _E2E_STAGE_MAP = {
@@ -4494,9 +4230,7 @@ def _e2e_readiness_check():
     return len(errors) == 0, errors
 
 
-# ================================================================
 # F062 路由 1：最近一次扫描概要（工具箱卡片 + 软提醒徽章用）
-# ================================================================
 @app.route("/api/tools/e2e/latest", methods=["GET"])
 def e2e_latest():
     """最新一份 E2E 报告的瘦身摘要。
@@ -4538,9 +4272,7 @@ def e2e_latest():
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F062 路由 2：启动端到端测试（后台线程）
-# ================================================================
 @app.route("/api/tools/e2e/start", methods=["POST"])
 def e2e_start():
     """启动 F062 端到端健康扫描。
@@ -4643,9 +4375,7 @@ def e2e_start():
                     "scan_depth": scan_depth})
 
 
-# ================================================================
 # F062 路由 3：历史报告列表
-# ================================================================
 @app.route("/api/tools/e2e/history", methods=["GET"])
 def e2e_history():
     """历史 E2E 报告列表。query: ?limit=20"""
@@ -4662,9 +4392,7 @@ def e2e_history():
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F062 路由 4：单份报告详情（含 full_report_json 自动 parse）
-# ================================================================
 @app.route("/api/tools/e2e/report/<int:rid>", methods=["GET"])
 def e2e_report_detail(rid):
     try:
@@ -4677,15 +4405,12 @@ def e2e_report_detail(rid):
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F062 路由 4.5(v2.3.0-part3.5 新增)：E2E 诊断包 Markdown 导出
-# ================================================================
 # 设计思路:
 #   - 纯读功能,直接委托 e2e_diagnosis_exporter 格式化
 #   - Response 带 Content-Disposition: attachment 让浏览器触发下载
 #   - 失败返回 404(报告不存在) 或 500(格式化异常),不污染任何 _task 槽
 #   - 事件日志:打 export_success / export_failed 便于审计
-# ================================================================
 @app.route("/api/tools/e2e/export/<int:rid>", methods=["GET"])
 def e2e_export_diagnosis(rid):
     """导出 E2E 诊断包为 Markdown 文件(浏览器下载)。
@@ -4737,9 +4462,7 @@ def e2e_export_diagnosis(rid):
     return Response(md, mimetype="text/markdown; charset=utf-8", headers=headers)
 
 
-# ================================================================
 # F062 路由 5：issue 四态列表（含分组 + 筛选）
-# ================================================================
 @app.route("/api/tools/e2e/issues", methods=["GET"])
 def e2e_issues_list():
     """issue 四态列表。
@@ -4813,9 +4536,7 @@ def e2e_issues_list():
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # F062 路由 6：issue 四态切换（无限双向，给老唐逃生口）
-# ================================================================
 @app.route("/api/tools/e2e/issues/<int:iid>/status", methods=["POST"])
 def e2e_issue_set_status(iid):
     """四态切换。入参 JSON: {"status": "pending|fixed|intermittent|ignored"}
@@ -4847,9 +4568,7 @@ def e2e_issue_set_status(iid):
         return jsonify({"error": str(e)}), 500
 
 
-# ================================================================
 # v2.3.2 F055 本地问答助手路由(7 条)
-# ----------------------------------------------------------------
 # /api/qa/ask              POST   启动问答(异步 202)
 # /api/qa/progress         GET    进度轮询(2 秒一次)
 # /api/qa/cancel           POST   取消(协作式退出)
@@ -4863,7 +4582,6 @@ def e2e_issue_set_status(iid):
 #   - 端到端硬上限 60 秒,前端轮询超时主动 /cancel
 #   - mode='self|friend' 由请求体传(默认 self),朋友试用走 ?mode=friend URL
 #   - is_test_query=1 标记老唐自测,不回写 used_count(防脏数据)
-# ================================================================
 @app.route("/api/qa/ask", methods=["POST"])
 def qa_ask():
     """启动一次问答(异步 202).
@@ -5187,9 +4905,7 @@ def qa_stats():
         return jsonify({"success": False, "error": str(e)[:500]}), 500
 
 
-# ================================================================
 # 启动
-# ================================================================
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 

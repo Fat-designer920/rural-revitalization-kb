@@ -1,43 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-premium_judge.py - 精品候选 AI 判定引擎
-
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-
-职责:对所有"可引用级"(content_readiness IN ('quotable','premium'))的 kp,
-    分别从"客户视角"和"投标视角"调用 V3 AI 判定精品资格,结果写 premium_ai_cache 表。
-
-设计决策(Phase 2 冻结档案 §6):
-  - 方案 B:两条独立 Prompt(CLIENT + RFP),不合并一次调用
-  - N=1:单条调用,不批处理(老唐 Phase 2 选择,稳定性优先)
-  - 两视角独立判:同一条 kp 可能 client=strong + rfp=not(允许视角分化)
-  - 强推门槛不在 AI 侧实现,由前端按 composite_score Top 10-15% 标 strong
-
-三级降级链(§6.3):
-  主链: _call_v3(CLIENT_PROMPT / RFP_PROMPT) 单条调用
-   └ JSON 解析失败 / 字段非法 → L1: 同条重试 1 次
-   └ 仍失败 → L2: 本地规则兜底
-         client: qa>=4.5 AND has_annotation → optional, 其他 → not
-         rfp:    source_authority IN ('official','authoritative') → optional, 其他 → not
-         source='rule_fallback',便于审计
-
-对齐 health_checker.py 架构:
-  - 五方法两签名 V3 适配器
-  - _safe_log_event 事件埋点(立规则 4)
-  - 成本累计与 _v3_call_count 计数
-
-运行量级(Phase 2 冻结档案):
-  - 2000+ quotable kp × 2 视角 = 4000 次 AI 调用
-  - 预估 40-60 分钟 / 7-10 元(单条调用延迟 ~6-8 秒)
-  - 进度每 10 条上报一次(前端 2 秒轮询看得到动)
-
-立规则对齐:
-  第 4 条:关键操作必记 operation_events(start/done/failed)
-  第 9 条:调用 db 方法前对照真实签名(见 db_manager.py v2.3.1 新增 7 方法)
-  第 11 条:Prompt 顶层裸 import,禁 try/except 静默降级
-  第 18 条:AI 客户端五方法两签名适配器
-  第 21 条:模块支持 headless(progress_callback=None 兜底)
-  第 50 条:跨模块 import 双路径兜底
+premium_judge.py - 精品知识评判模块
+路径：scripts/premium_judge.py
+版本：v2.3.6-part1
 """
 
 import json
@@ -98,9 +63,7 @@ class PremiumJudgeEngine:
         self._rule_fallback = 0
         self._failed_records: List[Dict] = []
 
-    # ================================================================
     # 主入口
-    # ================================================================
     def run_refresh(self) -> Dict[str, Any]:
         """执行一次完整的精品刷新.
 
@@ -220,9 +183,7 @@ class PremiumJudgeEngine:
         })
         return result
 
-    # ================================================================
     # 单条 × 单视角判定(含 L1 重试 + L2 规则兜底)
-    # ================================================================
     def _judge_one_kp(self, kp: Dict, view: str) -> None:
         """判定一条 kp 的一个视角.
 
@@ -280,9 +241,7 @@ class PremiumJudgeEngine:
             })
             self._record_failure(kp_id, view, "upsert_failed")
 
-    # ================================================================
     # Prompt 构造
-    # ================================================================
     def _build_user_prompt(self, template: str, kp: Dict) -> str:
         """把 kp dict 填入 user_prompt_template.
 
@@ -324,9 +283,7 @@ class PremiumJudgeEngine:
             kp_content_json=content_json,
         )
 
-    # ================================================================
     # 单次调用 + 解析
-    # ================================================================
     def _call_and_parse(self, system_prompt: str, user_prompt: str,
                          view: str, retry: bool = False) -> Optional[Dict]:
         """调用 V3 + 解析 JSON + 字段校验.
@@ -373,9 +330,7 @@ class PremiumJudgeEngine:
 
         return {"recommendation": rec, "reason": reason, "score": score}
 
-    # ================================================================
     # V3 适配器(五方法两签名,立规则 18)
-    # ================================================================
     def _call_v3(self, system_prompt: str, user_prompt: str,
                  timeout: int = V3_TIMEOUT_PER_CALL) -> Optional[str]:
         """调用 V3 模型,返回文本.
@@ -453,9 +408,7 @@ class PremiumJudgeEngine:
         except (ValueError, TypeError):
             pass
 
-    # ================================================================
     # JSON 容错解析
-    # ================================================================
     @staticmethod
     def _parse_json_loose(text: str) -> Optional[Dict]:
         """容错 JSON 解析:剥离 ``` 包裹 + 提取第一个 {...} 块."""
@@ -485,9 +438,7 @@ class PremiumJudgeEngine:
                 return None
         return None
 
-    # ================================================================
     # 规则兜底(L2)
-    # ================================================================
     def _write_rule_fallback(self, kp: Dict, view: str, reason_hint: str = "") -> None:
         """L2 本地规则兜底,写入 premium_ai_cache 表(source='rule_fallback').
 
@@ -538,9 +489,7 @@ class PremiumJudgeEngine:
             "kp_id": kp_id, "view": view, "reason": reason,
         })
 
-    # ================================================================
     # 事件日志(立规则 4 / 14)
-    # ================================================================
     def _safe_log_event(self, event_type: str, severity: str, payload: Dict) -> None:
         """封装 db.log_operation_event,失败不抛.
 
@@ -560,9 +509,7 @@ class PremiumJudgeEngine:
             pass
 
 
-# ================================================================
 # 模块级便捷入口(对齐 health_checker.run_health_check 模式)
-# ================================================================
 def run_premium_refresh(db, client,
                          progress_callback: Optional[Callable[[Dict], None]] = None,
                          cancel_check: Optional[Callable[[], bool]] = None) -> Dict:

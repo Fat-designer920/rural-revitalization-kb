@@ -1,91 +1,7 @@
 """
-prompt_templates.py - Prompt模板库
+prompt_templates.py - 31 个 Prompt 模板集中管理
 路径：scripts/prompts/prompt_templates.py
-版本：v2.3.6-part1 - 并行双模型提取架构
-
-变更说明（v2.3.6-part1）：
-  - 并行双模型架构:同一套 Prompt 同时喂 V4-Flash + V4-Pro
-  - Prompt 内容完全不动(仅提取架构升级,Prompt 体系改造留 v2.3.6-part2)
-  - PROMPT_VERSION 保持 v2.3.5-part2-hotfix1(提取 prompt 未改动)
-
-变更说明（v2.3.0-part3-alpha1 对话 1/3）：
-  - 新增 1 个 F062 体检 Prompt 正式版文本:
-    * E2E_RESPONSE_JUDGE_PROMPT (V3, 端到端响应语义判断)
-      职责: 对 HTTP 响应 + 最近 operation_events 片段做"真假绿色"判断
-      核心: 识别"抢救/降级/跳过/异常继续"等关键词,揪出"字面 200 但实际降级"
-      输出: judgment=pass/warn/fail + reasons + keywords_hit + confidence
-  - 双 key 严格对齐对话 A 立规则:system_prompt / user_prompt_template
-  - 顶层可 import（对话 2 e2e_tester.py 将顶层 from ... import E2E_RESPONSE_JUDGE_PROMPT,
-    禁止 try/except + None 降级模式）
-  - 内省型 Prompt,不注入策略块(对齐 F048 HEALTH_DIAGNOSIS 模式)
-  - PROMPT_VERSION 从 v2.3.0-part2.2 升到 v2.3.0-part3-alpha1
-  - get_all_prompt_names() 追加 1 条 F062 Prompt 登记
-
-变更说明（v2.3.0-part2.2 对话A）：
-  - 新增 6 个 F048 体检/打磨 Prompt 正式版文本(之前 v2.3.0-part2 仅在 03 手册声明契约,代码未落地):
-    * HEALTH_DIAGNOSIS_PROMPT        (V3, 低分病根诊断)
-    * HEALTH_POLISH_PROMPT           (R1, 创造性打磨)
-    * HEALTH_POLISH_VERIFY_PROMPT    (V3, 打磨结果校验)
-    * HEALTH_POLISH_CONSERVATIVE_PROMPT (V3, L2 保守打磨)
-    * HEALTH_ISLAND_JUDGE_PROMPT     (V3, 孤岛精判)
-    * HEALTH_MONETIZE_REPORT_PROMPT  (V3, 变现匹配度报告)
-  - 每个 Prompt 按适配场景注入共享策略块:
-    * HEALTH_POLISH_PROMPT 注入 PRODUCT_CONTEXT / DATA_PRECISION_RULE / SICHUAN_SENSITIVITY / EXCERPT_REQUIREMENT
-    * HEALTH_POLISH_CONSERVATIVE_PROMPT 注入 DATA_PRECISION_RULE(严格禁止新增数据)
-    * HEALTH_MONETIZE_REPORT_PROMPT 注入 PRODUCT_CONTEXT(5 种变现场景与产品目标对齐)
-    * 诊断 / 校验 / 孤岛精判 三个内省型 Prompt 不注入策略块(职责是判断,不是生成)
-  - PROMPT_VERSION 从 v2.2.3 升到 v2.3.0-part2.2(跨越 v2.3.0-part2 版号占位)
-  - get_all_prompt_names() 追加 6 条 F048 Prompt 登记(总数 21 → 27)
-  - 与 health_checker.py v2.3.0-part2-alpha2 import 契约完全对齐
-
-变更说明（v2.2.3）：
-  - 新增SOURCE_NATURE_INSTRUCTION共享策略块（来源属性→分类策略映射）
-  - 注入全部5个提取Prompt，位于DOCUMENT_FORM_INSTRUCTION之后
-  - PRE_ANALYSIS_PROMPT新增source_nature输出字段（6种来源类型）
-  - CONTEXT_RELAY_TEMPLATE新增source_nature传递
-  - DOCUMENT_FORM_INSTRUCTION系统性文章新增3条合并规则（总分合并/因果链不拆分/论点去重）
-  - 解决：第三方调研报告被全部分成"操盘经验"、系统性文章知识点重叠过多
-  - PROMPT_VERSION升级v2.2.3
-
-变更说明（v2.2.2）：
-  - 新增DOCUMENT_FORM_INSTRUCTION共享策略块（文档形态识别→颗粒度适配）
-  - 注入全部5个提取Prompt，位于PRODUCT_CONTEXT之后、颗粒度标准之前
-  - 解决：编制大纲被拆成十几条碎片、系统性分析文章论证链断裂等颗粒度失控问题
-  - 四种文档形态：碎片记录(默认)/系统性文章/框架大纲/数据密集型
-
-变更说明（v2.2.1）：
-  - PROMPT_VERSION改为v2.2.1
-  - EXCERPT_REQUIREMENT重写：去掉章节编号、禁止整段搬运、截取实质性内容
-  - 政策类颗粒度标准新增反面定义（什么不算一个知识点）
-  - 政策类输出结构字段注释重写：明确original_excerpt/core_provisions/implementation_points三者区别
-  - 案例类/经验类输出结构字段注释同步强化
-  - QC_CHECK_PROMPT新增第7维度"提炼增值度"，检查核心条款与原文是否重复
-
-变更说明（v2.2.0 F045）：
-  - 新增EXPERIENCE_STRUCTURE_PROMPT(V3模型，经验速记自动结构化)
-  - 保留v2.1.1全部内容不变
-
-变更说明（v2.1.1 F038）：
-  - PROMPT_VERSION改为v2.1.1
-  - 新增PRACTICAL_INSIGHTS_INSTRUCTION共享策略块
-  - 5个提取Prompt输出结构新增practical_insights数组字段（含insight/basis/confidence）
-  - QC_CHECK_PROMPT从5维度扩展到6维度（新增举一反三可靠性）
-  - QC输出新增insight_reliability字段(reliable/uncertain/unreliable/no_insights)
-  - 保留v2.1.0-d全部内容不变
-
-变更说明（v2.1.0-c）：
-  - 5个提取Prompt全部深度重写：注入产品目标上下文+颗粒度标准+正反示例+自检指令
-  - 新增四川地域敏感标注要求
-  - 新增数据精确度强制要求
-  - 新增分段上下文接力模板（供extractor.py使用）
-  - 新增PROMPT_VERSION常量（供版本追踪）
-  - 新增4个V3辅助Prompt：预分析/质检/结构摘要/跨段补漏
-  - 输出JSON结构不变，与现有extractor.py完全兼容
-
-保留不变：
-  - FILE_RENAME_PROMPT / TAG_SUGGESTION_PROMPT / QA_DERIVATION_PROMPT
-  - 标签注入机制（_build_tag_reference / get_extraction_prompt）
-  - 待激活占位Prompt（CONFLICT_DETECTION等）
+版本：v2.3.6-part1
 """
 
 import sys
@@ -108,10 +24,8 @@ except ImportError:
     )
 
 
-# ============================================================
 # Prompt版本号（v2.1.0-c新增）
 # extractor.py提取时记录此版本号到knowledge_points表
-# ============================================================
 
 PROMPT_VERSION = "v2.3.5-part2-hotfix1"
 
@@ -121,9 +35,7 @@ def get_prompt_version():
     return PROMPT_VERSION
 
 
-# ============================================================
 # 通用策略块（各Prompt共享）
-# ============================================================
 
 PRODUCT_CONTEXT = """
 ## 产品目标（你必须理解这些知识点将来做什么用）
@@ -320,10 +232,8 @@ COMMON_TAG_OUTPUT_DESC = """
 """
 
 
-# ============================================================
 # 分段上下文接力模板（v2.1.0-c新增，供extractor.py使用）
 # extractor.py在分段提取时，将此模板填充后附加到user_prompt前面
-# ============================================================
 
 CONTEXT_RELAY_TEMPLATE = """
 === 分段提取上下文（请仔细阅读） ===
@@ -345,9 +255,7 @@ CONTEXT_RELAY_TEMPLATE = """
 """
 
 
-# ============================================================
 # 文件重命名Prompt（不变）
-# ============================================================
 
 FILE_RENAME_PROMPT = {
     "system_prompt": """你是乡村振兴领域的资料管理专家。根据文件内容生成规范化文件名和分类标签。
@@ -365,9 +273,7 @@ FILE_RENAME_PROMPT = {
 }
 
 
-# ============================================================
 # 标签建议Prompt（v2.0.0，不变）
-# ============================================================
 
 TAG_SUGGESTION_PROMPT = {
     "system_prompt": """你是乡村振兴领域的知识管理专家。为知识内容进行三层标签打标。
@@ -384,12 +290,10 @@ TAG_SUGGESTION_PROMPT = {
 }
 
 
-# ============================================================
 # 5个提取Prompt（v2.1.0-c 深度重写，v2.2.1 字段职责修正）
 # 核心升级：产品导向+颗粒度标准+正反示例+自检+四川标注+数据精确
 # v2.2.1升级：原文摘录精准化+核心条款与原文去重+执行要点操盘化
 # 标签清单由get_extraction_prompt()动态注入
-# ============================================================
 
 _POLICY_EXTRACT_BASE = {
     "system_prompt": PRODUCT_CONTEXT + DOCUMENT_FORM_INSTRUCTION + SOURCE_NATURE_INSTRUCTION + """
@@ -866,10 +770,8 @@ _DATA_EXTRACT_BASE = {
 }
 
 
-# ============================================================
 # V3辅助Prompt（v2.1.0-c新增，v2.2.1 QC升级）
 # 预分析/质检/结构摘要/跨段补漏，均使用V3模型
-# ============================================================
 
 PRE_ANALYSIS_PROMPT = {
     "system_prompt": """你是乡村振兴领域的文档评估专家。你的任务是快速评估一份文件的提取价值，并给出分类建议和分段方案。
@@ -969,12 +871,10 @@ QC_CHECK_PROMPT = {
 请从七个维度（独立可用性/信息密度/颗粒度/标签匹配/重复嫌疑/举一反三可靠性/提炼增值度）逐条检查，按JSON格式输出。"""
 }
 
-# ================================================================
 # v2.2.3 F058: 逐条质检Prompt（L2降级专用）
 # 输入只有1个知识点，prompt体积小，V3不易格式异常
 # 保留6维度评分但简化推理步骤（不对比同文件其他知识点）
 # 输出结构与 QC_CHECK_PROMPT 的单条 item 对齐（qa_score/qa_flags/insight_reliability/improvement_suggestion）
-# ================================================================
 QC_CHECK_SINGLE_PROMPT = {
     "system_prompt": """你是知识产品质量检验专家。你的任务是对单个知识点做快速质量检查，给出评分和问题标记。
 
@@ -1088,10 +988,8 @@ CROSS_SEGMENT_CHECK_PROMPT = {
 }
 
 
-# ============================================================
 # 政策依赖扫描Prompt（v2.1.0-d F028新增）
 # V3模型扫描非政策类知识点中的政策引用
-# ============================================================
 
 POLICY_SCAN_PROMPT = {
     "system_prompt": """你是乡村振兴领域的政策合规审核专家。你的任务是检查知识点中是否引用了政策文件，并识别出具体的政策引用。
@@ -1144,9 +1042,7 @@ POLICY_SCAN_PROMPT = {
 }
 
 
-# ============================================================
 # 待激活Prompt（保留不变）
-# ============================================================
 
 ARCHITECTURE_SUGGESTION_PROMPT = {
     "system_prompt": "知识架构扩充建议Prompt(v1.1.0激活)",
@@ -1194,9 +1090,7 @@ AI提取内容：{ai_content}
 }
 
 
-# ============================================================
 # 核心函数：获取提取Prompt（动态注入标签清单）
-# ============================================================
 
 _EXTRACT_BASES = {
     "policy": _POLICY_EXTRACT_BASE,
@@ -1249,9 +1143,7 @@ def get_extraction_prompt(content_type):
     }
 
 
-# ================================================================
 # v2.1.1 F039: 重复知识点关系判断Prompt（V3模型）
-# ================================================================
 DUPLICATE_JUDGE_PROMPT = {
     "system": """你是乡村振兴领域的知识管理专家。你的任务是判断多条知识点之间的关系。
 
@@ -1281,10 +1173,8 @@ DUPLICATE_JUDGE_PROMPT = {
 }
 
 
-# ================================================================
 # v2.2.0 F045: 经验速记结构化Prompt（V3模型）
 # 将老唐的自由文本经验转为知识库标准结构
-# ================================================================
 EXPERIENCE_STRUCTURE_PROMPT = {
     "system": """你是乡村振兴领域的知识结构化专家。你的任务是将一线操盘人员口述或快速记录的实战经验，转化为知识库标准格式的结构化知识点。
 
@@ -1326,14 +1216,12 @@ EXPERIENCE_STRUCTURE_PROMPT = {
 }
 
 
-# ================================================================
 # v2.3.0-part2.2 F048: 知识库体检 / 打磨 Prompt(6 个)
 # 三层打磨降级链:
 #   L1 主链: HEALTH_DIAGNOSIS(V3) -> HEALTH_POLISH(R1) -> HEALTH_POLISH_VERIFY(V3)
 #   L2 降级: HEALTH_POLISH_CONSERVATIVE(V3)
 #   L3 兜底: 规则标记 manual_review_needed, suggested_content=NULL
 # 调用方: scripts/health_checker.py v2.3.0-part2-alpha2
-# ================================================================
 
 # ----------------------------------------------------------------
 # 1) HEALTH_DIAGNOSIS_PROMPT (V3, 低分知识点病根诊断)
@@ -1699,10 +1587,8 @@ HEALTH_MONETIZE_REPORT_PROMPT = {
 }
 
 
-# ============================================================
 # v2.3.0-part3-alpha1 F062 端到端健康测试 Agent Prompt（1 个）
 # 对话 1/3 基础层 - 契约 → 骨架关卡
-# ============================================================
 
 # ----------------------------------------------------------------
 # E2E_RESPONSE_JUDGE_PROMPT (V3, 端到端响应语义判断)
@@ -1799,13 +1685,11 @@ HTTP 状态码: {status_code}
 }
 
 
-# ============================================================
 # v2.3.1 F2 精品候选双视角判定 Prompt(2 个,新 key 规范)
 # 对应立规则第 13 条新规范:system_prompt + user_prompt_template
 # 方案 B + N=1:每条 kp 分两视角各调一次 V3,不合并(老唐 Phase 2 决策)
 # 降级链:主链失败 → L1 同条重试 1 次 → L2 本地规则兜底
 # 强推门槛 10-15%:AI 返回 score 0-100,前端按 composite_score Top 10-15% 标 strong
-# ============================================================
 
 # ----------------------------------------------------------------
 # PREMIUM_JUDGE_CLIENT_PROMPT (V3, 客户视角精品判定)
@@ -1908,7 +1792,6 @@ PREMIUM_JUDGE_RFP_PROMPT = {
 }
 
 
-# ============================================================
 # F055 本地问答助手(v2.3.2)— 3 个 Prompt
 # ----------------------------------------------------------------
 # 调用顺序:
@@ -1922,7 +1805,6 @@ PREMIUM_JUDGE_RFP_PROMPT = {
 #   - 板块 1"直答"严格基于检索 KP, 禁止补充库外知识
 #   - evidence_kp_ids 必须是输入候选的子集(防 V3 编造 ID,db 层会再校验一次)
 #   - 板块 4"补漏提醒"主动暴露知识缺口, 诚信兜底
-# ============================================================
 
 QA_RETRIEVAL_RANK_PROMPT = {
     "system_prompt": """你是知识库检索结果的二次重排序助手。
@@ -2037,11 +1919,9 @@ QA_FOLLOWUP_GEN_PROMPT = {
 
 
 
-# ============================================================
 # get_all_prompt_names(): 供外部查询所有 Prompt 登记
 # v2.3.0-part2.2 新增 6 条 F048 登记
 # v2.3.1 新增 2 条 F2 精品判定登记
-# ============================================================
 
 def get_all_prompt_names():
     return [
@@ -2085,7 +1965,6 @@ def get_all_prompt_names():
     ]
 
 
-# ================================================================
 # v2.3.5-part1: 知识点关系六态判别 Prompt(替代旧 DUPLICATE_JUDGE_PROMPT 二态)
 # 调用方: scripts/relation_analyzer.py
 # 主链 V3, confidence < 70 升级 R1 兜底
@@ -2093,7 +1972,6 @@ def get_all_prompt_names():
 #   - 输入新增 source_filename / created_at 字段(关键判别依据!)
 #   - 输出从二态升级为六态 + confidence + cluster_suggestion + fallback_action
 #   - 默认倾向 cross_file_consensus 而非 same_file_redundancy(政策反复重申是信号不是噪声)
-# ================================================================
 RELATION_JUDGE_PROMPT = {
     "system_prompt": """你是乡村振兴政策与知识管理领域的资深分析师。
 你的任务是分析一组疑似相关的知识点之间的真实关系,

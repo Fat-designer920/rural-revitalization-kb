@@ -1,53 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-health_checker.py - 知识库体检 Agent 引擎层（F048）
-
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-所属: 乡村振兴知识管理系统
-
-变更说明(v2.3.0-part2.2 对话A):
-    - import 段顶层化: DatabaseManager / DeepSeekClient / 6 个 HEALTH_* Prompt
-      全部改为直接 import(不再 try/except 静默 fallback 到 None)
-      理由: 静默降级会把"真缺包"的启动错误伪装成"正常运行但功能裸奔",
-            之前关联/打磨维度都假满分 100 就是此类静默降级的受害者
-    - 字段读取契约收紧: k.get('category') / k.get('subcategory') 保持不变,
-      依赖 db_manager v2.3.0-part2.2 起在三个扫描查询追加 LEFT JOIN categories
-      并 AS 出 category / subcategory 字符串(落地在对话 B)
-    - 其他代码逻辑一律不动: 降级链 / 权重 / 维度方法签名 / 进度回调
-    - 体检 Prompt 正式落地到 prompt_templates.py v2.3.0-part2.2
-
-变更说明(v2.3.0-part2.2 对话C 落地):
-    - _dim2_structure_score detail 追加 uncategorized_count / uncategorized_pct 两字段,
-      未分类判定以 category 字符串是否为空为准(不是 category_id IS NULL)
-      理由: 历史库若有未分类 kp(final_category_id IS NULL), LEFT JOIN 后 category=None,
-            l1_set 不增, 会拉低维度②结构分。追加这两字段让老唐在报告里
-            一眼看到"分低是因为有 X 条 kp 未分类"还是"分类覆盖本就不全",
-            区分"数据原因"和"代码 bug"
-    - 仅增强可观察性,score 计算逻辑零改动;旧版报告无此字段天然向后兼容
-    - 其他代码一律不动
-
-职责:
-    六维度扫描知识库健康度,生成 health_report + polish_suggestions
-    维度①健康度  维度②结构分布  维度③加工深度
-    维度④关联密度(孤岛精判)  维度⑤低分打磨(三层降级链)  维度⑥变现匹配度
-
-核心约定:
-    - 所有 AI 调用走 deepseek_client,V3 传 model_override='deepseek-chat'+temperature=0.1
-    - R1 不传 temperature,超时 300s,分段 <=3000 字
-    - JSON 字段入 db.save_polish_suggestion() 直接传 dict,db 层自动序列化
-    - 所有 log_operation_event 调用走 _safe_log_event 包装
-    - 采纳事务(备份->更新kp->标记applied)由 api_server 层做,本模块只管生成 suggestion
-
-打磨三层降级链:
-    L1 主链: HEALTH_DIAGNOSIS(V3) -> HEALTH_POLISH(R1) -> HEALTH_POLISH_VERIFY(V3)
-    L2 降级: HEALTH_POLISH_CONSERVATIVE(V3)
-    L3 兜底: 规则标记 manual_review_needed, suggested_content=NULL
-
-降级触发条件:
-    诊断阶段: recommend_manual_review=true / polish_difficulty=impossible -> L3
-              polish_direction=drop -> 生成 drop 建议(仍算 L1)
-    主链校验: verify_pass=false / re_score<原分 / confidence=low / R1 截断 -> L2
-    L2 失败: -> L3
+health_checker.py - 知识库健康体检引擎(F048 六维度)
+路径：scripts/health_checker.py
+版本：v2.3.6-part1
 """
 
 import json
@@ -58,11 +13,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
-# ============================================================
-# 模块级直接导入
+
 # v2.3.0-part2.2: 放弃原 try/except 静默 fallback 到 None 的做法,
 #                 任何 import 失败直接抛 ImportError 让问题暴露
-# ============================================================
+
 from scripts.db_manager import DatabaseManager
 from scripts.deepseek_client import DeepSeekClient
 from scripts.prompts.prompt_templates import (
@@ -75,9 +29,6 @@ from scripts.prompts.prompt_templates import (
 )
 
 
-# ============================================================
-# 常量
-# ============================================================
 # 六大类(00_项目全景)
 TOP_CATEGORIES = ['政策库', '案例库', '经验库', '工具库', '数据库']
 # 27 个二级分类(02_知识体系)
@@ -96,9 +47,6 @@ SUB_CATEGORIES = [
 ]
 
 
-# ============================================================
-# HealthChecker 主类
-# ============================================================
 class HealthChecker:
     """知识库体检 Agent 引擎层
 
@@ -1343,9 +1291,6 @@ class HealthChecker:
             return 0.0
 
 
-# ============================================================
-# 模块级便捷入口(方便 api_server 简短调用)
-# ============================================================
 def run_health_check(
     db=None,
     client=None,

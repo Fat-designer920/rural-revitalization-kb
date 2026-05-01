@@ -1,34 +1,7 @@
 """
-deepseek_client.py - DeepSeek API 封装 + 硅基流动 OCR + 硅基流动镜像兜底
+deepseek_client.py - DeepSeek API 封装 + 硅基流动镜像兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.6-part1 - 版本统一
-
-变更说明(v2.3.5-part2, 2026-04-30):
-  V1 PRICING 加 V4 主力模型(deepseek-v4-pro / deepseek-v4-flash):
-     - V4-Pro: ¥1.05 输入 / ¥12.5 输出(主链 thinking 模式,替代 R1)
-     - V4-Flash: ¥1.0 输入 / ¥2.0 输出(辅助 non-thinking 模式,替代 V3)
-     - 老 deepseek-chat / deepseek-reasoner 价格保留(7/24 退役前 DeepSeek 自动路由 V4)
-  V2 _is_thinking_model 加 "v4-pro" 关键字(立规则 61 第 2 次应用)
-     V4-Pro 默认 thinking 模式,走 r1_timeout=300s,自动跳过 temperature 参数
-  V3 Kimi 兜底链整体废弃(配合 extractor.py 立规则 16 改造):
-     - 删除 chat_via_kimi_official + chat_jsonl_via_kimi_official(149 行)
-     - 删除 _get_kimi_api_key + has_kimi_official 两方法
-     - 删除 KIMI_OFFICIAL_ENDPOINT / KIMI_OFFICIAL_MODEL_L1 类常量
-     - PRICING 删除 kimi-k2.6 价格(硅基 Kimi 价格保留作历史记账参照)
-     - settings.json 中 kimi_official_api_key_encrypted 字段保留无害,代码不再读
-  V4 _request timeout 简化:回到 hotfix3 三档(siliconflow+thinking 1200s / 非
-     siliconflow+thinking 300s / 其他 120s),删除 moonshot.cn 第四档分支
-  立规则 16 改造(本版):截断兜底链 5 层(R1→Kimi硅基→Kimi官方→R1镜像→F057)
-     → 3 层(V4-Pro→V3.2镜像→F057)。Kimi 兜底实测 0429 三段全失败(L1.1+L1.2 0/3),
-     V4-Pro 384K max_output 直接根治截断,从源头消除"必须思考型概率冗余"的需求。
-
-============================================================
-旧版本变更说明已迁移至 CHANGELOG.md(立规则 51 做减法)
-v2.3.5-part1.x:Kimi 双层互备 → 本版整体废弃
-v2.3.4-hotfix1/2/3:R1 截断防御 / _is_thinking_model / database is locked → 本版保留
-v2.3.4:Chat Prefix Completion / JSON Mode / chat_with_jsonl → 保留
-v2.3.x 及更早:_extract_json_robust 7 步保险 / OCR / cost limit → 保留
-============================================================
+版本：v2.3.6-part1
 """
 import os, sys, json, time, base64, re, requests, tempfile
 from pathlib import Path
@@ -831,9 +804,7 @@ class DeepSeekClient:
             result["reasoning_content"] = reasoning
         return result
 
-    # ============================================================
     # 硅基流动OCR（扫描件PDF + 图片识别）
-    # ============================================================
 
     def ocr_image(self, file_path, call_type="ocr"):
         """

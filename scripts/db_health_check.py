@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-乡村振兴知识库 - 数据体检脚本
-=============================================
-用途: 只读扫描数据库健康度,定位积累的脏数据和契约违规
-特征:
-  - 纯 SELECT / PRAGMA,不做任何 UPDATE/DELETE/INSERT
-  - 不调用任何 AI 接口,零网络、零成本
-  - 字段缺失自动容错,单项失败不影响其他
-  - 报告同步输出到 stdout + db_health_check_report.txt
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-作者: 老唐 + Claude 首席工程师
-=============================================
+db_health_check.py - 数据库只读健康扫描(纯 PRAGMA + SELECT,零 AI 调用)
+路径：scripts/db_health_check.py
+版本：v2.3.6-part1
 """
 
 import sys

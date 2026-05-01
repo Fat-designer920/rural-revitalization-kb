@@ -1,89 +1,7 @@
 """
-setup.py - 系统初始化（完整建库 + 存量升级,双用脚本）
+setup.py - 首次安装与数据库迁移
 路径：scripts/setup.py
-版本：v2.3.6-part1 - 版本统一
-
-功能：
-  1. 创建目录结构（9个目录）
-  2. 初始化数据库（28张表,全部字段,一次建成 — v2.3.5-part1 新增 kp_relations / consensus_clusters / cluster_members）
-  3. 写入27条默认分类 + 标签定义
-  4. 插入虚拟source_file记录(id=0, 经验速记入口)
-  5. [v2.3.1/v2.3.2/v2.3.3-mvp/v2.3.4-hotfix1/v2.3.5-part1 新增] 追齐存量库 schema（幂等,新库空跑）
-  6. 创建桌面快捷方式
-  7. 验证核心文件完整性
-
-注意：本脚本替代了所有 migrate_*.py 迁移脚本。
-      新用户首次安装 → init_tables() 一步到位拿最新 schema。
-      存量用户(老库)→ init_tables() 幂等 + 追齐步骤 ALTER TABLE ADD COLUMN。
-      同一个脚本同时支持"首次安装"和"老库升级",scripts 文件夹不再堆积一次性脚本。
-
-v2.3.5-part1 变更:
-  - 知识关系网络底座(替代旧重复检测的二态判别)
-  - 3 张新表(kp_relations / consensus_clusters / cluster_members)
-    新表 CREATE TABLE IF NOT EXISTS 幂等,新库走 init_tables 一步建好,
-    老库走 _upgrade_schema_to_current 的 Step 11(_V235_NEW_TABLES)兜底建表
-  - 2 字段追加 knowledge_points: relation_count + consensus_strength
-    走 _upgrade Step 12(_V235_NEW_COLUMNS)立规则 60 落地
-  - 5 条新索引: idx_rel_source/idx_rel_target/idx_rel_type_status/idx_cluster_type/idx_cm_kp
-    新表新字段无 ALTER 风险,可放 init_tables 统一索引列表(已同步)
-  - duplicate_checker.py 退役删除,relation_analyzer.py 新建替代
-  - 立规则#3 推广到新表(purge_cluster_record / purge_kp_relations)
-
-v2.3.4-hotfix1 变更：
-  - 截断零提取多模型兜底(L1 Kimi-K2.6 + L2 R1 跨厂商镜像)
-  - knowledge_points 表加 extracted_by_model 字段(默认 'r1' 兼容老库)
-  - 新增索引 idx_kp_model 走 _upgrade Step 9/10(立规则 60:依赖新字段的索引必须在字段建好后建)
-  - _V234_NEW_COLUMNS / _V234_NEW_INDEXES 独立常量,db 表数量不变(25 张)
-
-v2.3.3-mvp-part1a 变更：
-  - 双客户端架构 part1a 后端基础设施(part1b qa_public.html / part1c review.html 改造)
-  - F063 朋友试用配额管理 (新表 friend_quota_daily) 限速 20 次/天/IP
-  - qa_history 加 friend_tag 字段(URL ?u=张三 朋友身份识别,精准反馈分析)
-  - 新表 friend_quota_daily(ip + date 复合主键 + count 自增)
-  - 1 个新索引: idx_qa_history_friend_tag
-  - 数据库表数量: 24 → 25 张
-  - _V233_NEW_COLUMNS / _V233_NEW_TABLES_SQL_LIST / _V233_NEW_INDEXES 独立常量
-  - _upgrade_schema_to_current 加 Step 6/7/8 处理 v2.3.3-mvp schema
-  - 立规则 55 第 4 次落地:不再单独提供 migrate 脚本,合并入本脚本
-  - 立规则 9 第 10 次应验:文件验证清单本版补 qa_assistant.py(v2.3.2 注释说加但实际清单遗漏)
-
-v2.3.2 变更：
-  - F055 本地问答助手 schema 加入(立规则 55 第 3 次落地,继续合并入本脚本)
-  - 新表 qa_history(问答留痕 + 4 板块审计)
-  - 新表 qa_feedback(朋友试用 👍/👎/💬 反馈闭环)
-  - 4 个新索引: idx_qa_history_created / idx_qa_history_mode /
-    idx_qa_history_test / idx_qa_feedback_history
-  - knowledge_points 7 字段无新增(v2.3.1 已预埋 used_count/last_used_at/used_for)
-  - 核心文件校验清单追加 1 项: qa_assistant.py
-  - 数据库表数量: 22 → 24 张
-  - 立规则 9 第 9 次应验:Claude 在 setup.py 写表数量"19→21"靠记忆,
-    实际 grep init_tables 真相是 22→24。每次写数字都必须 grep 源代码,不靠记。
-  - _V232_NEW_TABLES_SQL_LIST + _V232_NEW_INDEXES 独立常量(保留 v2.3.1 常量不动,
-    版本可追溯)
-
-v2.3.1 变更：
-  - 合并 migrate_v2_3_1.py 核心逻辑为 _upgrade_schema_to_current() 函数
-    (立规则第 9 条应验 + 老唐立规则"scripts 不留一次性脚本")
-  - knowledge_points 表 7 字段新增: premium_client / premium_rfp /
-    premium_tier / used_count / last_used_at / used_for /
-    premium_freshness_status
-  - 新表 premium_ai_cache(v2.3.1 F2 AI 双视角判定缓存)
-  - 3 个新索引: idx_kp_premium_client / idx_kp_premium_rfp /
-    idx_premium_cache_kp_view
-  - 核心文件校验清单追加 2 项: premium_judge.py / premium_exporter.py
-  - 数据库表数量: 18 → 19 张
-
-v2.3.0-part3 变更（对话 B 防护层）：
-  - get_version() 兜底字符串 "2.3.0-part2.1" → "2.3.0-part3"
-  - 核心文件校验清单追加 2 项（老唐决策锁定）：
-      scripts/health_checker.py     (F048 六维度扫描引擎,对话 A 字段契约修复后)
-      scripts/db_health_check.py    (数据层只读体检脚本,v1.1 扩 F048 契约一致性)
-  - 数据库表数量保持 18 张（无 schema 变更）
-
-v2.3.0-part2.1 变更：
-  - init_tables() 已吸收 v2.2.3 / v2.3.0-part2 所有 schema 变更
-  - scripts/migrate_v223.py 和 scripts/migrate_v230_part2.py 已退役（删除）
-  - 数据库表数量：15张 → 18张（新增 operation_events / health_reports / polish_suggestions）
+版本：v2.3.6-part1
 """
 import os, sys, json, sqlite3
 from pathlib import Path
@@ -107,15 +25,6 @@ def get_version():
     return p.read_text(encoding="utf-8").strip() if p.exists() else "2.3.3-mvp-part1a"
 
 
-# ================================================================
-# v2.3.1 追齐存量库 schema(合并自原 migrate_v2_3_1.py,老唐立规则)
-# ----------------------------------------------------------------
-# 设计原则:
-#   - 新库:init_tables() 已建全,本函数全跳过(PRAGMA table_info 检查)
-#   - 老库:ALTER TABLE ADD COLUMN / CREATE TABLE IF NOT EXISTS /
-#          CREATE INDEX IF NOT EXISTS 幂等追加
-#   - 任意次数运行无副作用(立规则第 8 条)
-# ================================================================
 _V231_NEW_COLUMNS = [
     ("premium_client", "INTEGER DEFAULT 0"),
     ("premium_rfp", "INTEGER DEFAULT 0"),
@@ -187,14 +96,6 @@ _V232_NEW_INDEXES = [
 ]
 
 
-# ================================================================
-# v2.3.3-mvp-part1a 追齐:朋友试用配额管理 + 朋友身份识别
-# ----------------------------------------------------------------
-# 双客户端架构 part1a 后端基础设施:
-#   - qa_history 加 friend_tag 字段(URL ?u=张三, 朋友身份精准识别)
-#   - 新表 friend_quota_daily(IP 限速 20 次/天)
-#   - 1 个索引:idx_qa_history_friend_tag(便于按朋友筛选历史)
-# ================================================================
 _V233_NEW_COLUMNS = [
     ("friend_tag", "TEXT DEFAULT NULL"),  # 朋友身份(URL ?u=张三),仅 mode=friend 有值
 ]

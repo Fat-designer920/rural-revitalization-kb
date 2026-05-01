@@ -1,77 +1,13 @@
 """
-qa_assistant.py - F055 本地问答助手主引擎
-路径: scripts/qa_assistant.py
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-
-模块定位:
-  - 4 板块通用回答 + 检索 + 朋友试用模式
-  - 双模式同一套 Prompt(老唐自用 / 朋友试用),mode 字段只影响 UI 渲染与历史筛选
-  - V3 主链 + L1 重试 + L2 R1 兜底 + L3 规则兜底 三级降级链(决策档案 §5)
-
-调用入口(模块级便捷,对齐 premium_judge.run_premium_refresh):
-    run_qa(db, client, query, mode='self', is_test_query=0,
-           progress_callback=None, cancel_check=None) -> dict
-
-返回 dict:
-    {
-        'ok': bool,
-        'history_id': int,
-        'answer': dict,                  # 4 板块 (direct_answer / evidence_kp_ids / followup_questions / coverage_gap)
-        'source': str,                   # 'main' | 'l1_retry' | 'r1_fallback' | 'rule_fallback'
-        'latency_ms': int,
-        'retrieved_kp_ids': List[int],
-        'canceled': bool,
-        'cost_estimate_cny': float,
-        'error': Optional[str],
-    }
-
-降级链(决策档案 §5):
-    主链:V3 + QA_ANSWER_GEN_PROMPT 一次生成 4 板块
-        ↓ 失败
-    L1: 同条重试 1 次(同一 Prompt)
-        ↓ 仍失败
-    L2: R1 兜底(同 Prompt 走 deepseek-reasoner)
-        ↓ 仍失败
-    L3: 规则兜底(列 Top 3 KP 标题,板块 1/2 简单填充)
-
-进度 stage(progress_callback dict 字段,对齐 premium_judge):
-    current_step: 'tokenize' | 'retrieve' | 'rerank' | 'generate' | 'record'
-    message: str (可读描述)
-    processed_kps: int (本次问答已完成的 stage 数, 0-5)
-    total_kps: 5 (固定)
-    ai_calls_count: int (本次累计 AI 调用次数)
-    cost_estimate_cny: float (本次累计成本)
-
-字段读法(立规则 §5.7,防漂移):
-    kp.get('kp_id') / kp.get('source_authority') / kp.get('access_level')
-    禁止误用 'id' / 'authority_level' / 'monetize_tier'
-
-立规则落地:
-  - 9 第 10 次应验:对照 deepseek_client 真实代码,2 个公开方法 chat / chat_with_json,
-    优先 chat_with_json(自带 7 重 JSON 解析保险),fallback chat,最后五方法适配器兜底
-  - 11: Prompt 顶层裸 import,失败让解释器崩(禁 try/except 静默降级)
-  - 14: severity 强制三态 info/warning/error
-  - 15: R1 路径不传 temperature(由 deepseek_client 内部跳过)
-  - 18: 兼容 premium_judge 的五方法两签名容错精神
-  - 21: 模块支持 headless(progress_callback=None / cancel_check=None 均兜底)
-  - 53: 本对话内闭环交付(Phase 3 第 2 轮)
-
-成本估算(单次问答):
-  - 主链:1 次 V3 重排 + 1 次 V3 生成 ≈ 0.02 元
-  - L1 重试:多 1 次 V3 ≈ +0.01 元
-  - L2 R1 兜底:1 次 R1 ≈ +0.05 元
-  - L3 规则兜底:0 元
-  - 平均成本预期 < 0.03 元/次
+qa_assistant.py - 问答助手模块
+路径：scripts/qa_assistant.py
+版本：v2.3.6-part1
 """
 import json
 import re
 import time
 from typing import Optional, Callable, Dict, List, Any
 
-# ============================================================
-# Prompt 顶层裸 import(立规则 11,禁静默降级)
-# 双路径兜底(立规则 50 第 6 项):scripts.X / 裸 X
-# ============================================================
 try:
     from scripts.prompts.prompt_templates import (
         QA_RETRIEVAL_RANK_PROMPT,
@@ -85,10 +21,6 @@ except ImportError:
         QA_FOLLOWUP_GEN_PROMPT,
     )
 
-
-# ============================================================
-# 全局常量
-# ============================================================
 
 QA_RETRIEVAL_LIMIT = 30          # 关键词召回上限(db 层 LIMIT)
 QA_TOP_N_AFTER_RANK = 5          # V3 重排后取 Top N 喂生成
@@ -118,10 +50,6 @@ _STOP_WORDS = set([
     '?', '?', '、', '/',
 ])
 
-
-# ============================================================
-# 工具函数
-# ============================================================
 
 def _parse_json_loose(text: str) -> Optional[Dict]:
     """容错 JSON 解析:剥离 ``` 包裹 + 提取第一个 {...} 块.
@@ -181,10 +109,6 @@ def _tokenize_query(query: str) -> List[str]:
         out.append(w)
     return out
 
-
-# ============================================================
-# 主引擎类
-# ============================================================
 
 class QaAssistantEngine:
     """F055 问答主引擎,与 PremiumJudgeEngine 类结构对齐."""
@@ -893,9 +817,6 @@ class QaAssistantEngine:
             pass
 
 
-# ============================================================
-# 模块级便捷入口(对齐 premium_judge.run_premium_refresh)
-# ============================================================
 def run_qa(db: Any, client: Any, query: str, mode: str = 'self',
             is_test_query: int = 0,
             progress_callback: Optional[Callable[[Dict], None]] = None,

@@ -18,13 +18,19 @@
 
 ```
 第 0 步:读本文件(CLAUDE.md)+ 6 个项目文件(docs/00/01/02/03 + CHANGELOG + README)
-第 1 步:扫高频立规则 9/47/48/51/63/64/65(见 §6 速查)
+第 1 步:扫高频立规则 9/47/48/51/53/63/64/65/66/67/68/69(见 §6 速查)
 第 2 步:脑内立 todos(本对话要做的事,完成一项打 ✓)
 第 3 步:开工前 4 问自检
         (a) 有没有需要 grep 的真实签名/字段名/路由?
         (b) 有没有需要老唐告知的事实(数字/客户/路径)?
         (c) 我打算输出的项目文件超 DIET-CHECK 限制了吗?
         (d) 这次任务有没有踩过同样的错(看 CHANGELOG 立规则应验记录)?
+第 4 步:任务完成后跑测试(见 §12 测试自动化)
+        (a) 确定本次改动涉及哪些模块(scripts/xxx.py)
+        (b) 跑快速冒烟: python scripts/auto_tester.py --smoke(秒级)
+        (c) 若改动了提取/关系/Prompt 核心模块 → 跑 python scripts/auto_tester.py --auto --no-ai
+        (d) 若 L4/L5 层有 AI 调用测试需求 → 跑 python scripts/auto_tester.py --auto(注意费用)
+        (e) 测试不通过 → 修 bug → 重跑测试 → 通过后才报告"任务完成"
 ```
 
 **任何步骤跳过 = 直接违规**。立规则 9 应验已 25 次,根因都是跳启动序列。
@@ -39,6 +45,8 @@
 | `DIET-CHECK` | 立规则 65 自查 | 数行数,对照硬限制 |
 | `TASK-RADAR` | 立规则 58 自查 | 列触发的立规则 |
 | `BACKUP?` | 长任务前自查 | 检查是否调 operation_hook 备份 |
+| `CONTEXT?` | 上下文压缩前保全 | 扫描新需求/质量要求→持久化到项目文件→再压缩 |
+| `CLEAN?` | 立规则 67 自查 | 扫当前文件:docstring是否>10行/有版本日志/WHAT注释/冗余分隔符 |
 
 ## 5. 自我暴露机制(每次对话结束前必报告)
 
@@ -62,6 +70,10 @@
 | 63 | 信息齐全 | 三张清单 | INFO-CHECK |
 | 64 | 不拍脑袋 | 三问追溯事实源 | SCIENCE-CHECK |
 | 65 | 强制瘦身 | 硬行数限制 | DIET-CHECK |
+| 66 | 压缩前保全 | 上下文压缩前把需求/质量要求写入项目文件 | CONTEXT? |
+| 67 | 代码清爽 | 模块docstring≤10行+版本日志归CHANGELOG+注释只写WHY | CLEAN? |
+| 68 | 改动即清理 | 改完文件顺手删该文件内与后续开发/质量无关的冗余 | - |
+| 69 | 异常不裸奔 | 禁止 bare except,必须指定异常类型 | - |
 
 ## 7. 项目文件导航(读什么去哪查)
 
@@ -73,6 +85,7 @@
 | 31 个 Prompt 接口契约 | docs/03_Prompt手册.md |
 | 版本变更详情 | CHANGELOG.md |
 | 对外文档 + 系统简介 | README.md |
+| 自动化测试引擎 + 用法 | scripts/auto_tester.py + §12 |
 
 **改动前必读**:改 .py → docs/01_工程手册.md §一 + §六模块速查;改 review.html → docs/01_工程手册.md ES5 严格约束;改 Prompt → docs/03_Prompt手册.md;改客户画像 → docs/02_知识体系.md。
 
@@ -121,6 +134,111 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 - **v2.3.6-part1 核心**: 提取引擎架构升级 — 并行双模型(解决速度 vs 质量矛盾)+ CHECK_MAX_ROUNDS 5→1 + segment_max 3000→6000
 - **下一步**: v2.3.6-part2 — Prompt 体系与知识形态改造(5 个 _EXTRACT_BASE 按 P0-P4 优先级表大改 + 跨段补漏 prompt 加基层操盘手视角 + 经验线喂料 + 课程生成模块规划)
 - **前置条件**: 新对话首轮老唐回答 6 个问题(经验文件形态 / 课程预期形态 / 工具链 / 标杆参考 / 时间预期 / 商业化时间表)
+
+## 12. 功能测试自动化(F063, v2.3.6-part1)
+
+**测试文件位置**: `测试用文件/乡村振兴资料库/`(已加入 .gitignore,不提交 GitHub)
+涵盖 70+ 个真实乡村振兴政策文档,按知识库分类组织:中央1号文件 / 全域土地综合整治 / 农业农村 / 银发经济 / 四川省域等。
+
+**测试引擎**: `python scripts/auto_tester.py` — 六层金字塔(L0-L5)
+
+| 层次 | 内容 | 耗时 | AI调用 |
+|------|------|------|--------|
+| L0 | 15 个核心模块 import 自检 | 秒级 | 无 |
+| L1 | FileReader多格式 / TagConfig / 配置完整性 | 秒级 | 无 |
+| L2 | 文件读取→预处理结果校验 | 秒级 | 无 |
+| L3 | DB schema / 外键 / 索引 / CHECK约束 | 秒级 | 无 |
+| L4 | Prompt加载 / API连通性 / 模块实例化 | 秒级 | 轻量 |
+| L5 | static_analyzer / HealthChecker / 跨模块数据流 | 秒级 | 无 |
+
+**常用命令**:
+```
+python scripts/auto_tester.py --smoke        # 快速冒烟(L0+L3,每次任务完成必跑)
+python scripts/auto_tester.py --auto --no-ai  # 自动检测变更+代码级测试(L0-L5,不改AI)
+python scripts/auto_tester.py --auto          # 自动检测变更+含AI调用(L4加API连通性)
+python scripts/auto_tester.py --modules extractor,relation_analyzer  # 指定模块
+python scripts/auto_tester.py --full --dry-run  # 查看会测哪些文件
+python scripts/auto_tester.py --full           # 全量回归(重大版本发布前)
+```
+
+**模块→测试文件自动映射**(核心映射,详见 auto_tester.py MODULE_TESTFILE_MAP):
+| 改动的 .py | 自动选哪些测试文件 |
+|-----------|-------------------|
+| file_reader | 各格式(.docx/.pdf/.xlsx)代表文件 |
+| preprocessor | 混合格式文件 |
+| extractor / extractor_parallel | 中央1号文件 + 政策文档 |
+| relation_analyzer | 同主题 4+ 文件(全域土地综合整治) |
+| policy_validator | 政策文件 |
+| db_manager | 任意文件 + DB 完整性深度检查 |
+| prompt_templates | 全类别各 1 个文件(Prompt 版本一致性) |
+| tag_config | 标签密集文件 |
+| 其他/多模块 | 每类 1-2 个代表文件 |
+
+**Claude 任务完成铁律**:
+1. 改完代码 → 跑 `python scripts/auto_tester.py --smoke` → 必须通过
+2. 改核心管道(提取/关系/预处理/Prompt) → 加跑 `python scripts/auto_tester.py --auto --no-ai`
+3. 改 API 层(deepseek_client/db_manager) → 加跑 `python scripts/auto_tester.py --auto`
+4. 测试不通过 → 修 bug → 重跑 → 通过后才说"完成"
+5. `--dry-run` 可预览会测哪些文件,不实际执行
+
+**设计原则**:
+- L0-L3 零成本(不调 AI),每次任务完成必跑
+- L4-L5 包含轻量 AI 调用(仅 API 连通性检查,费用 < 0.01 元)
+- 测试文件本地隔离(测试用文件/),不影响生产 data/
+- 自动筛选:根据 git diff 变更模块智能选测试文件,不改的模块不测
+
+## 13. 上下文压缩保全(F066, v2.3.6-part1)
+
+**触发条件**:超长自动化任务中出现 `<system-reminder>上下文压缩</system-reminder>` 或对话超过 ~200 轮。
+
+**Claude 必须执行的保全序列**(压缩前,不可跳过):
+
+```
+(1) 扫描本次对话中老唐提出的:
+    · 新功能需求(未在 docs/00 路线图中的)→ 追加到 docs/00_项目全景.md 迭代路线表
+    · 质量要求/开发规范(未在立规则中的)→ 追加到 CLAUDE.md 或 docs/01_工程手册.md
+    · 客户画像/标签/分类变更→ 追加到 docs/02_知识体系.md
+    · Prompt 变更要求→ 追加到 docs/03_Prompt手册.md
+(2) 写入时标注来源:"[F066上下文保全 YYYY-MM-DD]"
+(3) 写入完成后输出简表:"上下文压缩前已保全: X 条需求 / Y 条质量要求 / Z 条其他"
+(4) 压缩后开工前,重新读 CLAUDE.md(第 0 步)
+```
+
+**为什么**:上下文压缩会清空对话中积累的隐性需求,这些是项目发展方向。丢需求=项目走偏=大规模返工。写入项目文件后即使压缩也能在第 0 步恢复。
+
+**DIET-CHECK 豁免**:F066 保全写入不适用 DIET-CHECK 行数限制(保需求完整优先于瘦身)。
+
+## 14. 代码清爽标准(F067, v2.3.6-part1)
+
+**模块 docstring 硬标准**(每个 .py 文件顶部):
+
+```
+"""
+模块名.py - 一句话用途
+路径：scripts/xxx.py
+版本：v2.3.6-part1
+"""
+```
+
+- 上限 **10 行**,超出即违规
+- 版本变更日志归 **CHANGELOG.md** 独占(代码内不保留历史)
+- "变更说明"块(`v2.x.x 变更:`)一律删除,已在 CHANGELOG 中
+
+**注释铁律**:
+- WHY 保留:非显而易见的约束/坑/变通/边界条件(读者会困惑的)
+- WHAT 删除:代码自解释(`# 加载配置`配 `load_config()` 是噪音)
+- 段分隔符:删 `# ===...===` 长横幅,空一行即可
+- `# v2.x.x 新增/修复`:删,那是 git blame 的事
+- 立规则引用(`# 立规则 N`):删,那是开发过程记录,不属代码
+
+**每次改动后自检**(改完一个 .py 文件立执行):
+1. 这个文件的 docstring 是否 ≤10 行?
+2. 有没有可删的 WHAT 注释?
+3. 有没有版本变更块(该去 CHANGELOG)?
+4. 有没有 bare except?(有就补异常类型)
+5. 有没有注释掉的老代码块?(删,git 有历史)
+
+**铁律**:CHANGELOG 是唯一版本历史真相,代码文件只展示当前状态。代码内藏历史→历史腐烂(代码删了但 docstring 忘改)→同一条信息两个版本互相矛盾。
 
 ---
 

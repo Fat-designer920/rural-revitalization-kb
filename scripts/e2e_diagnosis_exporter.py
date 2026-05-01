@@ -1,67 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-e2e_diagnosis_exporter.py — F062 端到端测试诊断包导出引擎
-
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-  配套 e2e_tester.py v2.3.0-part3.8 新增的 WHITELIST_COVERAGE 常量,
-  第三段从"单一的失效自检警告"升级为"按文件分类展示":
-    ✅ 白名单覆盖内但命中 X 条(可能漂移)  — 需要重扫对齐
-    ⚪ 未覆盖范围(需独立治理)           — 需要扩展白名单或治理代码
-  好处: 老唐看报告时能一眼看出"这个文件之前就没在白名单",不会再被"白
-        名单已失效"笼统警告误导(part3.6 的警告机制是真漂移 + 死角都说漂移,
-        part3.8 把两者区分开)。
-  版本号同步: _render_section_version_context 里的版本表对齐 part3.8
-
-v2.3.0-part3.7(2026-04-24) - hotfix: 第三段白名单自检口径与第四段对齐
-  Bug 4 - 第三段 dim4 140 vs 第四段 dim4 109 口径错配:
-    根因: 第三段取 dims["dim4"]["issues"] 的 len(白名单过滤后 raw,但
-          upsert_e2e_issue signature 去重前);第四段从 e2e_issues 表读
-          (upsert 后入库)。两边分别是 raw 口径和入库口径,raw 会因同
-          signature 重复实例多出 20-30%。
-    修复: _render_section_whitelist 签名加 issues 参数,dim4/dim6 count
-          从传入的入库 issues 按 dim_code 前缀 filter 数,和第四段同源。
-    影响: 第三段警告里的数字不再和第四段"总计 XXX 条"相互掐架。老签名
-          (lines, report) 仍兼容(issues 参数默认 None 退化到旧口径)。
-
-v2.3.0-part3.6(2026-04-24) - hotfix: 修复 part3.5 首版诊断包三个显示 bug
-  Bug 1 - 六维度权重全 0(读取侧兜底):
-    根因: full_report 漏写 dim_weights 字段(part3.6 e2e_tester 已补写)
-    兜底: 新报告从 fr["dim_weights"] 读;历史报告按 fr["scan_depth"] fallback 到常量
-    好处: 老唐已存在的历史报告(比如 report_id=9)不用重跑也能正确渲染
-  Bug 2 - 白名单过滤显示"无过滤项":
-    根因: e2e_tester.py DIM4/DIM6 白名单行号跟 db_manager.py v2.3.0-part3.4 完全对不上
-    修复: 第三段改为显式自检输出,告诉 Claude"可能白名单已失效"而不是装没事
-    长期: 白名单重扫对齐 v2.3.0-part3.4 真实行号留待单独 hotfix
-  Bug 3 - 近 7 天事件日志永远显示"无事件":
-    根因: SQL 字段名拼错 created_at/payload 应为 event_time/payload_json
-    修复: 查询 SQL + 渲染读取两处字段名全部修正
-
-v2.3.0-part3.5(2026-04-24) - feature 首版:
-  F062 配套功能:把 E2E 测试报告和 issue 列表格式化为 Markdown 诊断包,
-  用于发给 Claude/工程师做异地诊断。
-
-对外接口(唯一):
-  build_e2e_diagnosis_markdown(db, report_id) -> (markdown_text, filename)
-    report_id 不存在时抛 ValueError。
-
-设计原则:
-  - 纯读:不写 DB、不调 AI、无副作用
-  - 聚合优先:相同 (rule_id + 文件 + dim_code) 的 issue 合并展示,
-             避免 Markdown 冗长 + 防止 Claude 对同一模式重复诊断
-  - payload 双格式兜底:既兼容 {rule_id, file, line, snippet, msg} 顶层扁平,
-                        也兼容 {rule_id, detail:{file,line,snippet,msg}} 嵌套
-    —— 对齐立规则第 9 条"不靠记忆,写兜底"精神
-  - 事件日志抽样:按 event_type 分桶,每类最多 5 条,总上限 150 条
-  - 时间锚点:事件日志以报告 created_at 为锚点往前 7 天,反映报告那一刻的系统状态
-  - 文本截断:snippet 最多 6 行,msg/payload 最多 300 字符,防单条爆炸
-  - 权重双源(part3.6):新版 full_report 写 dim_weights;读不到时按 scan_depth
-    fallback 到 e2e_tester.DIM_WEIGHTS_DEEP/QUICK 常量,历史报告不丢信息
-
-立规则对齐:
-  - 第 5 条 JSON 字段自动反序列化(payload_json → dict)
-  - 第 14 条 severity 严格三态(info/warning/error)
-  - 第 20 条 业务逻辑放独立模块,api_server 只做路由
-  - 第 49 条(part3.6 新立) 大文件修改用拷贝+局部替换,别重出整文件
+e2e_diagnosis_exporter.py - E2E 诊断包导出器
+路径：scripts/e2e_diagnosis_exporter.py
+版本：v2.3.6-part1
 """
 
 import json
@@ -80,9 +21,6 @@ except Exception:
         _WHITELIST_COVERAGE = set()
 
 
-# ============================================================
-# 常量
-# ============================================================
 
 # severity 排序权重(error 最严重,排最前)
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
@@ -108,9 +46,6 @@ _SNIPPET_MAX_LINES = 6
 _SNIPPET_MAX_CHARS = 400
 
 
-# ============================================================
-# 对外唯一入口
-# ============================================================
 
 def build_e2e_diagnosis_markdown(db, report_id):
     """构造 E2E 诊断包 Markdown。
@@ -147,9 +82,6 @@ def build_e2e_diagnosis_markdown(db, report_id):
     return md, filename
 
 
-# ============================================================
-# 数据加载
-# ============================================================
 
 def _load_issues_by_report(db, report_id):
     """取某份报告的所有 issue(含四态),按 severity 升序(error 最前)。"""
@@ -251,9 +183,6 @@ def _load_recent_events(db, anchor_time):
     return result
 
 
-# ============================================================
-# 聚合
-# ============================================================
 
 def _aggregate_issues(issues):
     """按 (dim_code, rule_id, 文件或端点) 三元组聚合 issue。
@@ -400,9 +329,6 @@ def _extract_rule_from_signature(signature):
     return parts[-1] if len(parts) >= 3 else ""
 
 
-# ============================================================
-# Markdown 渲染(7 段)
-# ============================================================
 
 def _render_markdown(report, issues, groups, events_by_type):
     lines = []
@@ -957,9 +883,6 @@ def _render_section_version_context(lines):
     lines.append("")
 
 
-# ============================================================
-# 工具函数
-# ============================================================
 
 def _get_full_report(report):
     """安全取 full_report_json 字段(可能是 dict 或 JSON 字符串)。"""
@@ -1042,9 +965,6 @@ def _now_stamp():
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-# ============================================================
-# CLI 自测入口(老唐可跑 python e2e_diagnosis_exporter.py <report_id>)
-# ============================================================
 
 if __name__ == "__main__":
     import sys

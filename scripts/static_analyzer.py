@@ -1,55 +1,7 @@
 """
-static_analyzer.py - F062 端到端测试 Agent 静态分析模块
+static_analyzer.py - Python 代码静态分析器
 路径：scripts/static_analyzer.py
-版本：v2.3.6-part1 - 版本统一
-
-变更历史:
-  v2.3.0-part3-alpha1  初版(宁严勿漏姿态),signal-to-noise 偏低
-  v2.3.0-part3.7       规则精度重构,四项改动(part3.7):
-    - 规则 ① smell_silent_except:signature + snippet 行号从 h.lineno
-      改为 body[0].lineno(pass 真实行),诊断报告不再显示 `except X:`
-      伪像,老 pending issue 会洗牌一次
-    - 规则 ② smell_except_print_only:同上,snippet 显示 print(...) 真实行
-    - 规则 ③ field_unknown:_KP_LIKE_VARS 从 {kp,k,row,r,first} 收窄
-      到 {kp};下划线前缀字段跳过(_keywords/_summary 等临时挂字段);
-      OR 兼容写法识别(`kp.get('a') or kp.get('b')` 两个 key 至少一个
-      在白名单就不报);白名单扩 8 条 kp 相关字段
-    - 规则 ④ prompt_wrong_key:error → warning;历史 key 白名单静默
-      (system/user/description 兼容对话 A 之前的老 Prompt dict 定义)
-
-定位：
-  F062 六维度中 ③ Prompt 调用一致性 / ④ 字段契约 / ⑥ 代码异味
-  三个维度的纯 AST 静态规则库。零 AI 调用,零 DB 写入,只读副作用。
-
-对外接口（对话 2 e2e_tester.py 顶层 import 调用）:
-  scan_prompt_call_consistency(script_paths) -> list[dict]   # 维度③
-  scan_field_contract(script_paths, db_schema_snapshot) -> list[dict]  # 维度④
-  scan_code_smells(script_paths) -> list[dict]               # 维度⑥
-  run_static_scan(script_paths, db_schema_snapshot) -> dict  # 一次跑完三维度
-
-返回 issue 记录统一格式（供 db.upsert_e2e_issue 消费）:
-  {
-    "dim_code":   "3_prompt_call" | "4_field_contract" | "6_code_smell",
-    "severity":   "info" | "warning" | "error",
-    "endpoint":   None（静态规则不挂路由）
-    "signature":  "{dim_code}|{rel_path}:{lineno}|{rule_id}",
-    "rule_id":    "prompt_wrong_key" 等（便于去重）
-    "detail":     {"file": rel_path, "line": int, "snippet": str, "msg": str}
-  }
-
-设计约束:
-  - 仅依赖 Python 标准库（ast / pathlib / re / json / os），不引第三方
-  - 单文件扫描复杂度 O(节点数),大仓库也秒级
-  - 所有 AST 访问器用 ast.NodeVisitor 子类实现,不做跨文件推理
-  - 明确不扫: .html / .bat / .md / node_modules / .git / venv / __pycache__
-  - 对话 A 立规则兜底: scan 过程中任何文件解析失败（如 Python 2 遗留 / 编码异常）
-    记 info 级 signature,不 raise,保证单文件失败不终止全量扫描
-
-对话 A/B 踩坑复盘的 4 类 bug 模式（本模块维度⑥的扫描对象）:
-  A. try: from ... import X except: X = None      → rule_id = smell_try_except_none_import
-  B. if not X: return None（import 之后的死防御）  → rule_id = smell_dead_none_guard
-  C. PROMPT['system']、PROMPT['user'] 错误 key    → rule_id = prompt_wrong_key（维度③）
-  D. except Exception: pass / except: pass         → rule_id = smell_silent_except
+版本：v2.3.6-part1
 """
 
 import ast
@@ -57,10 +9,6 @@ import os
 import re
 from pathlib import Path
 
-
-# ============================================================
-# 常量 / 白名单
-# ============================================================
 
 # Prompt dict 合法 key 白名单（对话 A 立规则严格口径）
 _VALID_PROMPT_KEYS = {"system_prompt", "user_prompt_template"}
@@ -115,10 +63,6 @@ _IGNORE_DIRS = {"__pycache__", "node_modules", ".git", ".venv", "venv",
                 "dist", "build", ".idea", ".vscode"}
 
 
-# ============================================================
-# 工具函数
-# ============================================================
-
 def _sig(dim_code, rel_path, lineno, rule_id):
     """生成 issue 去重签名。"""
     return "{}|{}:{}|{}".format(dim_code, rel_path, lineno, rule_id)
@@ -168,10 +112,6 @@ def _is_prompt_var(name):
         return False
     return any(name.endswith(suf) for suf in _PROMPT_VAR_SUFFIXES)
 
-
-# ============================================================
-# 维度③：Prompt 调用一致性（AST 访问器）
-# ============================================================
 
 class _PromptCallVisitor(ast.NodeVisitor):
     """扫描规则:
@@ -334,10 +274,6 @@ class _PromptCallVisitor(ast.NodeVisitor):
         })
 
 
-# ============================================================
-# 维度④：字段契约扫描（AST 访问器）
-# ============================================================
-
 class _FieldContractVisitor(ast.NodeVisitor):
     """扫描规则:
       匹配形如:
@@ -474,10 +410,6 @@ class _FieldContractVisitor(ast.NodeVisitor):
         })
 
 
-# ============================================================
-# 维度⑥：代码异味扫描（AST 访问器）
-# ============================================================
-
 class _CodeSmellVisitor(ast.NodeVisitor):
     """扫描 4 类 bug 模式(对话 A/B 复盘沉淀):
       A. try: from/import X except: X = None   (smell_try_except_none_import)
@@ -554,10 +486,6 @@ class _CodeSmellVisitor(ast.NodeVisitor):
             },
         })
 
-
-# ============================================================
-# 顶层 API
-# ============================================================
 
 def _resolve_script_paths(script_paths):
     """归一 script_paths。
@@ -721,12 +649,6 @@ def run_static_scan(script_paths=None, db_schema_snapshot=None):
         "signature_set": signature_set,
     }
 
-
-# ============================================================
-# CLI 调试入口（可选）
-# 用法: python -m scripts.static_analyzer
-#       或 python scripts/static_analyzer.py
-# ============================================================
 
 def _print_issues(label, issues):
     print("== {} ({} 条) ==".format(label, len(issues)))

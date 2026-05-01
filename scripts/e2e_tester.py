@@ -1,78 +1,7 @@
 """
-e2e_tester.py - F062 端到端健康测试 Agent 引擎层
+e2e_tester.py - F062 端到端健康测试 Agent 引擎
 路径：scripts/e2e_tester.py
-版本：v2.3.6-part1 - 版本统一
-
-变更（v2.3.0-part3.8,2026-04-24）:
-  - DIM4_KNOWN_FALSE_POSITIVES: 67 条 → 75 条
-      新增 8 条跨文件真·合理兜底:
-      · api_server.py:830    - get_knowledge_point 的 LEFT JOIN 合成字段
-      · extractor.py:595/598/1744 - AI 返回 JSON dict(非 DB kp 对象)
-      · health_checker.py:805/832/1231/1232 - 新老字段兼容 + AI 返回 excerpt
-  - DIM6_KNOWN_FALSE_POSITIVES: 11 条 → 约 75 条
-      · db_manager.py 漂移对齐(part3.4 → 真实行号):
-          694/695 → 714  /  955 → 974  /  1339/1340 → 1359  /
-          1419/1420 → 1439  /  1841/1842 → 1861  /  2461/2462 → 2488
-      · part3.7 规则改用 body[0].lineno,旧"except 行+body 行双覆盖"简化为单行
-      · 新增 5 文件 silent_except warning + info 条目约 64 条
-  - 新增 WHITELIST_COVERAGE 常量(文件维度覆盖范围集合):
-      供 e2e_diagnosis_exporter.py 第三段按文件分类展示"白名单覆盖内 vs 覆盖外"
-      未来新文件引入 E2E 扫描时,诊断包能一眼看出"该文件未在白名单覆盖范围内"
-  - 本次不动:static_analyzer 规则 / 任何扫描逻辑 / 其他函数签名
-  - 立规则第 38 条补注再次应验:白名单扩覆盖属"规则前提与业务现实对齐",合规
-
-变更（v2.3.0-part3.6,2026-04-24）:
-  - full_report 字典新增 "dim_weights": dict(DIM_WEIGHTS_DEEP/QUICK) 字段
-  - 根因:老版本权重常量只在 _compute_total_score 里用完就扔,没落进 full_report_json。
-    exporter 读 fr.get("dim_weights") 永远拿空字典,导致诊断包"六维度得分表"权重
-    列全 0、加权贡献列全 0(总分 69.32 算对但明细看起来是"0 × 95 = 0")。
-  - 修复 part3.5 诊断包显示的 Bug 1(权重全 0)。
-  - 立规则第 9 条第 4 次应验:读取侧字段必须在写入侧存在,不能靠常量默认。
-
-变更（v2.3.0-part3.4,2026-04-23）:
-  - _write_issues(issues) 签名扩为 _write_issues(issues, report_id)
-  - _write_issues 内部调用 db.upsert_e2e_issue 对齐真实签名
-  - _run_pipeline 调用顺序调整:六维度 → 汇总 → _save_report → _write_issues
-  - 立规则第 9 条再次应验:跨模块调用前必 grep 真实签名。
-
-变更（v2.3.0-part3.3,2026-04-23）:
-  - DIM4_KNOWN_FALSE_POSITIVES: 35 条 → 67 条,行号对齐 db_manager.py v2.3.0-part3.2
-  - DIM6_KNOWN_FALSE_POSITIVES: 6 条 → 11 条(每个 pass 点位覆盖 except 行 + body 行)
-  - WHITELIST_REASONS: 同步更新为 78 条(67+11)
-
-定位：
-  F062 六维度扫描引擎,消费对话 1 基础层（static_analyzer / db_manager / prompt_templates）,
-  输出 e2e_test_reports + e2e_issues 双落库。界面层（对话 3/3）通过 api_server 路由调度。
-
-对外接口（对话 3 api_server 顶层 import 调用）:
-  class E2ETester(db, client, progress_callback=None)
-      run_full_scan(scan_depth='quick'|'deep') -> dict   # 主入口,返回 {success, report_id, ...}
-  模块级便捷函数 run_e2e_scan(db, client, progress_callback, scan_depth)
-
-六维度:
-  ① 路由自省      _dim1_route_introspect  — Flask url_map vs api_endpoint_registry 差集
-  ② 启动就绪性   _dim2_readiness         — 5 引擎模块顶层 import 自检
-  ③ Prompt 一致性 _dim3_prompt_call       — 消费 static_analyzer.scan_prompt_call_consistency
-  ④ 字段契约      _dim4_field_contract    — 消费 scan_field_contract + 白名单二次过滤
-  ⑤ 事件语义      _dim5_event_v3          — deep 档:V3 判断最近 7 天 warning/error 事件
-  ⑥ 代码异味      _dim6_code_smell        — 消费 scan_code_smells + 白名单二次过滤
-
-设计约束:
-  - 顶层 import Prompt / static_analyzer,禁止 try/except 静默降级(对话 A 立规则)
-  - 字段严格对齐 db_manager AS 别名:kp_id / authority_level / monetize_tier(对话 A 立规则)
-  - Prompt key 严格:system_prompt / user_prompt_template(对话 A 立规则)
-  - severity 严格:info / warning / error,禁 warn 简写(operation_events CHECK 约束)
-  - issue status 严格:pending / fixed / intermittent / ignored(e2e_issues CHECK 约束)
-  - _safe_dim 单维度异常隔离(借鉴 F048 health_checker):任一维度挂掉不中断整体
-
-白名单二次过滤(对话 2 落地):
-  对话 1 已暴露 db_manager.py 35 条 unique dim4 signature + 6 条 unique dim6 signature,
-  全部为已知合理场景(SQL 别名 cnt / 其他表字段 / 非关键 except-pass 兜底)。
-  本引擎层以 signature set 精确匹配跳过,不反向改弱 static_analyzer 规则。
-
-成本:
-  quick 档 — 0 次 V3 调用,纯秒级
-  deep 档  — 最多 30 次 V3 调用 × 约 0.005 元 ≈ 0.15 元/次扫描
+版本：v2.3.6-part1
 """
 
 import json
@@ -80,9 +9,9 @@ import time
 import traceback
 from datetime import datetime, timedelta
 
-# ============================================================
+
 # 顶层 import — 禁止 try/except 降级(对话 A 立规则)
-# ============================================================
+
 
 from scripts.prompts.prompt_templates import (
     E2E_RESPONSE_JUDGE_PROMPT,
@@ -91,9 +20,6 @@ from scripts.prompts.prompt_templates import (
 from scripts import static_analyzer
 
 
-# ============================================================
-# 常量
-# ============================================================
 
 # static_analyzer 默认扫描的 scripts 清单(跟 static_analyzer._DEFAULT_SCRIPT_FILES 保持一致)
 STATIC_SCAN_TARGETS = None  # None → 使用 static_analyzer 内置默认清单
@@ -151,7 +77,7 @@ VALID_STAGES = {
     "dim4_field", "dim5_event", "dim6_smell", "done", "failed",
 }
 
-# ============================================================
+
 # 白名单二次过滤(对话 2 落地,基于对话 1 真实扫描产出)
 # v2.3.0-part3.3 (2026-04-23) 刷新：基于 db_manager.py v2.3.0-part3.2 重扫
 # 原因：part3.2 hotfix 新增 promote_readiness_by_qa_score /
@@ -159,7 +85,7 @@ VALID_STAGES = {
 #       pattern，导致 db_manager.py 下游所有行号漂移；原 41 条白名单全
 #       部打不中，DIM4 issue 从个位数暴涨到 140，DIM6 从 0 涨到 94，
 #       报告总分跌到 0 分（立规则 §5.8 已预告的坑，part3.2 遗漏执行）。
-# ============================================================
+
 
 # dim4 字段契约 已知合理项(67 个 unique signature)
 # 来源：v2.3.0-part3.3 用真实 db_manager.py v2.3.0-part3.2 (~2496 行)
@@ -595,9 +521,6 @@ V3_COST_PER_1K_INPUT = 0.0014
 V3_COST_PER_1K_OUTPUT = 0.0028
 
 
-# ============================================================
-# E2ETester 主类
-# ============================================================
 
 class E2ETester(object):
     """端到端健康测试 Agent 引擎。"""
@@ -1610,9 +1533,6 @@ class E2ETester(object):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-# ============================================================
-# 模块级便捷入口
-# ============================================================
 
 def run_e2e_scan(db, client, progress_callback=None, scan_depth="quick"):
     """对话 3 api_server 路由可选调用入口。等效于 E2ETester(db,client,cb).run_full_scan(depth)。"""
@@ -1620,10 +1540,9 @@ def run_e2e_scan(db, client, progress_callback=None, scan_depth="quick"):
     return tester.run_full_scan(scan_depth=scan_depth)
 
 
-# ============================================================
-# CLI 调试入口(便于本地跑)
+
 # 用法: python -m scripts.e2e_tester
-# ============================================================
+
 
 if __name__ == "__main__":
     print("e2e_tester.py — F062 引擎层 v2.3.0-part3-alpha2")

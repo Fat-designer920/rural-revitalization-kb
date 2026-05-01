@@ -36,6 +36,9 @@ config/*.json
 data/
 data_backup/
 
+# 测试用文件(老唐本地测试资料,不公开)
+测试用文件/
+
 # 备份和快照
 backups/
 snapshots/

@@ -1,19 +1,7 @@
 """
-log_viewer.py - 日志查看工具
+log_viewer.py - 日志查看器
 路径：scripts/log_viewer.py
-版本：v2.3.6-part1 - 新增
-
-功能：
-  - 自动读取最新的提取日志、错误日志、调试日志
-  - 供 Claude 快速诊断问题,无需用户手动复制粘贴
-  - 支持按时间/类型/关键词过滤
-
-使用方式：
-  from scripts.log_viewer import LogViewer
-  lv = LogViewer()
-  lv.show_latest_extraction()  # 最新提取日志
-  lv.show_errors(hours=24)     # 最近24小时错误
-  lv.show_debug_files(limit=5) # 最新5个调试文件
+版本：v2.3.6-part1
 """
 import os, json
 from pathlib import Path

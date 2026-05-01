@@ -376,27 +376,6 @@
 
 ---
 
-## 八、版本历史（简版）
-
-| 版本 | 日期 | 变更 |
-|------|------|------|
-| **v2.3.6-part1** | **2026-05-01** | **并行双模型提取架构,Prompt 内容不改(同一套 Prompt 喂 V4-Flash + V4-Pro)。PROMPT_VERSION 保持 v2.3.5-part2-hotfix1。** |
-
-| **v2.3.6-design** | **2026-04-30** | **设计阶段,Prompt 代码改动 0**。PROMPT_VERSION 保持 v2.3.5-part2-hotfix1。**待 v2.3.6-part2 落地**:5 个 _EXTRACT_BASE 按 02 客户画像章节 P0-P4 优先级表大改 + CROSS_SEGMENT 视角改造 + RELATION_JUDGE 强化同源冗余识别 + practical_insights 字段地位提升(承载老唐独家 IP)。**立规则 64/65 首立**(详见 01 立规则段) |
-| **v2.3.5-part2-hotfix1** | **2026-04-30** | **5 个 _EXTRACT_BASE 老 1.X-5.X 编号清单整行删除(立规则 9 第 23 次应验同根:prompt 硬编码 1.X 体系与 tag_config.LAYER1_TAGS 真实 A/B/C/D... 体系完全两个版本,F5 修了"格式不一致"但没修"体系不一致");5 处字段说明"如1.1" → "从 LAYER1 清单中选";PRE_ANALYSIS 1.X-5.X 体系说明改"以三层标签体系为准";PROMPT_VERSION 升 v2.3.5-part2-hotfix1;关系判别 prompt 复用 RELATION_JUDGE_PROMPT 不变(主链由 V3 切 V4-Pro 仅 model_override 改)** |
-| **v2.3.5-part2** | **2026-04-30** | **Prompt 内容完全不动,仅 PROMPT_VERSION 升 v2.3.5-part2;一套 prompt 同时喂 V4-Pro thinking 主链 + V4-Flash 辅助 + 硅基 R1 镜像兜底,3 个 model 共用;F4 修 relation_analyzer.py:330 chat_with_json kwarg(立规则 9 第 22 次应验)** |
-| **v2.3.4** | **2026-04-28** | **5 个提取类 BASE 输出格式段统一改 JSON Lines(数组 → 每行 1 KP + 末行 _meta);PROMPT_VERSION 升 v2.3.4;Prompt 数量不变 31 个,仅形态升级;消费侧 `chat_with_jsonl()` 已就位** |
-| v2.3.2 | 2026-04-25 | F055 问答助手 3 Prompt 落地(`QA_RETRIEVAL_RANK_PROMPT` / `QA_ANSWER_GEN_PROMPT` / `QA_FOLLOWUP_GEN_PROMPT`);PROMPT_VERSION 升 v2.3.2;`get_all_prompt_names` +3 条(总 31) |
-| v2.3.1-hotfix1 | 2026-04-25 | F056 v1.0 schema 冻结 + premium_exporter `_build_json` 升级 + `validate_publish_json` 校验函数(立规则 55 第 2 次落地) |
-| v2.3.0-part3-alpha1 | 2026-04-23 | +E2E_RESPONSE_JUDGE_PROMPT;PROMPT_VERSION 升版;get_all_prompt_names +1 条(总 26) |
-| v2.3.0-part2.2 | 2026-04-22 | F048 6 个 Prompt 正式版文本落地 + import 顶层化 + Prompt key 修正 |
-| v2.2.3 | 2025 | QC_CHECK_SINGLE_PROMPT + SOURCE_NATURE_INSTRUCTION + 三级降级链 |
-| v2.2.0 | 2024 | EXPERIENCE_STRUCTURE_PROMPT |
-| v2.1.1 | 2024 | practical_insights 启示推导 |
-| v2.1.0-c | 2024 | 提取 Prompt 深度重写 + PROMPT_VERSION 引入 |
-
----
-
 ## 九、发布 JSON 标准 F056(v2.3.1-hotfix1 起)
 
 > F056 是本地知识库 → 云端服务库的**契约层**。本地 SQLite 是生产库(加工车间),云端 PG+Qdrant 是服务库(交付车间),两库不共享存储,通过 F056 标准 JSON 同步。
@@ -405,7 +384,7 @@
 >
 > 实装位置:`scripts/premium_exporter.py`(`_build_json` + 末尾 `validate_publish_json`),立规则 55 第 2 次落地不开独立 validator 文件。
 
-### 9.1 设计原则(F056 第 2 轮决策冻结档案 §第 1 轮已锁的 5 件事)
+### 9.1 设计原则（第 1 轮已锁的 5 件事）
 
 | # | 决定 | 一句话理由 |
 |---|---|---|
@@ -480,7 +459,7 @@
 | 二次传播侵权 | v2.4.0 服务条款 + 数字水印 | **不入 schema** |
 | 用户用错反咬 | `source.document_id` 字段 + 服务条款 | schema(承重墙) |
 
-### 9.6 客户视角覆盖(F056 第 2 轮决策档案,8 类全覆盖)
+### 9.6 客户视角覆盖（8 类全覆盖）
 
 - **B 端 3 类**:决策者 / 执行者 / 投标项目经理
 - **C 端 5 类**:返乡青年 / 咨询助理 / 自媒体 / 学生 / 自学者

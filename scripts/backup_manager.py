@@ -1,28 +1,7 @@
 """
-备份恢复管理器
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-功能: 数据库一键备份、恢复、清理 + 关键操作自动备份钩子（F060）
-
-v2.2.3 新增：
-  - BackupFailedError 异常类
-  - operation_hook(op_name) 关键操作触发钩子
-    5个触发点：版本重提取/批量重跑/重复合并/体检采纳/全库清空重扫
-    失败时先写 operation_events(severity='error') 再 raise
-  - cleanup_by_op_name() 按操作名分组保留最近N个
-  - enforce_size_limit() 总量超限时按时间清理
-  - 保留策略：每类操作保留5个 + backups目录总量超2GB时清理老备份
-
-v2.3.0-part1 增强：
-  - 正式纳入 batch_rerun op_name 支持（F059 批量重跑触发点）
-  - 调用方式：BackupManager().operation_hook("batch_rerun")
-  - OP_KEEP_PER_NAME=5 对 batch_rerun 同样生效
-
-v2.3.0-part1.1 修复（hotfix）：
-  - 补齐模块级 operation_hook() 便捷函数
-  - 此前 api_server.py 用 `from scripts.backup_manager import operation_hook`
-    导入，但模块内只定义了类方法 BackupManager.operation_hook()，缺模块级包装，
-    导致 ImportError: cannot import name 'operation_hook'
-  - 修复后 api_server.py 无需任何改动，类方法也完全保留，完全向下兼容
+backup_manager.py - 备份管理器
+路径：scripts/backup_manager.py
+版本：v2.3.6-part1
 """
 
 import os
@@ -399,9 +378,7 @@ class BackupManager:
             print("[_log_backup_event 失败] {}".format(e))
 
 
-# ==================================================
 # 模块级便捷函数（v2.3.0-part1.1 新增）
-# ==================================================
 # 供 api_server.py 等调用方直接 import 使用：
 #   from scripts.backup_manager import operation_hook, BackupFailedError
 #   try:
@@ -425,9 +402,7 @@ def operation_hook(op_name):
     return BackupManager().operation_hook(op_name)
 
 
-# ==================================================
 # 命令行入口
-# ==================================================
 
 def _print_backup_list(manager):
     """打印备份列表"""

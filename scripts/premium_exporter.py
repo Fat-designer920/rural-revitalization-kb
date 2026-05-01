@@ -1,24 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-premium_exporter.py - 精品导出引擎
-=======================
-
-版本: v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
-
-职责:把已封神的精品条目导出为 Markdown 或 JSON,供老唐在
-    咨询场景 / 投标场景 / 写文章场景直接使用。
-
-设计决策(Phase 2 冻结档案 §7.4):
-  - 两种输出格式:Markdown(阅读友好) / JSON(结构化,v2.3.2 F056 预埋)
-  - 四种范围:all_premium / client_only / rfp_only / by_category
-  - 成色过滤:可选 verified/trusted/candidate 勾选
-  - 文件命名:"精品导出_<scope标签>_YYYY-MM-DD.<ext>"
-  - 纯读无副作用(失败走 operation_events 埋点 premium_export_success/failed)
-
-立规则对齐:
-  第 4 条:关键操作记事件(premium_export_success/failed)
-  第 20 条:api_server 只做路由,导出格式化放独立模块
-  第 50 条:跨模块 import 双路径兜底
+premium_exporter.py - 精品知识导出模块
+路径：scripts/premium_exporter.py
+版本：v2.3.6-part1
 """
 
 import json

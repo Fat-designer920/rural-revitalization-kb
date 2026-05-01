@@ -1,30 +1,7 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.3.6-part1 - 版本统一
-
-v2.3.0-part2.2 变更（对话 B 防护层扩展）：
-v2.3.0-part3 变更（F062 对话 3/3 界面层收尾）：
-  - 命令行版 [4] 数据库基础 expected 清单扩到 12 张（+api_endpoint_registry +e2e_test_reports +e2e_issues）
-  - JSON 版 [4] 同扩（决策 Q1：F062 是核心业务,老库没升级该早暴露）
-  - 命令行版新增 [19] F062 端到端测试就绪度（4 小项:Prompt + static_analyzer + e2e_tester + 9 db 方法）
-  - JSON 版新增 "F062 就绪度" 项，汇总时纳入 ok_count 统计
-
-v2.3.0-part2.2 变更（F048 对话 B/C 防护层收尾）：
-  - 命令行版新增第 17 项 check_f048_readiness()：F048 体检功能就绪度
-      [17.1] 6 个 F048 Prompt 顶层可 import
-      [17.2] 6 个 Prompt dict 含非空 system_prompt / user_prompt_template（对话 A 缺陷 4）
-      [17.3] health_reports / polish_suggestions 两表存在
-      [17.4] 近 2 小时无 status='running' 僵尸任务
-  - JSON 版 run_checks_json() 顺手扩 2 处：
-      [4] 数据库基础的 expected 表清单追加 health_reports / polish_suggestions（老唐决策Q1）
-      末尾追加 [18] F048 就绪度（同命令行第 17 项 4 小项聚合）
-  - 主流程 results 追加 "F048 就绪度" 项，汇总时纳入 ok_count 统计
-
-v2.5 - v2.2.0 F029+F045升级：
-  - 保留v2.4全部15项检查
-  - 新增第16项: 专家注解与经验速记状态检查(F029+F045)
-  - 数据库迁移检查新增annotations表+source_type字段
+版本：v2.3.6-part1
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -55,9 +32,7 @@ def _get_db_path(config):
             str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db"))
     return str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db")
 
-# ================================================================
 # 原有基础检查（保留，微调格式）
-# ================================================================
 def check_python():
     print(f"\n[1] Python环境")
     print(f"    版本: {sys.version.split()[0]}")
@@ -185,9 +160,7 @@ def check_disk():
     except Exception:
         return True
 
-# ================================================================
 # v2.0 新增：数据库字段完整性
-# ================================================================
 def check_db_migration():
     print(f"\n[7] 数据库迁移状态(v2.2.0 F029+F045)")
     config = _load_config()
@@ -272,9 +245,7 @@ def check_db_migration():
         print(f"    FAIL {e}")
         return False
 
-# ================================================================
 # v2.0 新增：知识库健康度概览
-# ================================================================
 def check_knowledge_health():
     print(f"\n[8] 知识库健康度")
     config = _load_config()
@@ -339,9 +310,7 @@ def check_knowledge_health():
         print(f"    FAIL {e}")
         return False
 
-# ================================================================
 # v2.0 新增：Prompt版本检查
-# ================================================================
 def check_prompt_version():
     print(f"\n[9] Prompt版本")
     try:
@@ -394,9 +363,7 @@ def check_prompt_version():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.0 新增：V3质检覆盖率
-# ================================================================
 def check_qa_coverage():
     print(f"\n[10] V3质检覆盖率")
     config = _load_config()
@@ -436,9 +403,7 @@ def check_qa_coverage():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.0 新增：备份状态
-# ================================================================
 def check_backup_status():
     print(f"\n[11] 备份状态")
     try:
@@ -472,9 +437,7 @@ def check_backup_status():
         print(f"    未获取到备份信息")
     return True
 
-# ================================================================
 # v2.0 新增：文件管线状态
-# ================================================================
 def check_file_pipeline():
     print(f"\n[12] 文件管线")
     config = _load_config()
@@ -506,9 +469,7 @@ def check_file_pipeline():
             print(f"    {desc}: 目录不存在")
     return not has_stuck
 
-# ================================================================
 # v2.1 新增：保鲜状态检查
-# ================================================================
 def check_freshness_status():
     print(f"\n[13] 保鲜状态")
     config = _load_config()
@@ -588,9 +549,7 @@ def check_freshness_status():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.2 新增：政策校验状态检查（F028）
-# ================================================================
 def check_policy_validation():
     print(f"\n[14] 政策校验状态(F028)")
     config = _load_config()
@@ -662,9 +621,7 @@ def check_policy_validation():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.4 新增：重复检测状态检查（F039）
-# ================================================================
 def check_duplicate_status():
     print(f"\n[15] 重复检测状态(F039)")
     config = _load_config()
@@ -717,9 +674,7 @@ def check_duplicate_status():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.5 新增：专家注解与经验速记状态检查（F029+F045）
-# ================================================================
 def check_annotation_status():
     print(f"\n[16] 专家注解与经验速记(F029+F045)")
     config = _load_config()
@@ -764,9 +719,7 @@ def check_annotation_status():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.5.1 新增：F048 体检功能就绪度检查（v2.3.0-part2.2 对话 B）
-# ================================================================
 def check_f048_readiness():
     print(f"\n[17] F048 体检功能就绪度(v2.3.0-part2.2)")
 
@@ -851,9 +804,7 @@ def check_f048_readiness():
         print(f"    WARN {e}")
         return True
 
-# ================================================================
 # v2.1.2 新增：供API调用的JSON版检查（不print，返回结构化数据）
-# ================================================================
 def run_checks_json():
     """
     执行所有系统检查，返回结构化JSON结果。
@@ -1244,9 +1195,7 @@ def run_checks_json():
     }
 
 
-# ================================================================
 # 主流程
-# ================================================================
 def check_f062_readiness():
     """v2.3.0-part3 新增：F062 端到端测试就绪度 4 小项
        [19.1] E2E_RESPONSE_JUDGE_PROMPT 双 key

@@ -1,62 +1,7 @@
 """
-extractor.py - 知识点提取引擎
+extractor.py - 知识点提取引擎(并行双模型架构)
 路径：scripts/extractor.py
-版本：v2.3.6-part1 - 并行双模型架构
-
-变更说明（v2.3.6-part1, 2026-05-01）：
-  P1 并行双模型架构(解决速度 vs 质量矛盾):
-     - V4-Flash 快速全覆盖(所有段落,速度优先)
-     - V4-Pro 深度核心段(一级标题 + 关键词段落,质量优先)
-     - 合并去重(title 完全相同保留 Pro,相似度>85%保留更详细版本)
-     - 新增 extractor_parallel.py 辅助模块
-  P2 跨段补漏从 5 轮改为 1 轮(CHECK_MAX_ROUNDS = 5 → 1):
-     - 配合并行双模型,Flash 已全覆盖,Pro 已深挖核心,补漏需求大幅降低
-     - 避免 5 轮全文扫描导致的 3.7 小时提取时间
-  P3 统计字段扩展:
-     - parallel_flash_kps: V4-Flash 提取数量
-     - parallel_pro_kps: V4-Pro 提取数量
-     - merged_duplicates: 合并去重数量
-
-变更说明（v2.3.5-part2, 2026-04-30）：
-  D1 主链升级 R1 → V4-Pro thinking 模式:
-     - MODEL_OPTIONS 重写,选项 1=deepseek-v4-pro / 2=deepseek-v4-flash
-     - 老 R1/V3 model 名作 1_legacy/2_legacy 保留供逃生回滚
-     - 主提取 max_tokens 从默认 8192 → 32768,充分利用 V4 384K 输出能力
-     - 截断概率预期从 30% 降到 ~0%(V4 Max-Output 47 倍于 R1)
-     - Prompt 内容完全不动(同一套 prompt 喂 V4-Pro thinking 模式)
-  D2 截断救援链 5 层 → 3 层(立规则 16 改造):
-     - L0 V4-Pro 主提取 → L1 硅基镜像兜底 → L2 F057(若 partial>=1)→ L3 保留
-     - 删除 L1.1 硅基 Kimi-K2.6(原 L1) + L1.2 Kimi 官方 K2.6(part1.3 引入)
-     - 删除 _retry_via_kimi_official 方法 + _truncation_stats 中 kimi_* 字段
-     - L1 复用 _retry_via_siliconflow + SILICONFLOW_TEXT_MODEL_L2 model_id
-     - 立规则 62 仍成立(V4-Pro=api.deepseek.com / 镜像=api.siliconflow.cn 跨厂商)
-     - 日志铁证(0429 实测): L1.1+L1.2 三段截断全失败,真正救回都是原 L2(硅基镜像)
-  D3 跨段补漏闭环(F1 核心新功能,老唐 0430 拍板:5 轮上限 + "基本完整"即合格):
-     - 新增 _supplementary_extract 方法:针对 missed_sections 高/中重要性章节重新提取
-     - Step 5 状态机:首轮检查 → 不合格 → 补提 → 再检查 → 直到合格或 5 轮上限
-     - V4-Pro 1M context 装得下完整原文,无需切片;Prompt 加"已提取标题清单"避免重复
-     - extracted_by_model 新取值 "supplementary"(供审计区分首轮 / 补漏轮)
-  D4 F5 标签校验容错(立规则 10 第 N 次应验):
-     - _sanitize_tags 加 _normalize_tag 函数,剥离 code 前缀 + code↔name 双向映射
-     - AI 输出 "A10 乡村产业运营" / "A10乡村产业运营" / "A10" 等格式都映射到合法 name
-     - 日志中老唐 0429 文件 ~80% 被过滤标签实为格式误杀,本版起恢复入库
-  D5 _cross_segment_check model 升级 deepseek-chat → deepseek-v4-flash
-  D6 立规则 9 第 22 次应验联动:relation_analyzer.py:330 chat_with_json model= 关键字漏改修复
-
-立规则 16 改造(v2.3.5-part2):截断兜底链从"5 层(R1→Kimi硅基→Kimi官方→R1镜像→F057)"
-  改为"3 层(V4-Pro→V3.2镜像→F057)"。Kimi 物理冗余目标实测不达预期(L1.1+L1.2 三段全失败),
-  V4 max_output 直接根治截断从源头消除"必须思考型概率冗余"的需求。
-
-立规则 63 首次正式落地(v2.3.5-part2):Phase 1 信息齐全度自检 INFO-CHECK
-  本版 Phase 1 输出三张清单(待补传文件 / 待 web_search / 待用户决策)清空后才进 Phase 2。
-
-============================================================
-旧版本变更说明已迁移至 CHANGELOG.md(立规则 51 做减法)
-v2.3.5-part1.x:L1 救援链双层互备 → 本版整体废弃
-v2.3.4-hotfix1/2/3:R1 截断防御 → 本版被 V4-Pro 384K 输出根治
-v2.3.4:JSON Lines + Chat Prefix Completion → 保留(JSON Lines 仍是输出形态)
-v2.2.x 及更早:F057 截断补救 / F058 三级质检 → 保留
-============================================================
+版本：v2.3.6-part1
 """
 import os, sys, json, re, shutil, hashlib, time
 from pathlib import Path
@@ -282,9 +227,7 @@ class Extractor:
         if cur: segs.append(cur)
         return segs
 
-    # ================================================================
     # v2.3.4 D9: 单段提取 — JSON Lines 输出 + prefix 续写支持
-    # ================================================================
     def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
         """调用R1/V3提取单段内容,返回统一dict契约。
 
@@ -379,7 +322,6 @@ class Extractor:
         if current_max_len is None:
             current_max_len = self.segment_max_len
 
-        # ============= L0: R1 主提取 =============
         result = self._extract_single(content, filename, prompt, ctype, relay_prefix)
         kps = result["kps"]
         # L0 成功的 kp 打标 r1
@@ -430,7 +372,6 @@ class Extractor:
             # 未截断 + 0 条 + 解析失败(走到这里说明 7 步保险也救不回)
             print(f"     [L0 失败] V4-Pro 输出格式异常 + 7 步降级未救回,启动 L1 镜像兜底(硅基)")
 
-        # ============= L1: 硅基镜像兜底(跨厂商物理冗余,立规则 62) =============
         # v2.3.5-part2-hotfix1 C1:model_id 从类常量 SILICONFLOW_TEXT_MODEL_L2 改为
         # 实例属性 siliconflow_mirror_model(默认 V4-Pro 镜像,settings.json 可覆盖)
         # extracted_by_model 标记升级 r1_mirror → mirror_v4_pro 体现镜像模型版本
@@ -448,7 +389,6 @@ class Extractor:
             print(f"     [L1 镜像 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条")
             return merged
 
-        # ============= L2: F057 老逻辑兜底(仅当 partial_kps>=1) =============
         print(f"     [L1 失败] 硅基镜像兜底失败,启动 L2 F057 续写补救")
         if not kps:
             # 0 partial,F057 没有 last_excerpt 可定位,跳过
@@ -490,9 +430,7 @@ class Extractor:
             self._truncation_stats["lost_segments"] += 1
         return merged
 
-    # ================================================================
     # v2.3.4-hotfix1 H1: L1/L2 硅基流动整段重提
-    # ================================================================
     def _retry_via_siliconflow(self, content, filename, prompt, ctype, relay_prefix,
                                file_id, model_id, model_tag, layer_label):
         """走硅基流动文本模型整段重提(L1 Kimi / L2 R1 镜像 共用)。
@@ -566,7 +504,6 @@ class Extractor:
                      "cost": cost, "filename": filename})
         return kp_objects
 
-    # ================================================================
     # v2.3.4 D10 L0/L1: Prefix 续写补救核心 [DEPRECATED in v2.3.4-hotfix1]
     # ----------------------------------------------------------------
     # ⚠️ 本方法在 v2.3.4-hotfix1 起不再被 _extract_with_auto_split 调用。
@@ -574,7 +511,6 @@ class Extractor:
     # 老唐 2026-04-28 实测发现 R1 思考爆 token 时 partial==0,prefix 空,本方法 386 行直接降级。
     # 替代方案:_retry_via_siliconflow 多思考型模型整段重提(L1 Kimi-K2.6 / L2 R1 镜像)。
     # 代码完整保留作未来"prefix 续写适用"场景重启可能。
-    # ================================================================
     def _recover_via_prefix(self, init_result, file_id, filename, max_attempts=2):
         """L0/L1 prefix 续写。
 
@@ -712,9 +648,7 @@ class Extractor:
             prefix_for_next += last_broken_line
         return kps, meta, prefix_for_next, last_broken_line
 
-    # ================================================================
     # v2.2.3 F057: 截断补救核心
-    # ================================================================
     def _locate_cut_boundary(self, content, last_excerpt):
         """在原段中定位 last_excerpt 的末尾位置，返回切分点字符下标；定位失败返回 None。
         三级定位：完整匹配 → 首30字模糊 → 尾30字反向。
@@ -913,9 +847,7 @@ class Extractor:
                 os.remove(str(md_src))
         except Exception as e: print(f"     ! 文件隔离失败: {e}")
 
-    # ================================================================
     # v2.0.0 新增：标签数据校验
-    # ================================================================
     # v2.3.5-part2 F5:标签标准化 — 剥离 code 前缀 + code↔name 双向映射
     # 处理 AI 输出的 5 种格式:
     #   "乡村产业运营"          → 直接通过(纯 name)
@@ -1036,9 +968,7 @@ class Extractor:
             "authority": authority,
         }
 
-    # ================================================================
     # v2.1.0-c 新增：V3预分析
-    # ================================================================
     def _pre_analyze(self, content, filename):
         """V3预分析：质量评估+分类建议+结构识别。失败时暂停让用户选择。"""
         preview = content[:2000]
@@ -1080,9 +1010,7 @@ class Extractor:
             else:
                 print("     请输入 1/2/3")
 
-    # ================================================================
     # v2.1.0-c 新增：V3结构摘要
-    # ================================================================
     def _get_structure_summary(self, content, filename):
         """V3分析文件结构，返回分段建议。失败返回None。"""
         char_count = len(content)
@@ -1104,9 +1032,7 @@ class Extractor:
             print(f"     结构摘要失败: {e}")
         return None
 
-    # ================================================================
     # v2.1.0-c 新增：三级智能分段
-    # ================================================================
     def _smart_segment(self, content, pre_result, filename):
         """三级分段策略，绝不回退到机械切割。
         返回 (segments_list, file_structure_text)"""
@@ -1323,9 +1249,7 @@ class Extractor:
             lines.append(f"{indent}- {title}")
         return "\n".join(lines)
 
-    # ================================================================
     # v2.1.0-c 新增：上下文接力信息构建
-    # ================================================================
     def _build_context_relay(self, seg_idx, total_segs, file_structure, prev_kps, source_nature=""):
         """构建分段提取的上下文接力信息。
         v2.2.3: 单段文件也传递来源属性信息。"""
@@ -1359,12 +1283,10 @@ class Extractor:
             previous_titles=titles_text
         )
 
-    # ================================================================
     # v2.1.0-c 新增：跨段补漏检查
     # v2.3.5-part2 升级:model 从 deepseek-chat → deepseek-v4-flash(7/24 后 deepseek-chat 退役)
     # v2.3.5-part2-hotfix1 D1+A3:model 升 deepseek-v4-pro + max_tokens=32768 +
     #                              kp 数 > 30 时分批检查(避免 coverage_analysis 输出超 max_tokens)
-    # ================================================================
     CROSS_CHECK_BATCH_SIZE = 30  # 单次检查最多多少条 kp(超过则分批)
 
     def _cross_segment_check_single_batch(self, filename, file_structure, batch_kps, batch_label=""):
@@ -1493,7 +1415,6 @@ class Extractor:
             "_cost": total_cost,
         }
 
-    # ================================================================
     # v2.3.5-part2 新增:补漏闭环 — 针对 missed_sections 重新提取
     # ----------------------------------------------------------------
     # 状态机:
@@ -1503,7 +1424,6 @@ class Extractor:
     # Prompt 复用 EXTRACTION_PROMPT(get_extraction_prompt),user_prompt 改为
     # "完整原文 + 已提取标题清单 + 待补章节清单",让 V4-Pro 自己定位章节内容
     # (V4 1M context 可放下完整原文,无需切片)
-    # ================================================================
     def _supplementary_extract(self, content, filename, content_type, missed_sections,
                                 existing_kps, file_id, source_nature=""):
         """对 missed_sections 中的高/中重要性章节重新提取知识点。
@@ -1593,9 +1513,7 @@ class Extractor:
                      "cost": cost})
         return net_added
 
-    # ================================================================
     # v2.1.0-c 新增：费用预估
-    # ================================================================
     def _estimate_extraction_cost(self, segments):
         """估算 V4-Pro 提取费用（粗略估算，给用户一个量级参考）
 
@@ -1612,11 +1530,9 @@ class Extractor:
         cost = (est_input_tokens / 1e6) * 1.05 + (est_output_tokens / 1e6) * 12.5
         return round(cost, 2)
 
-    # ================================================================
     # v2.2.3 F058: V3质检 —— 三级降级链
     # L0 批量15/批 → L1 小批3/批最多2轮 → L2 逐条 → L3 规则兜底
     # 每条kp必有qa_score + qa_source；守门员机制保证不遗漏
-    # ================================================================
     def _build_qc_items(self, kps, kps_info):
         """构造质检用的 item 列表（L0/L1/L2 共用数据结构）。
         每个 item 的 'index' 字段保留全局索引，供回写 kp_id 时映射。
@@ -1838,7 +1754,6 @@ class Extractor:
         total_cost = 0.0
         processed_kp_ids = set()
 
-        # ===== L0: 批量 15/批 =====
         L0_BATCH_SIZE = 15
         l0_batches = [all_qc_items[i:i + L0_BATCH_SIZE]
                       for i in range(0, len(all_qc_items), L0_BATCH_SIZE)]
@@ -1879,7 +1794,6 @@ class Extractor:
             self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
             return len(processed_kp_ids)
 
-        # ===== L1: 小批 3/批 最多 2 轮 =====
         if l0_failed_items:
             print(f"     [F058 L1] {len(l0_failed_items)}条进入小批降级(3/批,最多2轮)...")
             L1_BATCH_SIZE = 3
@@ -1925,7 +1839,6 @@ class Extractor:
         else:
             l1_failed_items = []
 
-        # ===== L2: 逐条 QC_CHECK_SINGLE_PROMPT =====
         l2_failed = []  # [(item, kp_id, err)]
         if l1_failed_items:
             print(f"     [F058 L2] {len(l1_failed_items)}条进入逐条降级(1/次)...")
@@ -1959,7 +1872,6 @@ class Extractor:
                             if not any(t[1] == kid for t in l2_failed):
                                 l2_failed.append((item, kid, "cost_limit_exceeded"))
 
-        # ===== L3: 规则兜底 =====
         if l2_failed:
             print(f"     [F058 L3] {len(l2_failed)}条进入规则兜底...")
             for item, kp_id, err in l2_failed:
@@ -1980,7 +1892,6 @@ class Extractor:
                         "filename": filename
                     })
 
-        # ===== 守门员：遍历 kps_info 扫漏网 =====
         for idx, info in enumerate(kps_info):
             kp_id = info.get("kp_id")
             if not kp_id or kp_id in processed_kp_ids:
@@ -2092,9 +2003,7 @@ class Extractor:
         if low_count > 0:
             print(f"     [注意] {low_count}条知识点评分较低,建议审核时重点关注")
 
-    # ================================================================
     # v2.3.4 D11: 文件级截断统计输出
-    # ================================================================
     def _print_truncation_stats(self, kp_count):
         """提取完成时控制台输出一行截断统计 + 总耗时 + 单价估算。
         老唐肉眼即看,不入库,不动 db。
@@ -2160,9 +2069,7 @@ class Extractor:
             parts.append(f"Prompt {get_prompt_version()}")
             print(f"     📊 [文件统计] " + " / ".join(parts))
 
-    # ================================================================
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
-    # ================================================================
     def _check_category_suggestions(self, kps_info):
         """提取完成后,分析是否需要调整分类体系。"""
         unmatched = [k for k in kps_info if not k.get("category_matched")]
@@ -2254,9 +2161,7 @@ class Extractor:
         except Exception as e:
             print(f"     [AI分类建议] 出错: {e}")
 
-    # ================================================================
     # 核心提取流程
-    # ================================================================
     def extract_from_file(self, rec):
         result = {"success": False, "knowledge_count": 0, "error": ""}
         fid = rec["id"]
@@ -2726,9 +2631,7 @@ class Extractor:
         return {"success": True, "ok": ok, "fail": fail, "skip": skip, "total_kps": total_kps,
                 "message": "提取完成"}
 
-    # ================================================================
     # v2.3.6-part1: 并行双模型提取方法
-    # ================================================================
     def _extract_with_flash(self, segs, filename, prompt, ctype, file_structure, source_nature, file_id):
         """V4-Flash 快速全覆盖提取(v2.3.6-part1)"""
         flash_kps = []

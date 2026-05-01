@@ -1,153 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.6-part1 - 版本统一
-
-v2.3.5-part1 新增(feature, 2026-04-28):
-  - 3 张新表(init_tables 内建,与立规则#1 单一来源对齐):
-    * kp_relations: 关系边表(图的边),六态 CHECK 约束 + status 三态(pending/
-      pending_human_review/confirmed/rejected) + cluster_id 关联
-    * consensus_clusters: 聚类节点(共识簇/演进链/细化树三类型)
-    * cluster_members: 多对多成员表 + role(core/branch/derivative)
-  - 2 字段追加 knowledge_points: relation_count + consensus_strength
-  - 16 个新方法分组:
-    * 关系边读写(5):add_kp_relation / get_kp_relation / get_pending_relations /
-                    update_kp_relation_status / bump_kp_relation_count
-    * 共识簇读写(5):create_consensus_cluster / get_consensus_cluster /
-                    get_clusters_by_kp / update_cluster / dismiss_cluster
-    * 簇成员读写(2):add_cluster_member / get_cluster_members
-    * 关系列表读取(2):get_relation_groups_pending / get_relation_summary
-    * 立规则#3 推广 purge 封装(2):
-      - purge_cluster_record(cluster_id): 级联清 cluster_members + kp_relations.cluster_id 置空
-      - purge_kp_relations(kp_id): 删 kp 时同步清 kp_relations 全部边 + cluster_members 成员行
-  - delete_knowledge_point / delete_kps_by_source_file / delete_extracted_kps_by_source_file
-    三处级联删除路径加挂 kp_relations + cluster_members 清理(立规则#3)
-  - 5 条新索引: idx_rel_source / idx_rel_target / idx_rel_type_status /
-              idx_cluster_type / idx_cm_kp
-
-v2.3.4-hotfix2 修复(hotfix, 2026-04-28):
-  - 新增 purge_source_file_record(source_file_id) 方法(立规则#3 推广):
-    DELETE source_files 行必手动级联 operation_events 同源记录,
-    与 delete_kps_by_source_file 内部清 4 个 kp 关联表同模式。
-    BEGIN IMMEDIATE + 失败 ROLLBACK + finally close,事务安全,
-    避免半截事务卡 WAL 写锁(database is locked 根因)。
-  - 根因: source_files 通过 operation_events.related_file_id 外键引用,
-    PRAGMA foreign_keys=ON 时,删 source_files 行被 operation_events
-    历史记录卡住 → preprocessor 裸 DELETE 报 FOREIGN KEY constraint failed。
-  - 不改 schema / 不动现有方法 / 不影响数据。
-
-v2.3.0-part3.4 修复（hotfix，2026-04-23）:
-  - get_polish_candidates WHERE 去掉 review_status NOT IN ('confirmed')
-    改为 NOT IN ('ignored','merged')。
-  - 根因：老工作流假设"confirmed=审核通过=不需要打磨"，但就绪度联动上线后，
-    qa_score>=4 且 draft 自动升 quotable（= confirmed），导致低分条目也可能
-    进入 confirmed 状态；且 confirmed 才是真正需要"卖钱前再打磨一道"的内容。
-    现象：仪表盘显示 1-2 分共 35 条低分，体检维度⑤却返回"全库无低分条目
-    已跳过打磨"。
-  - 立规则第 40 条语义保持不变（qa_score>0 保留，避免"未质检"污染打磨池）；
-    本次只调整横向 review_status 过滤条件。
-  - 不改 schema / 不改方法签名 / 无迁移。
-
-v2.3.0-part3.2 新增（hotfix，2026-04-23）:
-  - 新增 promote_readiness_by_qa_score() / get_readiness_promote_preview()
-    → v2.3.1 批量重算成熟度的保守前置版本（qa>=4 且 draft → quotable，不碰 premium）
-  - get_tag_distribution 口径修正：pattern 从 tag_code 改为 tag_name；只返 count>0
-  - get_connection 追加 PRAGMA busy_timeout=10000（并发写等锁兜底）
-  - 立规则第 10 条：存储/查询口径一致性（JSON 字段 LIKE 必对照写入格式）
-
-v2.3.0-part3-alpha1 新增（F062 基础层 / 对话 1/3）：
-  - 3 张新表（init_tables 内建，对齐 v2.3.0-part2.1 立规则"schema 单一来源"）：
-    * api_endpoint_registry：接口登记表（endpoint PK + methods + first_seen_at
-                                           + last_tested_at + test_template_json）
-    * e2e_test_reports：E2E 测试整体报告（六维度汇总 + 新增接口清单 + 完整 JSON）
-    * e2e_issues：四态 issue 跟踪（pending/fixed/intermittent/ignored + signature
-                                    去重键 + occurrence_count + 偶发升级逻辑）
-  - 3 条 F062 索引：idx_e2e_report_created / idx_e2e_issue_status /
-                    idx_e2e_issue_signature
-  - 8 个新方法（严格按对话 1 Phase 2 锁定契约）：
-      路由自省(3)：register_endpoint / get_endpoint_registry /
-                   update_endpoint_last_tested
-      报告读写(3)：save_e2e_test_report / get_latest_e2e_test_report /
-                   get_e2e_test_report_detail
-      issue 四态(2)：upsert_e2e_issue（含偶发升级）/ set_e2e_issue_status
-  - 所有 JSON 字段（test_template_json / new_endpoints_json / full_report_json /
-    payload_json）传入支持 dict/list 自动 json.dumps，读取自动 json.loads
-  - severity 取值严格对齐 operation_events 的 CHECK：info / warning / error
-    （禁用 "warn" 简写，对话 A 立规则）
-  - e2e_issues.status 用 CHECK 约束锁死四态白名单
-  - 数据库表总数：18 → 21
-
-v2.3.0-part2.2 修复（hotfix 对话 B）：
-  - F048 维度②结构分布=0 根因修复：三个扫描查询（get_kp_for_health_scan /
-    get_polish_candidates / get_island_candidates）追加 LEFT JOIN categories
-    并 AS 出两个业务分类字符串字段：
-      c.level1_name AS category     -- 5 大类名（政策库/案例库/经验库/工具库/数据库）
-      c.level2_name AS subcategory  -- 27 子类名（如 "1.1全域土地综合整治政策"）
-  - JOIN 条件：c.id = kp.final_category_id（kp 表真实外键列名是 final_category_id，
-    不是 category_id；对话 A 的 01 工程手册锚点口径已在对话 B 同步纠正）
-  - 历史库中 final_category_id IS NULL 的未分类 kp，LEFT JOIN 后 category/subcategory
-    返回 None，health_checker 的 set 操作天然忽略 None，不崩但会让维度②略低
-  - 字段契约兑现后，health_checker.py 的 _dim2_structure_score / _build_library_summary /
-    _build_nearby_summary / _kp_to_judge_payload / _kp_to_full_payload 全部天然恢复，
-    代码零改动（这是对话 A/B 三对话拆分的精妙点：修 db 层兑现契约 > 改 health_checker 硬编码）
-
-v2.3.0-part2.1 修复（hotfix）：
-  - init_tables() 追加 health_reports / polish_suggestions 两张表建表 SQL
-    + 3 个 F048 索引（idx_health_created / idx_polish_report / idx_polish_status）
-  - 修复新电脑首次部署缺两表导致体检功能炸的 bug
-  - 建表单一来源原则：init_tables 必须是唯一的建表真相，schema 变更先改这里
-  - 配套删除 scripts/migrate_v223.py、scripts/migrate_v230_part2.py（历史使命完成）
-
-v2.3.0-part2 新增（F048 体检 Agent 基础层）：
-  - 新表 health_reports：六维度体检报告（status/total_score/6 维分/full_report_json/API调用统计）
-  - 新表 polish_suggestions：低分打磨建议（tier/diagnosis/original/suggested/status）
-  - 12 个新方法（严格按 01 工程手册锁定契约）：
-      健康报告读写(5)：save/update/get_latest/get_list/get_detail_health_report
-      打磨建议读写(4)：save/get_by_report/apply/reject_polish_suggestion
-      扫描候选查询(3)：get_kp_for_health_scan/get_polish_candidates/get_island_candidates
-  - 【重要】apply_polish_suggestion 仅标 status=applied，不在此方法内调 update_knowledge_point
-      事务边界由 api_server 层保持三步清晰：备份 → 更新 kp → 标记 suggestion applied
-  - 字段别名映射（SQL AS）：kp.id → kp_id / review_status → status / source_authority → authority_level / access_level → monetize_tier
-    + v2.3.0-part2.2 追加 c.level1_name → category / c.level2_name → subcategory
-
-v2.3.0-part1 新增（工具箱+批量重跑）：
-  - get_all_knowledge_points 签名补齐 qa_source_filter（v2.2.3 遗留bug：api层已在传，db层签名却没有）
-    和 layer1_tag（A组业务领域/C组知识形态/D组客户视角 穿透跳转用）
-  - 新方法 get_tag_distribution(group_code)：按标签组聚合已确认知识点数量（仪表盘卡片数据源）
-  - 新方法 delete_extracted_kps_by_source_file(file_id)：仅删 review_status='pending' 的知识点
-    （批量重跑 F059 用，保留已 confirmed 的审核成果；级联风格与 delete_kps_by_source_file 对齐）
-  - 新方法 get_batch_rerun_candidate_files()：扫 source_files 表 + LEFT JOIN kp 聚合，
-    返回 [{id, filename, kp_total, kp_pending, kp_confirmed, kp_ignored, has_annotations}] 供前端批量勾选
-
-v2.2.3 新增（hotfix）：
-  - source_files 表: truncation_count / recovery_runs / last_recovery_at
-  - knowledge_points 表: qa_source（batch/small_batch/single/rule_fallback）
-  - 新表 operation_events: 结构化事件日志（截断/降级/兜底/备份）
-  - 新方法 log_operation_event / get_qc_rerun_candidates
-  - update_knowledge_point 白名单追加 qa_source
-
-数据库表（21张，v2.3.0-part3-alpha1 新增 api_endpoint_registry / e2e_test_reports / e2e_issues）：
-  categories - 知识库分类体系（5大类27+子类）
-  source_files - 原始文件记录（v2.2.3新增3字段用于截断补救追溯）
-  knowledge_points - 知识点（核心表，v2.2.3新增qa_source字段）
-  knowledge_versions - 知识点版本快照（预留）
-  architecture_suggestions - AI分类建议
-  edit_history - 编辑历史记录
-  tag_definitions - 标签定义表（v2.0.0新增）
-  knowledge_relations - 知识关联表（v2.0.0新增）
-  knowledge_usage_log - 使用追踪表（v2.0.0新增）
-  tag_statistics - 标签统计缓存（v2.0.0新增）
-  operation_logs - 操作日志
-  api_call_logs - API调用日志
-  notion_sync_log - Notion同步日志（预留）
-  duplicate_groups - 重复检测结果（v2.1.1 F039新增）
-  annotations - 专家注解（v2.2.0 F029新增）
-  operation_events - 结构化事件日志（v2.2.3 F057/F058/F060新增）
-  health_reports - 体检报告（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
-  polish_suggestions - 打磨建议（v2.3.0-part2 F048新增，v2.3.0-part2.1 起由 init_tables 直接建）
-  api_endpoint_registry - 接口登记表（v2.3.0-part3-alpha1 F062新增，路由自省用）
-  e2e_test_reports - E2E 测试报告（v2.3.0-part3-alpha1 F062新增）
-  e2e_issues - E2E issue 四态跟踪（v2.3.0-part3-alpha1 F062新增）
+版本：v2.3.6-part1
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -179,9 +33,6 @@ class DatabaseManager:
         conn.execute("PRAGMA busy_timeout=10000")
         return conn
 
-    # ================================================================
-    # 建表
-    # ================================================================
     def init_tables(self):
         conn = self.get_connection(); c = conn.cursor()
         # --- 分类体系 ---
@@ -663,9 +514,6 @@ class DatabaseManager:
             c.execute(idx)
         conn.commit(); conn.close(); return True
 
-    # ================================================================
-    # 默认分类
-    # ================================================================
     def init_default_categories(self):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM categories")
@@ -704,9 +552,6 @@ class DatabaseManager:
             c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)", cat)
         conn.commit(); conn.close(); return True
 
-    # ================================================================
-    # 标签定义初始化（从tag_config.py同步到数据库）
-    # ================================================================
     def init_tag_definitions(self):
         """将tag_config.py中的标签定义同步到tag_definitions表"""
         try:
@@ -732,9 +577,6 @@ class DatabaseManager:
                     ("layer2", dim_code, dim["name"], dim_code, val, "", sort))
         conn.commit(); conn.close(); return True
 
-    # ================================================================
-    # 文件管理
-    # ================================================================
     def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None, doc_origin="external"):
         conn = self.get_connection(); c = conn.cursor()
         c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash,doc_origin) VALUES (?,?,?,?,?,?)",
@@ -764,9 +606,6 @@ class DatabaseManager:
         c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
         r = c.fetchone(); conn.close(); return dict(r) if r else None
 
-    # ================================================================
-    # 知识点管理
-    # ================================================================
     def add_knowledge_point(self, source_file_id, title, content_type, original_excerpt="",
                             ai_extracted_content=None, suggested_category_id=None,
                             suggested_category_tags=None, suggested_attribute_tags=None,
@@ -990,9 +829,6 @@ class DatabaseManager:
         conn.commit(); conn.close()
         self.log_operation("physical_delete", "knowledge_points", kp_id)
 
-    # ================================================================
-    # v2.1.2 F044: 版本重提取
-    # ================================================================
     def get_reextract_scan(self, current_prompt_version):
         """扫描需要重提取的知识点，按源文件分组"""
         conn = self.get_connection(); c = conn.cursor()

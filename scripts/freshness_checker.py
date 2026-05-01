@@ -1,18 +1,7 @@
 """
-freshness_checker.py - 内容保鲜扫描引擎
+freshness_checker.py - 知识点保鲜检查器
 路径：scripts/freshness_checker.py
-版本：v2.3.6-part1 - 版本统一
-
-功能：
-    - 扫描所有已确认知识点的保鲜状态
-    - 自动为无保鲜周期的知识点赋默认值（按一级分类）
-    - 分组输出报告（逾期未检 > 已到期 > 7天内到期 > 30天内到期）
-    - 提供供api_server.py调用的统计函数
-
-保鲜逻辑：
-    - 从未检查过（freshness_checked_at为空）→ 以入库时间created_at为起算点
-    - 距上次检查天数 >= freshness_interval_days → 标记为"已到期"
-    - 超期30天仍未处理 → 标记为"逾期未检"
+版本：v2.3.6-part1
 """
 
 import sqlite3

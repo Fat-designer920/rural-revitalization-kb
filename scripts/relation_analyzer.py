@@ -1,45 +1,7 @@
 """
-relation_analyzer.py - 知识点关系分析模块(替代 duplicate_checker.py)
+relation_analyzer.py - 知识点关系分析器(六态判别,替代旧重复检测)
 路径：scripts/relation_analyzer.py
-版本：v2.3.6-part1 - 版本统一
-
-v2.3.5-part2 修复(hotfix, 2026-04-30):
-  - F4 P0 BUG:_judge_one_group 调 chat_with_json 用了不存在的 model= 关键字
-    真实签名是 model_override=(deepseek_client.py:512),老唐 0429 实测 7 组关系判别
-    全部 TypeError 失败 → v2.3.5-part1 主功能瘫痪
-    立规则 9 第 22 次应验 — 凭记忆写 kwarg,不 grep 真实签名
-  - 同时把"reasoner not in model"这种历史思考型判定升级为支持 V4-Pro
-    (v4-pro / r1 / reasoner / thinking 任一关键字命中即跳过 temperature)
-
-v2.3.5-part1 重设计(feature, 2026-04-28):
-  - 替代 duplicate_checker.py(改名+重写,旧文件删除)
-  - 旧:二态判别(duplicate / not_duplicate)→ 写 duplicate_groups 表
-  - 新:六态判别(cross_file_consensus / policy_evolution / hierarchical_refinement /
-            same_file_redundancy / conflicting / complementary / unrelated)
-        → 写 kp_relations + consensus_clusters + cluster_members 三表
-  - AI 主链:V3 主判 + R1 兜底(V3 confidence < 70 或失败时升级)
-  - AI 不确定 fallback_action='human_review' 时,关系状态置 'pending_human_review'
-    UI 红色边框单独高亮,老唐手动选关系类型
-  - 旧 duplicate_groups 表保留向下兼容(物理保留,不再写入)
-  - 旧 /api/tools/duplicate_unified / duplicate-scan / duplicate-reset-rescan 路由保留
-    内部不再调用 DuplicateChecker(已删),改调 RelationAnalyzer
-
-关键架构:
-  - 第一阶段本地粗筛:标题相似度(SequenceMatcher) + 关键词重叠(Jaccard) — 沿用旧逻辑
-  - 第二阶段 V3 六态判别 → 命中 same_file_redundancy / cross_file_consensus / 等
-    → 写 kp_relations(单边或多边)+ 自动建 consensus_clusters(若 cluster_suggestion.should_cluster=True)
-    + 同步写 cluster_members
-  - confidence < 70 时升级 R1 重判一次(覆盖 V3 输出,标 source='r1_fallback')
-  - confidence 仍 < 70 或 fallback_action='human_review' → 关系标 'pending_human_review'
-
-立规则#3 推广应用:
-  - 删除关系组 → 走 db.purge_cluster_record() 封装(级联清 cluster_members + kp_relations.cluster_id 置空)
-  - 删除 kp → 走 db.delete_knowledge_point() 已挂钩 cascade(包含 kp_relations / cluster_members)
-
-公共入口(沿用旧三个名字以兼容 api_server 调度):
-  - scan_full()          -- 全库重扫(工具箱按钮"重扫全库关系")
-  - scan_recent(days=7)  -- 最近 N 天 created_at 的 kp 增量扫描
-  - scan_incremental(kp_ids) -- 提取后传入新 kp id 列表的增量扫描
+版本：v2.3.6-part1
 """
 import os, sys, json, re
 from pathlib import Path
@@ -69,9 +31,7 @@ class RelationAnalyzer:
         self.db = db or DatabaseManager()
         self.client = client  # DeepSeekClient, 可选(无client时只做本地粗筛不建关系)
 
-    # ================================================================
     # 公开接口(三入口)
-    # ================================================================
     def scan_full(self):
         """全库扫描:检测所有未忽略知识点之间的疑似关系"""
         print(f"\n  [关系分析] 全库扫描开始...")
@@ -122,9 +82,7 @@ class RelationAnalyzer:
         print(f"  粗筛: {len(candidate_pairs)}对疑似 -> {len(groups)}组")
         return self._ai_judge_groups(groups, all_kps)
 
-    # ================================================================
     # 第一阶段:加载 + 本地粗筛
-    # ================================================================
     def _load_all_kps(self):
         """加载全库 review_status != 'ignored' 的 kp,带必要字段"""
         conn = self.db.get_connection(); c = conn.cursor()
@@ -256,9 +214,7 @@ class RelationAnalyzer:
         groups.sort(key=lambda g: -g["max_score"])
         return groups
 
-    # ================================================================
     # 第二阶段:AI 六态判别(V3 主 + R1 兜底)
-    # ================================================================
     def _ai_judge_groups(self, groups, kps):
         """对每组候选调用 AI 判别六态关系"""
         kp_map = {kp["id"]: kp for kp in kps}

@@ -1,16 +1,7 @@
 """
-upgrade_manager.py - 知识库架构升级迁移管理器
+upgrade_manager.py - 版本升级管理器
 路径：scripts/upgrade_manager.py
-版本：v2.3.6-part1 - 版本统一
-功能：一键检查 + AI评估 + 补标签 + 重提取调度
-
-工作流程：
-  Step 1: 自动备份当前数据库
-  Step 2: 规则检查（免费，秒级）— 扫描所有知识点，检测缺失字段
-  Step 3: 展示检查报告 + 费用预估
-  Step 4: AI补标签（V3模型，费用低）— 对缺标签的知识点直接补充
-  Step 5: AI质量评估（V3模型）— 对内容疑似粗糙的知识点判断是否需要重提取
-  Step 6: 重提取调度 — 删除旧知识点，将源文件移至processing/，等待用户运行提取
+版本：v2.3.6-part1
 """
 
 import os
