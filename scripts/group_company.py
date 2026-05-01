@@ -214,7 +214,7 @@ class GroupCompany(object):
 总KPs: {status['total_kps']}, 日均新增: {status['daily_new_kps']}, 平均摘录深度: {status['avg_excerpt_depth']}字
 
 7个子公司:
-{chr(10).join(f'- {s[\"name\"]}({s[\"chain_stage\"]}): {s[\"mission\"][:80]}' for s in self.subsidiaries)}
+""" + chr(10).join(['- ' + s['name'] + '(' + s['chain_stage'] + '): ' + s['mission'][:80] for s in self.subsidiaries]) + """
 
 请评估:
 1. 哪些子公司表现好,应该加大投入?
