@@ -6,7 +6,7 @@
 
 **乡村振兴知识库搭建助手** — 知识工厂(原料 → 加工 → 质检 → 产品 → 卖钱)。
 代码仓:https://github.com/Fat-designer920/rural-revitalization-kb
-当前代码版本:**v2.3.5-part2-hotfix1.1** | 当前设计版本:**v2.3.6-design**(无代码改动)
+当前代码版本:**v2.3.6-part1** | 当前设计版本:**v2.3.6-part1**
 
 ## 2. 角色
 
@@ -99,11 +99,12 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 10. 核心架构速查(详细见 docs/01_工程手册.md)
 
-**提取管道**(v2.3.5-part2):
-- L0: V4-Pro thinking 模式主提取(max_tokens=65536,384K 输出能力)
-- L1: 硅基流动 V4-Pro 镜像兜底(跨厂商物理冗余,max_tokens=32768)
+**提取管道**(v2.3.6-part1):
+- **并行双模型架构**:V4-Flash 全覆盖(所有段落,速度优先)+ V4-Pro 深挖核心段(标题+关键词段,质量优先)→ 合并去重
+- L0: V4-Flash 全段快速提取(segment_max=6000) + V4-Pro 核心段深度提取 并行进行
+- L1: 硅基流动 V4-Pro 镜像兜底(跨厂商物理冗余)
 - L2: F057 截断续写补救(若 partial_kps ≥ 1)
-- 跨段补漏: 5 轮闭环,>30 条 kp 自动分批(30/批)
+- 跨段补漏: 1 轮闭环(V4-Flash 全覆盖 + V4-Pro 深挖核心段,补漏需求大幅降低)
 
 **关系网络**(v2.3.5-part1):
 - 6 种关系类型: cross_file_consensus / policy_evolution / hierarchical_refinement / same_file_redundancy / conflicting / complementary
@@ -116,9 +117,9 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 11. 当前状态与下一步(详细见 docs/00_项目全景.md)
 
-- **当前**: v2.3.5-part2-hotfix1.1(代码) + v2.3.6-design(设计冻结,无代码)
-- **v2.3.6-design 核心**: 客户画像重锚定(三档表→基层操盘手单一画像)+ 商业化两条腿(问答 + 课程,砍投标)+ 立规则 64/65 新立
-- **下一步**: v2.3.6-part1 落地 — 5 个 _EXTRACT_BASE 按 P0-P4 优先级表大改 + 同源冗余自动合并
+- **当前**: v2.3.6-part1(并行双模型架构:V4-Flash 全覆盖 + V4-Pro 深挖核心段 + 合并去重)
+- **v2.3.6-part1 核心**: 提取引擎架构升级 — 并行双模型(解决速度 vs 质量矛盾)+ CHECK_MAX_ROUNDS 5→1 + segment_max 3000→6000
+- **下一步**: v2.3.6-part2 — Prompt 体系与知识形态改造(5 个 _EXTRACT_BASE 按 P0-P4 优先级表大改 + 跨段补漏 prompt 加基层操盘手视角 + 经验线喂料 + 课程生成模块规划)
 - **前置条件**: 新对话首轮老唐回答 6 个问题(经验文件形态 / 课程预期形态 / 工具链 / 标杆参考 / 时间预期 / 商业化时间表)
 
 ---

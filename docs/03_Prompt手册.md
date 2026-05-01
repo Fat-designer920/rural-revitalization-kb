@@ -380,7 +380,9 @@
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| **v2.3.6-design** | **2026-04-30** | **设计阶段,Prompt 代码改动 0**。PROMPT_VERSION 保持 v2.3.5-part2-hotfix1。**待 v2.3.6-part1 落地**:5 个 _EXTRACT_BASE 按 02 客户画像章节 P0-P4 优先级表大改 + CROSS_SEGMENT 视角改造 + RELATION_JUDGE 强化同源冗余识别 + practical_insights 字段地位提升(承载老唐独家 IP)。**立规则 64/65 首立**(详见 01 立规则段) |
+| **v2.3.6-part1** | **2026-05-01** | **并行双模型提取架构,Prompt 内容不改(同一套 Prompt 喂 V4-Flash + V4-Pro)。PROMPT_VERSION 保持 v2.3.5-part2-hotfix1。** |
+
+| **v2.3.6-design** | **2026-04-30** | **设计阶段,Prompt 代码改动 0**。PROMPT_VERSION 保持 v2.3.5-part2-hotfix1。**待 v2.3.6-part2 落地**:5 个 _EXTRACT_BASE 按 02 客户画像章节 P0-P4 优先级表大改 + CROSS_SEGMENT 视角改造 + RELATION_JUDGE 强化同源冗余识别 + practical_insights 字段地位提升(承载老唐独家 IP)。**立规则 64/65 首立**(详见 01 立规则段) |
 | **v2.3.5-part2-hotfix1** | **2026-04-30** | **5 个 _EXTRACT_BASE 老 1.X-5.X 编号清单整行删除(立规则 9 第 23 次应验同根:prompt 硬编码 1.X 体系与 tag_config.LAYER1_TAGS 真实 A/B/C/D... 体系完全两个版本,F5 修了"格式不一致"但没修"体系不一致");5 处字段说明"如1.1" → "从 LAYER1 清单中选";PRE_ANALYSIS 1.X-5.X 体系说明改"以三层标签体系为准";PROMPT_VERSION 升 v2.3.5-part2-hotfix1;关系判别 prompt 复用 RELATION_JUDGE_PROMPT 不变(主链由 V3 切 V4-Pro 仅 model_override 改)** |
 | **v2.3.5-part2** | **2026-04-30** | **Prompt 内容完全不动,仅 PROMPT_VERSION 升 v2.3.5-part2;一套 prompt 同时喂 V4-Pro thinking 主链 + V4-Flash 辅助 + 硅基 R1 镜像兜底,3 个 model 共用;F4 修 relation_analyzer.py:330 chat_with_json kwarg(立规则 9 第 22 次应验)** |
 | **v2.3.4** | **2026-04-28** | **5 个提取类 BASE 输出格式段统一改 JSON Lines(数组 → 每行 1 KP + 末行 _meta);PROMPT_VERSION 升 v2.3.4;Prompt 数量不变 31 个,仅形态升级;消费侧 `chat_with_jsonl()` 已就位** |

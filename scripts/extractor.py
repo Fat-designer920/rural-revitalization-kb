@@ -2099,6 +2099,7 @@ class Extractor:
         """提取完成时控制台输出一行截断统计 + 总耗时 + 单价估算。
         老唐肉眼即看,不入库,不动 db。
 
+        v2.3.6-part1: 加并行双模型统计(Flash提取N / Pro提取M / 合并去重K)
         v2.3.5-part2 D2 简化:Kimi 兜底链整体废弃,字段精简为
             截断/L1 镜像救/L2 F057 兜底/全失败 + 跨段补漏轮数
         """
@@ -2114,16 +2115,34 @@ class Extractor:
         recovery_cost = stats.get("total_cost", 0.0)
         supp_rounds = stats.get("supplementary_rounds", 0)
         supp_added = stats.get("supplementary_kps_added", 0)
+        # v2.3.6-part1: 并行双模型统计
+        flash_kps = stats.get("parallel_flash_kps", 0)
+        pro_kps = stats.get("parallel_pro_kps", 0)
+        merged_dup = stats.get("merged_duplicates", 0)
 
         # 跨段补漏闭环统计行
         supp_part = ""
         if supp_rounds > 0:
             supp_part = f" / 跨段补漏{supp_rounds}轮(新增{supp_added}条)"
 
+        # v2.3.6-part1: 并行双模型前缀
+        parallel_part = ""
+        if flash_kps > 0 or pro_kps > 0:
+            parallel_part = f"Flash提取{flash_kps} / Pro提取{pro_kps}"
+            if merged_dup > 0:
+                parallel_part += f" / 合并去重{merged_dup}"
+            parallel_part += " / "
+
         if truncations == 0:
-            print(f"     📊 [文件统计] 一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
+            print(f"     📊 [文件统计] {parallel_part}一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
         else:
-            parts = [f"截断{truncations}次"]
+            parts = []
+            if flash_kps > 0 or pro_kps > 0:
+                parts.append(f"Flash{flash_kps}")
+                parts.append(f"Pro{pro_kps}")
+                if merged_dup > 0:
+                    parts.append(f"合并重{merged_dup}")
+            parts.append(f"截断{truncations}次")
             if l1_recovs > 0:
                 parts.append(f"L1 镜像救{l1_recovs}次")
             if f057_fallbacks > 0:
@@ -2782,24 +2801,9 @@ class Extractor:
 
 def main():
     try:
-        # v2.1.0-c: 自动检查数据库迁移
-        try:
-            from scripts.migrate_v210c import migrate
-            migrate()
-        except ImportError:
-            pass  # 迁移脚本不存在，跳过
-        # v2.1.0-d F028: 政策依赖校验字段迁移
-        try:
-            from scripts.migrate_v210d_f028 import migrate as migrate_f028
-            migrate_f028()
-        except ImportError:
-            pass
-        # v2.1.1 F038: 举一反三字段迁移
-        try:
-            from scripts.migrate_v211 import migrate as migrate_v211
-            migrate_v211()
-        except ImportError:
-            pass
+        # v2.3.0+ 迁移已合并到 setup.py _upgrade_schema_to_current(立规则 55)
+        # 旧 migrate_v210c/migrate_v210d_f028/migrate_v211 已退役
+        pass
         # v2.1.1 F039: 重复检测表迁移
         try:
             from scripts.migrate_v211_dup import migrate as migrate_dup

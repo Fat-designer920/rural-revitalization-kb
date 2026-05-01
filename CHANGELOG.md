@@ -6,6 +6,28 @@
 
 ---
 
+## [v2.3.6-part1] - 2026-05-01 (feature - 并行双模型架构:V4-Flash 全覆盖 + V4-Pro 深挖核心段)
+
+**定位**:本版是提取引擎从"单思考型深度提取"升级为"速度+质量双目标并行"的架构重构。**V4-Flash 快速全覆盖所有段落 + V4-Pro 深挖核心段(标题+关键词段)→ 合并去重**,解决"提取太多(211 条)"和"提取太久(3.7 小时)"的深层矛盾。跨段补漏从 5 轮缩减到 1 轮。老代码已预先开发(确认保留),本版正式文档化和版本化。
+
+**Added**:
+- `scripts/extractor_parallel.py`(135 行): `identify_core_segments(file_structure, segs)` 识别标题段+关键词段 + `merge_and_deduplicate(flash_kps, pro_kps)` 合并去重(Core 优先 + >85% 相似度保留更长 excerpt + `_title_similarity` bigram Jaccard)
+- `_extract_with_flash()(extractor.py`:临时切 V4-Flash 全段提取) / `_extract_with_pro()`(V4-Pro 深挖核心段) / `_identify_core_segments()` / `_merge_and_deduplicate()` 共 4 方法
+- `_truncation_stats` 新字段: `parallel_flash_kps` / `parallel_pro_kps` / `merged_duplicates`
+
+**Changed**:
+- **Step 4 逐段提取重写**:从单 V4-Pro 逐段 → 并行双模型(V4-Flash 全覆盖 + V4-Pro 核心段)→ 合并去重后再进 Step 5
+- `CHECK_MAX_ROUNDS = 5 → 1`:Flash 全覆盖 + Pro 深挖核心段已覆盖绝大多数,1 轮补漏足够
+- `MODEL_OPTIONS["1"] segment_max = 3000 → 6000`:V4 的 1M context 支持更大分段,减少分段数量降低总耗时
+- 跨段补漏覆盖度阈值同步收紧(与 Flash+Pro 双覆盖配合)
+
+**Migration**:
+- 数据库零变动
+- 老用户:替换 extractor.py + 新增 extractor_parallel.py(2 文件)
+- **分段数预期减少**(6000 字/段原 3000),耗时大幅下降
+
+---
+
 ## [v2.3.5-part2-hotfix1] - 2026-04-30 (hotfix - V4-Pro 全链路切换 + 5 类系统性根因一次清除)
 
 **定位**:本版是 v2.3.5-part2 部署后老唐 0430 喂料实测 1 个文件暴露的 5 类系统性故障一次性根治。**主链 V4-Pro 升级范围补完**(part2 只切了主提取,本版补预分析/结构摘要/跨段补漏/质检/分类建议/关系判别共 7 处)+ **降级链 max_tokens 升级**(L1 硅基镜像 8192→32768 + 主提取 32768→65536,留 V4-Pro thinking headroom)+ **跨段补漏分批化**(>30 条 kp 自动按 30/批分,避免 coverage_analysis 输出超 max_tokens 中止闭环)+ **标签 prompt 与校验体系一致性**(5 个 _EXTRACT_BASE 老 1.X-5.X 编号清单删除 + _normalize_tag 加近义子串兜底)+ **AI 说明显示 80→300 字 + 多处 R1 文案改 V4-Pro/通用**。**立规则 9 第 23 次应验**(同根:升级主链时只看主链,L1 max_tokens=8192 没改、L1 model 没升、跨段补漏 max_tokens 默认 8192、5 个 _EXTRACT_BASE 老 1.X 清单同样体系不一致)。
@@ -107,60 +129,6 @@
 - **立规则 63 首次正式落地**:Phase 1 信息齐全度自检 INFO-CHECK,本版 Phase 1 输出三张清单(待补传文件 / 待 web_search / 待用户决策)清空后才进 Phase 2;Phase 3 中 review.html / config_wizard.py 未补传时透明告知后变通处理(不假设、不猜代码)
 - **立规则 9 第 22 次应验**:relation_analyzer 凭记忆写 `chat_with_json(model=...)` 关键字,真实签名是 `model_override=`。已成立的 22 条应验,根因都是"写代码靠记忆不 grep 真实签名"
 - **立规则 53 第 8 次自证**:Phase 3 中途 Claude 又一次"工具配额顾虑"喊停拆对话,老唐"继续"督促才一气呵成完成。立规则 57 工作量预评估对单次大段 str_replace 应给加权(整段 docstring 重写 = 3 次普通 str_replace 配额),记入 v2.3.5-part2 的工程纪律债务
-
-
-
-**定位**:v2.3.5-part1.2 把硅基思考型 timeout 从 300s 加宽到 1200s 后,老唐 0429 实测仍遇硅基 ConnectionError(`Exception: API调用失败(重试3次): connection`),硅基整体抖动时 L1 救援链直接挂掉。诊断发现 v2.3.4-hotfix1 设计的 L1(硅基 Kimi)+ L2(硅基 R1 镜像)是"逻辑冗余"而非"物理冗余" — 两层共享同一硅基厂商基础设施,硅基挂时同时挂。修法:加 Kimi 官方直连作为 L1.2 兜底层,硅基(L1.1)挂时立刻切 Kimi 官方,真正的跨厂商物理冗余(硅基 / Moonshot 两个独立故障域)。
-
-涉及 3 代码 + 4 项目文件(deepseek_client.py + extractor.py + config_wizard.py + 00 + 01 + README + CHANGELOG)。Phase 1-3 单对话完成。立规则 9 第 21 次应验 + 立规则 62 新立(候选)。
-
-### Added
-
-- **deepseek_client.py PRICING**:加 `"kimi-k2.6": {"input": 6.5, "output": 27.0}`(老唐 0429 截图 4 platform.moonshot.cn 官方文档确认价格,比硅基镜像贵约 60-70% 但作为兜底只在硅基挂时启用,长期成本影响有限)
-- **deepseek_client.py 类常量**:`KIMI_OFFICIAL_ENDPOINT = "https://api.moonshot.cn/v1/chat/completions"` + `KIMI_OFFICIAL_MODEL_L1 = os.getenv("KIMI_OFFICIAL_MODEL", "kimi-k2.6")`(模型字符串来自截图 4 官方文档示例 `model = "kimi-k2.6"`)
-- **deepseek_client.py 方法 `_get_kimi_api_key()`**:解密读取 `settings.json` 的 `kimi_official_api_key_encrypted`,**未配置时抛 ValueError 由 extractor 捕获跳过 L1.2**(降级链不断,只是少一层兜底)
-- **deepseek_client.py 方法 `has_kimi_official()`**:轻量探测(不解密、不调网络),返回 bool 给 extractor 决定是否启 L1.2
-- **deepseek_client.py 方法 `chat_via_kimi_official()`**:Kimi 官方文本通用调用,OpenAI 兼容协议,K2.6 默认跳过 temperature(思考型),复用 `_request` retry 逻辑
-- **deepseek_client.py 方法 `chat_jsonl_via_kimi_official()`**:JSON Lines 解析版,行为与 `chat_jsonl_via_siliconflow` 完全对齐
-- **extractor.py L1.2 调度块**(_extract_with_auto_split):L1.1 失败后插入 L1.2 Kimi 官方调用,启动前 `has_kimi_official()` 探测决定是否跳过
-- **extractor.py 方法 `_retry_via_kimi_official()`**:照搬 `_retry_via_siliconflow` 骨架,仅改 client 调用 + 事件名前缀(立规则 53 第 N 次:照搬同名方法骨架,仅替换变化的 1-2 行)
-- **extractor.py `_truncation_stats` 字段 `kimi_official_recoveries`**:统计 L1.2 救回次数,`extracted_by_model` 字段新增取值 `kimi_official`
-- **extractor.py `_print_truncation_stats` 输出**:截断统计行加 `L1.1 硅基Kimi救N次` / `L1.2 官方Kimi救N次` 两字段(原 `L1 Kimi救` 重命名为 `L1.1 硅基Kimi救`)
-- **config_wizard.py 第 5 项输入框**:Kimi 官方 API Key(选填),掩码显示已配置值,**不填时不阻塞保存**(L1.2 自动跳过)
-- **config_wizard.py 测试按钮**:"测试 Kimi 官方" 调 api.moonshot.cn 用 moonshot-v1-8k 验证 key(K2.6 思考型响应慢,测试用便宜模型)
-- **config_wizard.py save() 持久化**:`kimi_official_api_key_encrypted` + `kimi_official_base_url` + `kimi_official_model` 三字段
-- **settings.json 新字段**(由配置向导生成):`kimi_official_api_key_encrypted` / `kimi_official_base_url=https://api.moonshot.cn/v1` / `kimi_official_model=kimi-k2.6`
-
-### Changed
-
-- **顶部 docstring 版本号**:deepseek_client v2.3.5-part1.2 → v2.3.5-part1.3,extractor v2.3.5-part1.1 → v2.3.5-part1.3,config_wizard v2.2.0 → v2.3.5-part1.3
-- **降级链层级命名**:原 L1 → L1.1 (硅基 Kimi),新增 L1.2 (Kimi 官方),L2 / L3 / L4 不变
-- **控制台日志区分 L1.1 / L1.2**:`[L1.1 异常] / [L1.1 失败] / [L1.2 跳过] / [L1.2 成功]` 等区分标签
-- **deepseek_client._request timeout 选择从三档扩四档**:siliconflow / moonshot.cn 两 endpoint 共用 `siliconflow_thinking_timeout` (1200s),DeepSeek 官方 R1 / 普通模型分支不变
-- **错误日志事件名**:L1.2 失败用 `kimi_official_retry`(原 L1/L2 用 `siliconflow_retry`),便于查询区分
-
-### Migration
-
-- **零 schema 变更,零 .env 必改**(默认 KIMI_OFFICIAL_MODEL=kimi-k2.6 已能覆盖)
-- **设置 Kimi 官方 API Key**(必做,否则 L1.2 永远跳过):重跑 `首次安装.bat` 弹出配置向导 → 填第 5 项 Kimi 官方 API Key → 保存。settings.json 自动新增 3 字段
-- **替换 3 个 .py 文件**:`scripts/deepseek_client.py` + `scripts/extractor.py` + `scripts/config_wizard.py`
-- **验证步骤**:
-  1. 启动后台,看启动日志正常无报错
-  2. 配置向导测试 "测试 Kimi 官方" 按钮,看是否返回 "连接成功"
-  3. 喂料历史长文件(优先选 0429 触发过 ConnectionError 的那份),看处理日志
-  4. **观察点 1**:R1 截断时进入 `[L0 部分] R1 截断但已解析{N}条,启动 L1.1 硅基 Kimi 整段重提补全`
-  5. **观察点 2**:硅基挂时进入 `[L1.1 失败] 硅基 Kimi 整段重提失败,启动 L1.2 Kimi 官方 K2.6` → `[L1.2 成功] kimi-k2.6 提取 N 条`
-  6. **观察点 3**:Kimi 官方未配置时进入 `[L1.2 跳过] 未配置 Kimi 官方 API Key,直接进 L2`(降级链不断)
-  7. **观察点 4**:文件统计行多出 `L1.2 官方Kimi救N次` 字段(原来无此字段)
-  8. **观察点 5**:仪表盘 Card 15 看 `kimi_official_recoveries` 计数 + `extracted_by_model="kimi_official"` 的 kp 占比
-- **回滚方案**:如有问题,恢复 v2.3.5-part1.2 的 deepseek_client.py + v2.3.5-part1.1 的 extractor.py + v2.2.0 的 config_wizard.py(假设老唐 git stash 还在)
-
-### 立规则应验
-
-- **立规则 9 第 21 次应验**:hotfix1 引入硅基镜像作为 L2 时,默认假设"硅基 + DeepSeek 跨厂商=物理冗余",但 L1+L2 均走 siliconflow.cn endpoint(只是模型不同),实际是逻辑冗余而非物理冗余 — 硅基整体抖动时两层同时挂。**根因 — 凭概念"R1 是 DeepSeek 模型 → L2 算 DeepSeek 厂商"听起来合理,与产品现实(硅基镜像走的就是硅基的服务器)脱节才露馅**。立规则升级:多层降级链设计时,每一层必须明确"独立故障域",不能仅看模型供应方,要看实际请求落在哪个 endpoint
-- **立规则 62 新立(候选)**:**跨厂商物理冗余原则 — 救援链相邻两层不应共享同一供应商 endpoint**。判断方法:列出每层的 endpoint 域名,相邻两层域名不同才算物理冗余。本版 L1.1 = api.siliconflow.cn,L1.2 = api.moonshot.cn,L2 = api.siliconflow.cn,L3 = (本地无网络) — L1.1/L1.2 跨厂商 ✅,L1.2/L2 跨厂商 ✅,L2/L3 跨厂商 ✅ 满足
-- **立规则 53 第 N 次自证(照搬模板)**:`_retry_via_kimi_official` 与 `_retry_via_siliconflow` 90% 代码相同,仅改 4 处(client 方法名 / 事件名前缀 / 注释 / docstring),没有重新设计调度逻辑 — 这种"照搬骨架仅替换变化点"的纪律避免了潜在的逻辑漂移
-- **反思方法论**:hotfix1 当时的"跨厂商概念"设计就埋了一个"模型供应方 ≠ 实际服务 endpoint"的假设。Phase 1 影响范围评估时主动列出"两层 endpoint 域名"才能秒级发现"L1+L2 都是 siliconflow.cn" — 本次评估时就用了这个方法,所以方案 C 一次写对
 
 ---
 

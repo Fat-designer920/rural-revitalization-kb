@@ -30,7 +30,7 @@
 | 运行环境 | Windows + Python 3.8+（便携版，绿色免安装） |
 | AI 引擎 | DeepSeek API（R1 提取 + 打磨；V3 辅助判断 + 校验 + E2E 语义 + 问答生成） |
 | OCR 引擎 | 硅基流动 API（Qwen2.5-VL-72B 视觉模型） |
-| 数据库 | SQLite(**25 张业务表** + 32 条索引;v2.3.3-mvp 新增 friend_quota_daily 表 + 1 索引 + qa_history.friend_tag 字段) |
+| 数据库 | SQLite(**28 张业务表** + 37 条索引;v2.3.5-part1 新增 kp_relations / consensus_clusters / cluster_members 3 表 + 5 索引 + 2 字段) |
 | Web 界面 | Flask 本地管理后台 + 独立朋友试用产品页 /qa（严格 ES5 前端，Tab 1 知识审核 + Tab 2 系统管理 + Tab 3 智能问答[调试自用] + qa_public.html[朋友试用]） |
 | 操作方式 | 管理后台为主，bat 入口辅助 |
 
