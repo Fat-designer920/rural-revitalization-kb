@@ -97,7 +97,7 @@ class DeepSeekClient:
         self.daily_cost_limit = config.get("daily_cost_limit", 50)
         self.max_retries = 3
         self.timeout = 120
-        self.r1_timeout = 300
+        self.r1_timeout = 450  # v2.3.6-part1: 300→450s,V4-Pro thinking 模式更充裕
         # v2.3.5-part1.2 T1:硅基流动思考型(Kimi-K2.6 / R1 跨厂商镜像)单独 timeout
         # 根因 — DeepSeek 官方 R1 走 300s 经验证够用,但硅基流动思考型实测 5-15 分钟
         # 老唐 .env 可设 SILICONFLOW_THINKING_TIMEOUT=1500 覆盖(秒,默认 1200=20 分钟)
@@ -257,11 +257,12 @@ class DeepSeekClient:
                 raise
         raise Exception(f"API调用失败(重试{self.max_retries}次): {last_err}")
 
-    def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=8192,
+    def chat(self, system_prompt, user_prompt, temperature=0.3, max_tokens=16384,
              call_type="general", model_override=None, response_format=None,
              extra_messages=None, base_url_override=None, stop=None):
         """v2.3.4 升级:
         - max_tokens 默认 4096 → 8192(D1+D2 R1/V3 输出窗口上限)
+        - v2.3.6-part1: 8192 → 16384,充分利用 V4-Pro 384K 输出能力,根治 JSON 截断
         - R1 分支显式传 max_tokens(原代码 pass 等于默认 4K,实测就是截断主因)
         - 新增 response_format(D3 JSON Mode)
         - 新增 extra_messages(D7 Prefix Completion 用,append 到 messages 末尾)
@@ -457,10 +458,11 @@ class DeepSeekClient:
         except Exception:
             pass
 
-    def chat_with_json(self, system_prompt, user_prompt, temperature=0.1, max_tokens=8192,
+    def chat_with_json(self, system_prompt, user_prompt, temperature=0.1, max_tokens=16384,
                        call_type="json_extract", model_override=None, use_json_mode=True):
         """v2.3.4 升级:
         - max_tokens 默认 4096 → 8192(D2)
+        - v2.3.6-part1: 8192 → 16384,根治 JSON 截断
         - 默认启用 response_format={"type":"json_object"}(D3 JSON Mode)
         - 双保险:同时保留 system_prompt 的"必须 JSON"硬话(D4)
         - JSON Mode 启用后空 content/解析失败 → 自动降级一次不带 mode 重试(D5)
@@ -513,9 +515,10 @@ class DeepSeekClient:
 
         return result
 
-    def chat_with_jsonl(self, system_prompt, user_prompt, temperature=0.2, max_tokens=8192,
+    def chat_with_jsonl(self, system_prompt, user_prompt, temperature=0.2, max_tokens=16384,
                         call_type="jsonl_extract", model_override=None):
         """v2.3.4 新增(D9):JSON Lines 输出专用解析。
+        v2.3.6-part1: max_tokens 8192 → 16384,根治截断
 
         约定:模型每行输出一个独立完整的 JSON 对象,最后一行可选输出 {"_meta":true,...}
         逐行 try parse,任一行解析失败 → 视为该行被截断,后续行丢弃。

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.5-part1</title>
+<title>乡村振兴知识库 v2.3.5-part2-hotfix1.1</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -954,13 +954,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   </div>
   <!-- Quick Note (v2.2.0 F045) -->
   <div class="admin-section">
-    <div class="admin-title">经验速记 <small>-- 3分钟快速记录实战经验，V3自动结构化入库</small></div>
+    <div class="admin-title">经验速记 <small>-- 3分钟快速记录实战经验，AI自动结构化入库</small></div>
     <div class="qn-form">
       <div class="field"><label>标题 (一句话说清楚核心经验)</label><input type="text" id="qnTitle" placeholder="例: 拆旧时机选择秋收后春节前效果最好"></div>
-      <div class="field"><label>经验内容 (详细描述你的经验、判断依据、实际效果)</label><textarea id="qnContent" placeholder="把你想记录的经验写下来，越详细越好。V3会自动帮你结构化成知识点。&#10;&#10;可以包含: 做法、原因、效果、注意事项、适用条件等"></textarea></div>
+      <div class="field"><label>经验内容 (详细描述你的经验、判断依据、实际效果)</label><textarea id="qnContent" placeholder="把你想记录的经验写下来，越详细越好。AI会自动帮你结构化成知识点。&#10;&#10;可以包含: 做法、原因、效果、注意事项、适用条件等"></textarea></div>
       <div class="field" style="display:flex;gap:12px">
         <div style="flex:1"><label>知识类型</label><select id="qnType"><option value="experience" selected>操盘经验</option><option value="case">项目案例</option><option value="tool">实操工具</option><option value="data">数据资料</option></select></div>
-        <div style="flex:2"><label>关键词 (逗号分隔，可留空由V3自动生成)</label><input type="text" id="qnKeywords" placeholder="例: 拆旧,时机,群众工作"></div>
+        <div style="flex:2"><label>关键词 (逗号分隔，可留空由AI自动生成)</label><input type="text" id="qnKeywords" placeholder="例: 拆旧,时机,群众工作"></div>
       </div>
       <div class="qn-form-actions">
         <button class="btn" onclick="clearQuickNote()">清空</button>
@@ -1002,8 +1002,8 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <span style="color:var(--border);margin:0 4px">|</span>
       <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">提取模型:</label>
       <select id="extractModelSelect" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text-primary);outline:none">
-        <option value="1" selected>R1 深度推理 (精准,较慢)</option>
-        <option value="2">V3 快速提取 (快速,性价比高)</option>
+        <option value="1" selected>V4-Pro 深度推理 (精准,较慢)</option>
+        <option value="2">V4-Flash 快速提取 (快速,性价比高)</option>
       </select>
       <span style="color:var(--border);margin:0 4px">|</span>
       <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
@@ -1117,7 +1117,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .qa-panel-collapsible.qa-panel-open .qa-collapse-icon{transform:rotate(180deg)}
 .qa-panel-collapsible .qa-panel-head-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .qa-panel-body{}
-/* v2.3.3-mvp-part1c: V3/R1 模型切换 + 直答快捷按钮 */
+/* v2.3.3-mvp-part1c: 模型切换 + 直答快捷按钮 */
 .qa-model-toggle{display:flex;gap:6px;background:var(--bg);border-radius:6px;padding:2px;font-size:11px}
 .qa-model-toggle .qa-model-opt{display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:4px;cursor:pointer;color:var(--text-muted);transition:var(--transition)}
 .qa-model-toggle .qa-model-opt input{margin:0;cursor:pointer}
@@ -1136,10 +1136,10 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <div class="qa-action-row">
         <button class="btn btn-success" id="qaAskBtn" onclick="qaDoAsk()">提问</button>
         <button class="btn" id="qaCancelBtn" onclick="qaDoCancel()" style="display:none;background:#C97A2C;color:#fff">取消</button>
-        <!-- v2.3.3-mvp-part1c: V3/R1 模型切换(自用模式独享, 朋友模式后端强制 v3) -->
+        <!-- v2.3.3-mvp-part1c: 模型切换(自用模式独享, 朋友模式后端强制默认模型) -->
         <div class="qa-model-toggle" id="qaModelToggle">
-          <label class="qa-model-opt"><input type="radio" name="qaModel" value="v3" checked> V3 (快, 0.02元)</label>
-          <label class="qa-model-opt"><input type="radio" name="qaModel" value="r1"> R1 深度 (慢, 0.10元)</label>
+          <label class="qa-model-opt"><input type="radio" name="qaModel" value="v3" checked> V4-Flash (快, 0.02元)</label>
+          <label class="qa-model-opt"><input type="radio" name="qaModel" value="r1"> V4-Pro 深度 (慢, 0.10元)</label>
         </div>
         <label class="qa-meta-toggle" id="qaTestLabel" title="勾选后本次提问不计入埋点统计">
           <input type="checkbox" id="qaTestQuery" checked> 自测
@@ -1251,7 +1251,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     <div class="field" id="editInsightsField" style="display:none">
       <label>实操启示 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(AI推导,只读)</span></label>
       <div id="editInsights" style="font-size:12px;color:var(--text-secondary);background:var(--bg);padding:10px;border-radius:var(--radius);max-height:200px;overflow-y:auto"></div>
-      <div class="field-hint">实操启示由R1提取时自动推导,V3质检评估可靠性</div>
+      <div class="field-hint">实操启示由AI提取时自动推导,质检评估可靠性</div>
     </div>
     <div class="field"><label>原文摘录</label><textarea id="editExcerpt" style="min-height:100px"></textarea></div>
     <div class="field"><label>AI提取内容 <span style="font-weight:400;color:var(--text-muted);font-size:11px">(JSON格式，慎改)</span></label><textarea id="editAiContent" style="min-height:140px;font-size:12px;font-family:'SF Mono',Consolas,monospace"></textarea></div>
@@ -1333,7 +1333,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     </button>
     <button class="btn" style="width:100%;padding:14px;margin-bottom:4px;text-align:left;display:block;border:1px solid #FFE0DE" onclick="doDupUnified('reset_rescan')">
       <div style="font-weight:600;font-size:14px;margin-bottom:4px;color:#991B1B">彻底重扫 <span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px">慢, 约5-8毛</span></div>
-      <div style="font-size:12px;color:var(--text-secondary);font-weight:400">强制备份 → 清除全部 pending 重复组 → V3 全库重扫，适合怀疑存在大量假阳性时</div>
+      <div style="font-size:12px;color:var(--text-secondary);font-weight:400">强制备份 → 清除全部 pending 重复组 → AI 全库重扫，适合怀疑存在大量假阳性时</div>
     </button>
   </div>
   <div class="modal-footer"><button class="btn" onclick="closeModal('dupModeDlg')">取消</button></div>
@@ -1411,7 +1411,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     </button>
     <button class="e2e-depth-option" onclick="doE2eStart('deep')">
       <div class="edo-head">deep 档 - 深度语义扫描</div>
-      <div class="edo-desc">含 quick 档 + 维度 5 V3 语义判断最近 7 天 warning/error 事件。<br>分钟级完成,约 0.1-0.2 元。适合版本发布前的深度审计。</div>
+      <div class="edo-desc">含 quick 档 + 维度 5 AI 语义判断最近 7 天 warning/error 事件。<br>分钟级完成,约 0.1-0.2 元。适合版本发布前的深度审计。</div>
     </button>
   </div>
   <div class="modal-footer">
@@ -1788,6 +1788,9 @@ var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
 var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
 var matched=!!kp.suggested_category_id;
 var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
+/* v2.3.6-part1: 过滤 qa_flags 误入 category_tags 的情况 */
+var qaFlagSet=["缺上下文","信息空泛","标签不符","提炼与原文重复","启示无依据","颗粒度过粗","low_value_add"];
+catTags=catTags.filter(function(t){return qaFlagSet.indexOf(t)===-1});
 var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
 var kws=parseTags(kp.final_keywords);if(!kws.length)kws=parseTags(kp.suggested_keywords);
 var rd=kp.content_readiness||"draft",au=kp.source_authority||"firsthand";
@@ -2292,9 +2295,9 @@ function renderDashboard(d){
   h+='<div class="dash-big" style="color:'+mdColor+'">'+mdNonMain+'</div>';
   h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:10px">'
    +'占比 '+mdPct.toFixed(2)+'% (总 '+mdTotal+' 条)</div>';
-  h+=dRow("","","R1 主链",mdMap.r1||0);
-  h+=dRow("","","L1 Kimi 救回",mdMap.kimi||0);
-  h+=dRow("","","L2 R1镜像救回",mdMap.r1_mirror||0);
+  h+=dRow("","","V4-Pro 主链",mdMap.r1||0);
+  h+=dRow("","","L1 硅基流动救回",mdMap.kimi||0);
+  h+=dRow("","","L2 V4-Pro镜像救回",mdMap.r1_mirror||0);
   h+=dRow("","","F057 兜底",mdMap.f057_recovery||0);
   h+='<hr class="dash-divider">';
   h+='<div style="font-size:10px;color:var(--text-muted);line-height:1.5">'
@@ -2519,7 +2522,7 @@ function runTool(name){
     /* v2.3.5-part1: 强制重扫全库关系(走 operation_hook 备份 + scan_full) */
     done();
     showConfirm("重扫全库关系","将对全库 confirmed/quotable/premium 的知识点做"+
-      "六态关系判别(V3 主链 + R1 兜底,不删除现有 pending)。"+
+      "六态关系判别(V4-Flash 主链 + V4-Pro 兜底,不删除现有 pending)。"+
       "API 估算成本 5-15 元,耗时 10-30 分钟。\n\n确认重扫?",function(ok){
       if(!ok)return;
       showToolResult("重扫全库关系","<div style='padding:20px;text-align:center;color:var(--text-secondary)'><div>正在扫描中...</div><div style='font-size:12px;margin-top:8px;color:var(--text-muted)'>请勿关闭页面,完成后会自动刷新</div></div>");
@@ -3811,7 +3814,7 @@ function renderHealthReview(items){
   /* 诊断折叠 */
   if(diagnosis){
     h+='<details class="review-diag">';
-    h+='<summary>诊断详情 (V3)</summary>';
+    h+='<summary>诊断详情 (AI)</summary>';
     h+='<div class="rd-body">'+esc(diagnosis)+'</div>';
     h+='</details>';
   }
@@ -4063,7 +4066,7 @@ function openE2eHistory(){
       h+='<span class="hi-count">pass '+(it.passed_count||0)+'</span>';
       h+='<span class="hi-count" style="color:#FF4D4F">fail '+(it.failed_count||0)+'</span>';
       h+='<span class="hi-count" style="color:#faad14">warn '+(it.warning_count||0)+'</span>';
-      h+='<span class="hi-count">V3x'+(it.v3_call_count||0)+'</span>';
+      h+='<span class="hi-count">AIx'+(it.v3_call_count||0)+'</span>';
       h+='</div>';
     }
     showToolResult("端到端测试历史",h);
@@ -4109,7 +4112,7 @@ function renderE2eReport(r){
   h+='passed '+(r.passed_count||summary.passed_count||0)+
     '  warning '+(r.warning_count||summary.warning_count||0)+
     '  failed '+(r.failed_count||summary.failed_count||0);
-  h+='  V3 调用 '+(r.v3_call_count||0)+' 次';
+  h+='  AI 调用 '+(r.v3_call_count||0)+' 次';
   h+='  成本 '+((r.cost_estimate||0).toFixed(6))+' 元';
   if(fr.duration_seconds!==undefined){
     /* v2.3.0-part3.3: duration_seconds 是 int(time.time()-start) 向下取整,
@@ -4401,15 +4404,15 @@ function qaDoAsk(){
   var isTest=0;
   var tcb=document.getElementById("qaTestQuery");
   if(tcb&&tcb.checked)isTest=1;
-  /* v2.3.3-mvp-part1c: 读取 V3/R1 模型选择 */
+  /* v2.3.3-mvp-part1c: 读取模型选择 */
   var modelPref="v3";
   var radios=document.getElementsByName("qaModel");
   for(var i=0;i<radios.length;i++){
     if(radios[i].checked){modelPref=radios[i].value;break}
   }
-  /* R1 慢, 给个等待时间提示更新 */
+  /* V4-Pro 慢, 给个等待时间提示更新 */
   var th=document.getElementById("qaTimeHint");
-  if(th)th.textContent=modelPref==="r1"?"R1 单次约 60-180 秒":"单次约 10-30 秒";
+  if(th)th.textContent=modelPref==="r1"?"V4-Pro 单次约 60-180 秒":"单次约 10-30 秒";
 
   _qaState.inFlight=true;
   _qaState.lastQuery=query;
@@ -4524,12 +4527,12 @@ function qaRenderAnswer(result){
   sb.textContent=result.source||"main";
   sb.style.background=result.source==="rule_fallback"?"#FFF3E0":"var(--info-bg)";
   sb.style.color=result.source==="rule_fallback"?"#C97A2C":"var(--info)";
-  /* model_used badge: V3 / R1 / 规则 */
+  /* model_used badge: V4-Flash / V4-Pro / 规则 */
   var mb=document.getElementById("qaModelUsedBadge");
   if(mb){
     var mu=result.model_used;
-    if(mu==="deepseek-chat"){mb.textContent="V3";mb.style.display=""}
-    else if(mu==="deepseek-reasoner"){mb.textContent="R1";mb.style.display=""}
+    if(mu==="deepseek-chat"){mb.textContent="V4-Flash";mb.style.display=""}
+    else if(mu==="deepseek-reasoner"){mb.textContent="V4-Pro";mb.style.display=""}
     else{mb.style.display="none"}
   }
   document.getElementById("qaDirectAnswer").textContent=ans.direct_answer||"(空)";

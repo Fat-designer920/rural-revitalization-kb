@@ -1,7 +1,21 @@
 """
 extractor.py - 知识点提取引擎
 路径：scripts/extractor.py
-版本：v2.3.5-part2-hotfix1.1 - 版本统一(Claude Code 系统修复)
+版本：v2.3.6-part1 - 并行双模型架构
+
+变更说明（v2.3.6-part1, 2026-05-01）：
+  P1 并行双模型架构(解决速度 vs 质量矛盾):
+     - V4-Flash 快速全覆盖(所有段落,速度优先)
+     - V4-Pro 深度核心段(一级标题 + 关键词段落,质量优先)
+     - 合并去重(title 完全相同保留 Pro,相似度>85%保留更详细版本)
+     - 新增 extractor_parallel.py 辅助模块
+  P2 跨段补漏从 5 轮改为 1 轮(CHECK_MAX_ROUNDS = 5 → 1):
+     - 配合并行双模型,Flash 已全覆盖,Pro 已深挖核心,补漏需求大幅降低
+     - 避免 5 轮全文扫描导致的 3.7 小时提取时间
+  P3 统计字段扩展:
+     - parallel_flash_kps: V4-Flash 提取数量
+     - parallel_pro_kps: V4-Pro 提取数量
+     - merged_duplicates: 合并去重数量
 
 变更说明（v2.3.5-part2, 2026-04-30）：
   D1 主链升级 R1 → V4-Pro thinking 模式:
@@ -53,6 +67,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.file_reader import FileReader
 from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded
+from scripts.extractor_parallel import identify_core_segments, merge_and_deduplicate
 from scripts.db_manager import DatabaseManager
 from scripts.prompts.prompt_templates import (
     get_extraction_prompt, get_prompt_version,
@@ -76,7 +91,7 @@ class Extractor:
             "model": "deepseek-v4-pro",   # v2.3.5-part2: V4-Pro Thinking 主链(替代 R1)
             "name": "V4-Pro 深度推理",
             "desc": "V4-Pro thinking 模式,384K max_output 根治截断,1M context,推理能力比 R1 更强",
-            "segment_max": 3000  # 段长保持不变(V4 max_output 大但单段上限我们仍用 R1 时代标定)
+            "segment_max": 6000  # v2.3.6-part1: 3000→6000,充分利用 V4-Pro 384K 输出能力
         },
         "2": {
             "model": "deepseek-v4-flash",  # v2.3.5-part2: V4-Flash Non-Thinking 辅助(替代 V3)
@@ -2245,6 +2260,10 @@ class Extractor:
             # v2.3.5-part2 跨段补漏闭环统计
             "supplementary_rounds": 0,    # 总执行的补漏轮数(含首轮+所有重提轮)
             "supplementary_kps_added": 0, # 补提取阶段新增的 kp 数(去重后)
+            # v2.3.6-part1: 并行双模型统计
+            "parallel_flash_kps": 0,      # V4-Flash 链提取的 kp 数
+            "parallel_pro_kps": 0,        # V4-Pro 链提取的 kp 数
+            "merged_duplicates": 0,       # 合并时去重的数量
         }
         try:
             print(f"\n     >> 开始提取: {fn}")
@@ -2377,21 +2396,29 @@ class Extractor:
                                 result["error"] = "用户暂缓(费用)"; return result
                             else: print(f"     请输入 Y 或 N")
 
-            # === Step 4: R1逐段提取(带上下文接力+F057截断补救) ===
-            print(f"     [Step 4] AI提取中,请耐心等待...")
-            self._report_progress(current_step="Step 4/8 AI提取")
-            kps = []
-            for i, seg in enumerate(segs, 1):
-                if len(segs) > 1:
-                    print(f"\n     --- 第{i}/{len(segs)}段 ({len(seg)}字) ---")
-                # 构建上下文接力信息
-                relay_prefix = self._build_context_relay(i, len(segs), file_structure, kps, source_nature=source_nature)
-                seg_kps = self._extract_with_auto_split(
-                    seg, f"{fn}(第{i}/{len(segs)}段)" if len(segs) > 1 else fn,
-                    prompt, ctype,
-                    relay_prefix=relay_prefix,
-                    file_id=fid)  # v2.2.3 F057: 传入 file_id 供补救时记日志
-                kps.extend(seg_kps)
+            # === Step 4: 并行双模型提取(v2.3.6-part1) ===
+            # 架构: V4-Flash 快速全覆盖 + V4-Pro 深度核心段 → 合并去重
+            print(f"     [Step 4] 并行双模型提取...")
+            self._report_progress(current_step="Step 4/8 并行双模型提取")
+
+            # 4.1 V4-Flash 快速全覆盖
+            print(f"\n     [4.1] V4-Flash 快速全覆盖提取...")
+            flash_kps = self._extract_with_flash(segs, fn, prompt, ctype, file_structure, source_nature, fid)
+            self._truncation_stats["parallel_flash_kps"] = len(flash_kps)
+            print(f"     V4-Flash 提取: {len(flash_kps)} 条知识点")
+
+            # 4.2 V4-Pro 深度核心段提取
+            print(f"\n     [4.2] V4-Pro 深度核心段提取...")
+            core_segs = self._identify_core_segments(file_structure, segs)
+            pro_kps = self._extract_with_pro(core_segs, fn, prompt, ctype, file_structure, source_nature, fid)
+            self._truncation_stats["parallel_pro_kps"] = len(pro_kps)
+            print(f"     V4-Pro 提取: {len(pro_kps)} 条知识点")
+
+            # 4.3 合并去重
+            print(f"\n     [4.3] 合并去重...")
+            kps, dup_count = self._merge_and_deduplicate(flash_kps, pro_kps)
+            self._truncation_stats["merged_duplicates"] = dup_count
+            print(f"     合并后: {len(kps)} 条知识点 (去重 {dup_count} 条)")
 
             if not kps:
                 self.db.update_source_file(fid, process_status="completed", process_message="未提取到知识点")
@@ -2407,7 +2434,7 @@ class Extractor:
             #     - 无高/中重要性 missed(都是低重要性)→ 算合格,跳出
             #   5 轮上限触底 → 不再循环,记日志,带"未达完全合格"标注入库
             extraction_notes = ""
-            CHECK_MAX_ROUNDS = 5  # 老唐 0430 拍板:补漏轮数上限
+            CHECK_MAX_ROUNDS = 1  # v2.3.6-part1: 5→1,单次补漏(配合并行双模型架构)
             ACCEPTABLE_COVERAGE = ("完整", "基本完整")  # 合格判定
             if len(segs) > 1:
                 print(f"\n     [Step 5] 跨段补漏闭环(最多{CHECK_MAX_ROUNDS}轮)...")
@@ -2679,6 +2706,78 @@ class Extractor:
                               message="提取完成: %d成功/%d跳过/%d失败, 共%d条知识点" % (ok, skip, fail, total_kps))
         return {"success": True, "ok": ok, "fail": fail, "skip": skip, "total_kps": total_kps,
                 "message": "提取完成"}
+
+    # ================================================================
+    # v2.3.6-part1: 并行双模型提取方法
+    # ================================================================
+    def _extract_with_flash(self, segs, filename, prompt, ctype, file_structure, source_nature, file_id):
+        """V4-Flash 快速全覆盖提取(v2.3.6-part1)"""
+        flash_kps = []
+        for i, seg in enumerate(segs, 1):
+            if len(segs) > 1:
+                print(f"     Flash 第{i}/{len(segs)}段 ({len(seg)}字)")
+
+            relay_prefix = self._build_context_relay(i, len(segs), file_structure, flash_kps, source_nature=source_nature)
+
+            # 临时切换到 V4-Flash
+            original_model = self.extraction_model
+            original_name = self.extraction_model_name
+            self.extraction_model = "deepseek-v4-flash"
+            self.extraction_model_name = "V4-Flash"
+
+            try:
+                seg_kps = self._extract_with_auto_split(
+                    seg, f"{filename}(Flash-{i}/{len(segs)})" if len(segs) > 1 else f"{filename}(Flash)",
+                    prompt, ctype,
+                    relay_prefix=relay_prefix,
+                    file_id=file_id)
+                flash_kps.extend(seg_kps)
+            finally:
+                self.extraction_model = original_model
+                self.extraction_model_name = original_name
+
+        return flash_kps
+
+    def _extract_with_pro(self, core_segs, filename, prompt, ctype, file_structure, source_nature, file_id):
+        """V4-Pro 深度核心段提取(v2.3.6-part1)"""
+        if not core_segs:
+            print(f"     Pro: 无核心段落,跳过")
+            return []
+
+        pro_kps = []
+        print(f"     Pro 提取 {len(core_segs)} 个核心段...")
+
+        for idx, (seg_idx, seg) in enumerate(core_segs, 1):
+            print(f"     Pro 核心段{idx}/{len(core_segs)} (原第{seg_idx+1}段, {len(seg)}字)")
+
+            relay_prefix = self._build_context_relay(seg_idx+1, len(core_segs), file_structure, pro_kps, source_nature=source_nature)
+
+            # 临时切换到 V4-Pro
+            original_model = self.extraction_model
+            original_name = self.extraction_model_name
+            self.extraction_model = "deepseek-v4-pro"
+            self.extraction_model_name = "V4-Pro"
+
+            try:
+                seg_kps = self._extract_with_auto_split(
+                    seg, f"{filename}(Pro-核心{idx}/{len(core_segs)})",
+                    prompt, ctype,
+                    relay_prefix=relay_prefix,
+                    file_id=file_id)
+                pro_kps.extend(seg_kps)
+            finally:
+                self.extraction_model = original_model
+                self.extraction_model_name = original_name
+
+        return pro_kps
+
+    def _identify_core_segments(self, file_structure, segs):
+        """识别核心段落(需要 V4-Pro 深度提取的段落)"""
+        return identify_core_segments(file_structure, segs)
+
+    def _merge_and_deduplicate(self, flash_kps, pro_kps):
+        """合并两个模型的提取结果并去重"""
+        return merge_and_deduplicate(flash_kps, pro_kps)
 
 
 def main():
