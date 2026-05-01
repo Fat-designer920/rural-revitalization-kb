@@ -134,8 +134,7 @@ class TurboExtractor(object):
         return kps if isinstance(kps, list) else []
 
     def _fast_insert(self, filename, kps, ctype):
-        """快速入库:只为每个文件创建一个虚拟source_file,然后批量插入KP"""
-        # 创建虚拟 source_file 记录
+        """快速入库(含质量门:摘录<50字或纯口号=拒绝)"""
         conn = self.db.get_connection(); c = conn.cursor()
         c.execute("""INSERT INTO source_files (original_filename, file_path, file_type, process_status)
                      VALUES (?,?,?,?)""",
@@ -143,18 +142,29 @@ class TurboExtractor(object):
         fid = c.lastrowid
         conn.commit(); conn.close()
 
-        count = 0
+        count = 0; rejected = 0
         for kp in kps[:150]:
             try:
                 title = str(kp.get("title", "未命名"))[:200]
                 excerpt = str(kp.get("original_excerpt", ""))[:2000]
+
+                # 质量门: 拒绝明显低质量的知识点
+                if len(excerpt) < 50:
+                    rejected += 1; continue
+                if len(title) < 5:
+                    rejected += 1; continue
+                # 拒绝纯口号
+                slogan_keywords = ["高度重视","加强领导","提高认识","深刻领会","认真贯彻"]
+                if any(kw in title for kw in slogan_keywords) and len(excerpt) < 100:
+                    rejected += 1; continue
+
                 self.db.add_knowledge_point(
                     source_file_id=fid,
                     title=title,
                     content_type=ctype,
                     original_excerpt=excerpt,
                     ai_extracted_content=kp,
-                    content_readiness="quotable",
+                    content_readiness="quotable" if len(excerpt) >= 150 else "draft",
                     source_authority="official",
                     prompt_version="turbo-v2.3.7",
                     extracted_by_model="v4-flash-turbo",
