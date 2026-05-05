@@ -264,10 +264,35 @@ class CEOAgent(object):
                  "reason": f"老板指令: {instruction[:80]}"},
                 {"agent": "agent_evolver", "task": "evolve_agents", "priority": "P2",
                  "reason": "同步检查Agent是否需要升级"}]}
-        elif any(w in instruction_lower for w in ["环境", "内存", "清理", "infra", "系统"]):
+        elif any(w in instruction_lower for w in ["环境", "内存", "清理", "infra", "系统运维"]):
             return {"action": "optimize_environment", "tasks": [
                 {"agent": "infrastructure", "task": "optimize_environment", "priority": "P0",
                  "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["前端", "html", "css", "js", "ui", "界面",
+                   "设计", "样式", "review.html", "页面"]):
+            return {"action": "frontend_dev", "tasks": [
+                {"agent": "rd_director", "task": "召集前端+UI+审查员讨论方案", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"},
+                {"agent": "frontend_architect", "task": "实现前端功能", "priority": "P0",
+                 "reason": "主力开发"},
+                {"agent": "ui_visual_designer", "task": "研究大厂同类设计+出方案", "priority": "P1",
+                 "reason": "设计研究先行"}]}
+        elif any(w in instruction_lower for w in ["后端", "api", "路由", "flask", "python",
+                   "数据库", "db", "sql", "接口"]):
+            return {"action": "backend_dev", "tasks": [
+                {"agent": "rd_director", "task": "召集后端+数据库+安全员讨论方案", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"},
+                {"agent": "backend_engineer", "task": "实现后端功能", "priority": "P0",
+                 "reason": "主力开发"},
+                {"agent": "database_engineer", "task": "审查数据库变更", "priority": "P1",
+                 "reason": "schema变更须DBA审核"}]}
+        elif any(w in instruction_lower for w in ["测试", "bug", "修bug", "验证",
+                   "test", "fix", "修复"]):
+            return {"action": "bugfix", "tasks": [
+                {"agent": "test_architect", "task": "先写测试用例复现bug", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"},
+                {"agent": "code_reviewer", "task": "审查修复代码", "priority": "P0",
+                 "reason": "修复须审查"}]}
         else:
             return {"action": "idle", "tasks": [],
                     "reasoning": f"无法自动匹配指令到具体任务,请老板明确: {instruction[:100]}"}
@@ -382,6 +407,11 @@ class CEOAgent(object):
             "gtm_strategist": "market_expansion", "content_marketer": "market_expansion",
             "fact_checker": "quality_assurance", "freshness_monitor": "quality_assurance",
             "system_operator": "tech_platform",
+            "rd_director": "rd_center", "frontend_architect": "rd_center",
+            "ui_visual_designer": "rd_center", "backend_engineer": "rd_center",
+            "database_engineer": "rd_center", "test_architect": "rd_center",
+            "code_reviewer": "rd_center", "devops_engineer": "rd_center",
+            "security_auditor": "rd_center",
         }
         return dept_map.get(agent_code, "ceo_office")
 

@@ -45,11 +45,15 @@ DEPARTMENTS = {
         "name": "技术平台部", "chief": "infrastructure_agent",
         "mission": "系统99.9%在线+NPU/GPU充分利用+内存<70%,技术问题不能成为收入瓶颈",
     },
+    "rd_center": {
+        "name": "研发中心", "chief": "rd_director",
+        "mission": "技术架构+前端+后端+DB+测试+审查+运维+安全,对标大厂标准,每个功能都经过团队辩论和代码审查",
+    },
 }
 
 
 def build_all_agents(client=None, db=None):
-    """构建18个Agent(6部门)。每个都是能独立调用AI的思考实体。
+    """构建全部Agent(7部门)。每个都是能独立调用AI的思考实体。
     返回: {agents: [BaseAgent...], departments: {...}}
     """
     agents = []
@@ -224,6 +228,14 @@ def build_all_agents(client=None, db=None):
     ))
     # infrastructure_agent 在CEO._load_agents()中独立初始化,不在此处创建
 
+    # ================================================================
+    # 部门7: 研发中心 (9 agents, 从rd_center.py加载)
+    # ================================================================
+    from agents.rd_center import build_rd_agents, get_rd_department
+    rd_agents = build_rd_agents(client=client, db=db)
+    agents.extend(rd_agents)
+    DEPARTMENTS.update(get_rd_department())
+
     return {
         "agents": agents,
         "departments": DEPARTMENTS,
@@ -307,4 +319,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 15  # 15个orchestra agent + 1个infrastructure(独立管理) = 16
+    return 24  # 15(6部门) + 9(研发中心) = 24, +1 infra = 25
