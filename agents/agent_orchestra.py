@@ -20,6 +20,10 @@ from agents.customer_profiler import CustomerProfiler
 from agents.revenue_agents import build_revenue_agents
 from agents.archivist_agent import build_archivist_agent
 from agents.auto_processor_agents import build_auto_processor_agents
+from agents.execution_agents import build_execution_agents
+from agents.safety_agents import build_safety_agents
+from agents.evolution_agents import build_evolution_agents
+from agents.pipeline_director import build_pipeline_director
 
 
 # 部门定义
@@ -59,6 +63,10 @@ DEPARTMENTS = {
     "archives": {
         "name": "档案管理部", "chief": "archivist",
         "mission": "文件分类+命名规范+目录治理+去重+爬虫存储+源文件归档,让每一份文件都能被找到",
+    },
+    "safety_compliance": {
+        "name": "安全合规部", "chief": "safety_filter",
+        "mission": "入口安全过滤+出口防幻觉,零有害内容进入知识库,零幻觉输出到达客户",
     },
 }
 
@@ -273,6 +281,30 @@ def build_all_agents(client=None, db=None):
     auto_agents = build_auto_processor_agents(client=client, db=db)
     agents.extend(auto_agents)
 
+    # ================================================================
+    # 部门11: 安全合规部 (2 agents, v2.3.7-part4)
+    # ================================================================
+    safety_agents = build_safety_agents(client=client, db=db)
+    agents.extend(safety_agents)
+
+    # ================================================================
+    # 部门12: 执行保障层 (3 agents, v2.3.7-part4)
+    # ================================================================
+    execution_agents = build_execution_agents(client=client, db=db)
+    agents.extend(execution_agents)
+
+    # ================================================================
+    # 部门13: 智能进化层 (4 agents, v2.3.7-part4)
+    # ================================================================
+    evolution_agents = build_evolution_agents(client=client, db=db)
+    agents.extend(evolution_agents)
+
+    # ================================================================
+    # 部门14: 管道调度 (1 agent, v2.3.7-part4)
+    # ================================================================
+    pipeline_agents = build_pipeline_director(client=client, db=db)
+    agents.extend(pipeline_agents)
+
     return {
         "agents": agents,
         "departments": DEPARTMENTS,
@@ -357,4 +389,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 40  # 37 + 2(自动处理) + 1(档案管理) = 40
+    return 50  # 40 + 10(v2.3.7-part4执行+安全+进化+管道) = 50
