@@ -833,24 +833,111 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
             return {"pushed": False, "error": str(e)[:200]}
 
     def _auto_update_claude_md(self, state):
+        """自动同步所有项目文件(CLAUDE.md + README + docs/ + CHANGELOG)"""
         try:
-            claude_md_path = PROJECT_ROOT / "CLAUDE.md"
-            if not claude_md_path.exists():
-                return
-            with open(claude_md_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            updated = content
-            updated = re.sub(r'当前代码版本:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*',
-                             '当前代码版本:**v2.3.7**', updated)
-            updated = re.sub(r'当前设计版本:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*',
-                             '当前设计版本:**v2.3.7**', updated)
-            if updated != content:
-                with open(claude_md_path, "w", encoding="utf-8") as f:
-                    f.write(updated)
-                self.metrics["claude_md_updates"] += 1
-                self._log("CLAUDE.md", "info", "已自动更新")
+            self.sync_all_project_files(state)
+            self.metrics["claude_md_updates"] += 1
         except Exception as e:
-            self._log("CLAUDE.md更新失败", "warning", str(e)[:200])
+            self._log("项目文件同步失败", "warning", str(e)[:200])
+
+    def sync_all_project_files(self, state=None):
+        """全面同步所有项目文件到当前状态。确保每次新对话从正确基线开始。"""
+        if state is None:
+            state = self._perceive()
+        synced = []
+        errors = []
+
+        # 1. CLAUDE.md: 版本号+架构描述
+        try:
+            self._sync_file_claude_md(state)
+            synced.append("CLAUDE.md")
+        except Exception as e:
+            errors.append(f"CLAUDE.md: {str(e)[:80]}")
+
+        # 2. README.md: 版本号+架构+集团部门表
+        try:
+            self._sync_file_readme(state)
+            synced.append("README.md")
+        except Exception as e:
+            errors.append(f"README.md: {str(e)[:80]}")
+
+        # 3. docs/00_项目全景.md: 当前状态+模块+迭代路线
+        try:
+            self._sync_file_docs_00(state)
+            synced.append("docs/00")
+        except Exception as e:
+            errors.append(f"docs/00: {str(e)[:80]}")
+
+        # 4. CHANGELOG.md: 确保最新版本条目存在
+        try:
+            self._sync_file_changelog()
+            synced.append("CHANGELOG.md")
+        except Exception as e:
+            errors.append(f"CHANGELOG: {str(e)[:80]}")
+
+        if synced:
+            self._log("项目文件同步", "info", f"已同步{len(synced)}个: {', '.join(synced)}")
+        if errors:
+            self._log("项目文件同步异常", "warning", "; ".join(errors))
+
+        return {"synced": synced, "errors": errors}
+
+    def _sync_file_claude_md(self, state):
+        path = PROJECT_ROOT / "CLAUDE.md"
+        if not path.exists():
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        updated = content
+        for pattern, replacement in [
+            (r'当前代码版本:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*', '当前代码版本:**v2.3.7**'),
+            (r'当前设计版本:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*', '当前设计版本:**v2.3.7**'),
+            (r'进行中:.*', f'进行中: CEO receive_instruction协作 + 16Agent审计 + 客户画像验证(第{self.cycle}轮)'),
+        ]:
+            updated = re.sub(pattern, replacement, updated)
+        if updated != content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated)
+
+    def _sync_file_readme(self, state):
+        path = PROJECT_ROOT / "README.md"
+        if not path.exists():
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        updated = content
+        updated = re.sub(r'\*\*当前版本\*\*:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*[^)]*\)',
+                         f'**当前版本**:**v2.3.7**(集团化重构: 6部门16Agent + CEO V4-Pro会议决策)',
+                         updated)
+        if updated != content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated)
+
+    def _sync_file_docs_00(self, state):
+        path = PROJECT_ROOT / "docs" / "00_项目全景.md"
+        if not path.exists():
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        updated = content
+        updated = re.sub(r'当前版本:\*\*v[\d.]+[-a-zA-Z0-9]*\*\*[^)]*\)',
+                         f'当前版本:**v2.3.7**(6部门16Agent + CEO会议决策,第{self.cycle}轮)',
+                         updated)
+        updated = re.sub(r'\| \*\*v2\.3\.7\*\* \|.*\|.*\|',
+                         '| **v2.3.7** | **集团化重构: 6部门16Agent+CEO会议决策+客户画像+NPU/GPU** | ✅ 2026-05-05 |',
+                         updated)
+        if updated != content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated)
+
+    def _sync_file_changelog(self):
+        path = PROJECT_ROOT / "CHANGELOG.md"
+        if not path.exists():
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "## [v2.3.7]" not in content:
+            self._log("CHANGELOG", "warning", "缺v2.3.7条目,需手动补充(已由本次对话添加)")
 
     def _report(self, state, plan, results):
         action = plan.get("action", "?")

@@ -113,12 +113,19 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 10. 核心架构速查(详细见 docs/01_工程手册.md)
 
+**Agent智慧体系**(v2.3.7, agents/独立目录):
+- **6部门16个AI思考实体**: CEO办公室(3)/内容生产部(4)/客户交付部(3)/市场拓展部(2)/质量保障部(2)/技术平台部(2)
+- **每个Agent都是BaseAgent子类实例**,独立调用DeepSeek API,拥有think()/evaluate()/ask()能力
+- **CEO决策**: receive_instruction()唯一入口→V4-Pro深度分析→质疑/建议→达成共识→召集Agent开会(meeting_engine七步协议)→CEO裁决→执行
+- **Agent验证**: agent_verifier.py 4项上岗测试(专业度+独立性+盈利导向+抗盲从)
+- **客户画像**: customer_profiler.py搜索→验证→构建真实付费客户画像→交付审查员
+- **后勤保障**: infrastructure_agent.py 内存监控+NPU/GPU路由+自动清理+动态批处理
+- **动态管理**: CEO.add_agent()/remove_agent() 按需增删,无需改代码
+
 **提取管道**(v2.3.6-part1):
-- **并行双模型架构**:V4-Flash 全覆盖(所有段落,速度优先)+ V4-Pro 深挖核心段(标题+关键词段,质量优先)→ 合并去重
-- L0: V4-Flash 全段快速提取(segment_max=6000) + V4-Pro 核心段深度提取 并行进行
+- **并行双模型架构**:V4-Flash 全覆盖 + V4-Pro 深挖核心段 → 合并去重
 - L1: 硅基流动 V4-Pro 镜像兜底(跨厂商物理冗余)
-- L2: F057 截断续写补救(若 partial_kps ≥ 1)
-- 跨段补漏: 1 轮闭环(V4-Flash 全覆盖 + V4-Pro 深挖核心段,补漏需求大幅降低)
+- 跨段补漏: 1 轮闭环
 
 **关系网络**(v2.3.5-part1):
 - 6 种关系类型: cross_file_consensus / policy_evolution / hierarchical_refinement / same_file_redundancy / conflicting / complementary
@@ -131,10 +138,10 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 11. 当前状态与下一步(详细见 docs/00_项目全景.md)
 
-- **当前**: v2.3.6-part1(并行双模型架构:V4-Flash 全覆盖 + V4-Pro 深挖核心段 + 合并去重)
-- **v2.3.6-part1 核心**: 提取引擎架构升级 — 并行双模型(解决速度 vs 质量矛盾)+ CHECK_MAX_ROUNDS 5→1 + segment_max 3000→6000
-- **下一步**: v2.3.6-part2 — Prompt 体系与知识形态改造(5 个 _EXTRACT_BASE 按 P0-P4 优先级表大改 + 跨段补漏 prompt 加基层操盘手视角 + 经验线喂料 + 课程生成模块规划)
-- **前置条件**: 新对话首轮老唐回答 6 个问题(经验文件形态 / 课程预期形态 / 工具链 / 标杆参考 / 时间预期 / 商业化时间表)
+- **当前**: v2.3.7(集团化重构: 6部门16个AI Agent + CEO V4-Pro会议决策 + 客户画像驱动 + NPU/GPU调度)
+- **v2.3.7 核心**: Agent从静态配置升级为BaseAgent思考实体 + CEO从if-else升级为receive_instruction协作协议 + meeting_engine七步会议 + agent_verifier验证 + customer_profiler画像研究
+- **下一步**: 四川测试文件全量喂入 + 首次16 Agent审计 + 客户画像真实数据验证 + 问答助手测试
+- **商业化锚点**: 聚焦"策划+融资",月入20万目标
 
 ## 12. 功能测试自动化(F063, v2.3.6-part1)
 

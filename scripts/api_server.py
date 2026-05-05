@@ -5449,6 +5449,22 @@ def org_chart():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/agents/sync-docs", methods=["POST"])
+def sync_project_docs():
+    """CEO自动同步所有项目文件(CLAUDE.md+README+docs/+CHANGELOG)"""
+    try:
+        from agents.ceo_agent import CEOAgent
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        ceo = CEOAgent(db=db, client=c)
+        ceo._ensure_imports()
+        result = ceo.sync_all_project_files()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # 启动
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")

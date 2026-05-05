@@ -5,6 +5,34 @@
 > 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。立规则与架构契约统一沉淀在 `01_工程手册.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/repo/releases)。
 
 ---
+## [v2.3.7] - 2026-05-05 (feature - 集团化重构: 6部门16Agent + CEO会议决策 + 客户画像驱动)
+
+**定位**: v2.3.7是本项目从"单体脚本集"升级为"集团公司AI Agent体系"的架构级重构。核心变化: (1) agents/独立目录,15个Agent模块物理隔离于scripts/核心管道; (2) 从31个Agent精简为16个,按6部门组织(CEO办公室/内容生产/客户交付/市场拓展/质量保障/技术平台); (3) CEO从"if-else轮询"升级为"V4-Pro深度决策+会议辩论+共识裁决"; (4) 所有Agent从静态配置字典升级为BaseAgent思考实体,每个都能独立调用AI API; (5) 15个角色Agent合并为1个客户视角审查员,加载CustomerProfiler真实画像库。
+
+**Added**:
+- `agents/` 目录(16个模块): base_agent.py(BaseAgent/RoleAgent/QualityAgent/StrategyAgent四级类体系), ceo_agent.py(receive_instruction入口+会议决策+Git推送+CLAUDE.md维护+动态Agent增删), meeting_engine.py(七步会议协议: 独立表态→强制异议→AI主持→CEO裁决), agent_verifier.py(4项上岗验证: 专业度+独立性+盈利导向+抗盲从), customer_profiler.py(客户画像研究: 搜索→验证→构建→交付审查员), infrastructure_agent.py(后勤保障: 内存监控+NPU/GPU路由+自动清理+动态批处理), agent_orchestra.py(16Agent按6部门组织), crawler_scheduler.py(真实HTTP爬取实现)
+- CEO协作协议: 老板指令→CEO V4-Pro深度分析→质疑/提替代方案→达成共识→才执行
+- 盈利导向注入: 所有Agent system_prompt注入"忠诚=集团利润,禁止迎合任何人,KPI=可持续收入"
+- 组织架构API: /api/agents/org-chart, /api/agents/status(六部门), /api/agents/infra-* (3条)
+
+**Changed**:
+- 31 Agent → 16 Agent (15 orchestra + 1 infrastructure), 15个角色Agent合并为1个客户视角审查员
+- agent_orchestra.py: 从返回dict列表 → 返回BaseAgent实例+部门定义
+- company_agents.py: 6个公司Agent → 功能吸收到六部门,返回空列表
+- ceo_agent.py: _strategize()从单人V4-Pro决策 → 召集Agent会议→辩论→CEO裁决
+- auto_tester.py: reader_tagger/audit_engine路径 scripts→agents
+- api_server.py: +11条Agent路由(ceo/agents/infra/verify/meeting)
+- review.html: +3个工具箱卡片(CEO Agent/Agent智慧体系/Agent审计)
+
+**Removed**:
+- 13个Agent冷冻(代码保留): 15个独立角色Agent→1个; 渠道/定价/上线/客服Agent→财务分析师+方案汇编师覆盖
+- scripts/下15个agent文件物理删除(已迁移到agents/)
+
+**Migration**:
+- 数据库无schema变更
+- 老用户: 替换全部agents/目录+scripts/api_server.py+scripts/auto_tester.py+scripts/extractor.py(reader_tagger import路径更新)
+- 新对话Claude必须读CLAUDE.md第0步(已更新agents/架构描述)
+
 
 ## [v2.3.6-part1] - 2026-05-01 (feature - 并行双模型架构:V4-Flash 全覆盖 + V4-Pro 深挖核心段)
 
