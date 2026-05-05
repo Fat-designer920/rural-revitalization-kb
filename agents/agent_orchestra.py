@@ -17,6 +17,7 @@ agent_orchestra.py - 18个Agent按6部门组织(CEO划分,锚定月入20万)
 import json
 from agents.base_agent import BaseAgent, RoleAgent, QualityAgent, StrategyAgent
 from agents.customer_profiler import CustomerProfiler
+from agents.revenue_agents import build_revenue_agents
 
 
 # 部门定义
@@ -48,6 +49,10 @@ DEPARTMENTS = {
     "rd_center": {
         "name": "研发中心", "chief": "rd_director",
         "mission": "技术架构+前端+后端+DB+测试+审查+运维+安全,对标大厂标准,每个功能都经过团队辩论和代码审查",
+    },
+    "revenue": {
+        "name": "商业变现部", "chief": "revenue_optimizer",
+        "mission": "把知识变成钱:定价策略+产品包装+销售转化+用户反馈+收入优化,月入20万的直接责任部门",
     },
 }
 
@@ -244,6 +249,12 @@ def build_all_agents(client=None, db=None):
     agents.extend(expansion)
     DEPARTMENTS.update(get_expansion_departments())
 
+    # ================================================================
+    # 部门8: 商业变现部 (5 agents, v2.3.7-part3)
+    # ================================================================
+    revenue_agents = build_revenue_agents(client=client, db=db)
+    agents.extend(revenue_agents)
+
     return {
         "agents": agents,
         "departments": DEPARTMENTS,
@@ -316,6 +327,7 @@ def _build_reviewer_agent(client, db):
     )
 
 
+
 def get_departments():
     return DEPARTMENTS
 
@@ -327,4 +339,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 32  # 15(6部门) + 9(研发中心) + 8(扩编) = 32, +1 infra = 33
+    return 37  # 32(原7部门) + 5(商业变现部) = 37
