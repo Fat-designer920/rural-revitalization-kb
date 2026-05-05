@@ -1,7 +1,14 @@
 """
-crawler_scheduler.py - 爬虫调度器(URL管理+去重+变化检测+限速)
+crawler_scheduler.py - 爬虫调度器(URL管理+去重+变化检测+限速+编码修复)
 路径：agents/crawler_scheduler.py
-版本：v2.3.7
+版本：v2.3.7-part3
+
+CEO爬取规则(v2.3.7-part3):
+  爬什么: 政策文件/通知公告/解读文章(不含首页/导航/纯链接页)
+  怎么爬: 原始编码检测→UTF-8清洗→提取正文≥500字→CEO审核→入库
+  文件命名: 来源域名_页面标题_日期.txt(可读,非机器码)
+  质量门槛: 正文<500字=低质量,标记待重爬; 乱码=直接丢弃
+  限速: 每URL间隔2秒,每轮最多5个URL
 """
 import json, time, hashlib, os, re
 from pathlib import Path
@@ -10,8 +17,19 @@ try:
     import requests
 except ImportError:
     requests = None
+try:
+    import chardet
+except ImportError:
+    chardet = None
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
+# === CEO爬取质量规则 ===
+MIN_CONTENT_CHARS = 500          # 正文最低字数,低于此值标记为低质量
+MAX_CONTENT_CHARS = 80000        # 单文件最大字数
+CRAWL_INTERVAL_SEC = 2           # URL间隔秒数
+MAX_URLS_PER_RUN = 5             # 每轮最多抓取数
+REVIEW_DIR_NAME = "data/crawled"  # CEO审核目录(爬取后先放这里)
 
 DEFAULT_TARGETS = [
     # 国家级
@@ -69,19 +87,22 @@ class CrawlerScheduler(object):
         return {"total": len(self._targets), "targets": self._targets}
 
     def run_scheduled(self, schedule="daily"):
-        """按计划执行爬取: 遍历匹配 schedule 的目标→抓取→保存到 pending/
-        返回 {fetched, new, skipped, errors, details}"""
+        """按计划爬取: 抓取→编码检测→正文提取→保存到data/crawled/(CEO审核目录)
+        返回 {fetched, new, skipped, errors, details, ceo_review_path}"""
         if not requests:
             return {"success": False, "error": "requests库未安装,无法爬取"}
 
-        pending_dir = PROJECT_ROOT / "data" / "pending"
-        os.makedirs(pending_dir, exist_ok=True)
+        # CEO审核目录(爬取后先放这里,CEO确认后才移到pending/)
+        review_dir = PROJECT_ROOT / REVIEW_DIR_NAME
+        os.makedirs(review_dir, exist_ok=True)
 
-        results = {"fetched": 0, "new": 0, "skipped": 0, "errors": 0, "details": []}
+        results = {"fetched": 0, "new": 0, "low_quality": 0,
+                    "skipped": 0, "errors": 0, "details": [],
+                    "ceo_review_path": str(review_dir)}
         targets = [t for t in self._targets if t["schedule"] in (schedule, "daily", "weekly")
                    or (schedule == "weekly" and t["schedule"] in ("daily", "weekly"))]
 
-        for t in targets[:5]:  # 每轮最多5个URL,限速保护
+        for t in targets[:MAX_URLS_PER_RUN]:
             url = t["url"]
             try:
                 fetched = self._fetch_url(url, timeout=30)
@@ -97,41 +118,118 @@ class CrawlerScheduler(object):
                     results["details"].append({"url": url, "status": "unchanged"})
                     continue
 
-                # 提取正文文本(非原始HTML),保存为.txt到pending/
-                text_content = self._extract_text(fetched.get("content", ""),
-                                                  url=url, category=t.get("category", "policy"))
-                safe_name = self._safe_filename(url)
-                save_path = pending_dir / f"crawl_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                with open(save_path, "w", encoding="utf-8") as f:
-                    f.write(text_content[:80000])  # 最多80KB文本
-                results["new"] += 1
-                results["details"].append({"url": url, "saved": str(save_path),
-                                           "chars": len(text_content)})
+                # 乱码检测
+                html_content = fetched.get("content", "")
+                if not self._clean_text_for_save(html_content):
+                    results["low_quality"] += 1
+                    results["details"].append({
+                        "url": url, "status": "garbled",
+                        "encoding": fetched.get("encoding", "?"),
+                        "action": "乱码,建议检查原始编码后重爬"
+                    })
+                    continue
 
-                # 记录到 crawl_history
+                # 提取正文并评估质量
+                extracted = self._extract_text(
+                    html_content, url=url,
+                    category=t.get("category", "policy"),
+                    page_title=fetched.get("title", "")
+                )
+                text_content = extracted["text"]
+
+                # 生成可读文件名: 域名_页面标题_日期.txt
+                safe_name = self._safe_filename(url, fetched.get("title", ""))
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+                filename = f"{safe_name}_{timestamp}.txt"
+                save_path = review_dir / filename
+
+                with open(save_path, "w", encoding="utf-8") as f:
+                    f.write(text_content[:MAX_CONTENT_CHARS])
+
+                # 质量分流
+                if extracted["quality"] == "low":
+                    results["low_quality"] += 1
+                    results["details"].append({
+                        "url": url, "saved": str(save_path),
+                        "quality": "low", "chars": extracted["char_count"],
+                        "action": "低质量,CEO决定:重爬/手动补充/丢弃",
+                        "reason": extracted["reason"],
+                    })
+                else:
+                    results["new"] += 1
+                    results["details"].append({
+                        "url": url, "saved": str(save_path),
+                        "quality": "good", "chars": extracted["char_count"],
+                        "title": fetched.get("title", "")[:60],
+                        "filename": filename,
+                    })
+
                 self._record_crawl(url, content_hash, str(save_path))
-                time.sleep(2)  # 限速: 每URL间隔2秒
+                time.sleep(CRAWL_INTERVAL_SEC)
             except Exception as e:
                 results["errors"] += 1
                 results["details"].append({"url": url, "error": str(e)[:200]})
 
         return {"success": True, **results}
 
+    def approve_to_pipeline(self, file_path):
+        """CEO审核通过: 将爬取文件从crawled/移动到pending/触发管道"""
+        src = Path(file_path)
+        if not src.exists():
+            return {"ok": False, "error": "文件不存在"}
+        pending_dir = PROJECT_ROOT / "data" / "pending"
+        os.makedirs(pending_dir, exist_ok=True)
+        dst = pending_dir / src.name
+        import shutil
+        shutil.move(str(src), str(dst))
+        return {"ok": True, "moved_to": str(dst)}
+
     def _fetch_url(self, url, timeout=30):
-        """抓取单个URL"""
+        """抓取单个URL,智能编码检测。返回 {success, content, title, encoding, ...}"""
         if not self._session:
             self._session = requests.Session()
             self._session.headers.update({
                 "User-Agent": "RuralRevitalizationKB/2.3.7 (knowledge-base-bot; contact@example.com)"
             })
         try:
-            resp = self._session.get(url, timeout=timeout)
+            resp = self._session.get(url, timeout=timeout, allow_redirects=True)
             resp.raise_for_status()
-            content = resp.text
+            raw_bytes = resp.content  # 用原始字节,不用resp.text(避免错误解码)
+
+            # 编码检测: 优先HTML meta标签,其次chardet,最后UTF-8
+            encoding = None
+            # 先尝试从HTML meta中提取charset
+            head_sample = raw_bytes[:2000]
+            meta_match = re.search(rb'charset[="\s]+([a-zA-Z0-9_-]+)', head_sample, re.IGNORECASE)
+            if meta_match:
+                try:
+                    encoding = meta_match.group(1).decode('ascii').lower()
+                except Exception:
+                    pass
+            # chardet兜底
+            if not encoding and chardet:
+                detected = chardet.detect(raw_bytes[:10000])
+                if detected and detected.get('confidence', 0) > 0.7:
+                    encoding = detected.get('encoding', 'utf-8')
+            if not encoding:
+                encoding = 'utf-8'
+
+            # 解码
+            try:
+                content = raw_bytes.decode(encoding, errors='replace')
+            except Exception:
+                content = raw_bytes.decode('utf-8', errors='replace')
+
+            # 提取页面标题
+            title_match = re.search(r'<title[^>]*>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
+            page_title = title_match.group(1).strip() if title_match else ''
+
             return {
                 "success": True,
                 "content": content,
-                "content_hash": hashlib.md5(content.encode("utf-8")).hexdigest(),
+                "title": page_title,
+                "encoding": encoding,
+                "content_hash": hashlib.md5(raw_bytes).hexdigest(),
                 "status_code": resp.status_code,
                 "url": url,
             }
@@ -190,67 +288,137 @@ class CrawlerScheduler(object):
     # ================================================================
     # HTML→文本提取
     # ================================================================
-    def _extract_text(self, html, url="", category="policy"):
-        """从HTML提取正文文本。策略: 去标签→去脚本/样式→压缩空白→截取有意义的段落。"""
+    def _extract_text(self, html, url="", category="policy", page_title=""):
+        """从HTML提取高质量正文。
+        步骤: 去噪音标签→提正文区→去HTML→去空行→质量评分
+        返回: {text, quality, char_count, reason}
+        """
         if not html:
-            return ""
-        # 去script/style标签及其内容
-        text = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<head[^>]*>.*?</head>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-        # 去HTML标签
+            return {"text": "", "quality": "empty", "char_count": 0, "reason": "无内容"}
+
+        text = html
+        # 1. 去除噪音标签(script/style/head/nav/footer/header)
+        for tag in ['script', 'style', 'head', 'nav', 'footer', 'header', 'aside',
+                     'noscript', 'iframe', 'svg', 'form']:
+            text = re.sub(rf'<{tag}[^>]*>.*?</{tag}>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+        # 2. 去除HTML注释
+        text = re.sub(r'<!--.*?-->', ' ', text, flags=re.DOTALL)
+        # 3. 去除HTML标签(保留文字)
         text = re.sub(r'<[^>]+>', ' ', text)
-        # 去HTML实体
+        # 4. 解码HTML实体
+        text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
+        text = text.replace('&amp;', '&').replace('&quot;', '"').replace('&apos;', "'")
         text = re.sub(r'&[a-z]+;', ' ', text)
         text = re.sub(r'&#\d+;', ' ', text)
-        # 去多余空白
-        text = re.sub(r'\s+', ' ', text).strip()
-        # 去导航/页脚噪音(短行密集区)
-        lines = [l.strip() for l in text.split('.') if len(l.strip()) > 15]
-        text = '。\n'.join(lines)
-        # 加来源标记
-        header = f"来源: {url}\n抓取时间: {datetime.now().isoformat()}\n类别: {category}\n\n"
-        return header + text
+        # 5. 去除URL和长数字串
+        text = re.sub(r'https?://\S+', ' ', text)
+        # 6. 按行清理: 保留有意义的行(>10个中文字符或>20个英文字符)
+        lines = []
+        for line in text.split('\n'):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # 计算中文字符数
+            chinese_chars = len(re.findall(r'[一-鿿]', stripped))
+            total_chars = len(stripped)
+            # 保留有意义的内容行
+            if chinese_chars >= 5 or (total_chars > 30 and chinese_chars > 0):
+                lines.append(stripped)
+        text = '\n'.join(lines)
+        # 7. 压缩连续空白行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = text.strip()
 
-    def _safe_filename(self, url):
-        """从URL生成安全文件名"""
-        name = url.replace("https://", "").replace("http://", "").replace("/", "_").replace(".", "_")
-        name = re.sub(r'[<>:"|?*]', '_', name)
-        return name[:60]
+        # 8. 质量评估
+        char_count = len(text)
+        chinese_count = len(re.findall(r'[一-鿿]', text))
+        if char_count < MIN_CONTENT_CHARS:
+            quality = "low"
+            reason = f"正文仅{char_count}字,低于{MIN_CONTENT_CHARS}字门槛,建议重爬或手动补充"
+        elif chinese_count < 50:
+            quality = "low"
+            reason = f"中文字符仅{chinese_count}个,可能为非中文页面或提取失败"
+        else:
+            quality = "good"
+            reason = f"正文{char_count}字,中文{chinese_count}字,质量合格"
+
+        # 9. 加元数据头
+        header = (
+            f"# 来源: {url}\n"
+            f"# 标题: {page_title}\n"
+            f"# 抓取时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"# 类别: {category}\n"
+            f"# 质量: {quality} | {reason}\n"
+            f"{'='*50}\n\n"
+        )
+        return {
+            "text": header + text,
+            "quality": quality,
+            "char_count": char_count,
+            "chinese_count": chinese_count,
+            "reason": reason,
+        }
+
+    def _safe_filename(self, url, page_title=''):
+        """从URL和页面标题生成可读文件名。
+        格式: 来源域名_页面标题_日期.txt
+        例: mnr_gov_cn_全域土地综合整治试点工作通知_20260506.txt
+        """
+        # 提取域名核心部分
+        domain = url.replace("https://", "").replace("http://", "").split("/")[0]
+        domain_short = domain.replace("www.", "").replace(".gov.cn", "").replace(".", "_")[:30]
+
+        # 清洗页面标题
+        if page_title:
+            # 去掉常见网站后缀和分隔符
+            title = page_title
+            for sep in ['_', '-', '|', '—', '–']:
+                if sep in title:
+                    # 取第一个有意义的部分
+                    parts = [p.strip() for p in title.split(sep) if len(p.strip()) > 3]
+                    if parts:
+                        title = parts[0]
+                        break
+            # 去掉"四川省""中国政府网"等通用前缀
+            title = re.sub(r'^(四川省|中国政府网|中华人民共和国|国务院)', '', title)
+            # 保留中文、字母、数字,其余替换为_
+            title = re.sub(r'[^\w一-鿿]+', '_', title)
+            title = title.strip('_')[:50]  # 标题不超过50字符
+        else:
+            title = 'untitled'
+
+        return f"{domain_short}_{title}"
+
+    def _clean_text_for_save(self, content):
+        """检查是否含乱码: 如果UTF-8字节序列出现大量无效序列→乱码。
+        简单检测: 解码后的文本含大量替换字符(U+FFFD)→乱码。"""
+        if not content:
+            return False
+        replacement_count = content.count('�')
+        if len(content) > 0 and replacement_count / max(len(content), 1) > 0.05:
+            return False  # >5%替换字符=乱码
+        return True
 
     # ================================================================
     # 爬取+自动喂入提取管道
     # ================================================================
     def crawl_and_feed(self, schedule="weekly", max_urls=5):
-        """爬取→保存.txt到pending/→自动触发提取。
-        这是CEO驱动的知识管道入口: 从课程体系倒推知识需求→爬取→自动入库。
-        返回 {crawl_result, extract_result}
+        """爬取→CEO审核→手动批准→入库。
+        v2.3.7-part3变更: 爬取文件先放data/crawled/等待CEO审核,
+        CEO调用approve_to_pipeline()确认后才进入提取管道。
+        返回 {crawl_result}
         """
         crawl_result = self.run_scheduled(schedule=schedule)
-        if crawl_result.get("new", 0) == 0:
-            return {"success": True, "crawl": crawl_result,
-                    "message": "无新内容,跳过提取"}
+        good_count = crawl_result.get("new", 0)
+        low_count = crawl_result.get("low_quality", 0)
 
-        # 自动触发预处理+提取(使用已成熟的管道)
-        try:
-            from scripts.preprocessor import Preprocessor
-            from scripts.extractor import Extractor
-            pp = Preprocessor()
-            files = pp.scan()
-            new_files = [f for f in files if f.get("original_filename", "").startswith("crawl_")]
-            if new_files:
-                for fi in new_files[:5]:
-                    try:
-                        pp.preprocess_file(fi)
-                    except Exception:
-                        pass
-                ext = Extractor()
-                ext.set_model("2")  # V4-Flash快速模式(爬虫内容质量较低)
-                ext_result = ext.run_headless(model_key="2")
-                return {"success": True, "crawl": crawl_result,
-                        "extract": {"ok": ext_result.get("ok", 0),
-                                   "total_kps": ext_result.get("total_kps", 0)}}
-        except Exception as e:
-            return {"success": True, "crawl": crawl_result,
-                    "extract_error": str(e)[:200]}
-        return {"success": True, "crawl": crawl_result}
+        return {
+            "success": True,
+            "crawl": crawl_result,
+            "message": (
+                f"爬取完成: 合格{good_count}个, 低质量{low_count}个。"
+                f"文件已保存到{REVIEW_DIR_NAME}/。"
+                f"请CEO审核后决定: 批准→入库 / 拒绝→重爬 / 低质量→手动补充。"
+            ),
+            "ceo_action": "请打开 data/crawled/ 查看爬取文件",
+        }
