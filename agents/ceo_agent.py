@@ -412,6 +412,12 @@ class CEOAgent(object):
             "database_engineer": "rd_center", "test_architect": "rd_center",
             "code_reviewer": "rd_center", "devops_engineer": "rd_center",
             "security_auditor": "rd_center",
+            "brand_gatekeeper": "market_expansion", "zhihu_operator": "market_expansion",
+            "douyin_operator": "market_expansion", "xiaohongshu_operator": "market_expansion",
+            "feedback_analyst": "client_delivery",
+            "design_standard_researcher": "content_production",
+            "construction_standard_researcher": "content_production",
+            "operation_standard_researcher": "content_production",
         }
         return dept_map.get(agent_code, "ceo_office")
 

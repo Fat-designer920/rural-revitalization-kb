@@ -105,8 +105,9 @@ htmlcov/
 .cursorignore
 .cursorindexingignore
 
-# Claude Code 本地配置
+# Claude Code 本地配置（含协作规则/偏好/本地路径,不上传GitHub）
 .claude/
+CLAUDE.md
 
 # Windows 系统文件
 Thumbs.db

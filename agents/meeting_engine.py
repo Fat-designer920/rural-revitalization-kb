@@ -57,6 +57,21 @@ class MeetingEngine(object):
         transcript.append({"phase": "主持人综合", "synthesis": synthesis})
         cost_total += synthesis.get("cost", 0)
 
+        # === Phase 3.5: 质量闸 ===
+        low_quality = [e for e in synthesis.get("agent_evaluations", [])
+                       if e.get("quality") == "low"]
+        low_count = len(low_quality)
+        if low_count >= max(1, len(agents) // 3):
+            low_names = [e.get("agent", "?") for e in low_quality]
+            return {
+                "meeting_id": meeting_id,
+                "quality_gate_blocked": True,
+                "blocked_reason": f"质量闸触发: {low_count}/{len(agents)}个Agent论证质量低({', '.join(low_names)})。需要升级后重新开会。",
+                "low_quality_agents": low_quality,
+                "debate_transcript": transcript,
+                "total_cost_cny": round(cost_total, 4),
+            }
+
         # === Phase 4: 生成会议纪要 ===
         minutes = self._compile_minutes(meeting_id, topic, agents, round1, round2, synthesis)
 

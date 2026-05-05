@@ -236,6 +236,14 @@ def build_all_agents(client=None, db=None):
     agents.extend(rd_agents)
     DEPARTMENTS.update(get_rd_department())
 
+    # ================================================================
+    # 部门扩编: 市场拓展部+4, 内容生产部+3, 客户反馈+1
+    # ================================================================
+    from agents.expansion_agents import build_expansion_agents, get_expansion_departments
+    expansion = build_expansion_agents(client=client, db=db)
+    agents.extend(expansion)
+    DEPARTMENTS.update(get_expansion_departments())
+
     return {
         "agents": agents,
         "departments": DEPARTMENTS,
@@ -319,4 +327,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 24  # 15(6部门) + 9(研发中心) = 24, +1 infra = 25
+    return 32  # 15(6部门) + 9(研发中心) + 8(扩编) = 32, +1 infra = 33

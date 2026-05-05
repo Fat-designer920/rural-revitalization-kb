@@ -5465,6 +5465,24 @@ def sync_project_docs():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/qa/feedback", methods=["POST"])
+def qa_submit_feedback():
+    """客户提交问答反馈(有用/没用/提建议)"""
+    try:
+        data = request.get_json(silent=True) or {}
+        qa_history_id = data.get("qa_history_id")
+        feedback_type = data.get("feedback_type", "comment")
+        comment = data.get("comment", "")
+        if feedback_type == "not_helpful" and not comment:
+            return jsonify({"success": False, "error": "请说明哪里不满意"}), 400
+        db.save_qa_feedback(qa_history_id, feedback_type, comment)
+        db.log_operation_event(event_type="qa_feedback_received", severity="info", module="api_server", payload={"qa_history_id": qa_history_id, "feedback_type": feedback_type, "comment": comment[:500]})
+        return jsonify({"success": True, "message": "感谢反馈"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 # 启动
 def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
