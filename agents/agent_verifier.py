@@ -10,12 +10,19 @@ agent_verifier.py - Agent能力验证器(专业度+独立性+盈利导向+抗盲
   3. 盈利导向: 每个分析是否关联到集团收入
   4. 抗盲从: 当其他Agent都同意错误观点时,能否坚持正确立场
 """
-import json, time
+import json, time, sys
 from datetime import datetime
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "agents"))
+
+from base_agent import BaseAgent
 
 
-class AgentVerifier(object):
-    """Agent能力验证器。上岗前必检,不合格→自动触发升级。"""
+class AgentVerifier(BaseAgent):
+    """Agent能力验证器。继承BaseAgent, 具备真正的AI思考验证能力。
+    每个Agent上岗前必须通过4项测试。不合格→自动触发升级。"""
 
     PASS_THRESHOLD = 3.0  # 单维度最低通过分(满分5)
 
@@ -44,8 +51,17 @@ class AgentVerifier(object):
     }
 
     def __init__(self, client=None, db=None):
-        self.client = client
-        self.db = db
+        super().__init__(
+            agent_code="agent_verifier",
+            agent_name="Agent验证官",
+            agent_type="quality",
+            identity_text=(
+                "我是Agent验证官。我的职责是确保每一个Agent都具备真正的专业能力、"
+                "独立判断力、盈利意识和抗盲从能力。不合格的Agent必须升级后才能参与决策。"
+                "我不放水,不走过场,因为一个不合格的Agent可能会毁掉整个集团的产品质量。"
+            ),
+            client=client, db=db, model="deepseek-v4-flash",
+        )
         self.verification_log = []
 
     # ================================================================

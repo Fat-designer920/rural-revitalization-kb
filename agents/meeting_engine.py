@@ -13,16 +13,31 @@ meeting_engine.py - 集团公司会议决策引擎(独立观点→辩论→共�
   - 禁止盲目附和,必须独立思考
   - 每个Agent以"为集团挣钱"为KPI锚点
 """
-import json, time
+import json, time, sys
 from datetime import datetime
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "agents"))
+
+from base_agent import BaseAgent
 
 
-class MeetingEngine(object):
-    """集团公司会议决策引擎。主持Agent辩论,产生共识报告,供CEO最终裁决。"""
+class MeetingEngine(BaseAgent):
+    """集团公司会议决策引擎。继承BaseAgent, 主持Agent辩论, 产生共识报告, 供CEO最终裁决。"""
 
     def __init__(self, client=None, db=None):
-        self.client = client
-        self.db = db
+        super().__init__(
+            agent_code="meeting_chair",
+            agent_name="会议主持人",
+            agent_type="role",
+            identity_text=(
+                "我是集团公司会议主持人。我的职责是确保每次会议都是真正的辩论——"
+                "每个Agent独立表态、强制提出异议、用数据和逻辑说服对方。"
+                "我不允许'一言堂',不允许盲目附和。会议结论必须经得起推敲。"
+            ),
+            client=client, db=db, model="deepseek-v4-pro",
+        )
         self.meeting_log = []
 
     # ================================================================

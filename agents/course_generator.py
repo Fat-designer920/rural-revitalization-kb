@@ -9,15 +9,31 @@ course_generator.py - AI课程自动生成引擎(大纲→脚本→老唐视角�
 产品形态对标: 洋葱学园(AI动画微课)+天津大学模式(理论+实操+案例)+得到(音频+文稿)
 差异化: 老唐20年实战视角=不可复制的IP
 """
-import json, time
+import json, time, sys
 from datetime import datetime
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "agents"))
+
+from base_agent import BaseAgent
 
 
-class CourseGenerator(object):
-    """AI课程自动生成引擎。知识库→课程产品。"""
+class CourseGenerator(BaseAgent):
+    """AI课程自动生成引擎。继承BaseAgent, 知识库→课程产品。"""
 
     def __init__(self, client=None, db=None):
-        self.client = client
+        super().__init__(
+            agent_code="course_generator",
+            agent_name="课程生成引擎",
+            agent_type="role",
+            identity_text=(
+                "我是课程生成引擎。我的职责是从知识库中提取最有价值的内容,"
+                "生成结构化的、有老唐独家视角的付费课程。我追求的不是信息堆砌,"
+                "而是'学完能用的操盘方法论'。每门课必须通过品牌红线检查。"
+            ),
+            client=client, db=db, model="deepseek-v4-flash",
+        )
         self.db = db
         self.agent_code = "course_generator"
         self.agent_name = "课程生成引擎"
