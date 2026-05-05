@@ -24,7 +24,7 @@ class AutoFeeder(object):
     # ================================================================
     def inventory_test_files(self):
         """盘点测试目录所有可提取文件。返回 [{rel_path, name, ext, size, subdir}]"""
-        test_root = PROJECT_ROOT / "测试用文件" / "乡村振兴资料库"
+        test_root = PROJECT_ROOT / "source_library" / "乡村振兴资料库"
         if not test_root.exists():
             return []
         files = []
@@ -77,7 +77,7 @@ class AutoFeeder(object):
                total_kps, ok, fail, skip, elapsed_sec, cost_estimate}
         """
         t0 = time.time()
-        test_root = PROJECT_ROOT / "测试用文件" / "乡村振兴资料库"
+        test_root = PROJECT_ROOT / "source_library" / "乡村振兴资料库"
         pending_dir = PROJECT_ROOT / "data" / "pending"
         os.makedirs(pending_dir, exist_ok=True)
 

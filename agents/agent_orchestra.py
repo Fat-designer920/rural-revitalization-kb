@@ -18,6 +18,7 @@ import json
 from agents.base_agent import BaseAgent, RoleAgent, QualityAgent, StrategyAgent
 from agents.customer_profiler import CustomerProfiler
 from agents.revenue_agents import build_revenue_agents
+from agents.archivist_agent import build_archivist_agent
 
 
 # 部门定义
@@ -53,6 +54,10 @@ DEPARTMENTS = {
     "revenue": {
         "name": "商业变现部", "chief": "revenue_optimizer",
         "mission": "把知识变成钱:定价策略+产品包装+销售转化+用户反馈+收入优化,月入20万的直接责任部门",
+    },
+    "archives": {
+        "name": "档案管理部", "chief": "archivist",
+        "mission": "文件分类+命名规范+目录治理+去重+爬虫存储+源文件归档,让每一份文件都能被找到",
     },
 }
 
@@ -254,6 +259,12 @@ def build_all_agents(client=None, db=None):
     # ================================================================
     revenue_agents = build_revenue_agents(client=client, db=db)
     agents.extend(revenue_agents)
+
+    # ================================================================
+    # 部门9: 档案管理 (1 agent, v2.3.7-part3)
+    # ================================================================
+    archivist = build_archivist_agent(client=client, db=db)
+    agents.append(archivist)
 
     return {
         "agents": agents,

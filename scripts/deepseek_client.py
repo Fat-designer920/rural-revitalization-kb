@@ -823,7 +823,12 @@ class DeepSeekClient:
         """用硅基流动视觉模型OCR识别单张图片"""
         sf_key = self._get_siliconflow_api_key()
         sf_base = self.config.get("siliconflow_base_url", "https://api.siliconflow.cn/v1")
-        sf_model = self.config.get("siliconflow_model", "Qwen/Qwen2.5-VL-72B-Instruct")
+        sf_model = self.config.get("siliconflow_model", "Qwen/Qwen2-VL-72B-Instruct")
+        # v2.3.7-part3: Qwen2.5-VL可能被禁用,级联回退Qwen2-VL→InternVL2
+        OCR_FALLBACK_MODELS = [
+            "Qwen/Qwen2-VL-72B-Instruct",
+            "OpenGVLab/InternVL2-26B",
+        ]
 
         with open(image_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("utf-8")
@@ -871,6 +876,18 @@ class DeepSeekClient:
                     }
                 if r.status_code == 401:
                     raise ValueError("硅基流动API Key无效，请在配置向导中重新设置")
+                if r.status_code == 403:
+                    # 模型可能被禁用,尝试回退模型
+                    err_msg = r.json() if r.text else {}
+                    err_code = err_msg.get("code", "") if isinstance(err_msg, dict) else ""
+                    if "disabled" in str(err_msg).lower() or err_code == "30003":
+                        print(f"     模型{sf_model}被禁用,尝试回退...")
+                        if OCR_FALLBACK_MODELS:
+                            sf_model = OCR_FALLBACK_MODELS.pop(0)
+                            payload["model"] = sf_model
+                            print(f"     回退到: {sf_model}")
+                            continue
+                    raise Exception(f"硅基流动模型不可用(403): {r.text[:200]}")
                 if r.status_code == 429 or r.status_code >= 500:
                     wait = min(60, 2 ** attempt * 3)
                     print(f"    硅基流动API错误({r.status_code}), {wait}秒后重试...")

@@ -515,7 +515,7 @@ class CEOAgent(BaseAgent):
         except Exception:
             pass
         try:
-            test_dir = PROJECT_ROOT / "测试用文件" / "乡村振兴资料库"
+            test_dir = PROJECT_ROOT / "source_library" / "乡村振兴资料库"
             state["test_files_available"] = len(list(test_dir.rglob("*"))) if test_dir.exists() else 0
         except Exception:
             pass

@@ -36,8 +36,8 @@ config/*.json
 data/
 data_backup/
 
-# 测试用文件(老唐本地测试资料,不公开)
-测试用文件/
+# source_library(老唐本地测试资料,不公开)
+source_library/
 
 # 项目文档(商业秘密:商业战略/客户画像/定价策略)
 docs/

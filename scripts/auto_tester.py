@@ -13,7 +13,7 @@ from collections import OrderedDict
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-TEST_FILES_ROOT = PROJECT_ROOT / "测试用文件" / "乡村振兴资料库"
+TEST_FILES_ROOT = PROJECT_ROOT / "source_library" / "乡村振兴资料库"
 
 # ============================================================
 # 模块→测试文件映射
@@ -409,7 +409,7 @@ def _run_l1_unit_tests(report, selector):
 def _l1_test_file_reader(report, selector):
     from scripts.file_reader import FileReader
 
-    # 将测试用文件目录加入 allowed_paths,否则 FileReader 安全检查拦截
+    # 将source_library目录加入 allowed_paths,否则 FileReader 安全检查拦截
     test_root = str(selector.root)
     cfg = _load_config() or {}
     allowed = list(cfg.get("allowed_paths", []))
@@ -420,7 +420,7 @@ def _l1_test_file_reader(report, selector):
     test_files = selector.pick_by_format_coverage()
 
     if not test_files:
-        report.add_check("L1", "FileReader 多格式读取", "skip", "测试用文件目录不存在或无文件")
+        report.add_check("L1", "FileReader 多格式读取", "skip", "source_library目录不存在或无文件")
         return
 
     supported = {".docx", ".pdf", ".xlsx"}

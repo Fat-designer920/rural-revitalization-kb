@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全域土地综合整治项目策划与融资实战 — 四川乡村振兴操盘手训练营</title>
+<meta name="description" content="2天集训+3个月线上支持。把老唐20年全域土地综合整治操盘经验变成你自己的项目策划和融资能力。限30人，¥3,980/人。">
+<link rel="stylesheet" href="/static/design_system.css">
+<style>
+/* ===== Hero ===== */
+.hero-section {
+  background: linear-gradient(135deg, #0d3d18 0%, #1a5c2a 40%, #2d6b3a 100%);
+  color: #fff;
+  padding: var(--space-2xl) 0 calc(var(--space-2xl) + 40px);
+  position: relative;
+  overflow: hidden;
+}
+.hero-section::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(ellipse at 30% 50%, rgba(196,127,44,0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(45,138,78,0.2) 0%, transparent 40%);
+  pointer-events: none;
+}
+.hero-content { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; text-align: center; }
+.hero-badge {
+  display: inline-block;
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 6px 18px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  margin-bottom: var(--space-lg);
+  letter-spacing: 1px;
+}
+.hero-section h1 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+  margin-bottom: var(--space-md);
+}
+.hero-subtitle {
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: var(--space-xl);
+  max-width: 560px;
+  margin-left: auto; margin-right: auto;
+}
+.hero-meta {
+  display: flex;
+  gap: var(--space-lg);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-xl);
+}
+.hero-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.9);
+}
+.hero-meta-item .icon { font-size: 1.2rem; }
+.hero-price-block {
+  background: rgba(0,0,0,0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg) var(--space-xl);
+  display: inline-block;
+  margin-bottom: var(--space-md);
+}
+.hero-price {
+  font-size: 2.8rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-accent);
+}
+.hero-price-label { font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-top: 4px; }
+.hero-includes { font-size: 0.85rem; color: rgba(255,255,255,0.75); margin-top: var(--space-sm); }
+
+/* ===== Section Common ===== */
+.section { padding: var(--space-2xl) 0; }
+.section-dark { background: var(--color-bg); }
+.section-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+  font-weight: 600;
+  margin-bottom: var(--space-sm);
+}
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: var(--space-sm);
+  color: var(--color-text);
+}
+.section-desc {
+  color: var(--color-text-secondary);
+  max-width: 600px;
+  margin-bottom: var(--space-xl);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+/* ===== Problem/Value ===== */
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-lg);
+  margin-top: var(--space-xl);
+}
+.problem-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.problem-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.problem-card .pain {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-error);
+  margin-bottom: var(--space-sm);
+}
+.problem-card .solution {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ===== Audience ===== */
+.audience-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-md);
+}
+.audience-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  text-align: center;
+}
+.audience-card .role {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: var(--space-xs);
+  color: var(--color-primary);
+}
+.audience-card .pain-point {
+  font-size: 0.85rem;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+/* ===== Agenda ===== */
+.agenda-tabs {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xl);
+  border-bottom: 2px solid var(--color-border);
+}
+.agenda-tab {
+  padding: var(--space-sm) var(--space-lg);
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all var(--transition-fast);
+  color: var(--color-text-tertiary);
+  background: none; border-top: none; border-left: none; border-right: none;
+  font-size: 0.95rem;
+}
+.agenda-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+.agenda-panel { display: none; }
+.agenda-panel.active { display: block; }
+.agenda-session {
+  display: flex;
+  gap: var(--space-lg);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-border);
+  align-items: flex-start;
+}
+.agenda-time {
+  min-width: 120px;
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: 0.9rem;
+  padding-top: 2px;
+}
+.agenda-detail { flex: 1; }
+.agenda-detail h4 {
+  font-size: 1.05rem;
+  margin-bottom: var(--space-xs);
+  color: var(--color-text);
+}
+.agenda-detail .goal {
+  font-size: 0.85rem;
+  color: var(--color-accent);
+  font-weight: 500;
+  margin-bottom: var(--space-sm);
+}
+.agenda-detail p {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+.agenda-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-right: 4px;
+}
+.tag-lecture { background: #e3f0e8; color: #1a5c2a; }
+.tag-case { background: #fef3e0; color: #8b5e1a; }
+.tag-exercise { background: #e8eef5; color: #1a4c7a; }
+.tag-laotang { background: #fde8e0; color: #8b2d1a; }
+
+/* ===== Instructor ===== */
+.instructor-block {
+  display: flex;
+  gap: var(--space-xl);
+  align-items: flex-start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  margin-top: var(--space-xl);
+}
+.instructor-avatar {
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 2.5rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.instructor-info h3 { font-size: 1.3rem; margin-bottom: var(--space-xs); }
+.instructor-title { color: var(--color-accent); font-weight: 600; font-size: 0.9rem; margin-bottom: var(--space-md); }
+.instructor-stats {
+  display: flex;
+  gap: var(--space-xl);
+  margin-bottom: var(--space-md);
+}
+.instructor-stat { text-align: center; }
+.instructor-stat .num { font-size: 1.5rem; font-weight: 700; color: var(--color-primary); }
+.instructor-stat .label { font-size: 0.8rem; color: var(--color-text-tertiary); }
+.instructor-bio { font-size: 0.95rem; color: var(--color-text-secondary); line-height: 1.7; }
+
+/* ===== Pricing ===== */
+.pricing-block {
+  background: var(--color-surface);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  text-align: center;
+  max-width: 480px;
+  margin: var(--space-xl) auto 0;
+  position: relative;
+}
+.pricing-block .tag {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-accent);
+  color: #fff;
+  padding: 4px 16px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pricing-old { color: var(--color-text-tertiary); text-decoration: line-through; font-size: 1.1rem; }
+.pricing-current { font-size: 3rem; font-weight: 800; color: var(--color-primary); line-height: 1; margin: var(--space-sm) 0; }
+.pricing-per { color: var(--color-text-secondary); font-size: 0.9rem; }
+.pricing-includes {
+  text-align: left;
+  margin-top: var(--space-lg);
+  list-style: none;
+  padding: 0;
+}
+.pricing-includes li {
+  padding: var(--space-xs) 0;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+.pricing-includes li::before { content: '\2713'; color: var(--color-success); margin-right: 8px; font-weight: 700; }
+
+/* ===== CTA ===== */
+.cta-section {
+  background: linear-gradient(135deg, #0d3d18 0%, #1a5c2a 100%);
+  color: #fff;
+  text-align: center;
+  padding: var(--space-2xl) 0;
+}
+.cta-section h2 { margin-bottom: var(--space-sm); }
+.cta-section p { color: rgba(255,255,255,0.8); margin-bottom: var(--space-lg); }
+.cta-note { font-size: 0.85rem; color: rgba(255,255,255,0.6); margin-top: var(--space-md); }
+
+.btn-primary-large {
+  display: inline-block;
+  background: var(--color-accent);
+  color: #fff;
+  padding: 14px 40px;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+.btn-primary-large:hover {
+  background: #b06d1e;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+
+/* ===== FAQ ===== */
+.faq-list { max-width: 700px; margin: 0 auto; }
+.faq-item {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-lg) 0;
+}
+.faq-q { font-weight: 600; color: var(--color-text); font-size: 1.05rem; margin-bottom: var(--space-sm); cursor: pointer; }
+.faq-a { color: var(--color-text-secondary); font-size: 0.95rem; line-height: 1.7; }
+
+/* ===== Social Proof ===== */
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+  margin-top: var(--space-xl);
+}
+.testimonial-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+.testimonial-card .quote {
+  font-style: italic;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+  margin-bottom: var(--space-md);
+}
+.testimonial-card .author {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+.testimonial-card .author-role {
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .hero-section h1 { font-size: 1.75rem; }
+  .hero-price { font-size: 2.2rem; }
+  .instructor-block { flex-direction: column; text-align: center; }
+  .instructor-stats { justify-content: center; }
+  .agenda-session { flex-direction: column; gap: var(--space-sm); }
+  .agenda-time { min-width: auto; }
+  .hero-meta { flex-direction: column; gap: var(--space-sm); }
+}
+
+/* ===== Guarantee ===== */
+.guarantee-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  background: #f0f7f2;
+  border: 1px solid #c8e0ce;
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  margin-top: var(--space-lg);
+  max-width: 600px;
+  margin-left: auto; margin-right: auto;
+}
+.guarantee-icon {
+  font-size: 2.5rem;
+  flex-shrink: 0;
+}
+.guarantee-text { font-size: 0.95rem; color: var(--color-primary-dark); line-height: 1.6; }
+.guarantee-text strong { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ===== Hero ===== -->
+<section class="hero-section">
+  <div class="hero-content container">
+    <div class="hero-badge">四川乡村振兴操盘手训练营 · 2026Q2</div>
+    <h1>全域土地综合整治<br>项目策划与融资实战</h1>
+    <p class="hero-subtitle">
+      2天集训，把老唐20年操盘经验变成你自己的判断力。<br>
+      不是政策宣讲，不是泛泛培训——是策划到融资的完整作战地图。
+    </p>
+    <div class="hero-meta">
+      <div class="hero-meta-item"><span class="icon">&#128197;</span> 2天集训（周六-周日）</div>
+      <div class="hero-meta-item"><span class="icon">&#128205;</span> 四川 · 成都</div>
+      <div class="hero-meta-item"><span class="icon">&#128101;</span> 限30人/期</div>
+      <div class="hero-meta-item"><span class="icon">&#127891;</span> 含3个月线上会员</div>
+    </div>
+    <div class="hero-price-block">
+      <div class="hero-price">&yen;3,980</div>
+      <div class="hero-price-label">/人（含3个月线上会员价值&yen;1,197）</div>
+      <div class="hero-includes">2天集训 + 3套实操模板 + 3个月AI问答 + 老唐直联通道 + 同学社群</div>
+    </div>
+    <div style="margin-top: var(--space-lg);">
+      <a href="#cta" class="btn-primary-large">立即预约 &middot; 第一期限30人</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Who is this for ===== -->
+<section class="section">
+  <div class="container">
+    <div class="section-label">你的痛点</div>
+    <h2 class="section-title">这些场景你遇到过吗？</h2>
+    <p class="section-desc">如果你中了2条以上，这个训练营就是为你准备的。</p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="pain">&#10071; 上级推全域整治，但心里没底</div>
+        <div class="solution">学完Day 1上午，你能用一套框架在3天内判断项目能不能做、从哪开始。</div>
+      </div>
+      <div class="problem-card">
+        <div class="pain">&#10071; 策划方案总是被甲方打回来</div>
+        <div class="solution">学完Day 1下午，你知道甲方评审最关心的5个问题是什么，方案怎么写才会过。</div>
+      </div>
+      <div class="problem-card">
+        <div class="pain">&#10071; 只知道专项债，不知道还有哪些钱</div>
+        <div class="solution">学完Day 2上午，你能画出13种融资渠道的全景地图，给每个渠道匹配适用条件。</div>
+      </div>
+      <div class="problem-card">
+        <div class="pain">&#10071; 资金怎么组合才合规、不碰隐债红线</div>
+        <div class="solution">学完Day 2下午，你能设计合规的资金组合方案，精确定位6条隐债红线。</div>
+      </div>
+      <div class="problem-card">
+        <div class="pain">&#10071; 跟银行谈贷款，不知道对方想听什么</div>
+        <div class="solution">老唐亲授：银行想听的三句话——答不上来就别谈了。还有利率和期限的谈判策略。</div>
+      </div>
+      <div class="problem-card">
+        <div class="pain">&#10071; 社会资本引不进、留不住、退不出</div>
+        <div class="solution">投资人最关心的3个问题是什么？4种退出路径怎么设计？全部讲透。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Target Audience ===== -->
+<section class="section section-dark">
+  <div class="container">
+    <div class="section-label">适合谁</div>
+    <h2 class="section-title">这5类人最应该来</h2>
+    <p class="section-desc">训练营内容按角色分层设计，每类学员都有对应的实战收获。</p>
+    <div class="audience-grid">
+      <div class="audience-card">
+        <div class="role">县自然资源局/农业农村局科长</div>
+        <div class="pain-point">上级推全域整治，需要快速建立判断力，知道什么样的项目能推、怎么推</div>
+      </div>
+      <div class="audience-card">
+        <div class="role">乡镇党委书记/镇长</div>
+        <div class="pain-point">想做整治但不知道从哪开始，钱从哪来，第一步做什么</div>
+      </div>
+      <div class="audience-card">
+        <div class="role">平台公司项目经理</div>
+        <div class="pain-point">方案总是被甲方打回来，不知道怎么改，资金平衡编不好</div>
+      </div>
+      <div class="audience-card">
+        <div class="role">规划院/咨询公司</div>
+        <div class="pain-point">技术方案写得出来，但融资那块不专业，甲方越来越看重资金闭环</div>
+      </div>
+      <div class="audience-card">
+        <div class="role">投资人/产业运营方</div>
+        <div class="pain-point">想投乡村振兴但不知道怎么评估项目、怎么设计退出路径</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Agenda ===== -->
+<section class="section">
+  <div class="container">
+    <div class="section-label">课程安排</div>
+    <h2 class="section-title">两天集训 · 完整作战地图</h2>
+    <p class="section-desc">Day 1 解决"项目能不能做、怎么做"，Day 2 解决"钱从哪来、怎么组合"。从策划到融资，一次打通。</p>
+
+    <div class="agenda-tabs">
+      <button class="agenda-tab active" onclick="switchAgenda('day1')">Day 1：项目策划实战</button>
+      <button class="agenda-tab" onclick="switchAgenda('day2')">Day 2：融资实战</button>
+    </div>
+
+    <!-- Day 1 -->
+    <div class="agenda-panel active" id="panel-day1">
+      <div class="agenda-session">
+        <div class="agenda-time">09:00-09:30</div>
+        <div class="agenda-detail">
+          <h4>开营：为什么全域整治是乡村振兴最大的机会</h4>
+          <div class="goal">理解全域整治在当前政策窗口期的战略地位</div>
+          <p>从2018浙江试点到2024全面推开，四川60个示范项目启动，全国356+892个试点的规模全貌。老唐开场分享：2019年为什么能判断增减挂钩窗口期还剩3年。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-laotang">老唐开场</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">09:30-10:45</div>
+        <div class="agenda-detail">
+          <h4>第一课：全域整治的政策底层逻辑（75分钟）</h4>
+          <div class="goal">能独立判断项目政策可行性，知道政策真支持什么</div>
+          <p>五大工作原则+三优先原则+三大整治内容+政策工具箱（三区三线/增减挂钩/集建入市）。四川特色聚落（川西林盘/川南民居）的保护与价值转化。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-case">案例：浙江宁波五重空间重构</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">11:00-12:00</div>
+        <div class="agenda-detail">
+          <h4>第二课：3天快速可行性判断（60分钟）</h4>
+          <div class="goal">能用4维度12指标框架在3天内完成项目初步判断</div>
+          <p>政策可行性+空间可行性+资金可行性+人的可行性，每个维度3个关键指标。实施方案审批流程：村民同意→省级批准→与规划衔接。实操练习：用评分卡评自己的项目。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-exercise">实操：项目评分卡</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">13:30-15:00</div>
+        <div class="agenda-detail">
+          <h4>第三课：策划方案编制全流程（90分钟）</h4>
+          <div class="goal">能独立编制策划方案，知道甲方评审关注什么</div>
+          <p>五大章节结构拆解+政策性金融机构特殊要求+增减挂钩打包审批路径。甲方最关心的5个问题逐一回答。老唐经历：300页的方案被否，30页的反而通过——为什么？</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-case">案例：苏州工业上楼</span><span class="agenda-tag tag-exercise">沙盘：投资亮点一页纸</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">15:15-16:45</div>
+        <div class="agenda-detail">
+          <h4>第四课：老唐踩过的10个策划坑（90分钟）</h4>
+          <div class="goal">知道什么不该做——避免策划阶段最致命的10个错误</div>
+          <p>权属不清就开工/资金平衡编太乐观/甲方没想清楚就接单/产业导入写成愿景清单/忽略村民意愿/增减挂钩指标算错/隐债红线没摸清/运营成本没算进总盘/忽视生态修复交易成本/3个月方案被一句话否决。</p>
+          <span class="agenda-tag tag-laotang">老唐亲述</span><span class="agenda-tag tag-exercise">互动：踩坑箱分享</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">16:45-17:30</div>
+        <div class="agenda-detail">
+          <h4>Day 1 收官：策划实战沙盘推演（45分钟）</h4>
+          <div class="goal">综合运用全天所学，完成一个模拟项目的策划方案要点</div>
+          <p>给定四川某县虚拟项目信息包，各组完成：10分钟快速判断+15分钟策划要点+10分钟投资亮点一页纸+10分钟汇报。老唐逐一点评。</p>
+          <span class="agenda-tag tag-exercise">沙盘推演</span><span class="agenda-tag tag-laotang">老唐点评</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Day 2 -->
+    <div class="agenda-panel" id="panel-day2">
+      <div class="agenda-session">
+        <div class="agenda-time">09:00-09:15</div>
+        <div class="agenda-detail">
+          <h4>Day 2 开场：Day 1复盘+Day 2路线图</h4>
+          <div class="goal">巩固Day 1框架，明确Day 2学习路径</div>
+          <p>快速回顾策划判断框架 + Day 2四步路线图：全景图→专项债→银行贷款→社会资本→组合策略。</p>
+          <span class="agenda-tag tag-lecture">复盘</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">09:15-10:45</div>
+        <div class="agenda-detail">
+          <h4>第五课：乡村振兴资金来源全景图——13种渠道一次讲透（90分钟）</h4>
+          <div class="goal">能画出适合自己项目的资金渠道地图</div>
+          <p>财政类4种（中央预算/超长期国债/专项债/衔接资金）+信贷类3种（农发行/国开行/商业银行）+社会资本类3种（PPP/企业投资/产业基金）+创新类3种（绿色金融/资产证券化/设施抵押融资）。老唐：最容易被忽略的3个渠道是什么？</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-exercise">工具：融资渠道匹配表</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">11:00-12:00</div>
+        <div class="agenda-detail">
+          <h4>第六课：专项债申报实战——从0到获批（60分钟）</h4>
+          <div class="goal">能独立准备专项债申报材料，避免5大常见被拒原因</div>
+          <p>申报全流程拆解+收益与融资平衡方案编制核心逻辑。老唐心法：收益不是算得越高越好，是算得越真越好。5大被拒雷区逐一讲解。实操：做一个简版收益测算。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-exercise">实操：收益测算简表</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">13:30-14:45</div>
+        <div class="agenda-detail">
+          <h4>第七课：政策性银行贷款实操——农发行+国开行（75分钟）</h4>
+          <div class="goal">能独立准备贷款申请材料，掌握利率和期限谈判策略</div>
+          <p>两家银行产品体系逐一拆解+贷款申请材料清单+实施方案针对政策性银行的特殊要求。老唐金句：跟银行谈贷款最忌说"我们项目很好"——银行想听的是哪三句话？</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-case">案例：成都22亿整治贷款</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">15:00-16:00</div>
+        <div class="agenda-detail">
+          <h4>第八课：社会资本引进与退出机制（60分钟）</h4>
+          <div class="goal">能设计有吸引力的投资方案和合规的退出路径</div>
+          <p>3种进入模式+PPP新机制+投贷联动+4种退出路径。老唐：投资人最关心的3个问题——答不上来就别谈了。互动：模拟向"投资人"（老唐扮演）推介方案。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-exercise">角色扮演：投资人推介</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">16:00-17:00</div>
+        <div class="agenda-detail">
+          <h4>第九课：资金组合策略——多渠道路径设计与隐债规避（60分钟）</h4>
+          <div class="goal">能设计合规的资金组合方案，精确定位6条隐债红线</div>
+          <p>6种经典资金组合模式逐一讲解+6条绝对不碰的隐债红线精准定位+肥瘦搭配的正确做法。老唐：资金组合最怕拼错了——肥瘦搭配的真谛是让整个盘子能转起来。</p>
+          <span class="agenda-tag tag-lecture">讲授</span><span class="agenda-tag tag-case">案例：大邑300亿授信模式</span>
+        </div>
+      </div>
+      <div class="agenda-session">
+        <div class="agenda-time">17:00-17:30</div>
+        <div class="agenda-detail">
+          <h4>结营：从2天集训到操盘手之路（30分钟）</h4>
+          <div class="goal">带走完整的作战地图和3个月持续支持计划</div>
+          <p>问题墙逐条回顾+每人一句话收获+3个月线上支持开通。老唐结语：政策会变、渠道会变、案例会变，但判断框架不会过时。颁发结营证书+合影。</p>
+          <span class="agenda-tag tag-laotang">老唐结语</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Instructor ===== -->
+<section class="section section-dark">
+  <div class="container">
+    <div class="section-label">导师</div>
+    <h2 class="section-title">跟谁学</h2>
+    <p class="section-desc">不是学术教授，不是培训讲师——是在乡村振兴一线干了20年的老师傅。</p>
+    <div class="instructor-block">
+      <div class="instructor-avatar">唐</div>
+      <div class="instructor-info">
+        <h3>老唐</h3>
+        <div class="instructor-title">乡村振兴实战操盘手 · 20年一线经验</div>
+        <div class="instructor-stats">
+          <div class="instructor-stat"><div class="num">20年+</div><div class="label">一线实战</div></div>
+          <div class="instructor-stat"><div class="num">100+</div><div class="label">操盘项目</div></div>
+          <div class="instructor-stat"><div class="num">50亿+</div><div class="label">融资落地</div></div>
+          <div class="instructor-stat"><div class="num">四川</div><div class="label">深度聚焦</div></div>
+        </div>
+        <p class="instructor-bio">
+          老唐，四川乡村振兴操盘手，20年始终站在项目一线。从最早的增减挂钩试点到如今的全域土地综合整治，从村一级的土地整理到县一级的百亿级融资方案设计，他的经验不是"看来的"而是"踩出来的"。
+        </p>
+        <p class="instructor-bio" style="margin-top: var(--space-sm);">
+          他做过甲方、做过乙方、做过丙方（投资人），三种视角的切换让他能同时理解"政府想什么、企业要什么、银行怕什么"。他带过的徒弟现在分布在各县局、平台公司和咨询机构——他们都叫他老唐。
+        </p>
+        <p class="instructor-bio" style="margin-top: var(--space-sm); color: var(--color-accent); font-weight: 500;">
+          "我的方法论不是什么高深理论，是 20年踩坑踩出来的。我现在做的事就是把这些坑标出来，让你们不用再踩一遍。"
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Templates & Tools ===== -->
+<section class="section">
+  <div class="container">
+    <div class="section-label">配套工具</div>
+    <h2 class="section-title">3套实操模板，带走就能用</h2>
+    <p class="section-desc">训练营每个学员都获得印刷版+电子版工具模板，训练营当天在实战练习中直接使用。</p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <h4 style="color: var(--color-primary); margin-bottom: var(--space-sm);">模板A：项目快速判断评分卡</h4>
+        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6;">
+          4维度12指标评分体系（政策可行性30%+空间可行性25%+资金可行性30%+人的可行性15%）。5分制评分，自动计算加权总分，输出判定结论（可行/有条件可行/高风险/建议搁置）。
+        </p>
+      </div>
+      <div class="problem-card">
+        <h4 style="color: var(--color-primary); margin-bottom: var(--space-sm);">模板B：融资渠道匹配对比表</h4>
+        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6;">
+          7大融资渠道（专项债/农发行/国开行/商业银行/中央预算/社会资本/绿色金融）横向对比，含适用条件、最高比例、期限、利率区间、审批周期、还款来源要求。自动输出推荐组合方案+隐债红线自检。
+        </p>
+      </div>
+      <div class="problem-card">
+        <h4 style="color: var(--color-primary); margin-bottom: var(--space-sm);">模板C：项目实施风险矩阵</h4>
+        <p style="font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.6;">
+          10大常见风险（政策变化/权属纠纷/村民反对/资金断裂/收益不达预期/隐债审计/指标未达预期/成本超支/运营能力不足/不可抗力）。概率+影响+等级+应对措施四维评估。Top 3风险强制制定应对计划。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Pricing & CTA ===== -->
+<section id="cta" class="section section-dark">
+  <div class="container" style="text-align: center;">
+    <div class="section-label">定价</div>
+    <h2 class="section-title">投资2天，换一套终身受用的操盘框架</h2>
+    <p class="section-desc" style="margin-left: auto; margin-right: auto;">比一个咨询项目的零头还少，收获的是能做几十个项目的能力。</p>
+
+    <div class="pricing-block">
+      <div class="tag">限30人/期</div>
+      <div class="pricing-old">&yen;5,980</div>
+      <div class="pricing-current">&yen;3,980</div>
+      <div class="pricing-per">/人（含3个月线上会员，价值&yen;1,197）</div>
+      <ul class="pricing-includes">
+        <li>2天线下集训（含午餐+茶歇+教材+工具模板）</li>
+        <li>3套实操模板（判断评分卡+融资对比表+风险矩阵）</li>
+        <li>3个月AI知识问答无限次（KB知识库全量开放）</li>
+        <li>3个月"操盘手夜话"每周线上讨论（老唐参与）</li>
+        <li>2次老唐直联15分钟（重要决策可约电话咨询）</li>
+        <li>每月一次新政策解读直播（含录播回放）</li>
+        <li>同期学员专属社群（持续人脉网络）</li>
+        <li>第3个月末"项目回看"线上复盘（带自己的项目来）</li>
+        <li><strong>开营前14天可全额退款，无后顾之忧</strong></li>
+      </ul>
+    </div>
+
+    <div class="guarantee-block">
+      <div class="guarantee-icon">&#9989;</div>
+      <div class="guarantee-text">
+        <strong>不满意全额退款承诺</strong>
+        Day 1 上午结束前，如果你觉得内容不值这个价，告诉我们——全额退款，不解释。我们对内容有绝对的信心。
+      </div>
+    </div>
+
+    <div style="margin-top: var(--space-xl);">
+      <a href="#" class="btn-primary-large" style="font-size: 1.2rem; padding: 16px 48px;">立即预约 &middot; 第一期限30人</a>
+      <p class="cta-note">预约后24小时内客服与你联系确认席位。团体报名（3人及以上）享9折优惠。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FAQ ===== -->
+<section class="section">
+  <div class="container">
+    <div class="section-label">常见问题</div>
+    <h2 class="section-title">你可能想问</h2>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-q">Q: 我没有项目策划经验，能跟上吗？</div>
+        <div class="faq-a">能。训练营内容从入门级到判断级递进（基于知识库中93条入门级KP+62条判断级KP设计）。Day 1上午就是帮零基础的人建立判断框架。但如果你完全不了解乡村振兴的基本概念，建议先读完我们随录取通知发送的课前阅读材料（约2-3小时阅读量）。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 我是做财务的，全域整治的技术内容会不会听不懂？</div>
+        <div class="faq-a">不会。训练营聚焦的是"策划和融资"，不是工程技术。我们讲整治技术相关内容时，讲的是"这些技术对投资规模有什么影响""这些技术对资金平衡有什么影响""审批部门看这些技术看什么"——是策划视角和融资视角，不是施工视角。Day 2更是完全聚焦金融和融资。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 跟市面上其他乡村振兴培训班有什么区别？</div>
+        <div class="faq-a">三个根本不同。第一，我们不是政策汇编——网上能查到的我们不教，我们教的是"怎么用""怎么判断""怎么避坑"。第二，主讲人不是教授——老唐20年一线实操，每个结论背后都有真实的血泪教训。第三，聚焦四川——不是泛泛的全国通用方法论，而是四川的实操框架。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 3个月线上支持具体包含什么？</div>
+        <div class="faq-a">包含7项服务：AI知识问答无限次（7x24）+每周一次"操盘手夜话"微信群线上讨论（老唐参与）+2次老唐直联15分钟电话+每月一次新政策解读直播+同期学员专属社群+第3个月末"项目回看"线上复盘。详情见训练营产品文件。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 第一期具体什么时间？在哪举办？</div>
+        <div class="faq-a">第一期时间待定（预计2026年Q2），地点成都市区（交通便利的会议酒店）。具体时间和场地确认后第一时间通知已预约学员。预约不收取费用，确认时间后你再决定是否付款锁定席位。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 可以开发票吗？</div>
+        <div class="faq-a">可以。提供增值税普通发票和增值税专用发票，开票项目为"培训费"或"咨询服务费"。企业/单位团体报名可对公转账。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Q: 复训有优惠吗？</div>
+        <div class="faq-a">有。老学员复训享半价（&yen;1,990/人）。但我们建议你在第一次训练营后的3个月内充分消化和实操，然后在第3个月末的线上"项目回看"中带自己的项目来复盘——这比马上复训更有效。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Social Proof ===== -->
+<section class="section section-dark">
+  <div class="container">
+    <div class="section-label">他们怎么说</div>
+    <h2 class="section-title">老唐带过的徒弟和合作伙伴</h2>
+    <p class="section-desc">以下反馈来自老唐过往项目合作和培训中的真实评价（已脱敏处理）。</p>
+    <div class="testimonial-grid">
+      <div class="testimonial-card">
+        <div class="quote">"跟老唐做过3个项目，最大的收获不是技术方案——是他每次能在甲方还没说清楚的时候，就判断出甲方到底想要什么。这个能力不是看书能学来的。"</div>
+        <div class="author">某平台公司项目经理</div>
+        <div class="author-role">合作过3个全域整治项目</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="quote">"以前做策划方案就是在模板上填内容，跟老唐学了一次才知道方案真正的要害在哪——甲方要看的是确定性，不是信息量。现在方案通过率高了很多。"</div>
+        <div class="author">某规划院项目负责人</div>
+        <div class="author-role">参加过老唐内部培训</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="quote">"最服老唐的是融资这块。他不是金融出身，但能把专项债、政策性贷款、社会资本这些说得很清楚——因为他真的帮项目方搞定过钱，知道银行在想什么。"</div>
+        <div class="author">某县农业农村局副局长</div>
+        <div class="author-role">合作过专项债申报项目</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="quote">"老唐讲的10个策划坑，我听过前3个就冒冷汗——因为我都踩过。如果能早点听到，至少能少走两年弯路。"</div>
+        <div class="author">某咨询公司合伙人</div>
+        <div class="author-role">10年乡村振兴咨询经验</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Final CTA ===== -->
+<section class="cta-section">
+  <div class="container">
+    <h2>2天集训，换一套终身受用的操盘框架</h2>
+    <p style="max-width: 540px; margin: 0 auto var(--space-lg);">
+      全域土地综合整治是未来5年乡村振兴最大的机会窗口。<br>
+      我们教你在窗口期做出正确的判断。
+    </p>
+    <a href="#" class="btn-primary-large" style="font-size: 1.2rem; padding: 16px 48px;">立即预约 &middot; 第一期限30人</a>
+    <p class="cta-note">&#128222; 咨询：添加客服微信（laotang-xczx）或致电咨询热线<br>
+    &#128231; 邮箱：training@rural-revitalization-kb.com<br>
+    团体报名（3人及以上）享9折优惠</p>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer style="background: #0a2a14; color: rgba(255,255,255,0.6); padding: var(--space-lg) 0; text-align: center; font-size: 0.8rem;">
+  <div class="container">
+    <p>四川乡村振兴操盘手训练营 &copy; 2026 &middot; 聚焦四川全域土地综合整治</p>
+    <p style="margin-top: var(--space-xs);">
+      本页面内容受品牌红线（agents/brand_redlines.py）约束 &middot;
+      所有案例已脱敏处理 &middot;
+      不提供具体投资建议
+    </p>
+  </div>
+</footer>
+
+<script>
+function switchAgenda(day) {
+  document.querySelectorAll('.agenda-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.agenda-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[onclick="switchAgenda(\'' + day + '\')"]').classList.add('active');
+  document.getElementById('panel-' + day).classList.add('active');
+}
+</script>
+</body>
+</html>
