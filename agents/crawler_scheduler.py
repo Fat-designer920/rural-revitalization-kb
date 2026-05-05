@@ -3,7 +3,7 @@ crawler_scheduler.py - 爬虫调度器(URL管理+去重+变化检测+限速)
 路径：agents/crawler_scheduler.py
 版本：v2.3.7
 """
-import json, time, hashlib, os
+import json, time, hashlib, os, re
 from pathlib import Path
 from datetime import datetime
 try:
@@ -68,14 +68,16 @@ class CrawlerScheduler(object):
                     results["details"].append({"url": url, "status": "unchanged"})
                     continue
 
-                # 保存到 pending/ (仅保存前50KB,避免超大文件)
-                safe_name = url.replace("https://", "").replace("http://", "").replace("/", "_")[:60]
-                save_path = pending_dir / f"crawl_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                content = fetched.get("content", "")[:50000]
+                # 提取正文文本(非原始HTML),保存为.txt到pending/
+                text_content = self._extract_text(fetched.get("content", ""),
+                                                  url=url, category=t.get("category", "policy"))
+                safe_name = self._safe_filename(url)
+                save_path = pending_dir / f"crawl_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
                 with open(save_path, "w", encoding="utf-8") as f:
-                    f.write(content)
+                    f.write(text_content[:80000])  # 最多80KB文本
                 results["new"] += 1
-                results["details"].append({"url": url, "saved": str(save_path), "bytes": len(content)})
+                results["details"].append({"url": url, "saved": str(save_path),
+                                           "chars": len(text_content)})
 
                 # 记录到 crawl_history
                 self._record_crawl(url, content_hash, str(save_path))
@@ -155,3 +157,71 @@ class CrawlerScheduler(object):
             except Exception:
                 pass
         return status
+
+    # ================================================================
+    # HTML→文本提取
+    # ================================================================
+    def _extract_text(self, html, url="", category="policy"):
+        """从HTML提取正文文本。策略: 去标签→去脚本/样式→压缩空白→截取有意义的段落。"""
+        if not html:
+            return ""
+        # 去script/style标签及其内容
+        text = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<head[^>]*>.*?</head>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+        # 去HTML标签
+        text = re.sub(r'<[^>]+>', ' ', text)
+        # 去HTML实体
+        text = re.sub(r'&[a-z]+;', ' ', text)
+        text = re.sub(r'&#\d+;', ' ', text)
+        # 去多余空白
+        text = re.sub(r'\s+', ' ', text).strip()
+        # 去导航/页脚噪音(短行密集区)
+        lines = [l.strip() for l in text.split('.') if len(l.strip()) > 15]
+        text = '。\n'.join(lines)
+        # 加来源标记
+        header = f"来源: {url}\n抓取时间: {datetime.now().isoformat()}\n类别: {category}\n\n"
+        return header + text
+
+    def _safe_filename(self, url):
+        """从URL生成安全文件名"""
+        name = url.replace("https://", "").replace("http://", "").replace("/", "_").replace(".", "_")
+        name = re.sub(r'[<>:"|?*]', '_', name)
+        return name[:60]
+
+    # ================================================================
+    # 爬取+自动喂入提取管道
+    # ================================================================
+    def crawl_and_feed(self, schedule="weekly", max_urls=5):
+        """爬取→保存.txt到pending/→自动触发提取。
+        这是CEO驱动的知识管道入口: 从课程体系倒推知识需求→爬取→自动入库。
+        返回 {crawl_result, extract_result}
+        """
+        crawl_result = self.run_scheduled(schedule=schedule)
+        if crawl_result.get("new", 0) == 0:
+            return {"success": True, "crawl": crawl_result,
+                    "message": "无新内容,跳过提取"}
+
+        # 自动触发预处理+提取(使用已成熟的管道)
+        try:
+            from scripts.preprocessor import Preprocessor
+            from scripts.extractor import Extractor
+            pp = Preprocessor()
+            files = pp.scan()
+            new_files = [f for f in files if f.get("original_filename", "").startswith("crawl_")]
+            if new_files:
+                for fi in new_files[:5]:
+                    try:
+                        pp.preprocess_file(fi)
+                    except Exception:
+                        pass
+                ext = Extractor()
+                ext.set_model("2")  # V4-Flash快速模式(爬虫内容质量较低)
+                ext_result = ext.run_headless(model_key="2")
+                return {"success": True, "crawl": crawl_result,
+                        "extract": {"ok": ext_result.get("ok", 0),
+                                   "total_kps": ext_result.get("total_kps", 0)}}
+        except Exception as e:
+            return {"success": True, "crawl": crawl_result,
+                    "extract_error": str(e)[:200]}
+        return {"success": True, "crawl": crawl_result}

@@ -467,6 +467,25 @@ def _upgrade_schema_to_current(db_path):
                 c.execute(idx_sql)
                 summary["indexes_created"].append(idx_name)
 
+        # Step 19: v2.3.7-part2 crawl_history 表 (爬虫历史)
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='crawl_history'")
+        if c.fetchone():
+            summary["tables_skipped"].append("crawl_history")
+        else:
+            c.execute("""CREATE TABLE IF NOT EXISTS crawl_history (
+                crawl_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                content_hash TEXT,
+                saved_path TEXT,
+                category TEXT DEFAULT 'policy',
+                status TEXT DEFAULT 'new' CHECK(status IN ('new','unchanged','error','extracted')),
+                fetched_at TEXT DEFAULT (datetime('now','localtime')),
+                extracted_kp_count INTEGER DEFAULT 0,
+                notes TEXT DEFAULT '')""")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
+            summary["tables_created"].append("crawl_history")
+
         conn.commit()
     finally:
         conn.close()

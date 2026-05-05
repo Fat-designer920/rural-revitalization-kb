@@ -268,6 +268,41 @@ python scripts/auto_tester.py --full           # 全量回归(重大版本发布
 
 **铁律**:自动管道跑起来之前,P0 任务主要是"老唐喂经验"——Agent 审计发现的知识缺口,老唐手动补充 50-100 条操盘经验是当前最紧迫的 P0。
 
+## 16. 产品驱动知识管道(F071, v2.3.7-part2)
+
+**核心原则**:所有知识收集和提取,必须从知识产品(课程体系)倒推。
+
+**产品→需求→管道流程**:
+```
+课程体系(5模块20课) → 81项知识需求(knowledge_gap_analyzer)
+    ↓ 缺口
+爬虫定向抓取(crawler_scheduler) + 测试文件批量喂料(auto_feeder)
+    ↓ 提取
+并行双模型提取(extractor V4-Flash+V4-Pro) → 质检 → 关系网络 → 精品判定
+```
+
+**管道命令行入口**(`scripts/run_pipeline.py`):
+```
+python scripts/run_pipeline.py --status       # 知识库当前状态
+python scripts/run_pipeline.py --dry-run      # 预览待处理文件
+python scripts/run_pipeline.py --feed-only    # 仅喂料+提取
+python scripts/run_pipeline.py --qc-only      # 质检补跑+就绪度联动
+python scripts/run_pipeline.py --relations-only  # 关系全量扫描
+python scripts/run_pipeline.py --premium-only    # 精品候选判定
+python scripts/run_pipeline.py --full         # 一键全管道
+```
+
+**品牌红线**(`agents/brand_redlines.py`):所有对外内容一票否决,5类18条。课程/文章/问答发布前必过 BrandRedlineChecker。
+
+**知识需求优先级**(从课程体系倒推):
+- P0最高: 操盘方法/反常识洞察/踩坑记录/客户沟通话术(老唐独家IP)
+- P1高: 政策的真实理解(怎么落地+避坑+上面要什么)
+- P2中: 实战案例/数据支撑/工具模板
+- P3低: 政策原文条款的复述(降低提取权重)
+- P4不提: 纯口号/表态语言/流程套话(不入提取)
+
+**管道文件**: `agents/auto_feeder.py`(批量喂料) + `agents/crawler_scheduler.py`(爬虫调度) + `agents/knowledge_gap_analyzer.py`(缺口分析) + `scripts/run_pipeline.py`(CLI入口)
+
 ---
 
 **末尾铁律**:本文件是 Claude 每次新对话的第一站。**不读本文件直接开工 = 严重违规**(立规则 9 同根)。

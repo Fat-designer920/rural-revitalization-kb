@@ -557,6 +557,19 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')))""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)")
+        # v2.3.7-part2: 爬虫历史表
+        c.execute("""CREATE TABLE IF NOT EXISTS crawl_history (
+            crawl_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            content_hash TEXT,
+            saved_path TEXT,
+            category TEXT DEFAULT 'policy',
+            status TEXT DEFAULT 'new' CHECK(status IN ('new','unchanged','error','extracted')),
+            fetched_at TEXT DEFAULT (datetime('now','localtime')),
+            extracted_kp_count INTEGER DEFAULT 0,
+            notes TEXT DEFAULT '')""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
         conn.commit(); conn.close(); return True
 
     def init_default_categories(self):

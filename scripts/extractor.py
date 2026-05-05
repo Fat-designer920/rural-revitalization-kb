@@ -2333,10 +2333,14 @@ class Extractor:
 
             # 4.2 V4-Pro 深度核心段提取
             print(f"\n     [4.2] V4-Pro 深度核心段提取...")
-            core_segs = self._identify_core_segments(file_structure, segs)
-            pro_kps = self._extract_with_pro(core_segs, fn, prompt, ctype, file_structure, source_nature, fid)
-            self._truncation_stats["parallel_pro_kps"] = len(pro_kps)
-            print(f"     V4-Pro 提取: {len(pro_kps)} 条知识点")
+            pro_kps = []
+            try:
+                core_segs = self._identify_core_segments(file_structure, segs)
+                pro_kps = self._extract_with_pro(core_segs, fn, prompt, ctype, file_structure, source_nature, fid)
+                self._truncation_stats["parallel_pro_kps"] = len(pro_kps)
+                print(f"     V4-Pro 提取: {len(pro_kps)} 条知识点")
+            except Exception as e:
+                print(f"     [V4-Pro 降级] {type(e).__name__}: {e} — 退回到 Flash 结果")
 
             # 4.3 合并去重
             print(f"\n     [4.3] 合并去重...")
