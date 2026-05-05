@@ -116,7 +116,7 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 本项目已从 Claude Projects(网页版)迁移到 Claude Code(VSCode 扩展)。关键差异:
 
-- **工作目录**: `f:\乡村振兴知识库搭建助手V1.0.0\rural-revitalization-kb`
+- **工作目录**: `D:\rural-revitalization-kb`
 - **配置文件**: `.claude/settings.json`(已加入 .gitignore,不提交到 GitHub)
 - **Shell 环境**: Git Bash(Windows),使用 Unix 风格命令
 - **文件路径**: 使用反斜杠 `\` 或正斜杠 `/` 均可,Git Bash 自动处理
