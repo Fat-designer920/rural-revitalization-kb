@@ -897,11 +897,11 @@ class DeepSeekClient:
         # 方案B: 硅基流动(兜底)
         sf_key = self._get_siliconflow_api_key()
         sf_base = self.config.get("siliconflow_base_url", "https://api.siliconflow.cn/v1")
-        sf_model = self.config.get("siliconflow_model", "Qwen/Qwen2-VL-72B-Instruct")
-        # v2.3.7-part3: Qwen2.5-VL可能被禁用,级联回退Qwen2-VL→InternVL2
+        sf_model = self.config.get("siliconflow_model", "Qwen/Qwen3-VL-8B-Instruct")
+        # v2.3.7-part3: Qwen3-VL主力→32B兜底(已验证中文OCR准确)
         OCR_FALLBACK_MODELS = [
-            "Qwen/Qwen2-VL-72B-Instruct",
-            "OpenGVLab/InternVL2-26B",
+            "Qwen/Qwen3-VL-32B-Instruct",
+            "deepseek-ai/DeepSeek-OCR",
         ]
 
         with open(image_path, "rb") as f:

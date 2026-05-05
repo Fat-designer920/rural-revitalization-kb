@@ -193,7 +193,7 @@ class ConfigWizard:
         if sf_key and "****" not in sf_key:
             config["siliconflow_api_key_encrypted"] = encrypt_value(sf_key)
         config.setdefault("siliconflow_base_url", "https://api.siliconflow.cn/v1")
-        config.setdefault("siliconflow_model", "Qwen/Qwen2.5-VL-72B-Instruct")
+        config.setdefault("siliconflow_model", "deepseek-ai/DeepSeek-OCR")
 
         # Notion Token
         notion = self.notion_var.get().strip()
