@@ -5478,6 +5478,8 @@ def qa_submit_feedback():
         db.save_qa_feedback(qa_history_id, feedback_type, comment)
         db.log_operation_event(event_type="qa_feedback_received", severity="info", module="api_server", payload={"qa_history_id": qa_history_id, "feedback_type": feedback_type, "comment": comment[:500]})
         return jsonify({"success": True, "message": "感谢反馈"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/course/system", methods=["GET"])
@@ -5503,8 +5505,6 @@ def ceo_feeding_instructions():
     analyzer = KnowledgeGapAnalyzer(db=db)
     result = analyzer.generate_ceo_instructions()
     return jsonify({"success": True, **result})
-
-    except Exception as e:
 
 
 @app.route("/api/course/generate", methods=["POST"])
