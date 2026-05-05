@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>乡村振兴知识库 v2.3.6-part1</title>
+<title>乡村振兴知识库 v2.3.7</title>
 <style>
 :root {
   --primary: #0A9B80;
@@ -721,11 +721,11 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 <!-- Header -->
 <div class="header">
-  <div class="header-title">乡村振兴知识库 <span id="brandVersion">v2.3.6-part1</span></div>
-  <!-- v2.3.6-part1: 版本号每次发版务必同步更新 #brandVersion 文字
+  <div class="header-title">乡村振兴知识库 <span id="brandVersion">v2.3.7</span></div>
+  <!-- v2.3.7: 版本号每次发版务必同步更新 #brandVersion 文字
        (待未来改造为 /api/statistics 返回 version 字段, 立规则 60 第 1 次落地)
        v2.3.4-hotfix1 漏改后补:VERIFY-7 第 2 项升级为双向扫描(新版本号到位+旧版本号清理)
-       v2.3.6-part1 同步:title + brandVersion 两处 -->
+       v2.3.7 同步:title + brandVersion 两处 -->
 
   <div class="header-stats">
     <div class="stat-pill">待审核<span class="num" id="statPending">-</span></div>
@@ -1803,7 +1803,7 @@ var tp=kp.content_type||"policy",sel=selectedIds[kp.id];
 var cp="";if(kp.level1_name&&kp.level2_name)cp=kp.level1_name+" / "+kp.level2_name;
 var matched=!!kp.suggested_category_id;
 var catTags=parseTags(kp.final_category_tags);if(!catTags.length)catTags=parseTags(kp.suggested_category_tags);
-/* v2.3.6-part1: 过滤 qa_flags 误入 category_tags 的情况 */
+/* v2.3.7: 过滤 qa_flags 误入 category_tags 的情况 */
 var qaFlagSet=["缺上下文","信息空泛","标签不符","提炼与原文重复","启示无依据","颗粒度过粗","low_value_add"];
 catTags=catTags.filter(function(t){return qaFlagSet.indexOf(t)===-1});
 var attrs=parseObj(kp.final_attribute_tags);var ak=Object.keys(attrs);if(!ak.length){attrs=parseObj(kp.suggested_attribute_tags);ak=Object.keys(attrs)}
@@ -3611,7 +3611,7 @@ function _runDupUnified(mode,title,done){
     }
     h+='</p>';
     h+='<div style="font-size:12px;color:var(--text-muted);margin-top:8px">提示: 新关系组在 Tab 1 顶部"🔗 知识关系管理"区处理</div>';
-    h+=dRow("dot","#86868B","已排除",s.dismissed||0);
+    h+=dRow("dot","#86868B","已排除",r.dismissed||0);
     showToolResult(title+" 结果",h);
     loadDuplicateSummary();loadDashboard();
   });

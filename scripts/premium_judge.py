@@ -353,9 +353,14 @@ class PremiumJudgeEngine:
                 {"role": "user", "content": user_prompt},
             ]
             for kwargs in (
+                # 签名 A: DeepSeekClient.chat() 真实签名(system_prompt/user_prompt, 无timeout)
+                {"system_prompt": system_prompt, "user_prompt": user_prompt,
+                 "model_override": "deepseek-chat",
+                 "temperature": V3_TEMPERATURE},
+                # 签名 B: messages= 数组(泛用适配)
                 {"messages": msgs, "model": "deepseek-chat",
-                 "temperature": V3_TEMPERATURE, "timeout": timeout},
-                # 签名 B: 独立 system_prompt/user_prompt 参数
+                 "temperature": V3_TEMPERATURE},
+                # 签名 C: 独立 system_prompt/user_prompt 参数 + model_override
                 {"system_prompt": system_prompt, "user_prompt": user_prompt,
                  "model_override": "deepseek-chat",
                  "temperature": V3_TEMPERATURE, "timeout": timeout},
