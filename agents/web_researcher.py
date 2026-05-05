@@ -1,6 +1,6 @@
 """
 web_researcher.py - AI网络研究员(搜索→清洗→关联→入库)
-路径：scripts/web_researcher.py
+路径：agents/web_researcher.py
 版本：v2.3.7
 
 主动从互联网搜索乡村振兴相关信息,清洗过滤后与知识库关联。
@@ -43,13 +43,13 @@ class WebResearcher(object):
 
     def research_for_agent(self, agent_code, agent_question):
         """为特定Agent研究一个问题(15个客户Agent的核心问题驱动搜索)"""
-        from scripts.agent_orchestra import build_all_agents
+        from agents.agent_orchestra import build_all_agents
         agents = build_all_agents()
-        agent = next((a for a in agents if a["agent_code"] == agent_code), None)
+        agent = next((a for a in agents if a.agent_code == agent_code), None)
 
         search_query = agent_question
         if agent:
-            search_query = f"{agent['agent_name']} {agent_question} 四川 乡村振兴"
+            search_query = f"{agent.agent_name} {agent_question} 四川 乡村振兴"
 
         result = self.research_topic(search_query)
         result["agent_code"] = agent_code

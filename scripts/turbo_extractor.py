@@ -191,7 +191,7 @@ class TurboExtractor(object):
     def _async_tag_new_kps(self):
         """对最近入库的 KP 进行读者打标(非阻塞)"""
         try:
-            from scripts.reader_tagger import ReaderAutoTagger
+            from agents.reader_tagger import ReaderAutoTagger
             tagger = ReaderAutoTagger(client=self.client, db=self.db)
             kps = self.db.get_kps_missing_reader_fields(limit=50)
             for kp in kps[:10]:

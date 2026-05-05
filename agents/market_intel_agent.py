@@ -1,6 +1,6 @@
 """
 market_intel_agent.py - 市场情报Agent(动态监控竞品/政策/市场→实时报告CEO)
-路径：scripts/market_intel_agent.py
+路径：agents/market_intel_agent.py
 版本：v2.3.7
 
 市场变化很快。本Agent持续监控:竞品动态/政策变化/市场趋势/用户需求变化。

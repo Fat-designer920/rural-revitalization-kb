@@ -1,6 +1,6 @@
 """
 reader_tagger.py - V3 自动读者定位打标器(15角色×5场景×4深度)
-路径：scripts/reader_tagger.py
+路径：agents/reader_tagger.py
 版本：v2.3.7
 """
 import json, time

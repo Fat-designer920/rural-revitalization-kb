@@ -1,6 +1,6 @@
 """
 auto_feeder.py - 自动批量喂料器(使用现有成熟管道)
-路径：scripts/auto_feeder.py
+路径：agents/auto_feeder.py
 版本：v2.3.7
 """
 import json, os, shutil, time

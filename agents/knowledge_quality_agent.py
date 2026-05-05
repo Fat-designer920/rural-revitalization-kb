@@ -1,6 +1,6 @@
 """
 knowledge_quality_agent.py - 知识质量Agent(CEO指令:自动化QA校验,提质量降人工)
-路径：scripts/knowledge_quality_agent.py
+路径：agents/knowledge_quality_agent.py
 版本：v2.3.7
 
 CEO战略决策:质量已成为瓶颈。本Agent负责逐条校验知识点的一致性和专业度。

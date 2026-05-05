@@ -1,15 +1,15 @@
 """
 audit_engine.py - 17 Agent 质检引擎(15角色+1 Bug测试+1 UI设计)
-路径：scripts/audit_engine.py
+路径：agents/audit_engine.py
 版本：v2.3.7
 """
 import json, time, traceback
 from datetime import datetime
 from scripts.deepseek_client import CostLimitExceeded
-from scripts.agent_orchestra import build_all_agents
+from agents.agent_orchestra import build_agent_dicts
 
-# 24 个 Agent 定义(从 agent_orchestra 动态构建)
-AGENT_DEFINITIONS = build_all_agents()
+# 24 个 Agent 定义(从 agent_orchestra 动态构建,兼容dict格式)
+AGENT_DEFINITIONS = build_agent_dicts()
 class AuditEngine(object):
     """17 Agent 质检引擎。复用 health_checker 的 _safe_dim() 隔离模式。"""
 

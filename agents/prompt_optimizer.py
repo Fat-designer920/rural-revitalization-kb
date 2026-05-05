@@ -1,6 +1,6 @@
 """
 prompt_optimizer.py - Prompt 自动优化器(评估→诊断→修补→验证)
-路径：scripts/prompt_optimizer.py
+路径：agents/prompt_optimizer.py
 版本：v2.3.7
 """
 import json, time, traceback

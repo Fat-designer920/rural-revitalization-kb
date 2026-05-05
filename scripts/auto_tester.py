@@ -137,8 +137,8 @@ CORE_MODULES = [
     ("scripts.check_system", "CheckSystem"),
     ("scripts.backup_manager", "BackupManager"),
     ("scripts.config_wizard", "ConfigWizard"),
-    ("scripts.reader_tagger", "ReaderAutoTagger"),
-    ("scripts.audit_engine", "AuditEngine"),
+    ("agents.reader_tagger", "ReaderAutoTagger"),
+    ("agents.audit_engine", "AuditEngine"),
 ]
 
 

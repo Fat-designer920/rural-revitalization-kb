@@ -1,6 +1,6 @@
 """
 design_center.py - 设计中心(6个专业Agent+部门协调+设计评审)
-路径：scripts/design_center.py
+路径：agents/design_center.py
 版本：v2.3.7
 
 设计中心=设计总监协调6个专业Agent,每个有独立领域,定期开会评审。

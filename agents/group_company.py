@@ -1,6 +1,6 @@
 """
 group_company.py - 乡村振兴知识集团(7子公司×全链条×24/7自动化)
-路径：scripts/group_company.py
+路径：agents/group_company.py
 版本：v2.3.7
 
 集团架构: 母公司(CEO+战略+财务) + 7子公司(每条价值链一个)

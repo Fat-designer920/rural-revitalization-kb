@@ -1,6 +1,6 @@
 """
 solo_company.py - 一人公司智慧架构(董事长+CEO+部门+Agent)
-路径：scripts/solo_company.py
+路径：agents/solo_company.py
 版本：v2.3.7
 
 一人公司=老唐(董事长)+Claude(CEO)+30Agent(各部门)。极致智慧化,保守变现。

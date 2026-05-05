@@ -2804,6 +2804,52 @@ function runTool(name){
     done();
     openPremiumExport();
   }
+  else if(name==="ceo"){
+    var card=document.getElementById("tc-ceo");
+    apiGet("/api/tools/ceo/progress").then(function(r){
+      if(r.running){
+        showToolResult("CEO Agent","<p>CEO正在运行中... 动作:"+esc((r.progress||{}).current_action||"?")+", 周期:"+(r.progress.cycle||0)+"</p><p style=\"color:var(--text-muted);font-size:12px\"><button onclick=\"ceoStop()\">停止</button></p>");
+      }else if(r.has_result){
+        var res=r.progress.metrics||{};
+        var h="<div>上次运行完成: "+(esc(r.progress.current_action||"?"))+"</div>";
+        h+="<div style=\"margin-top:8px\">KPs喂入: "+(res.kps_fed||0)+" | 提取: "+(res.kps_extracted||0)+" | 审计: "+(res.audits_run||0)+"</div>";
+        h+="<p style=\"margin-top:8px\"><button onclick=\"ceoStart()\">启动CEO单次</button></p>";
+        showToolResult("CEO Agent",h);
+      }else{
+        showToolResult("CEO Agent","<p>CEO Agent就绪,可启动单次模式</p><p style=\"margin-top:8px\"><button onclick=\"ceoStart()\">启动单次</button></p>");
+      }
+      if(card)card.classList.remove("running");
+    });
+  }
+  else if(name==="agents"){
+    var card2=document.getElementById("tc-agents");
+    apiGet("/api/agents/status").then(function(r){
+      var h="";
+      if(r.success){
+        h+="<div style=\"font-weight:600;margin-bottom:8px\">30 Agent智慧体系</div>";
+        h+="<div>乐团Agent: <b>"+r.orchestra_agents+"</b> | 公司Agent: <b>"+r.company_agents+"</b></div>";
+        var types=r.orchestra_by_type||{};
+        h+="<p style=\"margin-top:8px\"><button onclick=\"agentsLoadGroup()\">查看集团架构</button> <button onclick=\"agentsAudit()\">触发Agent审计</button></p>";
+      }else{h="<p style=\"color:var(--danger)\">"+esc(r.error)+"</p>"}
+      showToolResult("Agent智慧体系",h);
+      if(card2)card2.classList.remove("running");
+    });
+  }
+  else if(name==="audit"){
+    var card3=document.getElementById("tc-audit");
+    apiGet("/api/tools/audit-history").then(function(r){
+      var h="<div style=\"font-weight:600;margin-bottom:8px\">Agent审计</div>";
+      if(r.history&&r.history.length){
+        for(var i=0;i<r.history.length;i++){
+          var a=r.history[i];
+          h+="<div class=\"tr-item\" style=\"font-size:12px\"><span>"+esc(a.cycle_label||"")+"</span><span>"+esc(a.status||"")+"</span><span style=\"color:var(--text-muted)\">"+esc(a.created_at||"")+"</span></div>";
+        }
+      }else{h+="<p style=\"color:var(--text-muted)\">暂无审计记录</p>"}
+      h+="<p style=\"margin-top:8px\"><button onclick=\"agentsAudit()\">运行Agent审计</button></p>";
+      showToolResult("Agent审计",h);
+      if(card3)card3.classList.remove("running");
+    });
+  }
   else{done()}
 }
 
@@ -2865,6 +2911,67 @@ function _premShowProgress(r){
 function _premHideProgress(){
   var el=document.getElementById("premTaskProgress");
   if(el)el.style.display="none";
+}
+
+/* ================================================================ */
+/* === v2.3.7 CEO Agent + Agent 体系 辅助函数 === */
+/* ================================================================ */
+function ceoStart(){
+  showToolResult("CEO Agent","<div style='padding:20px 0;text-align:center;color:var(--text-secondary)'>正在启动 CEO Agent...</div>");
+  apiPost("/api/tools/ceo/start",{}).then(function(r){
+    if(r.error){showToolResult("CEO Agent","<p style='color:var(--danger)'>启动失败: "+esc(r.error)+"</p>");return}
+    showToolResult("CEO Agent","<p style='color:var(--success)'>CEO Agent已启动("+esc(r.mode||"?")+")</p><p style='color:var(--text-muted);font-size:12px'>自动轮询进度中...</p>");
+    ceoStartPolling();
+  });
+}
+function ceoStop(){
+  apiPost("/api/tools/ceo/stop").then(function(r){
+    showToast("CEO停止请求已发送","success");
+  });
+}
+function ceoStartPolling(){
+  apiGet("/api/tools/ceo/progress").then(function(r){
+    if(!r)return;
+    if(r.running){
+      var p=r.progress||{};
+      var h="<div>CEO运行中: 周期 "+(p.cycle||0)+"/"+(p.max_iterations||"?").toString()+"</div>";
+      h+="<div style='color:var(--text-muted);font-size:12px;margin-top:4px'>动作: "+esc(p.current_action||"?")+"</div>";
+      h+="<div style='color:var(--text-muted);font-size:12px'>"+esc(p.message||"")+"</div>";
+      h+="<p style='margin-top:8px'><button onclick='ceoStop()'>停止</button></p>";
+      showToolResult("CEO Agent",h);
+      setTimeout(ceoStartPolling,3000);
+    }else{
+      var res=r.progress.metrics||{};
+      var h2="<div style='color:var(--success);font-weight:600'>CEO运行完成</div>";
+      h2+="<div style='margin-top:8px'>KPs喂入: "+(res.kps_fed||0)+" | 提取: "+(res.kps_extracted||0)+"</div>";
+      h2+="<div>审计: "+(res.audits_run||0)+" | Prompt优化: "+(res.prompts_optimized||0)+" | 爬虫: "+(res.crawl_cycles||0)+"</div>";
+      if(r.has_error)h2+="<p style='color:var(--danger)'>错误: "+esc(r.progress.message||"")+"</p>";
+      h2+="<p style='margin-top:8px'><button onclick='ceoStart()'>重新启动</button></p>";
+      showToolResult("CEO Agent",h2);
+    }
+  });
+}
+function agentsLoadGroup(){
+  apiGet("/api/agents/group-status").then(function(r){
+    if(r.error){showToolResult("集团架构","<p style='color:var(--danger)'>"+esc(r.error)+"</p>");return}
+    var h="<div style='font-weight:600;margin-bottom:8px'>"+esc(r.group_name||"")+"</div>";
+    h+="<div>子公司: <b>"+(r.subsidiaries||0)+"</b> | 总KPs: <b>"+(r.total_kps||0)+"</b> | 日均新增: <b>"+(r.daily_new_kps||0)+"</b></div>";
+    h+="<div style='font-size:12px;color:var(--text-muted);margin-top:4px'>状态: "+esc(r.operational_status||"")+"</div>";
+    showToolResult("集团架构",h);
+  });
+}
+function agentsAudit(){
+  showToolResult("Agent审计","<div style='padding:20px 0;text-align:center;color:var(--text-secondary)'>正在运行Agent审计(抽样+评分+辩论)...</div>");
+  apiPost("/api/tools/audit-run").then(function(r){
+    if(r.error){showToolResult("Agent审计","<p style='color:var(--danger)'>"+esc(r.error)+"</p>");return}
+    var report=r.report||{};
+    var h="<div style='color:var(--success);font-weight:600;margin-bottom:8px'>审计完成! 综合评分: <b>"+(report.overall_score||"?")+"</b></div>";
+    h+="<div>Agent数: "+(report.agent_count||0)+" | 抽样: "+(report.sample_count||0)+" 条</div>";
+    if(r.feed_tasks&&r.feed_tasks.length)h+="<div style='margin-top:4px'>喂料任务: <b>"+r.feed_tasks.length+"</b> 条</div>";
+    if(r.code_tasks&&r.code_tasks.length)h+="<div style='color:var(--danger);margin-top:4px'>代码任务: <b>"+r.code_tasks.length+"</b> 条(P0!)</div>";
+    h+="<p style='margin-top:8px'><button onclick='runTool(\"audit\")'>刷新</button></p>";
+    showToolResult("Agent审计",h);
+  });
 }
 
 /* --- 打开精品候选队列模态 --- */

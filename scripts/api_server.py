@@ -405,6 +405,80 @@ def _qa_readiness_check():
     return (len(errors) == 0), errors
 
 
+# v2.3.7: CEO Agent 自动化任务槽(对齐 _qa_task 模式)
+# 设计动机:
+#   - CEO 主循环是长任务(可能几十轮),走异步+独立槽
+#   - 与 _task / _qc_task / _premium_task / _qa_task 物理隔离,允许并发
+#   - cancel_requested 标志供 ceo_agent 引擎协作式退出
+_ceo_task_lock = threading.Lock()
+_ceo_task = {
+    "running": False,
+    "started_at": None,
+    "cancel_requested": False,
+    "loop_mode": False,  # True=持续循环, False=单次
+    "progress": {
+        "cycle": 0,
+        "max_iterations": 0,
+        "current_action": "",
+        "message": "",
+        "metrics": {},
+    },
+    "result": None,
+    "error": None,
+}
+
+
+def _ceo_task_update_progress(data):
+    """供 CEO Agent 主循环回调更新进度."""
+    with _ceo_task_lock:
+        for k, v in data.items():
+            if k in _ceo_task["progress"]:
+                _ceo_task["progress"][k] = v
+
+
+def _ceo_cancel_check():
+    """供 CEO Agent 引擎查询取消标志."""
+    with _ceo_task_lock:
+        return bool(_ceo_task.get("cancel_requested"))
+
+
+def _ceo_readiness_check():
+    """v2.3.7 CEO Agent 启动就绪性自检(对齐模板).
+    自检 4 项:
+      [1] db 可连 SELECT 1
+      [2] agents.ceo_agent / agents.audit_engine 可 import
+      [3] agent_definitions 表和 audit_cycles 表存在
+      [4] deepseek_client 可实例化
+    """
+    errors = []
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT 1"); c.fetchone()
+        conn.close()
+    except Exception as e:
+        errors.append("[1] db 连接失败: " + str(e))
+        return False, errors
+
+    try:
+        from agents.ceo_agent import CEOAgent
+        from agents.audit_engine import AuditEngine
+    except Exception as e:
+        errors.append("[2] Agent 模块 import 失败: " + str(e)[:200])
+
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('agent_definitions','audit_cycles')")
+        existing = {r[0] for r in c.fetchall()}
+        conn.close()
+        for t in ("agent_definitions", "audit_cycles"):
+            if t not in existing:
+                errors.append("[3] 表 " + t + " 不存在(请先运行 首次安装.bat 追齐 schema)")
+    except Exception as e:
+        errors.append("[3] schema 检查失败: " + str(e))
+
+    return (len(errors) == 0), errors
+
+
 REVIEW_HTML = None
 for _p in [PROJECT_ROOT/"web"/"templates"/"review.html", PROJECT_ROOT/"web"/"review.html", PROJECT_ROOT/"review.html"]:
     if _p.exists():
@@ -4912,7 +4986,7 @@ def qa_stats():
 def audit_run():
     """触发一次 Agent 审计周期(同步,秒级)。返回审计报告。"""
     try:
-        from scripts.audit_engine import run_audit_cycle
+        from agents.audit_engine import run_audit_cycle
         from scripts.deepseek_client import DeepSeekClient
         c = DeepSeekClient()
         result = run_audit_cycle(db, c)
@@ -4963,7 +5037,7 @@ def reader_backfill():
                 _task["progress"] = prog
         def _worker():
             try:
-                from scripts.reader_tagger import run_reader_backfill
+                from agents.reader_tagger import run_reader_backfill
                 from scripts.deepseek_client import DeepSeekClient
                 c2 = DeepSeekClient()
                 r = run_reader_backfill(db, c2, progress_callback=_cb)
@@ -4980,6 +5054,398 @@ def reader_backfill():
     except Exception as e:
         with _task_lock:
             _task["running"] = False
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# v2.3.7: CEO Agent 自动化路由
+# ================================================================
+@app.route("/api/tools/ceo/start", methods=["POST"])
+def ceo_start():
+    """启动 CEO Agent 自动化循环(异步,独立 _ceo_task 槽)。POST body 可选 {loop_mode:true, max_iterations:50}"""
+    try:
+        ok, errors = _ceo_readiness_check()
+        if not ok:
+            db.log_operation_event(event_type="ceo_readiness_check_failed",
+                                   module="api_server", severity="error",
+                                   payload={"errors": errors})
+            return jsonify({"success": False, "error": "CEO就绪检查失败", "details": errors}), 400
+        with _ceo_task_lock:
+            if _ceo_task["running"]:
+                return jsonify({"error": "CEO Agent 正在运行中,请等待完成或先停止"}), 409
+            data = request.get_json(silent=True) or {}
+            _ceo_task["running"] = True
+            _ceo_task["started_at"] = datetime.now().isoformat()
+            _ceo_task["cancel_requested"] = False
+            _ceo_task["loop_mode"] = data.get("loop_mode", False)
+            _ceo_task["progress"] = {"cycle": 0, "max_iterations": data.get("max_iterations", 10),
+                                     "current_action": "", "message": "CEO 启动中", "metrics": {}}
+            _ceo_task["result"] = None
+            _ceo_task["error"] = None
+
+        def _worker():
+            try:
+                from agents.ceo_agent import CEOAgent
+                from scripts.deepseek_client import DeepSeekClient
+                c = DeepSeekClient()
+                ceo = CEOAgent(db=db, client=c, headless=True)
+                max_iter = _ceo_task["progress"]["max_iterations"]
+                if not _ceo_task["loop_mode"]:
+                    # 单次模式: 只跑一轮感知→决策→执行→学习→报告
+                    state = ceo._perceive()
+                    _ceo_task_update_progress({"cycle": 1, "current_action": "perceive",
+                                               "message": f"感知完成: KPs={state.get('kps_confirmed',0)}"})
+                    if _ceo_cancel_check():
+                        with _ceo_task_lock:
+                            _ceo_task["running"] = False
+                        return
+                    action = ceo._decide(state)
+                    _ceo_task_update_progress({"cycle": 1, "current_action": "decide",
+                                               "message": f"决策={action}"})
+                    if _ceo_cancel_check():
+                        with _ceo_task_lock:
+                            _ceo_task["running"] = False
+                        return
+                    result = ceo._execute(action)
+                    _ceo_task_update_progress({"cycle": 1, "current_action": "execute",
+                                               "message": f"执行完成: {'OK' if result.get('success') else 'FAIL'}"})
+                    ceo._learn(action, result)
+                    rpt = ceo._final_report()
+                    with _ceo_task_lock:
+                        _ceo_task["result"] = {"action": action, "result": result, "report": rpt,
+                                               "state": state}
+                        _ceo_task["running"] = False
+                else:
+                    # 循环模式: 跑完整 CEO 主循环
+                    rpt = ceo.run(max_iterations=max_iter)
+                    with _ceo_task_lock:
+                        _ceo_task["result"] = rpt
+                        _ceo_task["progress"]["metrics"] = rpt.get("metrics", {})
+                        _ceo_task["running"] = False
+            except Exception as ex:
+                with _ceo_task_lock:
+                    _ceo_task["error"] = str(ex)
+                    _ceo_task["running"] = False
+
+        import threading
+        threading.Thread(target=_worker, daemon=True).start()
+        return jsonify({"success": True, "message": "CEO Agent 已启动",
+                        "mode": "loop" if _ceo_task["loop_mode"] else "single"})
+    except Exception as e:
+        with _ceo_task_lock:
+            _ceo_task["running"] = False
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tools/ceo/stop", methods=["POST"])
+def ceo_stop():
+    """停止 CEO Agent(协作式退出)"""
+    with _ceo_task_lock:
+        _ceo_task["cancel_requested"] = True
+        return jsonify({"success": True, "message": "CEO 停止请求已发送"})
+
+
+@app.route("/api/tools/ceo/progress", methods=["GET"])
+def ceo_progress():
+    """获取 CEO Agent 当前进度"""
+    with _ceo_task_lock:
+        return jsonify({
+            "running": _ceo_task["running"],
+            "loop_mode": _ceo_task["loop_mode"],
+            "started_at": _ceo_task["started_at"],
+            "progress": _ceo_task["progress"],
+            "has_result": _ceo_task["result"] is not None,
+            "has_error": _ceo_task["error"] is not None,
+        })
+
+
+@app.route("/api/tools/ceo/status", methods=["GET"])
+def ceo_status():
+    """获取 CEO Agent 运行状态和指标摘要"""
+    state = {"kps_total": 0, "kps_confirmed": 0, "audit_avg_score": 0, "pending_files": 0}
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM knowledge_points")
+        state["kps_total"] = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed'")
+        state["kps_confirmed"] = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score > 0")
+        state["kps_qa_scored"] = c.fetchone()[0]
+        conn.close()
+    except Exception:
+        pass
+    try:
+        audit = db.get_latest_audit_report()
+        if audit:
+            rj = audit.get("report_json") or {}
+            if isinstance(rj, str):
+                try: rj = json.loads(rj)
+                except Exception: rj = {}
+            state["audit_avg_score"] = rj.get("overall_score", 0)
+    except Exception:
+        pass
+    try:
+        pending_dir = PROJECT_ROOT / "data" / "pending"
+        state["pending_files"] = len(list(pending_dir.glob("*"))) if pending_dir.exists() else 0
+    except Exception:
+        pass
+    with _ceo_task_lock:
+        state["ceo_running"] = _ceo_task["running"]
+        state["ceo_metrics"] = _ceo_task["progress"].get("metrics", {})
+    return jsonify({"success": True, "state": state})
+
+
+# ================================================================
+# v2.3.7: Agent 体系全局状态路由(GET,秒级同步)
+# ================================================================
+@app.route("/api/agents/status", methods=["GET"])
+def agents_status():
+    """获取集团6部门18Agent架构状态"""
+    try:
+        from agents.agent_orchestra import build_all_agents, get_departments
+        result = build_all_agents()
+        all_agents = result["agents"]
+        departments = result.get("departments", get_departments())
+        agent_types = {}
+        for a in all_agents:
+            t = a.agent_type
+            agent_types[t] = agent_types.get(t, 0) + 1
+        dept_summary = {code: {"name": d["name"], "chief": d["chief"],
+                               "mission": d["mission"][:80]}
+                       for code, d in departments.items()}
+        return jsonify({
+            "success": True,
+            "total_agents": len(all_agents) + 1,
+            "orchestra_agents": len(all_agents),
+            "orchestra_by_type": agent_types,
+            "departments": dept_summary,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/group-status", methods=["GET"])
+def group_status():
+    """获取集团(7子公司)运营状态"""
+    try:
+        from agents.group_company import GroupCompany
+        gc = GroupCompany(db=db)
+        status = gc.get_group_status()
+        return jsonify({"success": True, **status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/solo-company", methods=["GET"])
+def solo_company_status():
+    """获取一人公司7部门架构状态"""
+    try:
+        from agents.solo_company import SoloCompany
+        sc = SoloCompany(db=db)
+        dept_status = sc.get_department_status()
+        return jsonify({"success": True, **dept_status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/design-review", methods=["POST"])
+def design_review():
+    """触发设计中心评审(同步,AI调用)"""
+    try:
+        data = request.get_json(silent=True) or {}
+        page = data.get("page", "review.html")
+        from agents.design_center import DesignCenter
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        dc = DesignCenter(db=db, client=c)
+        result = dc.review_page(page)
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/market-intel/brief", methods=["GET"])
+def market_intel_brief():
+    """获取市场情报周报(同步,AI调用)"""
+    try:
+        from agents.market_intel_agent import MarketIntelAgent
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        mia = MarketIntelAgent(db=db, client=c)
+        brief = mia.generate_weekly_brief()
+        return jsonify({"success": True, **brief})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/evolve", methods=["POST"])
+def agent_evolve():
+    """触发 Agent 自我进化(评估低分Agent并自动升级)"""
+    try:
+        from agents.agent_evolver import AgentEvolver
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        evolver = AgentEvolver(db=db, client=c)
+        result = evolver.auto_upgrade_low_performers(threshold=2.5)
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/chairman-brief", methods=["GET"])
+def chairman_brief():
+    """获取董事长简报(≤500字)"""
+    try:
+        from agents.solo_company import SoloCompany
+        sc = SoloCompany(db=db)
+        brief = sc.generate_chairman_brief()
+        return jsonify({"success": True, **brief})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/infra-status", methods=["GET"])
+def infra_status():
+    """获取基础设施状态(内存/CPU/GPU/NPU/磁盘)"""
+    try:
+        from agents.infrastructure_agent import InfrastructureAgent
+        infra = InfrastructureAgent(db=db)
+        return jsonify({"success": True, **infra.get_system_snapshot()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/infra-optimize", methods=["POST"])
+def infra_optimize():
+    """一键优化系统环境(内存清理+硬件检测+参数调整)"""
+    try:
+        from agents.infrastructure_agent import InfrastructureAgent
+        infra = InfrastructureAgent(db=db)
+        result = infra.optimize_environment()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/infra-health", methods=["GET"])
+def infra_health():
+    """基础设施健康检查"""
+    try:
+        from agents.infrastructure_agent import InfrastructureAgent
+        infra = InfrastructureAgent(db=db)
+        healthy, issues, recs = infra.health_check()
+        return jsonify({"success": True, "healthy": healthy, "issues": issues,
+                        "recommendations": recs})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
+# v2.3.7: Agent验证 + 会议记录路由
+# ================================================================
+@app.route("/api/agents/verify-all", methods=["POST"])
+def agent_verify_all():
+    """对所有Agent进行4项能力验证(专业度+独立性+盈利导向+抗盲从)。异步。"""
+    try:
+        from agents.agent_orchestra import build_all_agents
+        from agents.agent_verifier import AgentVerifier
+        from scripts.deepseek_client import DeepSeekClient
+
+        c = DeepSeekClient()
+        build_result = build_all_agents(client=c)
+        agents = build_result["agents"]
+        verifier = AgentVerifier(client=c)
+        result = verifier.verify_all(agents[:6])  # 先验证前6个(控制API成本)
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/verify/<agent_code>", methods=["POST"])
+def agent_verify_single(agent_code):
+    """验证单个Agent"""
+    try:
+        from agents.agent_orchestra import build_all_agents
+        from agents.agent_verifier import AgentVerifier
+        from scripts.deepseek_client import DeepSeekClient
+
+        c = DeepSeekClient()
+        agents = build_all_agents(client=c)
+        agent = next((a for a in agents if a.agent_code == agent_code), None)
+        if not agent:
+            return jsonify({"error": f"Agent {agent_code} 不存在"}), 404
+
+        verifier = AgentVerifier(client=c)
+        report = verifier.verify_agent(agent)
+        return jsonify({"success": True, **report})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/meeting-history", methods=["GET"])
+def meeting_history():
+    """获取CEO会议记录(最近10次)"""
+    try:
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("""SELECT event_type, severity, payload_json, created_at
+                     FROM operation_events WHERE event_type LIKE 'ceo_%'
+                     ORDER BY created_at DESC LIMIT 30""")
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return jsonify({"success": True, "count": len(rows), "events": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/agents/org-chart", methods=["GET"])
+def org_chart():
+    """获取集团组织架构图(6部门+Agent清单)"""
+    try:
+        from agents.agent_orchestra import build_all_agents, get_departments
+        result = build_all_agents()
+        agents = result["agents"]
+        depts = result.get("departments", get_departments())
+
+        org = {"departments": {}, "total_agents": len(agents) + 1,
+               "monthly_revenue_target": "20万元"}
+
+        dept_agent_map = {
+            "ceo_office": ["ceo_strategist", "financial_analyst", "agent_evolution"],
+            "content_production": ["feed_strategist", "policy_researcher", "case_collector", "methodology_expert"],
+            "client_delivery": ["customer_reviewer", "qa_consultant", "solution_architect"],
+            "market_expansion": ["gtm_strategist", "content_marketer"],
+            "quality_assurance": ["fact_checker", "freshness_monitor"],
+            "tech_platform": ["system_operator"],
+        }
+
+        for dept_code, dept in depts.items():
+            member_codes = dept_agent_map.get(dept_code, [])
+            members = []
+            for code in member_codes:
+                agent = next((a for a in agents if a.agent_code == code), None)
+                if agent:
+                    members.append({
+                        "code": agent.agent_code, "name": agent.agent_name,
+                        "type": type(agent).__name__,
+                        "model": agent.model,
+                        "is_chief": code == dept["chief"],
+                    })
+            if dept_code == "tech_platform":
+                members.append({
+                    "code": "infrastructure_agent", "name": "后勤保障员",
+                    "type": "InfrastructureAgent", "model": "N/A(系统级)", "is_chief": True,
+                })
+            org["departments"][dept_code] = {
+                "name": dept["name"], "chief": dept["chief"],
+                "mission": dept["mission"], "members": members,
+            }
+
+        return jsonify({"success": True, **org})
+    except Exception as e:
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 

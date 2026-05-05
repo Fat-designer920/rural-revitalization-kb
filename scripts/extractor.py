@@ -2518,7 +2518,7 @@ class Extractor:
             # v2.3.7: 读者定位自动打标(非阻塞,失败不影响提取结果)
             if kps_info and cnt > 0:
                 try:
-                    from scripts.reader_tagger import ReaderAutoTagger
+                    from agents.reader_tagger import ReaderAutoTagger
                     tagger = ReaderAutoTagger(client=self.client, db=self.db)
                     tagged = 0
                     for info in kps_info:

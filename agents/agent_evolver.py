@@ -1,6 +1,6 @@
 """
 agent_evolver.py - Agent持续进化系统(会后自动升级+能力追踪+效果验证)
-路径：scripts/agent_evolver.py
+路径：agents/agent_evolver.py
 版本：v2.3.7
 
 每次CEO会议决策→立即执行Agent能力升级→追踪效果→持续迭代
@@ -146,15 +146,66 @@ class AgentEvolver(object):
         return None
 
     def _calculate_capability(self, agent_code):
-        # 简化:基于进化日志评分
-        upgrades = [e for e in self.evolution_log if e["agent_code"] == agent_code]
-        return min(5.0, 3.0 + len(upgrades) * 0.3)
+        """从 audit_cycles 表读取该Agent最近评分,计算真实能力值"""
+        try:
+            conn = self.db.get_connection(); c = conn.cursor()
+            c.execute("""SELECT report_json FROM audit_cycles
+                         WHERE status='completed' ORDER BY created_at DESC LIMIT 3""")
+            rows = c.fetchall()
+            conn.close()
+            scores = []
+            for (rj,) in rows:
+                try:
+                    report = json.loads(rj) if isinstance(rj, str) else rj
+                    for ag in report.get("agent_summaries", []):
+                        if ag.get("agent_code") == agent_code:
+                            scores.append(ag.get("avg_score", 0))
+                except Exception:
+                    pass
+            if scores:
+                return round(sum(scores) / len(scores), 1)
+            return 3.0  # 无数据=中等
+        except Exception:
+            return 3.0
 
     def _find_weakest_dimension(self, agent_code):
-        return "待首次审计评估"
+        """从最近审计报告分析最弱维度"""
+        agent = self._get_agent(agent_code)
+        dims = agent.get("scoring_dimensions", []) if agent else []
+        if not dims:
+            return "无评分维度定义"
+        try:
+            conn = self.db.get_connection(); c = conn.cursor()
+            c.execute("""SELECT report_json FROM audit_cycles
+                         WHERE status='completed' ORDER BY created_at DESC LIMIT 1""")
+            row = c.fetchone()
+            conn.close()
+            if row:
+                report = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                for ag in report.get("agent_summaries", []):
+                    if ag.get("agent_code") == agent_code and ag.get("dim_scores"):
+                        dim_scores = ag["dim_scores"]
+                        if dim_scores:
+                            return min(dim_scores, key=dim_scores.get)
+        except Exception:
+            pass
+        return dims[0] if dims else "未知"
 
     def _suggest_improvements(self, agent):
-        return ["首次评估后自动生成具体改进建议"]
+        """基于审计数据生成改进建议"""
+        agent_code = agent.get("agent_code", "")
+        weakest = self._find_weakest_dimension(agent_code)
+        capability = self._calculate_capability(agent_code)
+        suggestions = []
+        if capability < 2.5:
+            suggestions.append("评分" + str(capability) + "偏低,建议AI深度评估并升级核心问题")
+        if weakest and weakest != "未知":
+            suggestions.append(f"最弱维度'{weakest}'需重点改进")
+        if capability >= 4.0:
+            suggestions.append("Agent表现优秀,可考虑扩大评审范围")
+        if not suggestions:
+            suggestions.append("运行首次审计后自动生成具体改进建议")
+        return suggestions[:3]
 
     def _identify_affected_agents(self, decision):
         """根据决策内容识别受影响的Agent"""
