@@ -44,7 +44,8 @@ class WebResearcher(object):
     def research_for_agent(self, agent_code, agent_question):
         """为特定Agent研究一个问题(15个客户Agent的核心问题驱动搜索)"""
         from agents.agent_orchestra import build_all_agents
-        agents = build_all_agents()
+        result = build_all_agents()
+        agents = result["agents"] if isinstance(result, dict) else result
         agent = next((a for a in agents if a.agent_code == agent_code), None)
 
         search_query = agent_question

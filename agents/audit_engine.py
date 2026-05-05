@@ -79,17 +79,20 @@ class AuditEngine(object):
             return {"success": False, "error": str(e), "trace": traceback.format_exc()[:1000]}
 
     def _cross_validate(self, all_scores, agents, sample):
-        """Agent 辩论:让评分差异大的Agent对同一KP进行辩论,AI主持人裁决,产生更准确的评分。返回辩论报告。"""
+        """Agent 辩论:按部门分组,让评分差异大的Agent对同一KP进行辩论。"""
         debates = []
-        # 按域分组相关Agent
-        gov_agents = [a for a in agents if a['agent_code'] in
-                      ['township_cadre','county_land','county_agri','dev_reform','finance_bureau']]
-        ent_agents = [a for a in agents if a['agent_code'] in
-                      ['platform_pm','planning_institute','consulting_firm','construction_pm',
-                       'industry_operator','social_capital']]
-        local_agents = [a for a in agents if a['agent_code'] in
-                        ['village_secretary','cooperative_head']]
-        debate_groups = [gov_agents, ent_agents, local_agents]
+        # 按部门分组(当前16 Agent六部门结构)
+        content_prod = [a for a in agents if a['agent_code'] in
+                        ['feed_strategist','policy_researcher','case_collector','methodology_expert']]
+        client_deliv = [a for a in agents if a['agent_code'] in
+                        ['customer_reviewer','qa_consultant','solution_architect']]
+        market_exp = [a for a in agents if a['agent_code'] in
+                      ['gtm_strategist','content_marketer']]
+        quality = [a for a in agents if a['agent_code'] in
+                   ['fact_checker','freshness_monitor']]
+        ceo_office = [a for a in agents if a['agent_code'] in
+                      ['ceo_strategist','financial_analyst','agent_evolution']]
+        debate_groups = [content_prod, client_deliv, market_exp, quality, ceo_office]
 
         for group in debate_groups:
             if len(group) < 2:
@@ -300,9 +303,12 @@ class AuditEngine(object):
 
     def _generate_code_tasks(self, gaps):
         tasks = []
-        bug_gaps = [g for g in gaps if g["agent_code"] == "bug_tester"]
+        bug_gaps = [g for g in gaps if g.get("severity") == "high"]
+        if not bug_gaps:
+            bug_gaps = gaps[:2]
         for g in bug_gaps[:3]:
-            tasks.append({"type": "code", "priority": "P0", "description": g["suggestion"]})
+            tasks.append({"type": "code", "priority": "P0",
+                          "description": g.get("suggestion", g.get("question", ""))})
         return tasks
 
     def _emit_progress(self, stage, current, total, message):

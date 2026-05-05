@@ -5091,7 +5091,7 @@ def ceo_start():
                 ceo = CEOAgent(db=db, client=c, headless=True)
                 max_iter = _ceo_task["progress"]["max_iterations"]
                 if not _ceo_task["loop_mode"]:
-                    # 单次模式: 只跑一轮感知→决策→执行→学习→报告
+                    # 单次模式: 感知→战略决策→执行计划→学习→报告
                     state = ceo._perceive()
                     _ceo_task_update_progress({"cycle": 1, "current_action": "perceive",
                                                "message": f"感知完成: KPs={state.get('kps_confirmed',0)}"})
@@ -5099,20 +5099,20 @@ def ceo_start():
                         with _ceo_task_lock:
                             _ceo_task["running"] = False
                         return
-                    action = ceo._decide(state)
-                    _ceo_task_update_progress({"cycle": 1, "current_action": "decide",
-                                               "message": f"决策={action}"})
+                    plan = ceo._strategize(state)
+                    _ceo_task_update_progress({"cycle": 1, "current_action": "strategize",
+                                               "message": f"决策={plan.get('action','?')}"})
                     if _ceo_cancel_check():
                         with _ceo_task_lock:
                             _ceo_task["running"] = False
                         return
-                    result = ceo._execute(action)
+                    results = ceo._execute_plan(plan)
                     _ceo_task_update_progress({"cycle": 1, "current_action": "execute",
-                                               "message": f"执行完成: {'OK' if result.get('success') else 'FAIL'}"})
-                    ceo._learn(action, result)
+                                               "message": f"执行={'OK' if results.get('success') else 'FAIL'}"})
+                    ceo._learn(plan, results)
                     rpt = ceo._final_report()
                     with _ceo_task_lock:
-                        _ceo_task["result"] = {"action": action, "result": result, "report": rpt,
+                        _ceo_task["result"] = {"plan": plan, "results": results, "report": rpt,
                                                "state": state}
                         _ceo_task["running"] = False
                 else:

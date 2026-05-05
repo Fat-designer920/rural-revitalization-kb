@@ -228,9 +228,9 @@ class CEOAgent(object):
             topic += f"老板选定的方案: {agreed_approach}\n"
         topic += "\n请讨论: 如何执行这个指令? 谁负责什么? 优先级? 风险如何规避?"
 
-        # 选核心agent: 战略+质量+最相关的role agent
-        core_codes = ["ceo_strategist", "extraction_quality", "feed_strategy",
-                      "bug_tester", "agent_evolution"]
+        # 选核心agent: 战略+质量+进化
+        core_codes = ["ceo_strategist", "financial_analyst", "feed_strategist",
+                      "solution_architect", "agent_evolution"]
         participants = [a for a in all_agents if a.agent_code in core_codes]
         if len(participants) < 3:
             participants = all_agents[:5]
@@ -503,8 +503,8 @@ class CEOAgent(object):
                           if a.agent_type in ("strategy", "quality", "evolution")]
 
         # 取战略+质量+进化 共5个核心agent
-        core_codes = ["ceo_strategist", "extraction_quality", "feed_strategy",
-                      "agent_evolution", "prompt_evolution"]
+        core_codes = ["ceo_strategist", "financial_analyst", "feed_strategist",
+                      "agent_evolution", "policy_researcher"]
         participants = [a for a in all_agents if a.agent_code in core_codes]
         if len(participants) < 3:
             participants = strategy_agents[:5]

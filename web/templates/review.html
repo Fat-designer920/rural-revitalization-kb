@@ -942,7 +942,22 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">&#8615;</div>
         <div class="tool-name">精品导出</div>
         <div class="tool-desc">Markdown / JSON 打包下载</div>
+      <div class="tool-card" id="tc-ceo" onclick="runTool('ceo')" style="position:relative">
+        <div class="tool-icon" style="background:#F3EAFA;color:#7A38A6">C</div>
+        <div class="tool-name">CEO Agent</div>
+        <div class="tool-desc">v2.3.7 自动决策+会议辩论</div>
       </div>
+      <div class="tool-card" id="tc-agents" onclick="runTool('agents')">
+        <div class="tool-icon" style="background:#DCFCE7;color:#16A34A">G</div>
+        <div class="tool-name">Agent智慧体系</div>
+        <div class="tool-desc">6部门16Agent全貌</div>
+      </div>
+      <div class="tool-card" id="tc-audit" onclick="runTool('audit')">
+        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">U</div>
+        <div class="tool-name">Agent审计</div>
+        <div class="tool-desc">评分+辩论+缺口</div>
+      </div>
+    </div>
     </div>
     <div class="tool-result" id="toolResult">
       <div class="tool-result-head">
@@ -2826,7 +2841,7 @@ function runTool(name){
     apiGet("/api/agents/status").then(function(r){
       var h="";
       if(r.success){
-        h+="<div style=\"font-weight:600;margin-bottom:8px\">30 Agent智慧体系</div>";
+        h+="<div style=\"font-weight:600;margin-bottom:8px\">16 Agent智慧体系</div>";
         h+="<div>乐团Agent: <b>"+r.orchestra_agents+"</b> | 公司Agent: <b>"+r.company_agents+"</b></div>";
         var types=r.orchestra_by_type||{};
         h+="<p style=\"margin-top:8px\"><button onclick=\"agentsLoadGroup()\">查看集团架构</button> <button onclick=\"agentsAudit()\">触发Agent审计</button></p>";
