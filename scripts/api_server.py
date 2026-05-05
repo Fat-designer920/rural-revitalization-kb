@@ -5479,6 +5479,49 @@ def qa_submit_feedback():
         db.log_operation_event(event_type="qa_feedback_received", severity="info", module="api_server", payload={"qa_history_id": qa_history_id, "feedback_type": feedback_type, "comment": comment[:500]})
         return jsonify({"success": True, "message": "感谢反馈"})
     except Exception as e:
+
+
+@app.route("/api/course/generate", methods=["POST"])
+def course_generate():
+    """AI自动生成课程(选题→大纲→脚本→老唐视角)"""
+    try:
+        data = request.get_json(silent=True) or {}
+        topic = data.get("topic", "")
+        if not topic:
+            return jsonify({"error": "请提供课程选题(topic)"}), 400
+        from agents.course_generator import CourseGenerator
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        gen = CourseGenerator(client=c, db=db)
+        result = gen.generate_course(topic, data.get("audience", "乡镇干部+平台公司项目经理"), data.get("level", "中级"), data.get("lessons", 8))
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/course/redlines", methods=["GET"])
+def brand_redlines():
+    """获取品牌红线清单"""
+    from agents.brand_redlines import BrandRedlineChecker
+    checker = BrandRedlineChecker()
+    return jsonify({"success": True, **checker.get_redline_document()})
+
+
+@app.route("/api/course/check-content", methods=["POST"])
+def check_content_compliance():
+    """检查内容是否触犯品牌红线"""
+    try:
+        data = request.get_json(silent=True) or {}
+        content = data.get("content", "")
+        ctype = data.get("type", "article")
+        from agents.brand_redlines import BrandRedlineChecker
+        checker = BrandRedlineChecker()
+        result = checker.check_content(content, ctype)
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
         return jsonify({"error": str(e)}), 500
 
 
