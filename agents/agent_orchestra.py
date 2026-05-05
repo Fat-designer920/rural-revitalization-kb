@@ -19,6 +19,7 @@ from agents.base_agent import BaseAgent, RoleAgent, QualityAgent, StrategyAgent
 from agents.customer_profiler import CustomerProfiler
 from agents.revenue_agents import build_revenue_agents
 from agents.archivist_agent import build_archivist_agent
+from agents.auto_processor_agents import build_auto_processor_agents
 
 
 # 部门定义
@@ -266,6 +267,12 @@ def build_all_agents(client=None, db=None):
     archivist = build_archivist_agent(client=client, db=db)
     agents.append(archivist)
 
+    # ================================================================
+    # 部门10: 自动处理 (2 agents, v2.3.7-part3)
+    # ================================================================
+    auto_agents = build_auto_processor_agents(client=client, db=db)
+    agents.extend(auto_agents)
+
     return {
         "agents": agents,
         "departments": DEPARTMENTS,
@@ -350,4 +357,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 37  # 32(原7部门) + 5(商业变现部) = 37
+    return 40  # 37 + 2(自动处理) + 1(档案管理) = 40
