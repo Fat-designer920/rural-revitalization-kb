@@ -258,6 +258,16 @@ class Extractor:
             sp, up, temperature=0.2, max_tokens=65536,
             call_type=f"extract_{ctype}", model_override=self.extraction_model)
 
+        # v2.3.7-part3: 防御V4-Pro返回字符串的边界情况
+        if isinstance(ai, str):
+            print(f"     [V4-Pro 降级] AI返回字符串(非dict),尝试原始解析")
+            import json as _json
+            try:
+                ai = _json.loads(ai)
+            except Exception:
+                ai = {"kp_objects": [], "meta_object": None, "was_truncated": False,
+                      "estimated_cost": 0, "prefix_for_continuation": ""}
+
         kp_objects = ai.get("kp_objects", []) or []
         meta_object = ai.get("meta_object", None)
         was_truncated = ai.get("was_truncated", False)

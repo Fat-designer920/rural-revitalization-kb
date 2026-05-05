@@ -819,8 +819,82 @@ class DeepSeekClient:
         else:
             return self._ocr_single_image(file_path, call_type)
 
+    def _ocr_via_deepseek_vision(self, image_path, call_type="ocr"):
+        """v2.3.7-part3: 用DeepSeek V4 Pro视觉能力做OCR(硅基流动模型全被禁用后的主方案)。
+        DeepSeek V4支持image_url输入,通过标准Chat Completions API。
+        返回: {content, input_tokens, output_tokens, estimated_cost} 或 None(失败时)
+        """
+        try:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            ext = Path(image_path).suffix.lower()
+            mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".png": "image/png", ".bmp": "image/bmp"}
+            mime = mime_map.get(ext, "image/png")
+
+            payload = {
+                "model": "deepseek-v4-pro",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text",
+                         "text": "请精确识别图片中所有文字,保持原始排版和层级结构。如有表格,用markdown表格格式输出。只输出识别到的文字,不要添加任何解释。"},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    ]
+                }],
+                "max_tokens": 4096,
+                "temperature": 0.1,
+            }
+
+            headers = {"Authorization": f"Bearer {self.api_key}",
+                       "Content-Type": "application/json"}
+            # 使用DeepSeek官方API(通过配置的base_url)
+            ds_base = self.config.get("deepseek_base_url", "https://api.deepseek.com")
+            url = f"{ds_base}/chat/completions"
+
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    r = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                    if r.status_code == 200:
+                        resp = r.json()
+                        content = resp["choices"][0]["message"]["content"]
+                        u = resp.get("usage", {})
+                        inp = u.get("prompt_tokens", 0)
+                        out = u.get("completion_tokens", 0)
+                        cost = round((inp + out) * 2.0 / 1e6, 6)  # DeepSeek视觉约¥2/百万token
+                        self.db.log_api_call(call_type, "deepseek-v4-pro-vision", inp, out, cost)
+                        return {
+                            "content": content,
+                            "input_tokens": inp,
+                            "output_tokens": out,
+                            "estimated_cost": cost,
+                        }
+                    if r.status_code in (429, 500, 502, 503):
+                        wait = min(60, 2 ** attempt * 3)
+                        time.sleep(wait)
+                        continue
+                    # 其他错误(包括401/403/404)直接返回None
+                    return None
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                    wait = min(60, 2 ** attempt * 5)
+                    time.sleep(wait)
+        except Exception:
+            pass
+        return None
+
     def _ocr_single_image(self, image_path, call_type="ocr"):
-        """用硅基流动视觉模型OCR识别单张图片"""
+        """OCR识别单张图片。v2.3.7-part3: DeepSeek视觉优先→硅基流动兜底。
+        DeepSeek V4 Pro支持image_url视觉输入,走标准Chat API。
+        """
+        # 方案A: DeepSeek V4 Pro视觉(主方案)
+        result = self._ocr_via_deepseek_vision(image_path, call_type)
+        if result:
+            print(f"     [DeepSeek视觉] OCR成功,费用~{result.get('estimated_cost', 0):.4f}元")
+            return result
+
+        print(f"     DeepSeek视觉不可用,回退硅基流动...")
+        # 方案B: 硅基流动(兜底)
         sf_key = self._get_siliconflow_api_key()
         sf_base = self.config.get("siliconflow_base_url", "https://api.siliconflow.cn/v1")
         sf_model = self.config.get("siliconflow_model", "Qwen/Qwen2-VL-72B-Instruct")
