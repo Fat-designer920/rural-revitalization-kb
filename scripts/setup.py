@@ -486,6 +486,46 @@ def _upgrade_schema_to_current(db_path):
             c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
             summary["tables_created"].append("crawl_history")
 
+        # Step 20: v2.3.7-part2 source_whitelist 表 (信源白名单)
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='source_whitelist'")
+        if c.fetchone():
+            summary["tables_skipped"].append("source_whitelist")
+        else:
+            c.execute("""CREATE TABLE IF NOT EXISTS source_whitelist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain TEXT UNIQUE NOT NULL,
+                category TEXT DEFAULT 'government',
+                description TEXT DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                added_at TEXT DEFAULT (datetime('now','localtime')))""")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_source_domain ON source_whitelist(domain, is_active)")
+            summary["tables_created"].append("source_whitelist")
+
+        # Step 21: v2.3.7-part2 knowledge_points 新增字段 (source_url, source_verified, sichuan_prefecture)
+        for col_name, col_def in [
+            ("source_url", "TEXT DEFAULT ''"),
+            ("source_verified", "INTEGER DEFAULT 0"),
+            ("sichuan_prefecture", "TEXT DEFAULT ''"),
+        ]:
+            c.execute("PRAGMA table_info(knowledge_points)")
+            existing = {r[1] for r in c.fetchall()}
+            if col_name not in existing:
+                c.execute(f"ALTER TABLE knowledge_points ADD COLUMN {col_name} {col_def}")
+                summary["fields_added"].append(col_name)
+
+        # Step 22: v2.3.7-part2 新字段索引
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_kp_source_verified ON knowledge_points(source_verified)",
+            "CREATE INDEX IF NOT EXISTS idx_kp_prefecture ON knowledge_points(sichuan_prefecture)",
+        ]:
+            idx_name = idx_sql.split("IF NOT EXISTS")[1].split("ON")[0].strip()
+            c.execute("SELECT name FROM sqlite_master WHERE type='index' AND name=?", (idx_name,))
+            if c.fetchone():
+                summary["indexes_skipped"].append(idx_name)
+            else:
+                c.execute(idx_sql)
+                summary["indexes_created"].append(idx_name)
+
         conn.commit()
     finally:
         conn.close()

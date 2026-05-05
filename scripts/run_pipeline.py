@@ -178,24 +178,65 @@ def main():
     elif "--dry-run" in sys.argv:
         print_dry_run()
     elif "--qc-only" in sys.argv:
-        db = get_db()
-        client = get_client()
+        db = get_db(); client = get_client()
         run_qc_only(db, client)
     elif "--relations-only" in sys.argv:
-        db = get_db()
-        client = get_client()
+        db = get_db(); client = get_client()
         run_relations_only(db, client)
     elif "--premium-only" in sys.argv:
-        db = get_db()
-        client = get_client()
+        db = get_db(); client = get_client()
         run_premium_only(db, client)
     elif "--feed-only" in sys.argv:
-        db = get_db()
-        client = get_client()
+        db = get_db(); client = get_client()
         from agents.auto_feeder import AutoFeeder
         feeder = AutoFeeder(db=db, client=client)
         result = feeder.feed_all(model_key="parallel")
         print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif "--exp-inbox" in sys.argv:
+        db = get_db(); client = get_client()
+        from agents.auto_feeder import AutoFeeder
+        feeder = AutoFeeder(db=db, client=client)
+        result = feeder.watch_experience_inbox()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif "--crawl" in sys.argv:
+        db = get_db()
+        from agents.crawler_scheduler import CrawlerScheduler
+        cs = CrawlerScheduler(db=db)
+        result = cs.run_scheduled(schedule='weekly')
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif "--crawl-and-feed" in sys.argv:
+        db = get_db()
+        from agents.crawler_scheduler import CrawlerScheduler
+        cs = CrawlerScheduler(db=db)
+        result = cs.crawl_and_feed(schedule='weekly')
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif "--search" in sys.argv:
+        db = get_db(); client = get_client()
+        from agents.smart_search_agent import SmartSearchAgent
+        from agents.knowledge_gap_analyzer import get_knowledge_needs
+        needs = get_knowledge_needs()
+        agent = SmartSearchAgent(db=db, client=client)
+        result = agent.search_by_knowledge_needs(needs["all_needs"][:10])
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif "--retry-failed" in sys.argv:
+        db = get_db()
+        print("重试失败文件...")
+        conn = db.get_connection(); c = conn.cursor()
+        c.execute("SELECT id, renamed_filename FROM source_files WHERE process_status='failed'")
+        failed = c.fetchall(); conn.close()
+        print(f"失败文件: {len(failed)}")
+        for f in failed:
+            c2 = db.get_connection().cursor()
+            c2.execute("UPDATE source_files SET process_status='processing', process_message='自动重试' WHERE id=?", (f[0],))
+            db.get_connection().commit(); c2.close()
+        print(f"已重置{len(failed)}个文件为processing状态,将自动进入提取队列")
+    elif "--verify-sources" in sys.argv:
+        db = get_db()
+        from agents.source_verifier import SourceVerifier
+        sv = SourceVerifier(db=db)
+        result = sv.seed_whitelist()
+        status = sv.get_whitelist_status()
+        print(json.dumps({"seeded": result, "status": status}, ensure_ascii=False, indent=2))
     elif "--full" in sys.argv:
         db = get_db()
         client = get_client()
@@ -203,13 +244,19 @@ def main():
     else:
         print(__doc__)
         print("\n常用命令:")
-        print("  python scripts/run_pipeline.py --status      查看知识库状态")
-        print("  python scripts/run_pipeline.py --dry-run     预览待处理文件")
-        print("  python scripts/run_pipeline.py --feed-only   仅喂料+提取")
-        print("  python scripts/run_pipeline.py --qc-only     仅质检补跑+就绪度联动")
-        print("  python scripts/run_pipeline.py --relations-only  仅关系扫描")
-        print("  python scripts/run_pipeline.py --premium-only   仅精品判定")
-        print("  python scripts/run_pipeline.py --full        一键全管道")
+        print("  python scripts/run_pipeline.py --status         查看知识库状态")
+        print("  python scripts/run_pipeline.py --dry-run        预览待处理文件")
+        print("  python scripts/run_pipeline.py --feed-only      仅喂料+提取")
+        print("  python scripts/run_pipeline.py --exp-inbox      扫描经验收件箱")
+        print("  python scripts/run_pipeline.py --crawl          执行爬虫(weekly目标)")
+        print("  python scripts/run_pipeline.py --crawl-and-feed 爬虫+自动提取")
+        print("  python scripts/run_pipeline.py --search         智能搜索(缺口驱动)")
+        print("  python scripts/run_pipeline.py --qc-only        质检补跑+就绪度联动")
+        print("  python scripts/run_pipeline.py --relations-only 关系全量扫描")
+        print("  python scripts/run_pipeline.py --premium-only   精品候选判定")
+        print("  python scripts/run_pipeline.py --retry-failed   重试失败文件")
+        print("  python scripts/run_pipeline.py --verify-sources 信源白名单状态")
+        print("  python scripts/run_pipeline.py --full           一键全管道")
 
 
 if __name__ == "__main__":

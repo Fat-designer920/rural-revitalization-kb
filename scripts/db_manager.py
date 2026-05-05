@@ -148,6 +148,10 @@ class DatabaseManager:
             question_examples TEXT DEFAULT '[]',
             answer_template TEXT DEFAULT '',
             quality_score_json TEXT DEFAULT '{}',
+            -- v2.3.7-part2: 信源追溯 + 区划标签
+            source_url TEXT DEFAULT '',
+            source_verified INTEGER DEFAULT 0 CHECK(source_verified IN (0,1)),
+            sichuan_prefecture TEXT DEFAULT '',
             -- 时间戳
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
@@ -570,6 +574,28 @@ class DatabaseManager:
             notes TEXT DEFAULT '')""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
+        # v2.3.7-part2: 信源白名单表
+        c.execute("""CREATE TABLE IF NOT EXISTS source_whitelist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain TEXT UNIQUE NOT NULL,
+            category TEXT DEFAULT 'government' CHECK(category IN ('government','official_media','industry_assoc','academic')),
+            description TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            added_at TEXT DEFAULT (datetime('now','localtime')))""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_source_domain ON source_whitelist(domain, is_active)")
+        # v2.3.7-part2: knowledge_points 补字段(老库 ALTER, 新库 CREATE TABLE 已含)
+        for col_name, col_def in [
+            ("source_url", "TEXT DEFAULT ''"),
+            ("source_verified", "INTEGER DEFAULT 0"),
+            ("sichuan_prefecture", "TEXT DEFAULT ''"),
+        ]:
+            c.execute("PRAGMA table_info(knowledge_points)")
+            existing = {r[1] for r in c.fetchall()}
+            if col_name not in existing:
+                c.execute(f"ALTER TABLE knowledge_points ADD COLUMN {col_name} {col_def}")
+        # v2.3.7-part2: 新字段索引(字段已确保存在)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_source_verified ON knowledge_points(source_verified)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_prefecture ON knowledge_points(sichuan_prefecture)")
         conn.commit(); conn.close(); return True
 
     def init_default_categories(self):

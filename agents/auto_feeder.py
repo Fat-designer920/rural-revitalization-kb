@@ -1,5 +1,5 @@
 """
-auto_feeder.py - 批量喂料器(全量文件+双模型+进度+断点续传+质检)
+auto_feeder.py - 批量喂料器(全量文件+双模型+进度+断点续传+质检+经验收件箱)
 路径：agents/auto_feeder.py
 版本：v2.3.7-part2
 """
@@ -221,6 +221,105 @@ class AutoFeeder(object):
 
     def cancel(self):
         self._cancel = True
+
+    # ================================================================
+    # 经验收件箱 — 老唐投放经验文档,自动检测→提取→入库
+    # ================================================================
+    def watch_experience_inbox(self):
+        """扫描 data/experience_inbox/ 目录,检测新文件→自动预处理→经验提取→入库。
+        经验文件走绿色通道: 跳过审核直接confirmed, 信源标记为'laotang_experience'。
+        返回 {files_found, files_processed, kps_extracted}
+        """
+        inbox_dir = PROJECT_ROOT / "data" / "experience_inbox"
+        os.makedirs(inbox_dir, exist_ok=True)
+
+        # 收集待处理文件
+        pending_files = []
+        for ext in [".docx", ".pdf", ".txt", ".md"]:
+            for f in inbox_dir.glob(f"*{ext}"):
+                if f.name.startswith("~") or f.name.startswith("."):
+                    continue
+                pending_files.append(f)
+
+        if not pending_files:
+            return {"files_found": 0, "files_processed": 0, "kps_extracted": 0,
+                    "message": "经验收件箱为空,等待老唐投放文件"}
+
+        processed = 0
+        total_kps = 0
+
+        for exp_file in pending_files:
+            try:
+                # 拷贝到pending/
+                dest = PROJECT_ROOT / "data" / "pending" / f"EXP_{exp_file.name}"
+                if not dest.exists():
+                    shutil.copy2(str(exp_file), str(dest))
+
+                # 预处理(标记为老唐经验)
+                from scripts.preprocessor import Preprocessor
+                pp = Preprocessor()
+                files = pp.scan()
+                for fi in files:
+                    fn = (fi.get("renamed_filename") or fi.get("original_filename") or "")
+                    if exp_file.name in fn or f"EXP_{exp_file.name}" in fn:
+                        # 注入经验来源标记
+                        fi["_laotang_experience"] = True
+                        rr = pp.preprocess_file(fi, doc_origin="laotang_experience")
+                        if rr.get("success"):
+                            processed += 1
+
+                # 提取(使用经验提取Prompt)
+                from scripts.extractor import Extractor
+                ext = Extractor()
+                ext.set_model("1")  # V4-Pro深度模式(经验值得)
+                ext_files = ext.get_processing_files()
+                exp_ext_files = [f for f in ext_files
+                                if f.get("doc_origin") == "laotang_experience"
+                                or "EXP_" in (f.get("renamed_filename") or "")]
+                for rec in exp_ext_files[:3]:  # 每次最多处理3个
+                    r = ext.extract_from_file(rec)
+                    if r.get("success"):
+                        total_kps += r.get("knowledge_count", 0)
+                        # 经验文件自动confirmed(跳过人工审核)
+                        self._auto_confirm_experience(rec.get("id"))
+                        processed += 1
+
+                # 处理完成后删除或移到processed/
+                done_dir = inbox_dir / "processed"
+                os.makedirs(done_dir, exist_ok=True)
+                shutil.move(str(exp_file), str(done_dir / exp_file.name))
+
+            except Exception as e:
+                self._emit_progress("exp_error", 0, len(pending_files),
+                                   f"经验文件处理失败: {exp_file.name} - {e}")
+
+        # 触发就绪度联动
+        if total_kps > 0:
+            try:
+                self._run_readiness_promote()
+            except Exception:
+                pass
+
+        return {"files_found": len(pending_files), "files_processed": processed,
+                "kps_extracted": total_kps,
+                "message": f"经验收件箱处理完成: +{total_kps}条KP"}
+
+    def _auto_confirm_experience(self, source_file_id):
+        """经验文件提取的KP自动确认(跳过审核),并标记信源。"""
+        if not self.db:
+            return
+        try:
+            conn = self.db.get_connection(); c = conn.cursor()
+            c.execute("""UPDATE knowledge_points
+                         SET review_status='confirmed',
+                             source_verified=1,
+                             source_url='老唐本人提供(经验库)',
+                             confirmed_at=datetime('now','localtime')
+                         WHERE source_file_id=? AND review_status='pending'""",
+                      (source_file_id,))
+            conn.commit(); conn.close()
+        except Exception:
+            pass
 
     # ================================================================
     # 内部方法

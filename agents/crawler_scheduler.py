@@ -14,9 +14,38 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).parent.parent
 
 DEFAULT_TARGETS = [
+    # 国家级
     {"url": "https://www.mnr.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.gov.cn", "category": "policy", "schedule": "weekly"},
+    # 四川省省级
     {"url": "https://dnr.sc.gov.cn", "category": "policy", "schedule": "weekly"},
     {"url": "https://nynct.sc.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://fgw.sc.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://czt.sc.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://ggzyjy.sc.gov.cn", "category": "project", "schedule": "weekly"},
+    {"url": "https://www.ccgp-sichuan.gov.cn", "category": "project", "schedule": "weekly"},
+    # 四川21市州(按GDP排序)
+    {"url": "https://www.chengdu.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.mianyang.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.yibin.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.deyang.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.nanchong.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.luzhou.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.dazhou.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.leshan.gov.cn", "category": "policy", "schedule": "weekly"},
+    {"url": "https://www.zigong.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.guangan.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.ms.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.suining.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.neijiang.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.guangyuan.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.bazhong.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.ziyang.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.yaan.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.panzhihua.gov.cn", "category": "policy", "schedule": "biweekly"},
+    {"url": "https://www.abazhou.gov.cn", "category": "policy", "schedule": "monthly"},
+    {"url": "https://www.ganzi.gov.cn", "category": "policy", "schedule": "monthly"},
+    {"url": "https://www.liangshan.gov.cn", "category": "policy", "schedule": "monthly"},
 ]
 
 
