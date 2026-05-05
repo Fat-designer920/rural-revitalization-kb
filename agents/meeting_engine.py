@@ -139,7 +139,7 @@ class MeetingEngine(object):
             user_prompt = f"请对议题'{topic[:200]}'给出你的独立立场。记住:你的忠诚是对集团利润,不是对CEO。"
 
             try:
-                resp, cost = agent.client.chat_with_json(
+                resp = agent.client.chat_with_json(
                     system_prompt, user_prompt,
                     temperature=0.4, model_override=agent.model,
                     call_type=f"meeting_r1_{agent.agent_code}",
@@ -214,7 +214,7 @@ class MeetingEngine(object):
             user_prompt = f"请对议题'{topic[:150]}'的其他参会者观点提出异议。必须至少有1条不同意见。"
 
             try:
-                resp, cost = agent.client.chat_with_json(
+                resp = agent.client.chat_with_json(
                     system_prompt, user_prompt,
                     temperature=0.5, model_override=agent.model,
                     call_type=f"meeting_r2_{agent.agent_code}",
@@ -302,7 +302,7 @@ class MeetingEngine(object):
 请综合以上辩论,输出会议综合报告。"""
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.2, model_override="deepseek-v4-pro",
                 call_type="meeting_moderator",
@@ -358,7 +358,7 @@ class MeetingEngine(object):
 议题: {topic}
 返回JSON: {{"analysis":"≤300字","risks":[],"opportunities":[],"revenue_impact":"","recommendation":"","confidence":"high/medium/low"}}"""
         try:
-            resp, cost = agent.client.chat_with_json(
+            resp = agent.client.chat_with_json(
                 system_prompt, f"分析: {topic[:200]}",
                 temperature=0.3, model_override=agent.model,
                 call_type="meeting_single",

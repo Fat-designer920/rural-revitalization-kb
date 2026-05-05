@@ -134,7 +134,7 @@ class CEOAgent(object):
         user_prompt = f"老板{boss_name}说: {instruction}\n\n请深度分析,不要迎合。如果指令有问题,必须明确指出。"
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.2, model_override="deepseek-v4-pro",
                 call_type="ceo_analyze_instruction",
@@ -619,7 +619,7 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
         user_prompt = f"当前状态: KPs{state['kps_confirmed']}, 评分{state['audit_avg_score']}。请做出CEO裁决。"
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.2, model_override="deepseek-v4-pro",
                 call_type="ceo_ruling",

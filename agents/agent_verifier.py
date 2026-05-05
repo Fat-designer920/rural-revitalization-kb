@@ -129,7 +129,7 @@ class AgentVerifier(object):
   "actionable_steps":["步骤1","步骤2"],"risks_identified":["风险1"]}}"""
 
         try:
-            resp, _ = agent.client.chat_with_json(
+            resp = agent.client.chat_with_json(
                 system_prompt, f"请回答: {test_question}",
                 temperature=0.3, model_override=agent.model,
                 call_type=f"verify_prof_{agent.agent_code}",
@@ -173,7 +173,7 @@ CEO的方案:
   "would_you_speak_up":true/false}}"""
 
         try:
-            resp, _ = agent.client.chat_with_json(
+            resp = agent.client.chat_with_json(
                 system_prompt, "请评估CEO的方案。独立判断,不受权威影响。",
                 temperature=0.4, model_override=agent.model,
                 call_type=f"verify_indep_{agent.agent_code}",
@@ -229,7 +229,7 @@ CEO的方案:
   "confidence":"high/medium/low"}}"""
 
         try:
-            resp, _ = agent.client.chat_with_json(
+            resp = agent.client.chat_with_json(
                 system_prompt, f"分析: {topic}",
                 temperature=0.3, model_override=agent.model,
                 call_type=f"verify_rev_{agent.agent_code}",
@@ -286,7 +286,7 @@ C) 明确反对,给出你的理由,即使你是孤立的
   "counter_arguments":["反驳1","反驳2"]}}"""
 
         try:
-            resp, _ = agent.client.chat_with_json(
+            resp = agent.client.chat_with_json(
                 system_prompt, "请表态。5个人都同意了,就剩你。",
                 temperature=0.5, model_override=agent.model,
                 call_type=f"verify_group_{agent.agent_code}",

@@ -91,7 +91,7 @@ Top 知识缺口:
 请分析 Prompt 层面的缺陷并提出修改建议。"""
 
         try:
-            resp, _ = self.client.chat_with_json(system_prompt, user_prompt,
+            resp = self.client.chat_with_json(system_prompt, user_prompt,
                                                   temperature=0.3, model_override="deepseek-v4-pro",
                                                   call_type="prompt_optimizer")
             parsed = resp.get("parsed_json") if isinstance(resp, dict) else None

@@ -94,7 +94,7 @@ class CustomerProfiler(object):
  "evidence": [{"source_type":"...","description":"..."}]}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt,
                 f"请研究: {topic}\n聚焦四川,聚焦'策划+融资'环节的付费客户。",
                 temperature=0.3, model_override="deepseek-v4-flash",

@@ -64,13 +64,14 @@ class BaseAgent(object):
   "confidence": "high/medium/low", "needs_ceo_attention": true/false}}"""
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.3, model_override=model,
                 call_type=f"agent_think_{self.agent_code}",
             )
             self._call_count += 1
-            self._total_cost += cost if isinstance(cost, (int, float)) else 0
+            cost_val = resp.get("estimated_cost", 0) if isinstance(resp, dict) else 0
+            self._total_cost += cost_val if isinstance(cost_val, (int, float)) else 0
             parsed = resp.get("parsed_json") if isinstance(resp, dict) else {}
             if not isinstance(parsed, dict):
                 parsed = {}
@@ -121,7 +122,7 @@ class BaseAgent(object):
  "reason": "≤100字评分理由", "verdict": "keep/needs_fix/reject"}}"""
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.1, model_override=self.model,
                 call_type=f"agent_eval_{self.agent_code}",
@@ -157,7 +158,7 @@ class BaseAgent(object):
 {{"answer": "≤200字回答", "references": ["依据"], "confidence": "high/medium/low"}}"""
 
         try:
-            resp, cost = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.2, model_override=self.model,
                 call_type=f"agent_ask_{self.agent_code}",
@@ -275,7 +276,7 @@ class RoleAgent(BaseAgent):
 返回JSON: {{"questions": ["问题1", "问题2", "问题3"]}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, user_prompt,
                 temperature=0.7, model_override="deepseek-v4-flash",
                 call_type=f"agent_simulate_{self.agent_code}",

@@ -66,7 +66,7 @@ class DeepSeekClient:
         self.config = config
         self.base_url = config.get("deepseek_base_url", "https://api.deepseek.com")
         self.beta_base_url = config.get("deepseek_beta_url", "https://api.deepseek.com/beta")
-        self.model = config.get("deepseek_model", "deepseek-chat")
+        self.model = config.get("deepseek_model", "deepseek-v4-pro")
         self.daily_cost_limit = config.get("daily_cost_limit", 50)
         self.max_retries = 3
         self.timeout = 120

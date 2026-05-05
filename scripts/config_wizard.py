@@ -201,11 +201,11 @@ class ConfigWizard:
             config["notion_token_encrypted"] = encrypt_value(notion)
             config["notion_token_display"] = notion[:8]+"****"
 
-        config.setdefault("deepseek_model","deepseek-chat")
+        config.setdefault("deepseek_model","deepseek-v4-pro")
         config.setdefault("deepseek_base_url","https://api.deepseek.com")
         config.setdefault("flask_port", 5000)
         config.setdefault("max_file_size_mb", 50)
-        config["version"] = "2.3.6-part1"
+        config["version"] = "2.3.7-part2"
         config["last_configured_at"] = datetime.now().isoformat()
         config["allowed_paths"] = [str(Path(kb)/"data"), str(Path(kb)/"config"), str(Path(kb)/"logs"), str(Path(kb)/"backups")]
 

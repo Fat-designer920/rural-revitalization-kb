@@ -103,7 +103,7 @@ class CourseGenerator(object):
  "keywords":["关键词1","关键词2","关键词3"]}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, f"请分析选题: {topic}",
                 temperature=0.3, model_override="deepseek-v4-flash",
                 call_type="course_analyze")
@@ -170,7 +170,7 @@ class CourseGenerator(object):
  "pricing_tier":"99/199/499/799/999"}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, f"设计课程大纲: {topic}",
                 temperature=0.4, model_override="deepseek-v4-flash",
                 call_type="course_outline")
@@ -241,7 +241,7 @@ class CourseGenerator(object):
  "visual_cues":["需要展示的图表/流程图/对比表建议"]}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, f"撰写第{lesson_num}节脚本: {title}",
                 temperature=0.5, model_override="deepseek-v4-pro",
                 call_type="course_script")
@@ -302,7 +302,7 @@ class CourseGenerator(object):
   "description":"≤50字描述","data_source":"从哪里获取数据"}}]}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 system_prompt, "请建议视觉元素",
                 temperature=0.3, model_override="deepseek-v4-flash",
                 call_type="course_visuals")

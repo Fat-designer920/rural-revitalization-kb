@@ -106,7 +106,7 @@ class CourseGenerator(object):
         user_prompt = f"请为'{topic}'设计课程大纲,面向{target_reader},深度{depth}。"
 
         try:
-            resp, _ = self.client.chat_with_json(system_prompt, user_prompt,
+            resp = self.client.chat_with_json(system_prompt, user_prompt,
                                                   temperature=0.3, model_override="deepseek-v4-pro",
                                                   call_type="course_outline")
             return resp.get("parsed_json") if isinstance(resp, dict) else {}
@@ -132,7 +132,7 @@ class CourseGenerator(object):
 返回 JSON: {{"title": "...", "content": "...", "key_points": [...], "case_study": "...", "estimated_reading_minutes": 数字}}"""
 
         try:
-            resp, _ = self.client.chat_with_json(system_prompt,
+            resp = self.client.chat_with_json(system_prompt,
                                                   f"请撰写'{title}'的课程内容",
                                                   temperature=0.5, model_override="deepseek-v4-pro",
                                                   call_type="course_lesson")
@@ -143,7 +143,7 @@ class CourseGenerator(object):
     def _ai_generate_exercises(self, lesson_content, count=5):
         """AI 生成课后练习"""
         try:
-            resp, _ = self.client.chat_with_json(
+            resp = self.client.chat_with_json(
                 f"请为以下课程内容设计{count}道练习题(选择题+简答题混合):\n{str(lesson_content)[:1500]}",
                 "请生成练习题",
                 temperature=0.3, model_override="deepseek-v4-flash",

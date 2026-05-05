@@ -229,7 +229,7 @@ class Extractor:
 
     # v2.3.4 D9: 单段提取 — JSON Lines 输出 + prefix 续写支持
     def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
-        """调用R1/V3提取单段内容,返回统一dict契约。
+        """调用V4-Pro/V4-Flash提取单段内容,返回统一dict契约。
 
         v2.3.4 改动:
         - 改用 self.client.chat_with_jsonl()(JSON Lines 输出)
@@ -311,7 +311,7 @@ class Extractor:
         """单段提取的外层调度。
 
         v2.3.4-hotfix1 五级降级链(段内同步,不留事后批量重跑):
-          L0: chat_with_jsonl (R1) 主提取 → 截断/0 partial/解析失败 ↓
+          L0: chat_with_jsonl (V4-Pro) 主提取 → 截断/0 partial/解析失败 ↓
           L1: chat_jsonl_via_siliconflow (Kimi-K2.6) 整段重提 → 仍失败 ↓
           L2: chat_jsonl_via_siliconflow (R1 跨厂商镜像) 整段重提 → 仍失败 ↓
           L3: F057 老逻辑(若 partial_kps>=1) ↓
@@ -327,7 +327,7 @@ class Extractor:
         # L0 成功的 kp 打标 r1
         for k in kps:
             if isinstance(k, dict):
-                k["_extracted_by_model"] = "r1"
+                k["_extracted_by_model"] = self.extraction_model or "v4-flash"
 
         # v2.3.4-hotfix3 BUG#2A 修复:未截断时一律返回,0 条 kp 也是合理结果
         # ─────────────────────────────────────────────────────────────
