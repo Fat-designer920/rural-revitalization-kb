@@ -5478,6 +5478,32 @@ def qa_submit_feedback():
         db.save_qa_feedback(qa_history_id, feedback_type, comment)
         db.log_operation_event(event_type="qa_feedback_received", severity="info", module="api_server", payload={"qa_history_id": qa_history_id, "feedback_type": feedback_type, "comment": comment[:500]})
         return jsonify({"success": True, "message": "感谢反馈"})
+
+
+@app.route("/api/course/system", methods=["GET"])
+def course_system():
+    """获取完整课程体系(5模块20课)"""
+    from agents.course_system import get_course_system
+    return jsonify({"success": True, **get_course_system()})
+
+
+@app.route("/api/course/knowledge-gaps", methods=["GET"])
+def knowledge_gaps():
+    """课程体系→倒推知识需求→对比知识库→缺口清单"""
+    from agents.knowledge_gap_analyzer import KnowledgeGapAnalyzer
+    analyzer = KnowledgeGapAnalyzer(db=db)
+    result = analyzer.analyze_all_gaps()
+    return jsonify({"success": True, **result})
+
+
+@app.route("/api/course/ceo-instructions", methods=["GET"])
+def ceo_feeding_instructions():
+    """CEO行动指令: 优先爬取什么,喂什么料"""
+    from agents.knowledge_gap_analyzer import KnowledgeGapAnalyzer
+    analyzer = KnowledgeGapAnalyzer(db=db)
+    result = analyzer.generate_ceo_instructions()
+    return jsonify({"success": True, **result})
+
     except Exception as e:
 
 
