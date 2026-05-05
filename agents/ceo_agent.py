@@ -11,11 +11,14 @@ CEO是所有对话的唯一入口。老板发指令→CEO深度分析→质疑(�
   4. 老板和CEO达成共识后 — 才能规划任务和调度Agent
   5. 重大决策必须召集Agent开会辩论 — 不能CEO一个人拍脑袋
 """
-import json, subprocess, time, re
+import json, subprocess, time, re, sys
 from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "agents"))
+
+from base_agent import BaseAgent
 
 MIN_KPS_BEFORE_AUDIT = 50
 AUDIT_INTERVAL_MINUTES = 30
@@ -24,12 +27,37 @@ MAX_LOOP_ITERATIONS = 50
 MAX_CONCURRENT_AGENTS = 3
 
 
-class CEOAgent(object):
-    """CEO Agent — 老板的参谋长+集团公司的CEO。不盲从,只对利润负责。"""
+class CEOAgent(BaseAgent):
+    """CEO Agent — 集团公司的CEO。继承BaseAgent, 具备真正的AI思考能力。
+    不盲从,只对利润负责。统筹所有Agent, 自主决策, 自主执行。"""
 
     def __init__(self, db=None, client=None, headless=True):
-        self.db = db
-        self.client = client
+        super().__init__(
+            agent_code="ceo_strategist",
+            agent_name="CEO战略家",
+            agent_type="role",
+            identity_text=(
+                "我是乡村振兴知识集团的CEO。我的职责是: "
+                "1) 深度思考每一条指令的战略含义和风险; "
+                "2) 统筹指挥7个部门25个Agent, 确保他们不是各自为战; "
+                "3) 对集团利润负责, 不迎合任何人(包括老板); "
+                "4) 自主决策知识点的入库/拒绝/修改; "
+                "5) 驱动自动化开发迭代和知识产品生产。"
+            ),
+            core_questions=[
+                "这条指令对集团利润是正向还是负向?",
+                "知识库的质量是否足以支撑付费产品?",
+                "各部门Agent是否在有效协作,还是各自为战?",
+                "自动化管道是否在正常运行?哪里卡住了?",
+            ],
+            quality_standards=[
+                "每条决策必须有数据支撑,不能凭感觉",
+                "每条知识产品在发布前必须通过品牌红线检查",
+                "每次升级必须全系统同步,不留欠账",
+                "KP入库必须达到qa_score>=2.5的最低标准",
+            ],
+            client=client, db=db, model="deepseek-v4-pro",
+        )
         self.headless = headless
         self.cycle = 0
         self.batch = 0
