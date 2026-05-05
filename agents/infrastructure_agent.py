@@ -11,6 +11,9 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "agents"))
+
+from base_agent import BaseAgent
 
 
 def _get_windows_memory():
@@ -56,15 +59,21 @@ def _get_disk_usage(path=None):
     return {"total_gb": 0, "free_gb": 0, "used_pct": 0}
 
 
-class InfrastructureAgent(object):
-    """后勤保障Agent — 集团公司的基础设施管家。确保系统时刻运行在最佳状态。"""
+class InfrastructureAgent(BaseAgent):
+    """后勤保障Agent — 集团公司的基础设施管家。继承BaseAgent, 确保系统时刻运行在最佳状态。"""
 
     def __init__(self, db=None, client=None):
-        self.db = db
-        self.client = client
-        self.agent_code = "infrastructure"
-        self.agent_name = "后勤保障部长"
-        self.agent_type = "infrastructure"
+        super().__init__(
+            agent_code="infrastructure",
+            agent_name="后勤保障部长",
+            agent_type="infrastructure",
+            identity_text=(
+                "我是后勤保障部长。我的职责是确保集团公司的IT基础设施——"
+                "内存、磁盘、CPU、网络、API连接——始终处于最佳状态。"
+                "我主动监控、预警、自动修复,不让基础设施问题影响Agent团队的运作。"
+            ),
+            client=client, db=db, model="deepseek-v4-flash",
+        )
 
         # 硬件检测
         self.capabilities = self._detect_all()
