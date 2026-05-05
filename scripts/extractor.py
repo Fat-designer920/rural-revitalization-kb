@@ -393,7 +393,7 @@ class Extractor:
         if not kps:
             # 0 partial,F057 没有 last_excerpt 可定位,跳过
             self._truncation_stats["total_failures"] += 1
-            print(f"     ❌ [L3 全失败] L0/L1 均失败且 partial=0,F057 无锚点跳过")
+            print(f"     [L3 全失败] L0/L1 均失败且 partial=0,F057 无锚点跳过")
             self._safe_log_event(
                 "extract_full_fail", "extractor", "error",
                 file_id=file_id,
@@ -2043,7 +2043,7 @@ class Extractor:
             parallel_part += " / "
 
         if truncations == 0:
-            print(f"     📊 [文件统计] {parallel_part}一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
+            print(f"     [文件统计] {parallel_part}一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
         else:
             parts = []
             if flash_kps > 0 or pro_kps > 0:
@@ -2057,7 +2057,7 @@ class Extractor:
             if f057_fallbacks > 0:
                 parts.append(f"L2 F057兜底{f057_fallbacks}次")
             if total_fails > 0:
-                parts.append(f"❌ 全失败{total_fails}次")
+                parts.append(f"[FAIL] 全失败{total_fails}次")
             if lost > 0:
                 parts.append(f"放弃段{lost}")
             parts.append(f"知识点{kp_count}条")
@@ -2067,7 +2067,7 @@ class Extractor:
             if recovery_cost > 0:
                 parts.append(f"补救额外费用{recovery_cost:.4f}元")
             parts.append(f"Prompt {get_prompt_version()}")
-            print(f"     📊 [文件统计] " + " / ".join(parts))
+            print(f"     [文件统计] " + " / ".join(parts))
 
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
     def _check_category_suggestions(self, kps_info):

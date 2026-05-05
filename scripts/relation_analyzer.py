@@ -42,6 +42,20 @@ class RelationAnalyzer:
         print(f"  加载{len(kps)}条知识点")
         return self._run_pipeline(kps)
 
+    def _run_pipeline(self, kps):
+        """全量管道: 粗筛→去重→分组→AI判别"""
+        candidate_pairs = self._local_prefilter(kps)
+        if not candidate_pairs:
+            print(f"  未发现疑似关系")
+            return 0
+        candidate_pairs = self._filter_known_pairs(candidate_pairs)
+        if not candidate_pairs:
+            print(f"  所有疑似关系已在处理列表中")
+            return 0
+        groups = self._aggregate_groups(candidate_pairs, kps)
+        print(f"  粗筛: {len(candidate_pairs)}对疑似 -> {len(groups)}组")
+        return self._ai_judge_groups(groups, kps)
+
     def scan_recent(self, days=7):
         """扫描最近N天created_at的知识点"""
         print(f"\n  [关系分析] 最近{days}天扫描开始...")
