@@ -177,7 +177,7 @@ class NPUEngine(object):
         self._corpus_texts = list(texts)
         if HAS_SKLEARN:
             self._vectorizer = TfidfVectorizer(
-                max_features=5000, token_pattern=r'(?u)\b\w+\b',
+                max_features=5000, analyzer='char_wb', ngram_range=(2,4),
                 dtype=np.float32)
             self._corpus_matrix = self._vectorizer.fit_transform(
                 self._corpus_texts).toarray()

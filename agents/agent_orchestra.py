@@ -1,5 +1,5 @@
 """
-agent_orchestra.py - 10部门56+Agent集团编队(设计中心已并入研发中心)
+agent_orchestra.py - 10部门52Agent集团编队(设计中心已并入研发中心,v2.3.7-part5冷冻5个pre-revenue设计Agent)
 路径：agents/agent_orchestra.py
 版本：v2.3.7-part5
 
@@ -10,7 +10,7 @@ agent_orchestra.py - 10部门56+Agent集团编队(设计中心已并入研发中
   市场拓展部    → 获客策略师(部门长) + 内容营销员
   质量保障部    → 事实核查员(部门长) + 保鲜监控员
   技术平台部    → 系统运维员 + 后勤保障员(部门长)
-  研发中心      → 研发总监+9工程师+6设计师=16人(设计中心已并入,V4-Pro协调)
+  研发中心      → 研发总监+9工程师+1设计师=11人(设计中心已并入,V4-Pro协调)
 
 淘汰(13→冷冻): 15个独立角色Agent合并为1个客户视角审查员(加载CustomerProfiler画像库)
 每个Agent月入20万贡献路径写在identity中。
@@ -70,11 +70,11 @@ DEPARTMENTS = {
     "rd_center": {
         "name": "研发中心(含设计中心)", "chief": "rd_director",
         "mission": "技术架构+前端+后端+DB+测试+审查+运维+安全+设计,对标大厂标准,每个功能都经过团队辩论和代码审查。设计中心已并入,16人团队。",
+        # v2.3.7-part5 冷冻5个pre-revenue设计Agent: visual_designer/interaction_designer/accessibility_specialist/mobile_specialist/design_qa
         "members": ["frontend_architect", "ui_visual_designer", "backend_engineer",
                     "database_engineer", "test_architect", "code_reviewer",
-                    "devops_engineer", "security_auditor",
-                    "ui_architect", "visual_designer", "interaction_designer",
-                    "accessibility_specialist", "mobile_specialist", "design_qa"],
+                    "devops_engineer", "security_auditor", "qa_architect",
+                    "ui_architect"],
     },
     "revenue": {
         "name": "商业变现部", "chief": "revenue_optimizer",
@@ -285,7 +285,7 @@ def build_all_agents(client=None, db=None):
             dv["members"] = list(set(existing_members + dv.get("members", [])))
         DEPARTMENTS[dk] = dv
 
-    # 将设计中心6个Agent转为BaseAgent实例,并入研发中心
+    # 将设计中心活跃Agent转为BaseAgent实例并入研发中心(v2.3.7-part5: 5个pre-revenue设计Agent已冷冻,仅ui_architect活跃)
     design_agent_dicts = build_design_agents()
     for da in design_agent_dicts:
         agents.append(BaseAgent(
@@ -594,4 +594,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 56  # 50 base + 6 design agents from design_center merged into rd_center
+    return 52  # 57 - 5冷冻(v2.3.7-part5 pre-revenue设计Agent) = 52

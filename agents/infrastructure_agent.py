@@ -225,12 +225,24 @@ class InfrastructureAgent(BaseAgent):
         return actions
 
     def _emergency_cleanup(self):
-        """紧急清理: 全面释放内存"""
+        """紧急清理: 全面释放内存。保护memory/目录不被清理。"""
         actions = []
+        # 0. 保护记忆系统
+        memory_dir = PROJECT_ROOT / "memory"
+        memory_backup = []
+        if memory_dir.exists():
+            for mf in memory_dir.glob("*.md"):
+                try:
+                    memory_backup.append((mf.name, mf.read_text(encoding='utf-8')[:500]))
+                except Exception:
+                    pass
         # 1. 强制GC(包括不可达对象)
         gc.collect(2)
         self._gc_count += 1
         actions.append("强制GC(gen2)")
+        # 记忆已保护
+        if memory_backup:
+            actions.append(f"记忆已保护({len(memory_backup)}个文件)")
 
         # 2. 清__pycache__
         cleaned = self._clean_pycache()
