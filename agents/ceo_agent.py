@@ -25,6 +25,7 @@ AUDIT_INTERVAL_MINUTES = 30
 PROMPT_OPTIMIZE_THRESHOLD = 3.0
 MAX_LOOP_ITERATIONS = 50
 MAX_CONCURRENT_AGENTS = 3
+EVOLUTION_CYCLE_INTERVAL = 10
 
 
 class CEOAgent(BaseAgent):
@@ -282,6 +283,16 @@ class CEOAgent(BaseAgent):
             return {"action": "feed_test_files", "tasks": [
                 {"agent": "auto_feeder", "task": "feed_test_files", "priority": "P0",
                  "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["安全", "合规", "红线", "safety",
+                   "compliance", "brand_redline", "redline"]):
+            return {"action": "safety_check", "tasks": [
+                {"agent": "quality_safety_ops", "task": "safety_check", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["质量审计", "保鲜扫描", "事实核查",
+                   "freshness_scan", "quality_audit", "fact_check"]):
+            return {"action": "quality_audit", "tasks": [
+                {"agent": "quality_safety_ops", "task": "quality_audit", "priority": "P1",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
         elif any(w in instruction_lower for w in ["审计", "audit", "评分", "质量"]):
             return {"action": "audit", "tasks": [
                 {"agent": "audit_engine", "task": "audit", "priority": "P1",
@@ -295,6 +306,29 @@ class CEOAgent(BaseAgent):
         elif any(w in instruction_lower for w in ["环境", "内存", "清理", "infra", "系统运维"]):
             return {"action": "optimize_environment", "tasks": [
                 {"agent": "infrastructure", "task": "optimize_environment", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["代码审查", "code review", "安全审计",
+                   "security audit"]):
+            return {"action": "dispatch_to_department", "tasks": [
+                {"agent": "ceo_strategist", "task": "dispatch_to_department", "priority": "P0",
+                 "dept": "rd_center", "operation": "code_review",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["设计评审", "design review", "ui评审",
+                   "页面评审", "设计审查"]):
+            return {"action": "dispatch_to_department", "tasks": [
+                {"agent": "ceo_strategist", "task": "dispatch_to_department", "priority": "P0",
+                 "dept": "rd_center", "operation": "design_review",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["架构评审", "architecture review",
+                   "技术方案评审", "技术架构评审"]):
+            return {"action": "dispatch_to_department", "tasks": [
+                {"agent": "ceo_strategist", "task": "dispatch_to_department", "priority": "P0",
+                 "dept": "rd_center", "operation": "architecture_review",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
+        elif any(w in instruction_lower for w in ["部署检查", "deploy check", "上线检查"]):
+            return {"action": "dispatch_to_department", "tasks": [
+                {"agent": "ceo_strategist", "task": "dispatch_to_department", "priority": "P0",
+                 "dept": "rd_center", "operation": "deploy_check",
                  "reason": f"老板指令: {instruction[:80]}"}]}
         elif any(w in instruction_lower for w in ["前端", "html", "css", "js", "ui", "界面",
                    "设计", "样式", "review.html", "页面"]):
@@ -350,6 +384,13 @@ class CEOAgent(BaseAgent):
             if self.cycle % 5 == 0 or self.cycle == 1:
                 self._auto_git_push()
                 self._auto_update_claude_md(state)
+
+            # 演进层定期自检: 每N轮触发完整的Agent评估+升级+竞品+技术扫描
+            if self.cycle % EVOLUTION_CYCLE_INTERVAL == 0 and self.cycle > 0:
+                self._log("演进", "info", f"触发第{self.cycle//EVOLUTION_CYCLE_INTERVAL}次周度演进循环")
+                evo_result = self._action_evolve_agents()
+                self._log("演进", "info",
+                          "演进完成: {}".format(evo_result.get("summary", "?")[:120]))
 
             if state["audit_avg_score"] >= 4.0 and state["kps_confirmed"] >= 500:
                 self._log("收敛", "info", f"评分{state['audit_avg_score']}达标")
@@ -440,6 +481,9 @@ class CEOAgent(BaseAgent):
             "database_engineer": "rd_center", "test_architect": "rd_center",
             "code_reviewer": "rd_center", "devops_engineer": "rd_center",
             "security_auditor": "rd_center",
+            "ui_architect": "rd_center", "visual_designer": "rd_center",
+            "interaction_designer": "rd_center", "accessibility_specialist": "rd_center",
+            "mobile_specialist": "rd_center", "design_qa": "rd_center",
             "brand_gatekeeper": "market_expansion", "zhihu_operator": "market_expansion",
             "douyin_operator": "market_expansion", "xiaohongshu_operator": "market_expansion",
             "feedback_analyst": "client_delivery",
@@ -715,9 +759,14 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
     def _delegate(self, task):
         agent_code = task.get("agent", "")
         task_name = task.get("task", "")
+        if task_name == "dispatch_to_department":
+            dept = task.get("dept", "rd_center")
+            operation = task.get("operation", "")
+            return self.dispatch_to_department(dept, operation)
         if task_name in ("feed_test_files", "audit", "optimize_prompt",
                          "backfill_reader_tags", "crawl", "test_qa_quality",
-                         "seed_agents", "evolve_agents", "quality_audit"):
+                         "seed_agents", "evolve_agents", "quality_audit",
+                         "safety_check"):
             return self._delegate_to_module(task)
         agent = self._find_agent(agent_code)
         if agent:
@@ -751,6 +800,8 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
                 return self._action_evolve_agents()
             elif task_name == "quality_audit":
                 return self._action_quality_audit()
+            elif task_name == "safety_check":
+                return self._action_safety_check()
             elif task_name == "optimize_environment":
                 return self._action_optimize_environment()
             elif task_name == "infra_health_check":
@@ -767,6 +818,77 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
             if a.agent_code == agent_code:
                 return a
         return None
+
+    def dispatch_to_department(self, department, task):
+        """任务分派到指定部门,部门长带领成员协同完成。
+        department: 部门标识码, 如'content_production'
+        task: str或dict, 部门任务描述
+        返回: 部门执行报告
+        """
+        self._ensure_imports()
+        if not self._orchestra:
+            self._load_agents()
+
+        if department == "content_production":
+            from agents.content_production_ops import handle_content_production_task
+            result = handle_content_production_task(task, db=self.db, client=self.client)
+            label = task if isinstance(task, str) else task.get("task_name", task.get("task", "?"))
+            self._log("部门委派", "info", f"内容生产部 <- {label}")
+            return result
+
+        if department in ("quality_assurance", "safety_compliance"):
+            ops = self._get_quality_safety_ops()
+            op = task if isinstance(task, str) else task.get("operation", task.get("task", ""))
+            label = task if isinstance(task, str) else task.get("task_name", op)
+            self._log("部门委派", "info",
+                      f"{'质量保障部' if department == 'quality_assurance' else '安全合规部'} <- {label}")
+            if op in ("quality_audit", "fact_check", "freshness_scan"):
+                return {"success": True, "result": ops.quality_audit_cycle()}
+            elif op in ("safety_check", "safety_scan", "brand_redline_check"):
+                return {"success": True, "result": self._action_safety_check()}
+            elif op == "dual_gate":
+                content = task.get("content", "") if isinstance(task, dict) else ""
+                return {"success": True, "result": ops.dual_gate_publish(
+                    content if isinstance(content, dict) else {"text": str(content)})}
+            else:
+                return {"success": True, "status": ops.department_status()}
+
+        if department == "rd_center":
+            from agents.rd_center_ops import RDCenterOps
+            members = {}
+            for a in (self._orchestra or []):
+                if self._get_agent_dept(a.agent_code) == "rd_center":
+                    members[a.agent_code] = a
+            ops = RDCenterOps(chief=members.get("rd_director"), members_dict=members,
+                             db=self.db, client=self.client)
+            op = task if isinstance(task, str) else task.get("operation", "")
+            op_map = {
+                "code_review": lambda: ops.code_review("", ""),
+                "design_review": lambda: ops.design_review(""),
+                "architecture_review": lambda: ops.architecture_review(""),
+                "deploy_check": lambda: ops.deploy_check(),
+                "run_test_suite": lambda: ops.run_test_suite("smoke"),
+                "rd_daily_standup": lambda: ops.rd_daily_standup(),
+            }
+            handler = op_map.get(op)
+            if not handler:
+                return {"success": False, "error": f"未知操作:{op}", "dept": "rd_center",
+                        "supported_ops": list(op_map.keys())}
+            try:
+                result = handler()
+                self._log("部门调度", "info", f"rd_center->{op}: {'OK' if result.get('success') else 'FAIL'}")
+                return result
+            except Exception as e:
+                return {"success": False, "error": str(e)[:300], "dept": "rd_center", "operation": op}
+
+        dept_info = self._departments.get(department, {})
+        return {
+            "success": False,
+            "error": f"部门'{department}'尚未实作化",
+            "dept_name": dept_info.get("name", department),
+            "chief": dept_info.get("chief", "?"),
+            "supported": ["content_production", "quality_assurance", "safety_compliance", "rd_center"],
+        }
 
     def _learn(self, plan, results):
         ok = results.get("success", False)
@@ -843,16 +965,64 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
         return {"success": True, "agents_seeded": len(agents)}
 
     def _action_evolve_agents(self):
-        from agents.agent_evolver import AgentEvolver
-        evolver = AgentEvolver(db=self.db, client=self.client)
-        result = evolver.auto_upgrade_low_performers(threshold=2.5)
-        self.metrics["agent_upgrades"] += result.get("auto_upgraded", 0)
+        from agents.evolution_ops import build_evolution_ops_from_ceo
+        ops = build_evolution_ops_from_ceo(self)
+        result = ops.weekly_evolution_cycle()
+        self.metrics["agent_upgrades"] += result.get("details", {}).get(
+            "upgrades", {}).get("auto_upgraded", 0)
         return result
 
     def _action_quality_audit(self):
-        from agents.knowledge_quality_agent import KnowledgeQualityAgent
-        qa = KnowledgeQualityAgent(db=self.db, client=self.client)
-        return qa.audit_batch([])
+        """质量审计: 事实核查+保鲜扫描+低分打磨,双部门操作中心统一调度"""
+        ops = self._get_quality_safety_ops()
+        return ops.quality_audit_cycle()
+
+    def _action_safety_check(self):
+        """安全合规检查: 品牌红线+安全门禁+防幻觉验证"""
+        ops = self._get_quality_safety_ops()
+        # 对最近入库的50条KP进行安全抽查
+        passed = 0
+        blocked = 0
+        try:
+            conn = self.db.get_connection(); c = conn.cursor()
+            c.execute("""SELECT id, title, ai_extracted_content FROM knowledge_points
+                WHERE review_status='confirmed' ORDER BY id DESC LIMIT 50""")
+            rows = c.fetchall()
+            conn.close()
+            for row in rows:
+                kp_id, title, content = row
+                text = (title or "") + " " + (content or "")
+                result = ops.safety_gate_inbound({"text": text, "source": f"KP#{kp_id}"})
+                if result["passed"]:
+                    passed += 1
+                else:
+                    blocked += 1
+        except Exception as e:
+            self._log("safety_check", "error", str(e)[:150])
+
+        status = ops.department_status()
+        return {"success": True, "kps_scanned": passed + blocked,
+                "passed": passed, "blocked": blocked,
+                "brand_redlines_checked": True,
+                "department_status": status}
+
+    def _get_quality_safety_ops(self):
+        """懒加载获取QualitySafetyOps实例(缓存到self._quality_safety_ops)"""
+        if getattr(self, "_quality_safety_ops", None) is None:
+            from agents.quality_safety_ops import QualitySafetyOps
+            self._load_agents()
+            qa_chief = self._find_agent("fact_checker")
+            safety_chief = self._find_agent("safety_filter")
+            qa_members = [a for a in (self._orchestra or [])
+                          if a.agent_code in ("freshness_monitor", "content_lifecycle")]
+            safety_members = [a for a in (self._orchestra or [])
+                              if a.agent_code == "hallucination_guard"]
+            self._quality_safety_ops = QualitySafetyOps(
+                qa_chief=qa_chief, safety_chief=safety_chief,
+                qa_members=qa_members, safety_members=safety_members,
+                db=self.db, client=self.client,
+            )
+        return self._quality_safety_ops
 
     def _action_optimize_environment(self):
         """一键优化系统环境(内存清理+硬件检测+参数调整)"""

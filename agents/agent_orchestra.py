@@ -1,7 +1,7 @@
 """
-agent_orchestra.py - 18个Agent按6部门组织(CEO划分,锚定月入20万)
+agent_orchestra.py - 10部门56+Agent集团编队(设计中心已并入研发中心)
 路径：agents/agent_orchestra.py
-版本：v2.3.7
+版本：v2.3.7-part5
 
 集团架构(CEO决策):
   CEO办公室    → CEO战略家 + 财务分析师 + Agent进化师
@@ -10,12 +10,13 @@ agent_orchestra.py - 18个Agent按6部门组织(CEO划分,锚定月入20万)
   市场拓展部    → 获客策略师(部门长) + 内容营销员
   质量保障部    → 事实核查员(部门长) + 保鲜监控员
   技术平台部    → 系统运维员 + 后勤保障员(部门长)
+  研发中心      → 研发总监+9工程师+6设计师=16人(设计中心已并入,V4-Pro协调)
 
 淘汰(13→冷冻): 15个独立角色Agent合并为1个客户视角审查员(加载CustomerProfiler画像库)
 每个Agent月入20万贡献路径写在identity中。
 """
 import json
-from agents.base_agent import BaseAgent, RoleAgent, QualityAgent, StrategyAgent
+from agents.base_agent import BaseAgent, RoleAgent, QualityAgent, StrategyAgent, DepartmentChief
 from agents.customer_profiler import CustomerProfiler
 from agents.revenue_agents import build_revenue_agents
 from agents.archivist_agent import build_archivist_agent
@@ -24,6 +25,7 @@ from agents.execution_agents import build_execution_agents
 from agents.safety_agents import build_safety_agents
 from agents.evolution_agents import build_evolution_agents
 from agents.pipeline_director import build_pipeline_director
+from agents.design_center import build_design_agents
 
 
 # 部门定义
@@ -31,42 +33,64 @@ DEPARTMENTS = {
     "ceo_office": {
         "name": "CEO办公室", "chief": "ceo_strategist",
         "mission": "战略决策+财务规划+组织进化,确保集团月入20万方向不偏",
+        "members": ["financial_analyst", "agent_evolution", "task_executioner",
+                    "cost_guard", "agent_evolution_engine", "continuous_learner"],
     },
     "content_production": {
         "name": "内容生产部", "chief": "feed_strategist",
         "mission": "生产能直接卖钱的知识产品(策划方案/融资指南/政策解读),月产量≥200条高质量KP",
+        "members": ["policy_researcher", "case_collector", "methodology_expert",
+                    "design_standard_researcher", "construction_standard_researcher",
+                    "operation_standard_researcher", "content_packager",
+                    "pipeline_director", "auto_classifier"],
     },
     "client_delivery": {
         "name": "客户交付部", "chief": "solution_architect",
         "mission": "直接服务付费客户:问答+方案+审查,客户满意度≥85%,续费率≥60%",
+        "members": ["customer_reviewer", "qa_consultant", "sales_page_gen"],
     },
     "market_expansion": {
         "name": "市场拓展部", "chief": "gtm_strategist",
         "mission": "获客+品牌+渠道,月新增付费用户≥100人",
+        "members": ["content_marketer", "brand_gatekeeper", "zhihu_operator",
+                    "douyin_operator", "xiaohongshu_operator", "pricing_strategist",
+                    "competitive_intelligence"],
     },
     "quality_assurance": {
         "name": "质量保障部", "chief": "fact_checker",
         "mission": "零事实错误+保鲜率≥95%,客户因质量问题退款=部门绩效不合格",
+        "members": ["freshness_monitor", "content_lifecycle", "feedback_analyzer",
+                    "feedback_analyst", "relation_resolver"],
     },
     "tech_platform": {
         "name": "技术平台部", "chief": "infrastructure_agent",
         "mission": "系统99.9%在线+NPU/GPU充分利用+内存<70%,技术问题不能成为收入瓶颈",
+        "members": ["system_operator", "deadlock_detector"],
     },
     "rd_center": {
-        "name": "研发中心", "chief": "rd_director",
-        "mission": "技术架构+前端+后端+DB+测试+审查+运维+安全,对标大厂标准,每个功能都经过团队辩论和代码审查",
+        "name": "研发中心(含设计中心)", "chief": "rd_director",
+        "mission": "技术架构+前端+后端+DB+测试+审查+运维+安全+设计,对标大厂标准,每个功能都经过团队辩论和代码审查。设计中心已并入,16人团队。",
+        "members": ["frontend_architect", "ui_visual_designer", "backend_engineer",
+                    "database_engineer", "test_architect", "code_reviewer",
+                    "devops_engineer", "security_auditor",
+                    "ui_architect", "visual_designer", "interaction_designer",
+                    "accessibility_specialist", "mobile_specialist", "design_qa"],
     },
     "revenue": {
         "name": "商业变现部", "chief": "revenue_optimizer",
         "mission": "把知识变成钱:定价策略+产品包装+销售转化+用户反馈+收入优化,月入20万的直接责任部门",
+        "members": ["pricing_strategist", "content_packager", "sales_page_gen",
+                    "feedback_analyzer"],
     },
     "archives": {
         "name": "档案管理部", "chief": "archivist",
         "mission": "文件分类+命名规范+目录治理+去重+爬虫存储+源文件归档,让每一份文件都能被找到",
+        "members": ["relation_resolver"],
     },
     "safety_compliance": {
         "name": "安全合规部", "chief": "safety_filter",
         "mission": "入口安全过滤+出口防幻觉,零有害内容进入知识库,零幻觉输出到达客户",
+        "members": ["hallucination_guard"],
     },
 }
 
@@ -114,8 +138,8 @@ def build_all_agents(client=None, db=None):
     # ================================================================
     # 部门2: 内容生产部 (4 agents)
     # ================================================================
-    agents.append(BaseAgent(
-        "feed_strategist", "喂料调度员(部门长)", "quality",
+    agents.append(DepartmentChief(
+        "feed_strategist", "喂料调度员(部门长)",
         "我是喂料调度员,内容生产部的部门长。我决定知识库要补什么:从哪找、找多少、什么优先级。"
         "我的KPI:每月新增≥200条confirmed知识点,红标率<15%。"
         "我的收入贡献:高质量内容是所有付费产品的基础——没内容就没东西卖。",
@@ -170,7 +194,7 @@ def build_all_agents(client=None, db=None):
         ["答案实用度","案例丰富度","响应速度","诚信度(不编造)"],
         client=client, db=db,
     ))
-    agents.append(StrategyAgent(
+    agents.append(DepartmentChief(
         "solution_architect", "方案汇编师(部门长)",
         "我是方案汇编师,客户交付部的部门长。当客户需要完整方案(不是单个问答),我负责:"
         "理解客户需求→调集相关知识点→组织成结构化方案→确保逻辑完整+数据准确。"
@@ -185,7 +209,7 @@ def build_all_agents(client=None, db=None):
     # ================================================================
     # 部门4: 市场拓展部 (2 agents)
     # ================================================================
-    agents.append(StrategyAgent(
+    agents.append(DepartmentChief(
         "gtm_strategist", "获客策略师(部门长)",
         "我是获客策略师,市场拓展部的部门长。我的KPI:月新增付费用户≥100人。"
         "我研究:目标客户在哪(微信群?行业会议?搜索引擎?)用什么内容吸引他们?"
@@ -210,7 +234,7 @@ def build_all_agents(client=None, db=None):
     # ================================================================
     # 部门5: 质量保障部 (2 agents)
     # ================================================================
-    agents.append(QualityAgent(
+    agents.append(DepartmentChief(
         "fact_checker", "事实核查员(部门长)",
         "我是事实核查员,质量保障部的部门长。我的KPI:知识库零事实错误。"
         "任何一条要发给客户的知识点,我会检查:政策条款引用对吗?数据来源可靠吗?"
@@ -248,12 +272,30 @@ def build_all_agents(client=None, db=None):
     # infrastructure_agent 在CEO._load_agents()中独立初始化,不在此处创建
 
     # ================================================================
-    # 部门7: 研发中心 (9 agents, 从rd_center.py加载)
+    # 部门7: 研发中心 (16 agents: 10研发+6设计, 设计中心已并入)
     # ================================================================
     from agents.rd_center import build_rd_agents, get_rd_department
     rd_agents = build_rd_agents(client=client, db=db)
     agents.extend(rd_agents)
-    DEPARTMENTS.update(get_rd_department())
+    # Merge department info, preserving pre-defined members list
+    rd_dept = get_rd_department()
+    for dk, dv in rd_dept.items():
+        if dk in DEPARTMENTS:
+            existing_members = DEPARTMENTS[dk].get("members", [])
+            dv["members"] = list(set(existing_members + dv.get("members", [])))
+        DEPARTMENTS[dk] = dv
+
+    # 将设计中心6个Agent转为BaseAgent实例,并入研发中心
+    design_agent_dicts = build_design_agents()
+    for da in design_agent_dicts:
+        agents.append(BaseAgent(
+            da["agent_code"], da["agent_name"], da.get("agent_type", "ui"),
+            da["identity_text"],
+            core_questions=da.get("core_questions", []),
+            quality_standards=da.get("quality_standards", []),
+            scoring_dimensions=da.get("scoring_dimensions", []),
+            client=client, db=db,
+        ))
 
     # ================================================================
     # 部门扩编: 市场拓展部+4, 内容生产部+3, 客户反馈+1
@@ -261,7 +303,13 @@ def build_all_agents(client=None, db=None):
     from agents.expansion_agents import build_expansion_agents, get_expansion_departments
     expansion = build_expansion_agents(client=client, db=db)
     agents.extend(expansion)
-    DEPARTMENTS.update(get_expansion_departments())
+    # Merge department info, preserving pre-defined members
+    exp_depts = get_expansion_departments()
+    for dk, dv in exp_depts.items():
+        if dk in DEPARTMENTS:
+            existing_members = DEPARTMENTS[dk].get("members", [])
+            dv["members"] = list(set(existing_members + dv.get("members", [])))
+        DEPARTMENTS[dk] = dv
 
     # ================================================================
     # 部门8: 商业变现部 (5 agents, v2.3.7-part3)
@@ -304,6 +352,9 @@ def build_all_agents(client=None, db=None):
     # ================================================================
     pipeline_agents = build_pipeline_director(client=client, db=db)
     agents.extend(pipeline_agents)
+
+    # 做实部门管理: 为每个部门长分配成员
+    _assign_members_to_chief(agents, DEPARTMENTS)
 
     return {
         "agents": agents,
@@ -378,6 +429,160 @@ def _build_reviewer_agent(client, db):
 
 
 
+def _upgrade_to_chief(agent):
+    """将非DepartmentChief的Agent动态注入部门管理能力。
+    用于从其他模块(rd_center/revenue/archivist/safety/infrastructure)构建的chief。
+    通过闭包将部门管理方法绑定到agent实例上。"""
+    agent._members = []
+    agent._dept_key = None
+    agent._dept_mission = ""
+    agent._dept_kpi = {}
+
+    def set_department(dept_key, mission, members):
+        agent._dept_key = dept_key
+        agent._dept_mission = mission
+        agent._members = members
+
+    def list_members():
+        return [{
+            "name": m.agent_name, "code": m.agent_code,
+            "type": getattr(m, "agent_type", "?"),
+            "calls": getattr(m, "_call_count", 0),
+        } for m in agent._members]
+
+    def hold_dept_meeting(topic, client=None):
+        opinions = []
+        for m in agent._members:
+            try:
+                result = m.think(
+                    f"[{agent._dept_key}部门会议,主持:{agent.agent_name}] 议题:{topic}"
+                )
+                opinions.append({
+                    "agent": m.agent_name,
+                    "opinion": result.get("analysis", "")[:300],
+                    "confidence": result.get("confidence", "medium"),
+                })
+            except Exception:
+                opinions.append({
+                    "agent": m.agent_name,
+                    "opinion": "[无法参与讨论]",
+                    "confidence": "low",
+                })
+        synopsis = (f"[{agent.agent_name}]综合{len(opinions)}条意见:"
+                    f"已听取部门内各Agent观点,待形成最终决策。")
+        return {
+            "topic": topic, "dept": agent._dept_key,
+            "opinions": opinions, "decision": synopsis,
+        }
+
+    def assign_task(agent_code, task_description):
+        target = None
+        for m in agent._members:
+            if m.agent_code == agent_code:
+                target = m
+                break
+        if not target:
+            return {"error": f"成员{agent_code}不在本部门", "dept": agent._dept_key}
+        try:
+            result = target.think(
+                f"[任务分派自{agent.agent_name}] {task_description}"
+            )
+            return {
+                "assigned_to": agent_code, "task": task_description,
+                "response": result.get("analysis", "")[:300],
+            }
+        except Exception as e:
+            return {"assigned_to": agent_code, "error": str(e)[:200]}
+
+    def daily_standup():
+        return {
+            "dept": agent._dept_key, "chief": agent.agent_name,
+            "member_count": len(agent._members),
+            "members": [m.agent_name for m in agent._members],
+            "total_calls": sum(getattr(m, "_call_count", 0) for m in agent._members),
+            "total_cost": round(sum(getattr(m, "_total_cost", 0) for m in agent._members), 4),
+            "mission": agent._dept_mission,
+        }
+
+    def collect_kpis(db=None):
+        kpis = {
+            "dept": agent._dept_key,
+            "member_count": len(agent._members),
+            "total_calls": sum(getattr(m, "_call_count", 0) for m in agent._members),
+            "total_cost": round(sum(getattr(m, "_total_cost", 0) for m in agent._members), 4),
+        }
+        if db:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed'"
+                )
+                kpis["confirmed_kps"] = cursor.fetchone()[0]
+            except Exception:
+                pass
+        agent._dept_kpi = kpis
+        return kpis
+
+    def report_to_ceo():
+        return {
+            "dept": agent._dept_key,
+            "mission": agent._dept_mission,
+            "chief": agent.agent_name,
+            "member_count": len(agent._members),
+            "members": [m.agent_name for m in agent._members],
+            "kpis": agent._dept_kpi,
+            "needs_ceo_attention": [],
+        }
+
+    agent.set_department = set_department
+    agent.list_members = list_members
+    agent.hold_dept_meeting = hold_dept_meeting
+    agent.assign_task = assign_task
+    agent.daily_standup = daily_standup
+    agent.collect_kpis = collect_kpis
+    agent.report_to_ceo = report_to_ceo
+    return agent
+
+
+def _assign_members_to_chief(agents, departments):
+    """将各部门成员分配给部门长,做实部门管理。
+    1. 读取 departments dict 获取每个部门的 chief code 和 members list
+    2. 在所有 agents 中查找 chief,非 DepartmentChief 则动态升级
+    3. 查找所有成员 agent,调用 chief.set_department()
+    """
+    agent_lookup = {}
+    for a in agents:
+        agent_lookup[a.agent_code] = a
+
+    for dept_key, dept_info in departments.items():
+        if dept_key == "ceo_office":
+            continue  # CEO 有自己的类,跳过
+
+        chief_code = dept_info.get("chief")
+        if not chief_code:
+            continue
+
+        chief = agent_lookup.get(chief_code)
+        if not chief:
+            continue  # infrastructure_agent 等可能在外部初始化
+
+        # 非 DepartmentChief 实例则动态注入部门管理方法
+        if not isinstance(chief, DepartmentChief):
+            _upgrade_to_chief(chief)
+
+        # 收集本部门成员
+        member_codes = dept_info.get("members", [])
+        members = []
+        for code in member_codes:
+            m = agent_lookup.get(code)
+            if m and m is not chief:
+                members.append(m)
+
+        chief.set_department(dept_key, dept_info.get("mission", ""), members)
+
+    return agents
+
+
 def get_departments():
     return DEPARTMENTS
 
@@ -389,4 +594,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 50  # 40 + 10(v2.3.7-part4执行+安全+进化+管道) = 50
+    return 56  # 50 base + 6 design agents from design_center merged into rd_center

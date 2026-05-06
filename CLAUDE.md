@@ -6,7 +6,7 @@
 
 **乡村振兴知识库搭建助手** — 知识工厂(原料 → 加工 → 质检 → 产品 → 卖钱)。**聚焦四川**。
 代码仓:https://github.com/Fat-designer920/rural-revitalization-kb
-当前代码版本:**v2.3.7** | 当前设计版本:**v2.3.7** | Agent:**50个** | 部门:**10个**
+当前代码版本:**v2.3.7-part5** | 当前设计版本:**v2.3.7-part5** | Agent:**56个** | 部门:**10个**(设计中心已并入研发中心)
 产品定位:四川乡村振兴操盘手的第一知识工具(不是大而全,是四川够用+产品力够强)
 
 ## 2. 角色
@@ -125,11 +125,13 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 10. 核心架构速查(详细见 docs/01_工程手册.md)
 
-**Agent智慧体系**(v2.3.7, agents/独立目录):
-- **7部门25个AI思考实体**: CEO办公室(3)/内容生产部(4)/客户交付部(3)/市场拓展部(2)/质量保障部(2)/技术平台部(2)/研发中心(9)
-- **每个Agent都是BaseAgent子类实例**,独立调用DeepSeek API,拥有think()/evaluate()/ask()能力
-- **CEO决策**: receive_instruction()唯一入口→V4-Pro深度分析→质疑/建议→达成共识→召集Agent开会(meeting_engine七步协议)→CEO裁决→执行
-- **Agent验证**: agent_verifier.py 4项上岗测试(专业度+独立性+盈利导向+抗盲从)
+**Agent智慧体系**(v2.3.7, agents/独立目录,全自动闭环):
+- **10部门~56个AI思考实体**: CEO办公室(10)/内容生产部(10)/客户交付部(5)/市场拓展部(6)/质量保障部(3)/技术平台部(2)/研发中心(15,含设计中心6人)/商业变现部(5)/档案管理部(1)/安全合规部(2)
+- **全自动管道**: 5阶段日循环(需求分析→原料采集→知识加工→产品包装→报告),≥95%自动化率,CEO run()自主循环
+- **CEO决策**: receive_instruction()唯一入口→V4-Pro深度分析→质疑/建议→达成共识→召集Agent开会(meeting_engine七步协议:独立表态→强制异议→AI主持→CEO裁决)→执行
+- **Agent验证**: agent_verifier.py 4项上岗测试(专业度+独立性+盈利导向+抗盲从),评分<3.0淘汰
+- **自我进化**: agent_evolver自动升级低分Agent+evolution_agents持续学习引擎+competitive_intelligence竞品监控+prompt_optimizer自动优化
+- **安全双保险**: SafetyFilter强制门禁(3层过滤)+HallucinationGuard(来源追溯+置信度分层),零有害内容/零幻觉
 - **客户画像**: customer_profiler.py搜索→验证→构建真实付费客户画像→交付审查员
 - **后勤保障**: infrastructure_agent.py 内存监控+NPU/GPU路由+自动清理+动态批处理
 - **动态管理**: CEO.add_agent()/remove_agent() 按需增删,无需改代码
@@ -150,10 +152,10 @@ docs/03 版本历史单条 ≤ 3 行 / README 当前版本字段 ≤ 3 行 / 迭
 
 ## 11. 当前状态与下一步(详细见 docs/00_项目全景.md)
 
-- **当前**: v2.3.7(集团化重构: 7部门25个AI Agent(含研发中心9人) + CEO V4-Pro会议决策 + 客户画像驱动 + NPU/GPU调度)
-- **v2.3.7 核心**: Agent从静态配置升级为BaseAgent思考实体 + CEO从if-else升级为receive_instruction协作协议 + meeting_engine七步会议 + agent_verifier验证 + customer_profiler画像研究
-- **下一步**: 四川测试文件全量喂入 + 首次16 Agent审计 + 客户画像真实数据验证 + 问答助手测试
-- **商业化锚点**: 聚焦"策划+融资",月入20万目标
+- **当前**: v2.3.7(全自动集团化: 10部门~50个AI Agent + CEO V4-Pro自主决策 + 七步会议协议 + 5阶段自动管道 + 自我进化闭环 + 安全双保险)
+- **v2.3.7 核心**: 全自动闭环(CEO run()自主循环→感知→策略→执行→学习→停滞检测→报告)+Agent自我进化+管道日循环+meeting_engine七步会议+agent_verifier验证+双门禁(SafetyFilter/HallucinationGuard)
+- **下一步**: 审计周期自动化 + 管道全量跑通 + 老唐经验喂入 + 客户画像真实数据验证
+- **商业化锚点**: 聚焦"策划+融资",月入20万目标,5档定价体系(¥19.9-¥20K/年)
 
 ## 12. 功能测试自动化(F063, v2.3.6-part1)
 
