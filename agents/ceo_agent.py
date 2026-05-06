@@ -355,6 +355,11 @@ class CEOAgent(BaseAgent):
                  "reason": f"老板指令: {instruction[:80]}"},
                 {"agent": "code_reviewer", "task": "审查修复代码", "priority": "P0",
                  "reason": "修复须审查"}]}
+        elif any(w in instruction_lower for w in ["scout", "技能侦察", "skill scout",
+                   "skill_scout", "开源", "github搜索", "侦察"]):
+            return {"action": "scout_skills", "tasks": [
+                {"agent": "ceo_strategist", "task": "scout_skills", "priority": "P0",
+                 "reason": f"老板指令: {instruction[:80]}"}]}
         else:
             return {"action": "idle", "tasks": [],
                     "reasoning": f"无法自动匹配指令到具体任务,请老板明确: {instruction[:100]}"}
@@ -490,6 +495,9 @@ class CEOAgent(BaseAgent):
             "design_standard_researcher": "content_production",
             "construction_standard_researcher": "content_production",
             "operation_standard_researcher": "content_production",
+            "chinese_nlp_scout": "rd_center",
+            "gov_data_scout": "rd_center",
+            "security_scout": "rd_center",
         }
         return dept_map.get(agent_code, "ceo_office")
 
@@ -804,6 +812,8 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
                 return self._action_safety_check()
             elif task_name == "optimize_environment":
                 return self._action_optimize_environment()
+            elif task_name == "scout_skills":
+                return self._action_scout_skills()
             elif task_name == "infra_health_check":
                 return self._action_infra_health_check()
             return {"success": True, "status": "skipped"}
@@ -1023,6 +1033,34 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
                 db=self.db, client=self.client,
             )
         return self._quality_safety_ops
+
+    def _action_scout_skills(self):
+        """技能侦察: 触发3个SkillScout搜索GitHub开源项目,评估商业价值+安全性,推荐整合。"""
+        from agents.skill_scout import build_skill_scouts
+        scouts = build_skill_scouts(client=self.client, db=self.db)
+        results = {}
+        for scout in scouts:
+            try:
+                mission = scout.scout_mission()
+                results[scout.agent_code] = {
+                    "agent_name": scout.agent_name,
+                    "specialization": scout.specialization,
+                    "searches": mission.get("searches", 0),
+                    "findings_preview": str(mission.get("findings", []))[:300],
+                }
+                self._log("技能侦察", "info",
+                         f"{scout.agent_name}({scout.specialization}): {mission.get('searches',0)}次搜索完成")
+            except Exception as e:
+                results[scout.agent_code] = {
+                    "agent_name": scout.agent_name,
+                    "error": str(e)[:200],
+                }
+        return {
+            "success": True,
+            "scouts_deployed": len(scouts),
+            "results": results,
+            "summary": f"3个SkillScout已完成侦察: NLP/政府数据/安全领域",
+        }
 
     def _action_optimize_environment(self):
         """一键优化系统环境(内存清理+硬件检测+参数调整)"""

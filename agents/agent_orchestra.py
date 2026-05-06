@@ -26,6 +26,7 @@ from agents.safety_agents import build_safety_agents
 from agents.evolution_agents import build_evolution_agents
 from agents.pipeline_director import build_pipeline_director
 from agents.design_center import build_design_agents
+from agents.skill_scout import build_skill_scouts
 
 
 # 部门定义
@@ -74,7 +75,8 @@ DEPARTMENTS = {
         "members": ["frontend_architect", "ui_visual_designer", "backend_engineer",
                     "database_engineer", "test_architect", "code_reviewer",
                     "devops_engineer", "security_auditor", "qa_architect",
-                    "ui_architect"],
+                    "ui_architect", "chinese_nlp_scout", "gov_data_scout",
+                    "security_scout"],
     },
     "revenue": {
         "name": "商业变现部", "chief": "revenue_optimizer",
@@ -353,6 +355,10 @@ def build_all_agents(client=None, db=None):
     pipeline_agents = build_pipeline_director(client=client, db=db)
     agents.extend(pipeline_agents)
 
+    # 技能侦察: 3个SkillScout (v2.3.7 — CEO指令)
+    skill_scouts = build_skill_scouts(client=client, db=db)
+    agents.extend(skill_scouts)
+
     # 做实部门管理: 为每个部门长分配成员
     _assign_members_to_chief(agents, DEPARTMENTS)
 
@@ -594,4 +600,4 @@ def build_agent_dicts():
 
 
 def get_agent_count():
-    return 52  # 57 - 5冷冻(v2.3.7-part5 pre-revenue设计Agent) = 52
+    return 55  # 52 + 3 SkillScouts(v2.3.7 CEO指令)
