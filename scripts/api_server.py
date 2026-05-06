@@ -5205,6 +5205,28 @@ def ceo_status():
     return jsonify({"success": True, "state": state})
 
 
+@app.route("/api/ceo/instruction", methods=["POST"])
+def ceo_instruction():
+    """Send an instruction to the CEO agent for deep analysis (V4-Pro).
+    POST body: {instruction: str}
+    Returns CEO's analysis: verdict, risks, alternatives, recommendation, requires_meeting.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        instruction = (data.get("instruction", "") or "").strip()
+        if not instruction:
+            return jsonify({"error": "指令不能为空"}), 400
+        from agents.ceo_agent import CEOAgent
+        from scripts.deepseek_client import DeepSeekClient
+        c = DeepSeekClient()
+        ceo = CEOAgent(db=db, client=c, headless=True)
+        result = ceo.receive_instruction(instruction)
+        return jsonify({"success": True, "analysis": result})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # ================================================================
 # v2.3.7: Agent 体系全局状态路由(GET,秒级同步)
 # ================================================================

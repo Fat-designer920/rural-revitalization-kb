@@ -582,32 +582,166 @@ class CEOAgent(BaseAgent):
         return state
 
     def _strategize(self, state):
-        """CEO战略决策。重大事项=召开会议,日常=快速决策。"""
-        # 紧急情况: 无需开会,直接执行
+        """CEO系统性战略决策(v2.3.7-part5升级)。
+        用GlobalTaskRegistry做: 全局扫描→缺口发现→任务优先级→结果验证→纠偏。
+        不再靠关键词匹配——靠全局视图做MECE决策。"""
+        from agents.global_task_registry import get_registry
+        registry = get_registry()
+
+        # === 步骤1: 系统性全局扫描 ===
+        global_view = registry.get_global_view()
+        missing_domains = registry.get_missing_domains()
+        ready_tasks = registry.get_ready_tasks()
+
+        # === 步骤2: 主动性缺口检测 ===
+        # CEO必须主动发现被忽略的领域
+        proactive_tasks = self._systematic_scan(state, global_view, missing_domains)
+        for pt in proactive_tasks:
+            registry.register(**pt)
+
+        # === 步骤3: 验证已完成任务 ===
+        self._validate_and_correct(registry, state)
+
+        # === 步骤4: 紧急情况(无需注册表,直接P0) ===
         if state["kps_confirmed"] < 10:
-            action = "feed_test_files" if state.get("test_files_available", 0) > 0 else "crawl"
-            return {"action": action, "priority_agents": [],
-                    "tasks": [{"agent": "auto_feeder", "task": action, "priority": "P0"}],
-                    "reasoning": "紧急: KPs不足10条,无需开会,直接执行"}
+            tid = registry.register(
+                "紧急喂料", "P0", "content_production",
+                "feed_test_files" if state.get("test_files_available", 0) > 0 else "crawl",
+                validator=self._default_validator)
+            registry.mark_running(tid)
+            return self._plan_from_registry(registry, state)
 
-        # 日常决策: 规则引擎快速判断
-        if state["kps_confirmed"] < MIN_KPS_BEFORE_AUDIT and state.get("test_files_available", 0) > 0:
-            return {"action": "feed_test_files", "priority_agents": [],
-                    "tasks": [{"agent": "auto_feeder", "task": "feed_test_files", "priority": "P0"}],
-                    "reasoning": "日常: 知识库不足50条,继续喂料"}
+        # === 步骤5: 基于注册表做MECE优先级决策 ===
+        # 规则: P0先跑, P1并行, P2批量
+        if ready_tasks:
+            # 取优先级最高的就绪任务
+            priority_tasks = [t for t in ready_tasks if t["priority"] in ("P0",)]
+            if not priority_tasks:
+                priority_tasks = ready_tasks[:5]  # 最多5个P1/P2
+            return self._plan_from_registry(registry, state, priority_tasks)
 
-        # === 重大决策: 召开会议 ===
-        # 每5轮或评分<3.0或停滞≥3时,召开战略会议
+        # === 步骤6: 无就绪任务→重大决策召开会议 ===
         need_meeting = (
             self.cycle % 5 == 0
             or state["audit_avg_score"] < PROMPT_OPTIMIZE_THRESHOLD
             or self._stagnation_counter >= 3
+            or len(missing_domains) > 3  # 缺失领域>3,需要会议讨论
         )
-
         if need_meeting:
             return self._convene_strategy_meeting(state)
         else:
             return self._quick_decision(state)
+
+    def _systematic_scan(self, state, global_view, missing_domains):
+        """CEO主动性系统性扫描: 发现被忽视的领域,自动注册任务。"""
+        tasks = []
+
+        # 爬虫: 如果没有活跃爬虫任务,主动注册
+        if "crawler" in missing_domains:
+            tasks.append({
+                "name": "爬虫数据采集(CEO主动)", "priority": "P1",
+                "department": "crawler", "action": "crawl",
+                "validator": self._default_validator,
+            })
+
+        # UI改造: 如果review.html长期未更新
+        if "ui_overhaul" in missing_domains:
+            tasks.append({
+                "name": "UI改造升级(CEO主动)", "priority": "P1",
+                "department": "ui_overhaul", "action": "ui_overhaul",
+                "validator": self._default_validator,
+            })
+
+        # 深度学习: 如果Agent未使用deep模式
+        if "deep_learning" in missing_domains:
+            tasks.append({
+                "name": "深度学习能力升级(CEO主动)", "priority": "P0",
+                "department": "deep_learning", "action": "deep_learning_upgrade",
+                "validator": self._default_validator,
+            })
+
+        # 审计覆盖率: 如果<5%
+        if "quality_audit" in missing_domains:
+            tasks.append({
+                "name": "审计覆盖率提升(CEO主动)", "priority": "P0",
+                "department": "quality_audit", "action": "quality_audit",
+                "validator": self._default_validator,
+            })
+
+        # 精品判定: 如果premium<50条
+        if "premium_judge" in missing_domains:
+            tasks.append({
+                "name": "精品判定补跑(CEO主动)", "priority": "P1",
+                "department": "premium_judge", "action": "premium_judge",
+                "validator": self._default_validator,
+            })
+
+        # 变现分析: 持续追踪
+        if "revenue_analysis" in missing_domains:
+            tasks.append({
+                "name": "变现分析(CEO主动)", "priority": "P2",
+                "department": "revenue_analysis", "action": "revenue_analysis",
+                "validator": self._default_validator,
+            })
+
+        self._log("系统性扫描", "info",
+                  f"发现{len(missing_domains)}个缺失领域, 自动注册{len(tasks)}个任务: "
+                  f"{[t['name'] for t in tasks]}")
+        return tasks
+
+    def _validate_and_correct(self, registry, state):
+        """验证已完成任务,失败则纠偏。确保每项任务结果有效。"""
+        completed = [t for t in registry._tasks.values() if t["status"] == "completed"]
+        for task in completed[:5]:  # 每轮最多验证5个
+            ok, reason = registry.validate(task["id"])
+            if not ok:
+                self._log("验证失败", "warning",
+                         f"{task['name']}: {reason} → 自动纠偏")
+                registry.correct(task["id"], f"自动纠偏: {reason}")
+                self._consecutive_failures += 1
+            else:
+                self._log("验证通过", "info", f"{task['name']}: {reason}")
+
+    def _plan_from_registry(self, registry, state, priority_tasks=None):
+        """从注册表生成执行计划。MECE: 互斥完备。"""
+        if priority_tasks is None:
+            priority_tasks = registry.get_ready_tasks()[:5]
+
+        tasks_for_plan = []
+        for t in priority_tasks[:MAX_CONCURRENT_AGENTS]:
+            tasks_for_plan.append({
+                "agent": t.get("assigned_agent", t["department"]),
+                "task": t["action"],
+                "priority": t["priority"],
+                "registry_id": t["id"],
+            })
+            registry.mark_running(t["id"])
+
+        global_view = registry.get_global_view()
+        return {
+            "action": "execute_registry_tasks",
+            "priority_agents": [],
+            "tasks": tasks_for_plan,
+            "reasoning": (
+                f"系统性决策(第{self.cycle}轮): "
+                f"总任务{global_view['total']}, 就绪{global_view['ready_to_run']}, "
+                f"待验证{global_view['pending_validation']}, 需纠偏{global_view['failed_need_correction']}"
+            ),
+        }
+
+    def _default_validator(self, result):
+        """默认任务验证器: 检查结果有效性"""
+        if result is None:
+            return False, "result is None"
+        if isinstance(result, dict):
+            if result.get("error"):
+                return False, f"error: {result['error'][:100]}"
+            if result.get("success") is False:
+                return False, "success=False"
+            return True, "OK"
+        if isinstance(result, str) and "error" in result.lower()[:50]:
+            return False, "result contains error"
+        return True, "OK"
 
     def _convene_strategy_meeting(self, state):
         """召开战略会议: 召集核心Agent→独立表态→辩论→CEO裁决"""

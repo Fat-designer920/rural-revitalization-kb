@@ -384,6 +384,41 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .dup-group-wrap>.dup-group{flex:1;margin-bottom:0}
 .dup-member-cb{width:14px;height:14px;cursor:pointer;accent-color:var(--primary);flex-shrink:0}
 
+/* === NPU Status Badge === */
+.npu-badge-wrap{display:inline-flex;align-items:center;gap:6px}
+.npu-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.npu-dot.on{background:var(--success);box-shadow:0 0 6px rgba(52,199,89,.6)}
+.npu-dot.off{background:#C1C1C6}
+
+/* === CEO Command Input === */
+.ceo-cmd-section{margin-bottom:24px}
+.ceo-cmd-wrap{display:flex;gap:8px;align-items:center}
+.ceo-cmd-wrap input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:inherit;color:var(--text);background:var(--card);transition:var(--transition)}
+.ceo-cmd-wrap input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(10,155,128,.1)}
+.ceo-cmd-wrap input::placeholder{color:var(--text-muted)}
+.ceo-response-box{margin-top:10px;padding:14px 18px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);display:none}
+.ceo-response-box.open{display:block}
+
+/* === Department Monitor (Tab 4) === */
+.dept-monitor-wrap{padding:24px 28px;height:calc(100vh - 94px);overflow-y:auto;background:var(--bg)}
+.dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.dept-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition)}
+.dept-card:hover{box-shadow:var(--shadow);border-color:var(--border)}
+.dept-card-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.dept-status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.dept-status-dot.green{background:#34C759;box-shadow:0 0 8px rgba(52,199,89,.5)}
+.dept-status-dot.yellow{background:#FF9500;box-shadow:0 0 8px rgba(255,149,0,.5)}
+.dept-status-dot.red{background:#FF3B30;box-shadow:0 0 8px rgba(255,59,48,.5)}
+.dept-card-name{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.dept-card-chief{font-size:11px;color:var(--text-muted);margin-bottom:10px}
+.dept-card-chief span{font-weight:600;color:var(--primary)}
+.dept-card-mission{font-size:12px;color:var(--text-secondary);line-height:1.5;margin-bottom:12px;padding:8px 10px;background:var(--bg);border-radius:var(--radius)}
+.dept-card-members{display:flex;flex-wrap:wrap;gap:4px}
+.dept-member-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:500;background:var(--primary-light);color:var(--primary)}
+.dept-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.dept-header-row h2{font-size:18px;font-weight:700;color:var(--text)}
+.dept-header-row .dept-summary{font-size:13px;color:var(--text-secondary)}
+
 /* === Modals === */
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:200;justify-content:center;align-items:center;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .modal-overlay.open{display:flex}
@@ -732,6 +767,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
     <div class="stat-pill clickable" onclick="openStatsModal()">分类概览</div>
     <div class="stat-pill">API<span class="num" id="statCost">-</span>元</div>
+    <div class="stat-pill" id="npuBadge"><span class="npu-badge-wrap"><span class="npu-dot off" id="npuDot"></span>NPU<span class="num" id="npuStatus">-</span></span></div>
     <div class="stat-pill clickable" onclick="window.open('/qa','_blank')" title="新标签页打开朋友试用产品页">朋友试用 ↗</div>
   </div>
 </div>
@@ -741,6 +777,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <button class="tab-btn active" data-tab="review" onclick="switchTab('review')">知识审核</button>
   <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">系统管理</button>
   <button class="tab-btn" data-tab="qa" onclick="switchTab('qa')">智能问答</button>
+  <button class="tab-btn" data-tab="dept" onclick="switchTab('dept')">部门监控</button>
   <!-- v2.3.3-mvp-part1c: 朋友模式 ?mode=friend 已废弃,改用独立产品页 /qa
        qaModeBadge 已删除 -->
 
@@ -856,6 +893,16 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 <!-- ==================== Tab 2: System Admin ==================== -->
 <div id="tabAdmin" style="display:none">
 <div class="admin-wrap">
+  <!-- CEO Command -->
+  <div class="admin-section ceo-cmd-section">
+    <div class="admin-title">CEO指令 <small>-- 直接向CEO Agent下达指令,V4-Pro深度分析</small></div>
+    <div class="ceo-cmd-wrap">
+      <input type="text" id="ceoInput" placeholder="输入指令,例如:分析当前知识库薄弱环节并给出爬取建议" onkeydown="if(event.key==='Enter')sendCeoInstruction()">
+      <button class="btn btn-primary" id="ceoSendBtn" onclick="sendCeoInstruction()">发送</button>
+      <button class="btn btn-ghost" id="ceoCancelBtn" style="display:none" onclick="cancelCeoInstr()">取消</button>
+    </div>
+    <div class="ceo-response-box" id="ceoResponseBox"></div>
+  </div>
   <!-- Dashboard -->
   <div class="admin-section">
     <div class="admin-title">仪表盘 <small>-- 知识库运行状态总览</small>
@@ -1228,6 +1275,19 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   </div>
 </div>
 
+<!-- ==================== Tab 4: Department Monitor ==================== -->
+<div id="tabDept" style="display:none">
+  <div class="dept-monitor-wrap">
+    <div class="dept-header-row">
+      <h2>集团部门状态监控 <small style="font-size:12px;font-weight:400;color:var(--text-muted)">-- 10部门实时概览</small></h2>
+      <span class="dept-summary" id="deptSummary"></span>
+    </div>
+    <div class="dept-grid" id="deptGrid">
+      <div class="loading">正在加载部门数据...</div>
+    </div>
+  </div>
+</div>
+
 <!-- ==================== QA Comment Dialog ==================== -->
 <div class="modal-overlay" id="qaCommentDlg"><div class="modal" style="width:480px">
   <div class="modal-header">反馈一句</div>
@@ -1572,6 +1632,15 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   </div>
 </div>
 
+<!-- CEO Response Modal -->
+<div class="modal-overlay" id="ceoResultDlg"><div class="modal" style="width:640px">
+  <div class="modal-header">CEO Analysis Result</div>
+  <div class="modal-body" id="ceoResultBody"></div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal('ceoResultDlg')">关闭</button>
+  </div>
+</div></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1665,12 +1734,14 @@ function switchTab(tab){
   document.getElementById("tabReview").style.display=tab==="review"?"":"none";
   document.getElementById("tabAdmin").style.display=tab==="admin"?"":"none";
   document.getElementById("tabQa").style.display=tab==="qa"?"":"none";
+  document.getElementById("tabDept").style.display=tab==="dept"?"":"none";
   var btns=document.querySelectorAll(".tab-btn");
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
   }
   if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();premiumCheckRunningTask();_renderE2eBadge()}
   if(tab==="qa"){qaInitOnEnter();qaCheckRunningTask()}
+  if(tab==="dept"){loadDeptMonitor()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
@@ -4971,7 +5042,141 @@ function _qaResetUi(){
   document.getElementById("qaEmpty").style.display="block";
 }
 
-if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}
+/* === Department Monitor === */
+function loadDeptMonitor(){
+  apiGet("/api/agents/org-chart").then(function(r){
+    if(!r||r.error){document.getElementById("deptGrid").innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(r&&r.error||"未知错误")+'</p></div>';return}
+    var deptCodes=Object.keys(r.departments||{});
+    document.getElementById("deptSummary").textContent="共 "+deptCodes.length+" 个部门 | "+r.total_agents+" 个Agent | 月目标: "+r.monthly_revenue_target;
+    var grid=document.getElementById("deptGrid");
+    var h="";
+    for(var i=0;i<deptCodes.length;i++){
+      var d=r.departments[deptCodes[i]];
+      var memberCount=(d.members||[]).length;
+      var statusDot="green";
+      if(memberCount<=1)statusDot="red";
+      else if(memberCount===2)statusDot="yellow";
+      h+='<div class="dept-card">';
+      h+='<div class="dept-card-header">';
+      h+='<span class="dept-status-dot '+statusDot+'"></span>';
+      h+='<span class="dept-card-name">'+esc(d.name)+'</span>';
+      h+='</div>';
+      h+='<div class="dept-card-chief">首席: <span>'+esc(d.chief)+'</span> &middot; '+memberCount+' 人</div>';
+      h+='<div class="dept-card-mission">'+esc(d.mission||"")+'</div>';
+      h+='<div class="dept-card-members">';
+      for(var j=0;j<d.members.length;j++){
+        var m=d.members[j];
+        h+='<span class="dept-member-tag" title="模型:'+esc(m.model||"")+'">'+esc(m.name||m.code)+'</span>';
+      }
+      h+='</div></div>';
+    }
+    grid.innerHTML=h;
+  });
+}
+
+/* === NPU Polling === */
+var _npuTimer=null;
+function pollInfraStatus(){
+  apiGet("/api/agents/infra-status").then(function(r){
+    if(!r||r.error)return;
+    var hw=r.hardware||{};
+    var mem=r.memory||{};
+    var npuStr=hw.npu||"OFF";
+    var npuOn=npuStr.indexOf("ON")>=0;
+    var dot=document.getElementById("npuDot");
+    dot.className="npu-dot "+(npuOn?"on":"off");
+    document.getElementById("npuStatus").textContent=npuOn?"ON":"OFF";
+    if(mem.used_pct!=null){
+      document.getElementById("npuBadge").title="NPU:"+npuStr+" | RAM:"+mem.used_pct+"% | "+((mem.available_gb!=null)?mem.available_gb+"GB可用":"");
+    }
+  });
+}
+function startNpuPolling(){
+  pollInfraStatus();
+  if(_npuTimer)clearInterval(_npuTimer);
+  _npuTimer=setInterval(pollInfraStatus,60000);
+}
+function stopNpuPolling(){
+  if(_npuTimer){clearInterval(_npuTimer);_npuTimer=null}
+}
+
+/* === CEO Instruction === */
+var _ceoReqAbort=null;
+function sendCeoInstruction(){
+  var input=document.getElementById("ceoInput");
+  var text=input.value.trim();
+  if(!text){showToast("请输入指令","info");return}
+  document.getElementById("ceoSendBtn").disabled=true;
+  document.getElementById("ceoCancelBtn").style.display="inline-block";
+  document.getElementById("ceoResponseBox").className="ceo-response-box open";
+  document.getElementById("ceoResponseBox").innerHTML='<div style="padding:8px;color:var(--text-muted)">分析中...</div>';
+  var ctrl=new AbortController();
+  _ceoReqAbort=ctrl;
+  fetch(API+"/api/ceo/instruction",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({instruction:text}),
+    signal:ctrl.signal
+  }).then(function(r){return r.json()}).then(function(r){
+    document.getElementById("ceoSendBtn").disabled=false;
+    document.getElementById("ceoCancelBtn").style.display="none";
+    _ceoReqAbort=null;
+    if(r.error){
+      document.getElementById("ceoResponseBox").innerHTML='<div style="color:var(--danger);font-weight:600">错误: '+esc(r.error)+'</div>';
+      return;
+    }
+    renderCeoResult(r.analysis);
+  }).catch(function(e){
+    if(e&&e.name==="AbortError")return;
+    document.getElementById("ceoSendBtn").disabled=false;
+    document.getElementById("ceoCancelBtn").style.display="none";
+    _ceoReqAbort=null;
+    document.getElementById("ceoResponseBox").innerHTML='<div style="color:var(--danger);font-weight:600">请求失败: '+esc(e.message||e)+'</div>';
+  });
+}
+function renderCeoResult(analysis){
+  var body=document.getElementById("ceoResultBody");
+  if(!analysis||typeof analysis!=="object"){
+    body.innerHTML='<div style="color:var(--text-muted)">无分析结果</div>';
+    document.getElementById("ceoResultDlg").classList.add("open");
+    return;
+  }
+  var verdictMap={approve:"✅ 批准执行",reject:"❌ 建议拒绝",modify:"🔧 建议调整",defer:"⏸ 建议搁置",analyze:"🔍 深度分析"};
+  var h="";
+  h+='<div style="margin-bottom:14px"><span style="font-size:12px;color:var(--text-muted)">裁决</span><br>';
+  h+='<span style="font-size:16px;font-weight:700;color:var(--primary)">'+(verdictMap[analysis.verdict]||esc(String(analysis.verdict)))+'</span></div>';
+  if(analysis.analysis){
+    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--text-muted)">分析</span><p style="margin:4px 0 0;font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">'+esc(String(analysis.analysis))+'</p></div>';
+  }
+  if(analysis.risks&&analysis.risks.length){
+    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--warning);font-weight:600">风险点</span><ul style="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.7">';
+    for(var i=0;i<analysis.risks.length;i++)h+='<li style="color:var(--text-secondary)">'+esc(String(analysis.risks[i]))+'</li>';
+    h+='</ul></div>';
+  }
+  if(analysis.alternatives&&analysis.alternatives.length){
+    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--info);font-weight:600">备选方案</span><ul style="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.7">';
+    for(var i=0;i<analysis.alternatives.length;i++)h+='<li style="color:var(--text-secondary)">'+esc(String(analysis.alternatives[i]))+'</li>';
+    h+='</ul></div>';
+  }
+  if(analysis.recommendation){
+    h+='<div style="margin-bottom:12px;padding:12px;background:var(--primary-light);border-radius:var(--radius)"><span style="font-size:12px;color:var(--primary);font-weight:600">CEO建议</span><p style="margin:4px 0 0;font-size:13px;line-height:1.7;color:var(--text)">'+esc(String(analysis.recommendation))+'</p></div>';
+  }
+  if(analysis.requires_meeting){
+    h+='<div style="padding:8px 12px;background:var(--warning-bg);border-radius:var(--radius);font-size:12px;color:#C97A2C;font-weight:600">需要召集Agent会议讨论 (requires_meeting=true)</div>';
+  }
+  document.getElementById("ceoResponseBox").innerHTML=h;
+  body.innerHTML=h;
+  document.getElementById("ceoResultDlg").classList.add("open");
+}
+function cancelCeoInstr(){
+  if(_ceoReqAbort){_ceoReqAbort.abort();_ceoReqAbort=null}
+  document.getElementById("ceoSendBtn").disabled=false;
+  document.getElementById("ceoCancelBtn").style.display="none";
+  document.getElementById("ceoResponseBox").className="ceo-response-box";
+  document.getElementById("ceoResponseBox").innerHTML="";
+}
+
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init();startNpuPolling()})}else{init();startNpuPolling()}
 </script>
 </body>
 </html>
