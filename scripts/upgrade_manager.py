@@ -48,7 +48,7 @@ class UpgradeManager:
     def run(self):
         print("")
         print("=" * 60)
-        print("  乡村振兴知识库 - 架构升级迁移工具 v2.1.0-b")
+        print("  乡知 - 架构升级迁移工具 v2.1.0-b")
         print("  启动时间: {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         print("=" * 60)
 
@@ -304,7 +304,7 @@ class UpgradeManager:
         tag_ref = self._build_tag_reference()
 
         system_prompt = (
-            "你是乡村振兴知识库的标签专家。根据知识点内容,补充缺失的标签和元数据。\n"
+            "你是乡知的标签专家。根据知识点内容,补充缺失的标签和元数据。\n"
             "严格按JSON格式返回,不要有其他文字。"
         )
 
@@ -567,7 +567,7 @@ class UpgradeManager:
 def main():
     print("")
     print("=" * 60)
-    print("  乡村振兴知识库 - 架构升级迁移工具")
+    print("  乡知 - 架构升级迁移工具")
     print("=" * 60)
 
     try:

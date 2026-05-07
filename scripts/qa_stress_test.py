@@ -172,7 +172,7 @@ def main():
     from deepseek_client import DeepSeekClient
 
     print("=" * 60)
-    print("  乡村振兴知识库 - 模拟问答运营测试")
+    print("  乡知 - 模拟问答运营测试")
     print("=" * 60)
 
     # 初始化

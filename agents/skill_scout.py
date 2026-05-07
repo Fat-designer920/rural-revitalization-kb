@@ -110,7 +110,7 @@ class SkillScout(BaseAgent):
         repo_info: dict with {name, url, description, license, ...}
         返回: {commercial_value, moat_contribution, safety_risk, integration_effort, recommendation}
         """
-        eval_prompt = f"""评估以下开源项目对我们乡村振兴知识工厂的价值:
+        eval_prompt = f"""评估以下开源项目对我们乡知的价值:
 
 项目: {repo_info.get('name','?')}
 网址: {repo_info.get('url','?')}

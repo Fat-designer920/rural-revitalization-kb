@@ -41,7 +41,7 @@ class PricingValidator(object):
         body = f"{title}你好,\n\n我们为像你这样的{title}做了一个四川乡村振兴知识工具,核心解决一个问题:「{pain}」。\n\n现在邀请你免费试用1个月({tier['label']}),无需付费、无需承诺。\n试用期间:AI问答({tier['qpm']}次/月)+政策速查+案例库。\n我们只希望试用结束后你花2分钟告诉我们:这个工具值多少钱,哪里还不够好。\n\n如果你的朋友也需要,欢迎转发——每邀请1位同行试用,再送1个月。"
         return {
             "customer_type": customer_type, "persona": title, "pain_point": pain,
-            "subject": f"【内测邀请】{title},送你1个月免费试用四川乡村振兴知识库",
+            "subject": f"【内测邀请】{title},送你1个月免费试用四川乡知",
             "body": body, "call_to_action": "回复「试用」即可开通",
             "tier_matched": TYPE_TO_TIER.get(customer_type, "basic"), "trial_period_days": 30,
         }

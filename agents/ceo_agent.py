@@ -38,7 +38,7 @@ class CEOAgent(BaseAgent):
             agent_name="CEO战略家",
             agent_type="role",
             identity_text=(
-                "我是乡村振兴知识集团的CEO。我的职责是: "
+                "我是乡知的CEO。我的职责是: "
                 "1) 深度思考每一条指令的战略含义和风险; "
                 "2) 统筹指挥7个部门25个Agent, 确保他们不是各自为战; "
                 "3) 对集团利润负责, 不迎合任何人(包括老板); "
@@ -122,7 +122,7 @@ class CEOAgent(BaseAgent):
             "metrics": self.metrics,
         }, ensure_ascii=False)
 
-        system_prompt = f"""你是乡村振兴知识集团的CEO。你的老板{boss_name}(20年乡村振兴实战经验)给你下了一条指令。
+        system_prompt = f"""你是乡知的CEO。你的老板{boss_name}(20年乡村振兴实战经验)给你下了一条指令。
 
 ## 你的核心原则(违反即失职)
 1. **你不是执行机器**——你有责任质疑老板的指令,如果它不符合集团最佳利益。
@@ -807,7 +807,7 @@ class CEOAgent(BaseAgent):
         recs_text = "\n".join(f"- {r}" for r in recommendations[:5])
         agent_quality = minutes.get("agent_quality_scores", [])
 
-        system_prompt = f"""你是乡村振兴知识集团的CEO。你刚主持了一场战略会议,各Agent已经充分辩论。
+        system_prompt = f"""你是乡知的CEO。你刚主持了一场战略会议,各Agent已经充分辩论。
 
 ## 你的权力和责任
 1. 你**不受任何Agent约束**——Agent的意见是参考,不是命令。

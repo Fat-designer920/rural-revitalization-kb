@@ -26,7 +26,7 @@ def run_analytics():
     c = conn.cursor()
 
     print(f"\n{'=' * 60}")
-    print(f"  乡村振兴知识库 - 审核反馈统计")
+    print(f"  乡知 - 审核反馈统计")
     print(f"  分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 

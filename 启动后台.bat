@@ -21,11 +21,11 @@ if exist "python\python.exe" (
 chcp 65001 >nul
 
 REM 窗口标题用Python Unicode API设置, 彻底避免cmd title命令的GBK/UTF-8编码问题
-%PYTHON_CMD% -c "import ctypes; ctypes.windll.kernel32.SetConsoleTitleW('乡村振兴知识库 - 管理后台 v2.3.7-part6')"
+%PYTHON_CMD% -c "import ctypes; ctypes.windll.kernel32.SetConsoleTitleW('乡知 - 管理后台 v2.3.7-part6')"
 
 echo.
 echo ============================================================
-echo   乡村振兴知识工厂 管理后台 v2.3.7-part6
+echo   乡知 管理后台 v2.3.7-part6
 echo ============================================================
 
 REM 获取本机局域网IP

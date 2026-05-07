@@ -2096,7 +2096,7 @@ class Extractor:
             tags_preview = ", ".join(k.get("category_tags", [])[:4])
             unmatched_text += f"  - {k['title']} (AI建议分类编号: {k.get('suggested_code', '无')}, 分类标签: {tags_preview})\n"
 
-        system_prompt = """你是一个知识库分类体系顾问。用户有一个乡村振兴知识库,分类体系如下。
+        system_prompt = """你是一个知识库分类体系顾问。用户有一个乡知,分类体系如下。
 现在有一些知识点无法匹配到现有分类,请分析是否需要调整分类体系。
 
 注意：该知识库同时使用"分类体系"和"三层标签体系"。分类体系是档案柜（按来源类型分区），三层标签是多维标注。
@@ -2572,7 +2572,7 @@ class Extractor:
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  乡村振兴知识库 - 知识点提取引擎 v2.3.6-part1")
+        print(f"  乡知 - 知识点提取引擎 v2.3.6-part1")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")

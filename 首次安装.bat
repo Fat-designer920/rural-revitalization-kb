@@ -7,11 +7,11 @@ if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON
 chcp 65001 >nul
 
 REM 窗口标题用Python Unicode API设置, 彻底避免cmd title命令的GBK/UTF-8编码问题
-%PYTHON_CMD% -c "import ctypes; ctypes.windll.kernel32.SetConsoleTitleW('乡村振兴知识库 - 首次安装 v2.3.7-part6')"
+%PYTHON_CMD% -c "import ctypes; ctypes.windll.kernel32.SetConsoleTitleW('乡知 - 首次安装 v2.3.7-part6')"
 
 echo.
 echo   ========================================
-echo   乡村振兴知识库 - 首次安装 v2.3.7-part6
+echo   乡知 - 首次安装 v2.3.7-part6
 echo   ========================================
 echo.
 echo   将执行:

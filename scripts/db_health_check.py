@@ -92,7 +92,7 @@ def _get_cols(conn, table):
 # =========================================================
 
 def main():
-    header('乡村振兴知识库 - 数据体检报告')
+    header('乡知 - 数据体检报告')
     p('生成时间: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     p('数据库路径: ' + DB_PATH)
 

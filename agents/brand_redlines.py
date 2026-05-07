@@ -490,7 +490,7 @@ class BrandRedlineChecker(object):
     def get_redline_document(self):
         """获取完整的红线文档(供品牌把关人使用)"""
         return {
-            "title": "乡村振兴知识集团 — 品牌红线清单",
+            "title": "乡知 — 品牌红线清单",
             "version": "v2.0",
             "principle": "一票否决制。任何一条红线触发=内容不得发布。宁可不发,不可发坏。含DFA敏感词自动检测(Rule 19)。",
             "categories": REDLINES,
