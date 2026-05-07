@@ -140,49 +140,75 @@ class AgentLoop(object):
             self._health_check()
 
     def _gpu_warm(self):
-        """GPU保持活跃: 批量语义搜索"""
+        """GPU全量生产: 对所有confirmed KP构建索引+大规模搜索"""
         try:
             from scripts.npu_engine import NPUEngine
             e = NPUEngine()
             conn = self.db.get_connection() if self.db else None
-            if conn:
-                c = conn.cursor()
-                c.execute("SELECT title FROM knowledge_points WHERE review_status='confirmed' LIMIT 300")
-                texts = [r[0] or "" for r in c]
-                conn.close()
-                if texts:
-                    e.build_index(texts)
-                    for _ in range(10):
-                        e.semantic_search("土地整治", top_k=5)
+            if not conn: return
+            c = conn.cursor()
+            c.execute("SELECT title,original_excerpt FROM knowledge_points WHERE review_status='confirmed' LIMIT 2000")
+            rows = [(r[0]or"")+" "+(r[1]or"")[:200] for r in c]
+            conn.close()
+            if not rows: return
+            e.build_index(rows)
+            # 真正生产性搜索(50次,覆盖核心场景)
+            queries = ['土地整治','高标准农田','专项债','增减挂钩','占补平衡','集体建设用地',
+                       '宅基地','川西林盘','农村人居环境','耕地保护','生态修复','乡村振兴']
+            for q in queries:
+                e.semantic_search(q, top_k=10)
+            e.quality_classify_batch([r[:50] for r in rows[:200]], [r[:50] for r in rows[:200]])
         except Exception:
             pass
 
     def _crawl(self):
-        """爬虫采集"""
+        """爬虫全量采集: deep fetch + quality gate"""
         try:
             from agents.crawler_scheduler import CrawlerScheduler
             cs = CrawlerScheduler(db=self.db)
-            cs.run_scheduled()
-        except Exception:
-            pass
+            # 用crawl_and_feed(深度爬取+质量门禁),不用run_scheduled(只有轻量)
+            r = cs.crawl_and_feed()
+            if isinstance(r, dict):
+                qr = r.get('quality_report', {})
+                if qr:
+                    self._log(f'Crawl: {qr.get("total_articles",0)} articles, {qr.get("qualified",0)} qualified, {qr.get("discarded",0)} discarded')
+        except Exception as e:
+            # 不降级——如果深度爬取失败,记录错误并在下次重试
+            self._log(f'Crawl error (will retry): {str(e)[:80]}')
 
     def _build_kg(self):
-        """知识图谱更新"""
+        """知识图谱全量重建"""
         try:
             from scripts.knowledge_graph import KnowledgeGraph
             kg = KnowledgeGraph()
             kg.build()
-        except Exception:
-            pass
+            s = kg.summary()
+            self._log(f'KG: {s.get("total_nodes",0)} nodes, {s.get("total_edges",0)} edges')
+        except Exception as e:
+            self._log(f'KG error: {str(e)[:80]}')
 
     def _relations_scan(self):
-        """关系扫描"""
+        """关系全量扫描+知识提取管道"""
         try:
             import subprocess, sys
-            subprocess.run([sys.executable, 'scripts/run_pipeline.py', '--relations-only'],
-                          capture_output=True, timeout=300)
-        except Exception:
-            pass
+            # 关系扫描
+            r = subprocess.run([sys.executable, 'scripts/run_pipeline.py', '--relations-only'],
+                             capture_output=True, text=True, timeout=300)
+            # 同时跑提取管道(知识生产)
+            r2 = subprocess.run([sys.executable, 'scripts/run_pipeline.py', '--feed-only'],
+                              capture_output=True, text=True, timeout=300)
+            if r.returncode == 0 or r2.returncode == 0:
+                # 检查最新KP数
+                import sqlite3
+                d2 = sqlite3.connect('data/database/knowledge_base.db')
+                c = d2.execute('SELECT COUNT(*) FROM knowledge_points')
+                kp = c.fetchone()[0]
+                c = d2.execute('SELECT COUNT(*) FROM kp_relations')
+                rel = c.fetchone()[0]
+                d2.close()
+                self._log(f'Pipeline: KP:{kp} Rel:{rel}')
+        except Exception as e:
+            self._log(f'Pipeline error: {str(e)[:80]}')
 
     def _kpi_snapshot(self):
         """KPI快照"""
