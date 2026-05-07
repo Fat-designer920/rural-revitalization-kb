@@ -1,7 +1,7 @@
 """
-file_reader.py - 多格式文件读取
+file_reader.py - 多格式文件读取+中国公文结构检测
 路径：scripts/file_reader.py
-版本：v2.3.6-part1 - 版本统一
+版本：v2.3.7-part8 - 集成doc_structure公文分析
 """
 import os, sys, json, hashlib, chardet
 from pathlib import Path
@@ -9,6 +9,8 @@ from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.doc_structure import ChineseDocAnalyzer
 
 
 class FileReader:
@@ -62,9 +64,38 @@ class FileReader:
             elif ft in ("excel_legacy",): result["error"] = "请转换为.xlsx后重试"; return result
 
             result["success"] = True
+            self._analyze_chinese_doc(result)
         except Exception as e:
             result["error"] = f"{type(e).__name__}: {e}"
         return result
+
+    def _analyze_chinese_doc(self, result):
+        """对中国公文类文本进行结构元数据提取(MinerU启发: 解析文档树而非纯正文)。"""
+        content = result.get("content", "")
+        if not content or len(content) < 200 or result.get("file_type") in ("image", "excel_legacy"):
+            return
+        try:
+            meta = ChineseDocAnalyzer.extract_metadata(content)
+            if meta.get("is_govt_doc"):
+                result["metadata"]["doc_structure"] = {
+                    "document_number": meta.get("document_number"),
+                    "issuing_agency": meta.get("issuing_agency"),
+                    "title": meta.get("title"),
+                    "date": meta.get("date"),
+                    "security_level": meta.get("security_level"),
+                    "recipient": meta.get("recipient"),
+                }
+                result["metadata"]["hierarchy"] = ChineseDocAnalyzer.detect_hierarchy(content)
+                result["metadata"]["doc_type"] = ChineseDocAnalyzer.classify_doc_type(content)
+                result["metadata"]["key_sections"] = ChineseDocAnalyzer.extract_key_sections(content)
+                score, reasons = ChineseDocAnalyzer.score_document_quality(content, meta)
+                result["metadata"]["quality_score"] = score
+                result["metadata"]["quality_reasons"] = reasons
+                region = ChineseDocAnalyzer.detect_region(content)
+                if region:
+                    result["metadata"]["detected_region"] = region
+        except (KeyError, TypeError, AttributeError, ValueError):
+            pass  # 结构分析失败不应阻断文件读取
 
     def _read_pdf(self, fp, r):
         import pdfplumber
