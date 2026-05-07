@@ -1,6 +1,18 @@
 # CHANGELOG
 
 > 乡村振兴知识库搭建助手 — 版本变更记录
+
+---
+## [v2.3.7-part6-fix1] - 2026-05-07 (bugfix)
+
+**Fixed**:
+- .bat文件编码: 首次安装.bat + 启动后台.bat 从 UTF-8 without BOM 转为 UTF-8 BOM, 中文 Windows cmd.exe (GBK) 不再乱码
+- 窗口标题: 禁用 cmd `title` 命令, 改用 Python `SetConsoleTitleW()` Unicode API 设标题
+
+**Added**:
+- 立规则 #81: .bat编码铁律 (UTF-8 BOM + SetConsoleTitleW)
+
+---
 >
 > 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。立规则与架构契约统一沉淀在 `01_工程手册.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/repo/releases)。
 

@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 cd /d "%~dp0"
 
 REM === 检测Python环境 ===
@@ -19,11 +19,13 @@ if exist "python\python.exe" (
 )
 
 chcp 65001 >nul
-title 乡村振兴知识库 - 管理后台
+
+REM 窗口标题用Python Unicode API设置, 彻底避免cmd title命令的GBK/UTF-8编码问题
+%PYTHON_CMD% -c "import ctypes; ctypes.windll.kernel32.SetConsoleTitleW('乡村振兴知识库 - 管理后台 v2.3.7-part6')"
 
 echo.
 echo ============================================================
-echo   乡村振兴知识库 - 管理后台 v2.3.7-part5
+echo   乡村振兴知识库 - 管理后台 v2.3.7-part6
 echo   Tab1 知识库 ^| Tab2 系统管理 ^| Tab3 智能问答(手机可刷)
 echo ============================================================
 
@@ -32,7 +34,7 @@ set LOCAL_IP=
 for /f "tokens=2 delims=:" %%i in ('ipconfig ^| findstr "IPv4"') do (
     if not defined LOCAL_IP set "LOCAL_IP=%%i"
 )
-if defined LOCAL_IP set "LOCAL_IP=%LOCAL_IP: =%"
+set "LOCAL_IP=%LOCAL_IP: =%"
 
 echo.
 if defined LOCAL_IP (
