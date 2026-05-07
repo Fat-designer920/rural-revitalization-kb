@@ -12,33 +12,33 @@
   --primary: var(--brand-green);
   --primary-light: var(--brand-green-light);
   --primary-hover: var(--brand-green-hover);
-  --primary-soft: #B2E0D6;
-  --bg: #F5F5F7;
+  --primary-soft: var(--brand-green-light);
+  --bg: var(--brand-warm);
   --card: var(--white);
   --sidebar-bg: var(--white);
-  --border: #E5E5EA;
-  --border-light: #F2F2F7;
-  --text: #1D1D1F;
-  --text-secondary: #6E6E73;
-  --text-muted: #86868B;
-  --success: #34C759;
-  --success-bg: #E8F9EE;
-  --warning: #FF9500;
-  --warning-bg: #FFF4E6;
-  --danger: #FF3B30;
+  --border: var(--brand-warm-dark);
+  --border-light: var(--brand-warm);
+  --text: var(--ink-900);
+  --text-secondary: var(--ink-500);
+  --text-muted: var(--ink-300);
+  --success: var(--green-500);
+  --success-bg: var(--green-light);
+  --warning: var(--amber-500);
+  --warning-bg: var(--amber-light);
+  --danger: var(--red-500);
   --danger-bg: var(--red-light);
-  --info: #007AFF;
-  --info-bg: #EBF2FC;
-  --tag-A-bg: var(--brand-green-light); --tag-A-text: var(--brand-green); --tag-A-border:#B2E0D6;
-  --tag-B-bg:#EBF2FC; --tag-B-text:#2565C7; --tag-B-border:#B3CDEE;
-  --tag-C-bg:#FFF4E6; --tag-C-text:#C97A2C; --tag-C-border:#FDDCAB;
-  --tag-D-bg:#F3EEFA; --tag-D-text:#7B42C6; --tag-D-border:#D4BEF0;
-  --tag-E-bg:#FDE8EC; --tag-E-text:#C93D60; --tag-E-border:#F5B5C5;
-  --tag-F-bg:#F2F2F7; --tag-F-text:#4A4A5A; --tag-F-border:#D1D1D6;
-  --kw-bg:#F5F5F7; --kw-text:#6E6E73; --kw-border:#E5E5EA;
-  --shadow: 0 2px 8px rgba(0,0,0,.06);
-  --radius: 10px;
-  --radius-xl: 20px;
+  --info: #3385D6;
+  --info-bg: #EBF5FC;
+  --tag-A-bg: var(--brand-green-light); --tag-A-text: var(--brand-green); --tag-A-border: var(--brand-green-light);
+  --tag-B-bg: #EBF5FC; --tag-B-text: #2565C7; --tag-B-border: #B3CDEE;
+  --tag-C-bg: var(--amber-light); --tag-C-text: var(--amber-500); --tag-C-border: #F5D48B;
+  --tag-D-bg: #F3EEFA; --tag-D-text: #7B42C6; --tag-D-border: #D4BEF0;
+  --tag-E-bg: var(--red-light); --tag-E-text: var(--red-500); --tag-E-border: #F5B5C5;
+  --tag-F-bg: var(--brand-warm); --tag-F-text: var(--ink-500); --tag-F-border: var(--brand-warm-dark);
+  --kw-bg: var(--brand-warm); --kw-text: var(--ink-500); --kw-border: var(--brand-warm-dark);
+  --shadow: var(--shadow-sm);
+  --radius: var(--radius-md);
+  --radius-xl: var(--radius-lg);
   --transition: all .25s cubic-bezier(.4,0,.2,1);
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -61,37 +61,37 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
 
 /* === Notification Bars === */
-.suggestion-bar{background:var(--warning-bg);border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.suggestion-bar{background:var(--warning-bg);border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:var(--amber-500);display:none;cursor:pointer;transition:var(--transition)}
 .suggestion-bar:hover{background:#FFEFD4}
-.freshness-bar{background:#FFF0E6;border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.freshness-bar{background:var(--amber-light);border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:var(--amber-500);display:none;cursor:pointer;transition:var(--transition)}
 .freshness-bar:hover{background:#FFE8D4}
 .freshness-bar .fb-expired{color:var(--danger);font-weight:700}
 .freshness-bar .fb-expiring{color:var(--warning);font-weight:700}
-.dup-bar{background:#FFF0E6;border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:#C97A2C;display:none;cursor:pointer;transition:var(--transition)}
+.dup-bar{background:var(--amber-light);border-bottom:1px solid rgba(255,149,0,.15);padding:8px 28px;font-size:13px;color:var(--amber-500);display:none;cursor:pointer;transition:var(--transition)}
 .dup-bar:hover{background:#FFE8D4}
 .dup-bar .db-count{color:var(--danger);font-weight:700}
-.dup-bar .db-conflict{color:#991B1B;font-weight:700}
-.dup-panel{display:none;padding:16px 28px;background:#FFFBF5;border-bottom:1px solid rgba(255,149,0,.1)}
+.dup-bar .db-conflict{color:var(--red-500);font-weight:700}
+.dup-panel{display:none;padding:16px 28px;background:var(--brand-gold-light);border-bottom:1px solid rgba(255,149,0,.1)}
 .dup-panel.open{display:block}
-.dup-group{background:#FFFFFF;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+.dup-group{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
 .dup-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
 .dup-rel{display:inline-block;padding:2px 10px;border-radius:6px;font-size:11px;font-weight:600}
-.dup-rel-duplicate{background:#FFEDD5;color:#C2410C}
+.dup-rel-duplicate{background:var(--amber-light);color:#C2410C}
 .dup-rel-superseded{background:var(--info-bg);color:var(--info)}
-.dup-rel-complementary{background:var(--success-bg);color:#059669}
+.dup-rel-complementary{background:var(--success-bg);color:var(--green-500)}
 .dup-rel-conflicting{background:var(--danger-bg);color:var(--danger)}
 /* v2.3.5-part1: 6 类型关系徽章配色 */
-.dup-rel-cross_file_consensus{background:#DCFCE7;color:#16A34A}
+.dup-rel-cross_file_consensus{background:var(--green-light);color:#16A34A}
 .dup-rel-policy_evolution{background:#DBEAFE;color:#2563EB}
 .dup-rel-hierarchical_refinement{background:#F3E8FF;color:#9333EA}
-.dup-rel-same_file_redundancy{background:#FEF3C7;color:#B45309}
+.dup-rel-same_file_redundancy{background:var(--brand-gold-light);color:#B45309}
 .dup-rel-complementary{background:#F3F4F6;color:#4B5563}
 /* pending_human_review 红色高亮(决策3:AI 不确定时单独 high-light) */
 .dup-group-wrap.dup-human-review > .dup-group{border:2px solid var(--danger);box-shadow:0 0 0 1px rgba(239,68,68,.15)}
 .dup-rel-human-review-flag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:var(--danger-bg);color:var(--danger);margin-left:6px}
 /* 角色 badge */
 .dm-role{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600}
-.dm-role-core{background:#FEF3C7;color:#B45309}
+.dm-role-core{background:var(--brand-gold-light);color:#B45309}
 .dm-role-branch{background:#E0E7FF;color:#3730A3}
 .dm-role-derivative{background:#F3F4F6;color:#4B5563}
 .dup-cluster-topic{font-size:12px;color:var(--text-secondary);margin:4px 0;padding:6px 10px;background:var(--bg);border-radius:var(--radius);font-style:italic}
@@ -168,7 +168,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .kp-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:12px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition);position:relative}
 .kp-card:hover{box-shadow:var(--shadow);border-color:var(--border)}
 .kp-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(10,155,128,.15)}
-.kp-card.card-outdated{opacity:.55;background:#FAFAFA}
+.kp-card.card-outdated{opacity:.55;background:var(--brand-warm)}
 
 .kp-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
 .kp-cb{width:16px;height:16px;cursor:pointer;margin-top:3px;accent-color:var(--primary)}
@@ -184,12 +184,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;line-height:1.5}
 .badge-policy{background:var(--primary-light);color:var(--primary)}
-.badge-case{background:var(--success-bg);color:#059669}
+.badge-case{background:var(--success-bg);color:var(--green-500)}
 .badge-experience{background:var(--warning-bg);color:#C97A2C}
 .badge-tool{background:#F3EAFA;color:#AF52DE}
 .badge-data{background:var(--info-bg);color:var(--info)}
-.badge-pending{background:#FFF4E6;color:#C97A2C}
-.badge-confirmed{background:var(--success-bg);color:#059669}
+.badge-pending{background:var(--amber-light);color:#C97A2C}
+.badge-confirmed{background:var(--success-bg);color:var(--green-500)}
 .badge-ignored{background:var(--bg);color:var(--text-muted)}
 .cat-path{font-size:12px;color:var(--text-muted)}
 .match-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
@@ -216,16 +216,16 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .meta-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center}
 .rd-badge,.auth-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600}
 .rd-draft{background:var(--bg);color:var(--text-muted)}
-.rd-quotable{background:var(--success-bg);color:#059669}
-.rd-premium{background:#FFF4E6;color:#C97A2C}
+.rd-quotable{background:var(--success-bg);color:var(--green-500)}
+.rd-premium{background:var(--amber-light);color:#C97A2C}
 .auth-official{background:var(--info-bg);color:var(--info)}
 .auth-authoritative{background:var(--primary-light);color:var(--primary)}
-.auth-firsthand{background:#FFF4E6;color:#C97A2C}
+.auth-firsthand{background:var(--amber-light);color:#C97A2C}
 .auth-informal{background:var(--bg);color:var(--text-muted)}
 
 .qa-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;line-height:1.5}
-.qa-high{background:var(--success-bg);color:#059669}
-.qa-mid{background:#FFF4E6;color:#C97A2C}
+.qa-high{background:var(--success-bg);color:var(--green-500)}
+.qa-mid{background:var(--amber-light);color:#C97A2C}
 .qa-low{background:var(--danger-bg);color:var(--danger)}
 .qa-none{background:var(--bg);color:var(--text-muted)}
 .qa-flags{display:inline-flex;flex-wrap:wrap;gap:3px;margin-left:6px}
@@ -233,13 +233,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* === v2.2.3 F058: qa_source 质检来源标签 === */
 .qa-src-badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.5;margin-left:4px}
-.qa-src-batch{background:var(--success-bg);color:#059669}
+.qa-src-batch{background:var(--success-bg);color:var(--green-500)}
 .qa-src-small_batch{background:var(--info-bg);color:var(--info)}
 .qa-src-single{background:#F3EAFA;color:#AF52DE}
-.qa-src-rule_fallback{background:#FFF4E6;color:#C97A2C;border:1px solid #FDDCAB}
+.qa-src-rule_fallback{background:var(--amber-light);color:var(--amber-500);border:1px solid #FDDCAB}
 
 /* === v2.2.3 F058: 规则兜底条目整卡黄色高亮 === */
-.kp-card.qa-rule-fallback{background:#FFFBEF;border-left:3px solid var(--warning)}
+.kp-card.qa-rule-fallback{background:var(--brand-gold-light);border-left:3px solid var(--warning)}
 .kp-card.qa-rule-fallback:hover{background:#FFF8E1}
 
 /* === v2.2.3: 事件日志表格 === */
@@ -258,8 +258,8 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* === Freshness Badges === */
 .fr-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;line-height:1.5}
-.fr-fresh{background:var(--success-bg);color:#059669}
-.fr-expiring{background:#FFF4E6;color:#C97A2C}
+.fr-fresh{background:var(--success-bg);color:var(--green-500)}
+.fr-expiring{background:var(--amber-light);color:#C97A2C}
 .fr-expired{background:var(--danger-bg);color:var(--danger)}
 .fr-outdated{background:var(--bg);color:var(--text-muted);text-decoration:line-through}
 .fr-unknown{background:var(--bg);color:var(--text-muted)}
@@ -267,7 +267,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* === Policy Validation Badges === */
 .pv-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;line-height:1.5}
-.pv-validated{background:var(--success-bg);color:#059669}
+.pv-validated{background:var(--success-bg);color:var(--green-500)}
 .pv-pending{background:var(--danger-bg);color:var(--danger)}
 .pv-exempt{background:var(--info-bg);color:var(--info)}
 .pv-no-policy{background:var(--bg);color:var(--text-muted)}
@@ -276,10 +276,10 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .policy-deps .pd-title{font-weight:600;color:var(--danger);margin-bottom:6px}
 .policy-deps .pd-item{padding:4px 0;border-bottom:1px solid #FFE5E5}
 .policy-deps .pd-item:last-child{border-bottom:none}
-.policy-deps .pd-matched{color:#059669}
+.policy-deps .pd-matched{color:var(--green-500)}
 .policy-deps .pd-unmatched{color:var(--danger);font-weight:600}
 .policy-deps .pd-guide{font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic}
-.policy-deps-ok{background:var(--success-bg);border:1px solid #A2ECBE;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:#059669}
+.policy-deps-ok{background:var(--success-bg);border:1px solid #A2ECBE;border-radius:var(--radius);padding:8px 14px;margin-bottom:10px;font-size:12px;color:var(--green-500)}
 
 /* === Insights === */
 .insights-section{margin:6px 0;border:1px solid var(--border-light);border-radius:var(--radius);overflow:hidden}
@@ -289,19 +289,19 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .insights-body.open{display:block}
 .insight-item{margin-bottom:6px;padding:6px 8px;border-radius:6px;font-size:12px;line-height:1.5}
 .insight-item:last-child{margin-bottom:0}
-.ins-high{background:#F0FFF5;border-left:3px solid var(--success)}
-.ins-medium{background:#FFF9EE;border-left:3px solid var(--warning)}
+.ins-high{background:var(--green-light);border-left:3px solid var(--success)}
+.ins-medium{background:var(--amber-light);border-left:3px solid var(--warning)}
 .ins-low{background:var(--danger-bg);border-left:3px solid var(--danger)}
 .ins-conf{display:inline-block;font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;margin-right:4px}
-.ins-conf-high{background:#D5F5E3;color:#166534}
-.ins-conf-medium{background:#FFF0D4;color:#92400E}
-.ins-conf-low{background:#FFE0DE;color:#991B1B}
+.ins-conf-high{background:var(--green-light);color:var(--green-500)}
+.ins-conf-medium{background:var(--amber-light);color:var(--amber-500)}
+.ins-conf-low{background:var(--red-light);color:var(--red-500)}
 .ins-text{font-weight:500;color:var(--text)}
 .ins-basis{color:var(--text-muted);font-size:11px;margin-top:2px}
 .ir-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:500}
-.ir-reliable{background:#D5F5E3;color:#166534}
-.ir-uncertain{background:#FFF0D4;color:#92400E}
-.ir-unreliable{background:#FFE0DE;color:#991B1B}
+.ir-reliable{background:var(--green-light);color:var(--green-500)}
+.ir-uncertain{background:var(--amber-light);color:var(--amber-500)}
+.ir-unreliable{background:var(--red-light);color:var(--red-500)}
 
 /* === Annotations (v2.2.0 F029) === */
 .ann-section{margin:8px 0;border:1px solid var(--border-light);border-radius:var(--radius);overflow:hidden}
@@ -312,16 +312,16 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .ann-body.open{display:block}
 .ann-item{display:flex;gap:8px;padding:6px 8px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:6px;border-left:3px solid var(--border)}
 .ann-item:last-child{margin-bottom:0}
-.ann-item.ann-agree{background:#F0FFF5;border-left-color:var(--success)}
+.ann-item.ann-agree{background:var(--green-light);border-left-color:var(--success)}
 .ann-item.ann-disagree{background:var(--danger-bg);border-left-color:var(--danger)}
 .ann-item.ann-supplement{background:var(--info-bg);border-left-color:var(--info)}
-.ann-item.ann-correction{background:#FFF4E6;border-left-color:var(--warning)}
+.ann-item.ann-correction{background:var(--amber-light);border-left-color:var(--warning)}
 .ann-item.ann-experience{background:#F3EAFA;border-left-color:#AF52DE}
 .ann-type{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
-.ann-type-agree{background:#D5F5E3;color:#166534}
-.ann-type-disagree{background:#FFE0DE;color:#991B1B}
+.ann-type-agree{background:var(--green-light);color:var(--green-500)}
+.ann-type-disagree{background:var(--red-light);color:var(--red-500)}
 .ann-type-supplement{background:#D4E7FC;color:#1E40AF}
-.ann-type-correction{background:#FFF0D4;color:#92400E}
+.ann-type-correction{background:var(--amber-light);color:var(--amber-500)}
 .ann-type-experience{background:#E8D5F5;color:#6B21A8}
 .ann-content{flex:1;color:var(--text)}
 .ann-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
@@ -384,12 +384,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .dup-member-cb{width:14px;height:14px;cursor:pointer;accent-color:var(--primary);flex-shrink:0}
 
 /* === Product Preview Dropdown === */
-.product-dropdown{position:absolute;top:46px;right:120px;background:#fff;border:1px solid #E5E5EA;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.12);min-width:180px;padding:8px 0;z-index:200}
-.product-dropdown a{display:block;padding:8px 16px;font-size:13px;color:#1D1D1F;text-decoration:none;transition:background .15s}
-.product-dropdown a:hover{background:#F5F5F7}
-.product-dropdown a.planned{color:#86868B;font-style:italic}
-.product-dropdown a.planned:hover{background:#FFF9F0;color:#C8922B}
-.product-dropdown a.planned small{font-size:10px;color:#C8922B}
+.product-dropdown{position:absolute;top:46px;right:120px;background:var(--white);border:1px solid var(--brand-warm-dark);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);min-width:180px;padding:8px 0;z-index:200}
+.product-dropdown a{display:block;padding:8px 16px;font-size:13px;color:var(--ink-900);text-decoration:none;transition:background .15s}
+.product-dropdown a:hover{background:var(--brand-warm)}
+.product-dropdown a.planned{color:var(--ink-300);font-style:italic}
+.product-dropdown a.planned:hover{background:var(--brand-gold-light);color:var(--brand-gold)}
+.product-dropdown a.planned small{font-size:10px;color:var(--brand-gold)}
 
 /* === NPU Status Badge === */
 .npu-badge-wrap{display:inline-flex;align-items:center;gap:6px}
@@ -482,7 +482,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .history-field .nv{color:var(--success)}
 
 .sg-card{border:1px solid rgba(255,149,0,.2);border-radius:var(--radius);padding:16px;margin-bottom:10px;background:var(--warning-bg)}
-.sg-card .sg-t{font-weight:600;font-size:14px;color:#C97A2C;margin-bottom:4px}
+.sg-card .sg-t{font-weight:600;font-size:14px;color:var(--amber-500);margin-bottom:4px}
 .sg-card .sg-m{font-size:12px;color:var(--text-muted);margin-bottom:6px}
 .sg-card .sg-r{font-size:13px;color:var(--text-secondary);margin-bottom:10px;line-height:1.6}
 
@@ -573,7 +573,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .badge-improve{background:#F3EAFA;color:#7A38A6}
 .badge-manual{background:#EDEDED;color:#595959}
 .badge-enrich{background:#E6FFFB;color:#08979C}
-.badge-merge{background:#FFF4E6;color:#C97A2C}
+.badge-merge{background:var(--amber-light);color:#C97A2C}
 /* 六维度 grid（2×3） */
 .dim-grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;margin:16px 0}
 .dim-card{background:var(--card);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:14px;position:relative;overflow:hidden}
@@ -703,8 +703,8 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .prem-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
 .prem-badge-client{background:var(--brand-green-light);color:var(--brand-green);border:1px solid var(--brand-green)}
 .prem-badge-rfp{background:#E6F3FB;color:#1F7AAC;border:1px solid #1F7AAC}
-.prem-badge-tier{background:#FFF4E6;color:#C97A2C;border:1px solid #E4A85A}
-.prem-badge-tier.tier-verified{background:#FDE8EC;color:#C93D60;border-color:#C93D60}
+.prem-badge-tier{background:var(--amber-light);color:var(--amber-500);border:1px solid #E4A85A}
+.prem-badge-tier.tier-verified{background:var(--red-light);color:#C93D60;border-color:#C93D60}
 .prem-badge-tier.tier-candidate{background:#F5F5F5;color:#888;border-color:#BBB}
 .prem-status-bar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg);border-radius:var(--radius);margin-bottom:12px;font-size:12px;flex-wrap:wrap}
 .prem-status-bar .psb-refresh-info{flex:1;color:var(--text-secondary)}
@@ -956,12 +956,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">扫描过期知识点</div>
       </div>
       <div class="tool-card" id="tc-duplicateUnified" onclick="runTool('duplicateUnified')">
-        <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">D</div>
+        <div class="tool-icon" style="background:var(--red-light);color:#C93D60">D</div>
         <div class="tool-name">知识关系扫描</div>
         <div class="tool-desc">最近7天 / 全库扫描 / 彻底重扫(六态判别)</div>
       </div>
       <div class="tool-card" id="tc-relationRescan" onclick="runTool('relationRescan')">
-        <div class="tool-icon" style="background:#DCFCE7;color:#16A34A">R</div>
+        <div class="tool-icon" style="background:var(--green-light);color:#16A34A">R</div>
         <div class="tool-name">重扫全库关系 ★</div>
         <div class="tool-desc">v2.3.5-part1: 强制重扫 + 备份 + AI 六态判别</div>
       </div>
@@ -976,12 +976,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">未质检/异常条目(三级降级链)</div>
       </div>
       <div class="tool-card" id="tc-readinessPromote" onclick="runTool('readinessPromote')">
-        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">R</div>
+        <div class="tool-icon" style="background:var(--amber-light);color:#C97A2C">R</div>
         <div class="tool-name">就绪度联动</div>
         <div class="tool-desc">qa≥4 的 draft 升为 quotable</div>
       </div>
       <div class="tool-card" id="tc-analytics" onclick="runTool('analytics')">
-        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">A</div>
+        <div class="tool-icon" style="background:var(--amber-light);color:#C97A2C">A</div>
         <div class="tool-name">审核统计</div>
         <div class="tool-desc">查看审核反馈分析</div>
       </div>
@@ -1002,7 +1002,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <span class="e2e-badge" id="e2eBadge" style="display:none"></span>
       </div>
       <div class="tool-card" id="tc-premiumPool" onclick="runTool('premiumPool')">
-        <div class="tool-icon" style="background:#FDE8EC;color:#C93D60">&#9733;</div>
+        <div class="tool-icon" style="background:var(--red-light);color:#C93D60">&#9733;</div>
         <div class="tool-name">精品候选队列</div>
         <div class="tool-desc">AI 双视角推荐 + 批量封神</div>
       </div>
@@ -1016,12 +1016,12 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">v2.3.7 自动决策+会议辩论</div>
       </div>
       <div class="tool-card" id="tc-agents" onclick="runTool('agents')">
-        <div class="tool-icon" style="background:#DCFCE7;color:#16A34A">G</div>
+        <div class="tool-icon" style="background:var(--green-light);color:#16A34A">G</div>
         <div class="tool-name">Agent智慧体系</div>
         <div class="tool-desc">6部门16Agent全貌</div>
       </div>
       <div class="tool-card" id="tc-audit" onclick="runTool('audit')">
-        <div class="tool-icon" style="background:#FFF4E6;color:#C97A2C">U</div>
+        <div class="tool-icon" style="background:var(--amber-light);color:#C97A2C">U</div>
         <div class="tool-name">Agent审计</div>
         <div class="tool-desc">评分+辩论+缺口</div>
       </div>
@@ -1166,7 +1166,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .qa-evidence-title{font-weight:600;font-size:13px;color:var(--text);margin-bottom:4px}
 .qa-evidence-meta{font-size:11px;color:var(--text-muted);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
 .qa-evidence-meta .meta-tag{padding:1px 6px;border-radius:6px;background:var(--card)}
-.qa-evidence-meta .meta-prem{background:#FFF3E0;color:#C97A2C;font-weight:600}
+.qa-evidence-meta .meta-prem{background:#FFF3E0;color:var(--amber-500);font-weight:600}
 .qa-evidence-excerpt{font-size:12px;color:var(--text-secondary);line-height:1.5}
 .qa-followup{display:flex;flex-direction:column;gap:6px}
 .qa-followup-item{background:var(--bg);border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;color:var(--text);transition:var(--transition);border:1px solid transparent}
@@ -1428,7 +1428,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <div style="font-size:12px;color:var(--text-secondary);font-weight:400">扫描全库所有已入库知识点，保留历史 pending 组，适合周期性全面盘查</div>
     </button>
     <button class="btn" style="width:100%;padding:14px;margin-bottom:4px;text-align:left;display:block;border:1px solid #FFE0DE" onclick="doDupUnified('reset_rescan')">
-      <div style="font-weight:600;font-size:14px;margin-bottom:4px;color:#991B1B">彻底重扫 <span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px">慢, 约5-8毛</span></div>
+      <div style="font-weight:600;font-size:14px;margin-bottom:4px;color:var(--red-500)">彻底重扫 <span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px">慢, 约5-8毛</span></div>
       <div style="font-size:12px;color:var(--text-secondary);font-weight:400">强制备份 → 清除全部 pending 重复组 → AI 全库重扫，适合怀疑存在大量假阳性时</div>
     </button>
   </div>
@@ -1713,7 +1713,7 @@ function showBatchResult(title, successText, errors){
          +  '<strong>失败 '+errors.length+' 条</strong>,详情如下:</div>';
     html += '<div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">'
          +  '<table style="width:100%;border-collapse:collapse;font-size:13px">'
-         +  '<thead><tr style="background:#FAFAFA"><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">知识点 ID</th><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">错误原因</th></tr></thead>'
+         +  '<thead><tr style="background:var(--brand-warm)"><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">知识点 ID</th><th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)">错误原因</th></tr></thead>'
          +  '<tbody>';
     for(var i=0;i<errors.length;i++){
       var e = errors[i];
@@ -1805,7 +1805,7 @@ var _dupGroups=[];
 function loadDuplicateSummary(){apiGet("/api/relations/summary").then(function(s){if(!s||s.error)return;var p=s.total_pending||0;if(p>0){var hr=s.pending_human_review||0;document.getElementById("dbPending").textContent=p;var hint=document.getElementById("dbConflictHint");if(hint)hint.textContent=hr>0?(" (含 "+hr+" 组待研判)"):"";document.getElementById("dupBar").style.display="block"}else{document.getElementById("dupBar").style.display="none";document.getElementById("dupPanel").className="dup-panel"}})}
 function toggleDupPanel(){var panel=document.getElementById("dupPanel");if(panel.classList.contains("open")){panel.classList.remove("open");panel.innerHTML=""}else{panel.classList.add("open");panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">加载中...</div>';loadDuplicateGroups()}}
 function loadDuplicateGroups(){apiGet("/api/relations/groups").then(function(groups){var panel=document.getElementById("dupPanel");if(!groups||!groups.length){_dupGroups=[];panel.innerHTML='<div style="padding:10px;color:var(--text-muted)">无待处理的关系组</div>';return}_dupGroups=groups;var typeCounts={};for(var i=0;i<groups.length;i++){var t=groups[i].relation_type||"unknown";typeCounts[t]=(typeCounts[t]||0)+1}var head='<div style="font-weight:600;font-size:14px;margin-bottom:4px;color:#C97A2C">待处理: '+groups.length+' 组';var typeOrder=["pending_human_review","cross_file_consensus","policy_evolution","hierarchical_refinement","same_file_redundancy","conflicting","complementary"];var labels=[];for(var k=0;k<typeOrder.length;k++){var tk=typeOrder[k];var lbl=tk==="pending_human_review"?"🔴待研判":(dupRelNames[tk]||tk);if(typeCounts[tk])labels.push(lbl+" "+typeCounts[tk])}if(labels.length)head+=' &nbsp;|&nbsp; '+labels.join(" / ");head+='</div>';head+='<div class="dup-batch-bar"><label><input type="checkbox" id="dupSelectAll" onchange="dupToggleAll(this.checked)"> 全选</label>';head+='<button class="btn btn-sm btn-success" onclick="dupBatchAI()">批量按AI建议处理</button>';head+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="dupBatchDismiss()">批量保持独立</button>';head+='<span id="dupBatchCount" style="font-size:11px;color:var(--text-muted)"></span></div>';for(var i=0;i<groups.length;i++){head+=renderDupGroup(groups[i])}panel.innerHTML=head})}
-function renderDupGroup(g){var rt=g.relation_type||"unknown";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var topic=g.cluster_topic||judgment.topic||"";var ctype=g.cluster_type||"";var strength=g.strength_score||0;var members=g.members_detail||[];var score=g.similarity_score||0;var status=g.status||"pending";var isHumanReview=status==="pending_human_review";var groupId=g.group_id;var wrapClass="dup-group-wrap"+(isHumanReview?" dup-human-review":"");var h='<div class="'+wrapClass+'"><input type="checkbox" class="dup-gcb" value="'+esc(groupId)+'" onchange="dupUpdateBatchCount()"><div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+esc(rt)+'">'+esc(rtName)+'</span>';if(isHumanReview)h+='<span class="dup-rel-human-review-flag">AI不确定·待研判</span>';if(score)h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';if(ctype)h+='<span class="dup-strength">'+esc(dupClusterTypeNames[ctype]||ctype)+(strength?" 强度"+Math.round(strength):"")+'</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">'+esc(groupId)+'</span></div>';if(topic)h+='<div class="dup-cluster-topic">主题: '+esc(topic)+'</div>';if(reason)h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>';for(var i=0;i<members.length;i++){var m=members[i];var role=m.role||"";var sf=m.renamed_filename||m.original_filename||m.source_file||"";h+='<div class="dup-member">';h+='<input type="checkbox" class="dup-member-cb" data-gid="'+esc(groupId)+'" value="'+m.kp_id+'" title="勾选(同源冗余合并时作 keep_id)">';h+='<span class="dm-id">#'+m.kp_id+'</span>';if(role)h+='<span class="dm-role dm-role-'+esc(role)+'">'+esc(role)+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type||"")+'</span>';h+='<span class="dm-title">'+esc(m.title||"")+'</span>';if(sf)h+='<span class="dm-src" title="'+esc(sf)+'">'+esc(sf)+'</span>';h+='</div>'}h+='<div class="dup-actions">';if(isHumanReview){h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);font-weight:600" onclick="relGroupManualClassify(\''+esc(groupId)+'\')">🎯 手动选关系类型</button>'}else{h+='<button class="btn btn-sm btn-success" onclick="relGroupBuildConsensus(\''+esc(groupId)+'\')">🟢 共识簇</button>';h+='<button class="btn btn-sm" style="background:#DBEAFE;color:#2563EB" onclick="relGroupBuildEvolution(\''+esc(groupId)+'\')">🔵 演进链</button>';h+='<button class="btn btn-sm" style="background:#F3E8FF;color:#9333EA" onclick="relGroupBuildRefinement(\''+esc(groupId)+'\')">🟣 细化树</button>';h+='<button class="btn btn-sm" style="background:#FEF3C7;color:#B45309" onclick="relGroupMerge(\''+esc(groupId)+'\')">🟡 合并</button>';h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger)" onclick="relGroupMarkConflict(\''+esc(groupId)+'\')">🔴 标记冲突</button>';h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="relGroupKeepIndependent(\''+esc(groupId)+'\')">⚪ 保持独立</button>'}h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="toggleDupDetail(this)">查看详情</button>';h+='</div>';h+='<div class="dup-detail-content" style="display:none;margin-top:10px">';for(var k=0;k<members.length;k++){var mk=members[k];var aiC=mk.ai_extracted_content||"";if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}var excerpt=mk.original_excerpt||"";h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--primary)">#'+mk.kp_id+' '+esc(mk.title||"")+'</div>';if(excerpt){h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><b>原文摘录:</b> '+esc(excerpt)+'</div>'}if(aiC&&typeof aiC==="object"){var coreC=aiC.core_conclusion||aiC.policy_content||aiC.case_summary||aiC.description||"";if(coreC){h+='<div style="font-size:12px;color:var(--text-secondary)"><b>核心内容:</b> '+esc(coreC)+'</div>'}}h+='</div>'}h+='</div></div></div>';return h}
+function renderDupGroup(g){var rt=g.relation_type||"unknown";var rtName=dupRelNames[rt]||rt;var judgment=g.ai_judgment||{};if(typeof judgment==="string"){try{judgment=JSON.parse(judgment)}catch(e){judgment={}}}var reason=judgment.reason||"";var topic=g.cluster_topic||judgment.topic||"";var ctype=g.cluster_type||"";var strength=g.strength_score||0;var members=g.members_detail||[];var score=g.similarity_score||0;var status=g.status||"pending";var isHumanReview=status==="pending_human_review";var groupId=g.group_id;var wrapClass="dup-group-wrap"+(isHumanReview?" dup-human-review":"");var h='<div class="'+wrapClass+'"><input type="checkbox" class="dup-gcb" value="'+esc(groupId)+'" onchange="dupUpdateBatchCount()"><div class="dup-group">';h+='<div class="dup-group-header"><span class="dup-rel dup-rel-'+esc(rt)+'">'+esc(rtName)+'</span>';if(isHumanReview)h+='<span class="dup-rel-human-review-flag">AI不确定·待研判</span>';if(score)h+='<span class="dup-score">相似度: '+(score*100).toFixed(0)+'%</span>';if(ctype)h+='<span class="dup-strength">'+esc(dupClusterTypeNames[ctype]||ctype)+(strength?" 强度"+Math.round(strength):"")+'</span>';h+='<span style="font-size:11px;color:var(--text-muted);margin-left:auto">'+esc(groupId)+'</span></div>';if(topic)h+='<div class="dup-cluster-topic">主题: '+esc(topic)+'</div>';if(reason)h+='<div class="dup-reason">AI判断: '+esc(reason)+'</div>';for(var i=0;i<members.length;i++){var m=members[i];var role=m.role||"";var sf=m.renamed_filename||m.original_filename||m.source_file||"";h+='<div class="dup-member">';h+='<input type="checkbox" class="dup-member-cb" data-gid="'+esc(groupId)+'" value="'+m.kp_id+'" title="勾选(同源冗余合并时作 keep_id)">';h+='<span class="dm-id">#'+m.kp_id+'</span>';if(role)h+='<span class="dm-role dm-role-'+esc(role)+'">'+esc(role)+'</span>';h+='<span class="dm-type">'+esc(TN[m.content_type]||m.content_type||"")+'</span>';h+='<span class="dm-title">'+esc(m.title||"")+'</span>';if(sf)h+='<span class="dm-src" title="'+esc(sf)+'">'+esc(sf)+'</span>';h+='</div>'}h+='<div class="dup-actions">';if(isHumanReview){h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);font-weight:600" onclick="relGroupManualClassify(\''+esc(groupId)+'\')">🎯 手动选关系类型</button>'}else{h+='<button class="btn btn-sm btn-success" onclick="relGroupBuildConsensus(\''+esc(groupId)+'\')">🟢 共识簇</button>';h+='<button class="btn btn-sm" style="background:#DBEAFE;color:#2563EB" onclick="relGroupBuildEvolution(\''+esc(groupId)+'\')">🔵 演进链</button>';h+='<button class="btn btn-sm" style="background:#F3E8FF;color:#9333EA" onclick="relGroupBuildRefinement(\''+esc(groupId)+'\')">🟣 细化树</button>';h+='<button class="btn btn-sm" style="background:var(--brand-gold-light);color:#B45309" onclick="relGroupMerge(\''+esc(groupId)+'\')">🟡 合并</button>';h+='<button class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger)" onclick="relGroupMarkConflict(\''+esc(groupId)+'\')">🔴 标记冲突</button>';h+='<button class="btn btn-sm" style="background:var(--info-bg);color:var(--info)" onclick="relGroupKeepIndependent(\''+esc(groupId)+'\')">⚪ 保持独立</button>'}h+='<button class="btn btn-sm" style="background:var(--bg);color:var(--text-muted)" onclick="toggleDupDetail(this)">查看详情</button>';h+='</div>';h+='<div class="dup-detail-content" style="display:none;margin-top:10px">';for(var k=0;k<members.length;k++){var mk=members[k];var aiC=mk.ai_extracted_content||"";if(typeof aiC==="string"){try{aiC=JSON.parse(aiC)}catch(e){}}var excerpt=mk.original_excerpt||"";h+='<div style="background:var(--bg);border-radius:8px;padding:12px;margin-bottom:8px"><div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--primary)">#'+mk.kp_id+' '+esc(mk.title||"")+'</div>';if(excerpt){h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><b>原文摘录:</b> '+esc(excerpt)+'</div>'}if(aiC&&typeof aiC==="object"){var coreC=aiC.core_conclusion||aiC.policy_content||aiC.case_summary||aiC.description||"";if(coreC){h+='<div style="font-size:12px;color:var(--text-secondary)"><b>核心内容:</b> '+esc(coreC)+'</div>'}}h+='</div>'}h+='</div></div></div>';return h}
 function _relGroupCall(gid,action,body,confirmText){if(confirmText){showConfirm("确认操作",confirmText,function(ok){if(!ok)return;_relGroupDoCall(gid,action,body)})}else{_relGroupDoCall(gid,action,body)}}
 function _relGroupDoCall(gid,action,body){apiPost("/api/relations/groups/"+encodeURIComponent(gid)+"/"+action,body||{}).then(function(r){if(r.error){showToast("处理失败: "+r.error,"error");return}showToast("已处理: "+action,"success");loadDuplicateGroups();loadDuplicateSummary();loadStatistics();loadKnowledgePoints()})}
 function relGroupBuildConsensus(gid){_relGroupCall(gid,"build_consensus",{},"建立🟢跨文件共识簇:全部保留 + 关系标 confirmed。确认?")}
@@ -1965,8 +1965,8 @@ if(kp.premium_client){ah+='<button class="btn btn-sm" style="color:var(--brand-g
 if(kp.premium_rfp){ah+='<button class="btn btn-sm" style="color:#1F7AAC;border-color:#1F7AAC" onclick="premiumUnblessFromCard('+kp.id+',\'rfp\')">撤销投标型</button>'}
 /* 精品成色升降:硬货 ↔ 铁货 / 硬货 ↔ 候选(只在已是精品时显示) */
 if(kp.premium_tier==="trusted"){ah+='<button class="btn btn-sm" style="color:#C93D60;border-color:#C93D60" onclick="premiumSetTier('+kp.id+',\'verified\')">升铁货</button><button class="btn btn-sm" style="color:#888;border-color:#888" onclick="premiumSetTier('+kp.id+',\'candidate\')">降候选</button>'}
-else if(kp.premium_tier==="verified"){ah+='<button class="btn btn-sm" style="color:#C97A2C;border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">降硬货</button>'}
-else if(kp.premium_tier==="candidate"){ah+='<button class="btn btn-sm" style="color:#C97A2C;border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">升硬货</button>'}
+else if(kp.premium_tier==="verified"){ah+='<button class="btn btn-sm" style="color:var(--amber-500);border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">降硬货</button>'}
+else if(kp.premium_tier==="candidate"){ah+='<button class="btn btn-sm" style="color:var(--amber-500);border-color:#C97A2C" onclick="premiumSetTier('+kp.id+',\'trusted\')">升硬货</button>'}
 ah+='<button class="btn btn-danger btn-sm" onclick="removeConfirmed('+kp.id+')">移除</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="ignored"){ah='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="restoreToPending('+kp.id+')">恢复</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">查看</button><button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 return '<div class="kp-card'+(sel?" selected":"")+(isOutdated?" card-outdated":"")+(qaSrc==="rule_fallback"?" qa-rule-fallback":"")+'" id="card-'+kp.id+'"><div class="kp-top"><input type="checkbox" class="kp-cb" '+(sel?"checked":"")+" onchange=\"toggleSelect("+kp.id+')\" ><span class="kp-seq type-'+tp+'">'+seq+'</span><div class="kp-info"><div class="kp-title">'+esc(kp.title)+'</div><div class="kp-meta"><span class="badge badge-'+tp+'">'+esc(TN[tp])+'</span><span class="badge badge-'+kp.review_status+'">'+esc(SN[kp.review_status]||kp.review_status)+'</span>'+(cp?'<span class="cat-path"><span class="match-dot '+(matched?"yes":"no")+'"></span>'+esc(cp)+'</span>':"")+'</div></div></div>'
@@ -2165,7 +2165,7 @@ if(!Array.isArray(pdArr))pdArr=[];
 if(pvSt&&pvSt>0&&pdArr.length>0){
 pdField.style.display="block";
 var pdHtml="<div style='margin-bottom:6px;font-weight:600'>状态: "+esc(PVN[String(pvSt)]||"未知")+"</div>";
-for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:#059669'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:var(--danger)'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
+for(var pi=0;pi<pdArr.length;pi++){var pd=pdArr[pi];if(pd.exempt_reason){pdHtml+="<div>豁免原因: "+esc(pd.exempt_reason)+"</div>"}else if(pd.matched){pdHtml+="<div style='color:var(--green-500)'>&#10003; "+esc(pd.name||pd.number)+" (已匹配)</div>"}else{pdHtml+="<div style='color:var(--danger)'>&#10007; "+esc(pd.name||pd.number)+" (未匹配)</div>";if(pd.lookup_guide)pdHtml+="<div style='font-size:11px;color:var(--text-muted);margin-left:16px'>"+esc(pd.lookup_guide)+"</div>"}}
 pdDiv.innerHTML=pdHtml}else{pdField.style.display="none"}
 var insField=document.getElementById("editInsightsField");
 var insDiv=document.getElementById("editInsights");
@@ -3747,7 +3747,7 @@ function showBatchRerunPanel(){
       h+='<div class="rex-file"><input type="checkbox" class="br-cb" value="'+fid+'"><label>'+esc(fn)+'</label>';
       h+='<span class="rex-cnt">'+kpC+'条</span>';
       if(hasAnn)h+='<span style="font-size:11px;color:var(--warning);margin-left:6px;font-weight:600" title="含专家注解,重跑后会保留">!含 '+(annC||"?")+' 条注解</span>';
-      if(trC>0)h+='<span style="font-size:11px;color:#C97A2C;margin-left:6px" title="曾触发截断补救">截断×'+trC+'</span>';
+      if(trC>0)h+='<span style="font-size:11px;color:var(--amber-500);margin-left:6px" title="曾触发截断补救">截断×'+trC+'</span>';
       h+='</div>';
     }
     h+='<div style="margin-top:14px;text-align:right"><button class="btn btn-primary" onclick="doBatchRerun()">启动批量重跑</button></div>';
@@ -4034,7 +4034,7 @@ function renderHealthReview(items){
   }
   /* drop 场景特殊提示 */
   if(stype==="drop"){
-    h+='<div style="padding:10px 14px;margin-bottom:12px;background:#FFEFEE;border-left:3px solid #C5281C;border-radius:6px;font-size:12px;color:#991B1B">AI 诊断建议删除此知识点。点"确认删除"将把原 kp 标记为 ignored(可在 Tab 1 "已忽略"找回,不会物理删除)。</div>';
+    h+='<div style="padding:10px 14px;margin-bottom:12px;background:#FFEFEE;border-left:3px solid #C5281C;border-radius:6px;font-size:12px;color:var(--red-500)">AI 诊断建议删除此知识点。点"确认删除"将把原 kp 标记为 ignored(可在 Tab 1 "已忽略"找回,不会物理删除)。</div>';
   }
   /* split 场景特殊提示 */
   if(splitCount>1){
@@ -5183,7 +5183,7 @@ function renderCeoResult(analysis){
     h+='<div style="margin-bottom:12px;padding:12px;background:var(--primary-light);border-radius:var(--radius)"><span style="font-size:12px;color:var(--primary);font-weight:600">CEO建议</span><p style="margin:4px 0 0;font-size:13px;line-height:1.7;color:var(--text)">'+esc(String(analysis.recommendation))+'</p></div>';
   }
   if(analysis.requires_meeting){
-    h+='<div style="padding:8px 12px;background:var(--warning-bg);border-radius:var(--radius);font-size:12px;color:#C97A2C;font-weight:600">需要召集Agent会议讨论 (requires_meeting=true)</div>';
+    h+='<div style="padding:8px 12px;background:var(--warning-bg);border-radius:var(--radius);font-size:12px;color:var(--amber-500);font-weight:600">需要召集Agent会议讨论 (requires_meeting=true)</div>';
   }
   document.getElementById("ceoResponseBox").innerHTML=h;
   body.innerHTML=h;

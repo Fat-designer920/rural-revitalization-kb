@@ -3,390 +3,244 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>四川乡村振兴操盘手的第一知识工具 — AI问答助手</title>
+<title>稻也 — 四川乡村振兴操盘手的第一知识工具</title>
 <meta name="description" content="乡村振兴AI问答助手，聚焦四川，像旁边坐了个20年老师傅在告诉你。政策怎么用、项目怎么推、坑在哪里——直接回答、政策依据、操作步骤、风险提示。">
 <link rel="stylesheet" href="/static/css/design-tokens.css">
 <link rel="stylesheet" href="/static/css/typography-chinese.css">
 <link rel="stylesheet" href="/static/css/components.css">
 <link rel="stylesheet" href="/static/css/water.min.css">
 <style>
-/* ===== Reset & Base ===== */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body {
   font-family: var(--font-sans);
   background: var(--brand-warm);
-  color: var(--ink-900);
+  color: var(--ink-700);
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
   min-width: 320px;
+  letter-spacing: 0.01em;
 }
 
-/* ===== Typography ===== */
-h1 { font-size: var(--text-3xl); font-weight: 800; letter-spacing: -0.01em; line-height: var(--leading-tight); }
-h2 { font-size: var(--text-xl); font-weight: 700; }
-h3 { font-size: var(--text-lg); font-weight: 600; }
+/* Typography — MUJI+Song: generous spacing, restrained */
+h1 { font-size: 36px; font-weight: 700; line-height: 1.25; color: var(--ink-900); letter-spacing: 0; }
+h2 { font-size: 22px; font-weight: 600; color: var(--ink-900); }
+h3 { font-size: 16px; font-weight: 600; color: var(--ink-700); }
 a { color: var(--brand-green); text-decoration: none; }
 
-/* ===== Container ===== */
-.container { max-width: 960px; margin: 0 auto; padding: 0 var(--space-lg); }
+.container { max-width: 880px; margin: 0 auto; padding: 0 var(--space-lg); }
 
-/* ===== Buttons (landing-specific sizing with token colors) ===== */
+/* Buttons */
 .btn {
-  display: inline-block;
-  padding: 14px 36px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-  cursor: pointer;
-  text-decoration: none;
-  border: none;
-  transition: all 0.2s ease;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 32px; border-radius: var(--radius-md); font-size: 15px;
+  font-weight: var(--font-medium); cursor: pointer; text-decoration: none;
+  border: none; transition: all 0.2s ease; font-family: inherit;
 }
-.btn-primary {
-  background: var(--brand-green);
-  color: var(--white);
-}
-.btn-primary:hover {
-  background: var(--brand-green-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-.btn-outline {
-  background: transparent;
-  color: var(--brand-green);
-  border: 2px solid var(--brand-green);
-}
-.btn-outline:hover {
-  background: var(--brand-green);
-  color: var(--white);
-}
-.btn-gold {
-  background: var(--brand-gold);
-  color: var(--white);
-}
-.btn-gold:hover {
-  background: #b07d24;
-  box-shadow: var(--shadow-lg);
-}
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--brand-green); color: var(--white); }
+.btn-primary:hover { background: var(--brand-green-hover); box-shadow: var(--shadow-md); }
+.btn-outline { background: transparent; color: var(--brand-green); border: 1.5px solid var(--brand-green); }
+.btn-outline:hover { background: var(--brand-green-light); }
+.btn-gold { background: var(--brand-gold); color: var(--white); }
+.btn-gold:hover { background: #AD7D23; box-shadow: var(--shadow-md); }
 
-/* ===== Nav ===== */
+/* Nav — minimal, clean */
 .navbar {
-  background: var(--white);
-  border-bottom: 1px solid var(--brand-warm-dark);
-  padding: var(--space-sm) 0;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: sticky; top: 0; z-index: 100; height: 52px;
+  background: rgba(245,240,232,0.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--brand-warm-dark);
 }
-.navbar .container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.navbar .container { height: 100%; display: flex; justify-content: space-between; align-items: center; }
 .navbar-brand {
-  font-weight: 700;
-  font-size: var(--text-base);
-  color: var(--brand-green);
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+  font-weight: 600; font-size: 16px; color: var(--brand-green);
+  display: flex; align-items: center; gap: var(--space-sm);
 }
 .navbar-brand .icon {
-  width: 32px;
-  height: 32px;
-  background: var(--brand-green);
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--white);
-  font-size: var(--text-base);
-  font-weight: 800;
-}
-.navbar-cta {
-  font-size: var(--text-sm);
-  padding: var(--space-sm) 20px;
+  width: 28px; height: 28px; background: var(--brand-green);
+  border-radius: var(--radius-sm); display: inline-flex; align-items: center;
+  justify-content: center; color: var(--white); font-size: 14px; font-weight: 700;
 }
 
-/* ===== Hero ===== */
+/* Hero — lots of whitespace, MUJI philosophy */
 .hero {
   text-align: center;
-  padding: var(--space-3xl) 0 var(--space-2xl);
-  background: linear-gradient(180deg, var(--white) 0%, var(--brand-warm) 100%);
+  padding: 72px 0 56px;
+  margin-bottom: 0;
 }
 .hero-badge {
-  display: inline-block;
-  background: var(--brand-green-light);
-  color: var(--brand-green);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  padding: 6px var(--space-md);
-  border-radius: var(--radius-full);
-  margin-bottom: var(--space-lg);
+  display: inline-block; background: var(--white); color: var(--brand-green);
+  font-size: 13px; font-weight: var(--font-medium);
+  padding: 5px 16px; border-radius: var(--radius-full);
+  margin-bottom: var(--space-xl); border: 0.5px solid var(--brand-warm-dark);
+  letter-spacing: 0.02em;
 }
 .hero h1 {
-  max-width: 680px;
-  margin: 0 auto var(--space-md);
-  color: var(--ink-900);
+  max-width: 640px; margin: 0 auto var(--space-lg);
 }
-.hero-subtitle {
-  font-size: var(--text-lg);
-  color: var(--ink-500);
-  max-width: 520px;
-  margin: 0 auto var(--space-xl);
-  line-height: var(--leading-relaxed);
-}
-.hero-cta-wrap {
-  display: flex;
-  gap: var(--space-md);
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 40px;
-}
-.hero-cta-wrap .btn { min-width: 160px; }
-.hero-trust {
-  font-size: var(--text-sm);
-  color: var(--ink-300);
-}
-.hero-trust span { color: var(--brand-gold); font-weight: var(--font-semibold); }
-
-/* ===== Divider ===== */
-.section-divider {
-  border: none;
-  border-top: 1px solid var(--brand-warm-dark);
-  margin: 0;
-}
-
-/* ===== Section Headers ===== */
-.section {
-  padding: var(--space-3xl) 0;
-}
-.section-header {
-  text-align: center;
-  margin-bottom: var(--space-2xl);
-}
-.section-header h2 {
-  color: var(--ink-900);
-  margin-bottom: var(--space-sm);
-}
-.section-header p {
-  color: var(--ink-500);
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-/* ===== Demo Q&A ===== */
-.qa-list { display: flex; flex-direction: column; gap: var(--space-lg); }
-.qa-card {
-  background: var(--white);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--brand-warm-dark);
-  overflow: hidden;
-  transition: box-shadow 0.25s ease;
-}
-.qa-card:hover { box-shadow: var(--shadow-lg); }
-.qa-question {
-  padding: 20px var(--space-lg);
-  background: #faf7f2;
-  border-bottom: 1px solid var(--brand-warm-dark);
-  font-weight: var(--font-semibold);
-  color: var(--ink-900);
-  font-size: var(--text-base);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.qa-question .q-icon {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  background: var(--brand-green);
-  color: var(--white);
-  border-radius: var(--radius-full);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-.qa-answer {
-  padding: var(--space-lg);
-}
-.qa-answer-block {
-  margin-bottom: var(--space-md);
-}
-.qa-answer-block:last-child { margin-bottom: 0; }
-.qa-answer-label {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  color: var(--brand-gold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.qa-answer-label::before {
-  content: '';
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  background: var(--brand-gold);
-  border-radius: var(--radius-full);
-}
-.qa-answer-text {
-  color: var(--ink-700);
-  font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
-}
-
-/* ===== Pricing ===== */
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-lg);
-  align-items: start;
-}
-.pricing-card {
-  background: var(--white);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--brand-warm-dark);
-  padding: var(--space-xl) var(--space-lg);
-  text-align: center;
-  transition: all 0.25s ease;
-  position: relative;
-}
-.pricing-card:hover {
-  border-color: var(--brand-gold);
-  box-shadow: var(--shadow-lg);
-}
-.pricing-card.featured {
-  border-color: var(--brand-gold);
-  box-shadow: var(--shadow-lg);
-}
-.pricing-badge {
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--brand-gold);
-  color: var(--white);
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-md);
-  white-space: nowrap;
-}
-.pricing-name {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--ink-900);
-  margin-bottom: var(--space-sm);
-}
-.pricing-price {
-  font-size: 2.2rem;
-  font-weight: 800;
-  color: var(--brand-green);
-  margin-bottom: var(--space-xs);
-}
-.pricing-price sub { font-size: 0.9rem; font-weight: var(--font-medium); color: var(--ink-500); }
-.pricing-period { font-size: var(--text-xs); color: var(--ink-300); margin-bottom: var(--space-lg); }
-.pricing-features { list-style: none; padding: 0; text-align: left; margin-bottom: 28px; }
-.pricing-features li {
-  padding: var(--space-sm) 0;
-  font-size: var(--text-sm);
-  color: var(--ink-700);
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  border-bottom: 1px solid var(--brand-warm);
-}
-.pricing-features li:last-child { border-bottom: none; }
-.pricing-features li .check { color: var(--brand-green); font-weight: 700; }
-.pricing-cta .btn { display: block; width: 100%; text-align: center; }
-
-/* ===== Stats Bar ===== */
-.stats-bar {
-  background: var(--brand-green);
-  color: var(--white);
-  padding: 40px 0;
-}
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-lg);
-  text-align: center;
-}
-.stat-number {
-  font-size: var(--text-3xl);
-  font-weight: 800;
-  color: var(--brand-gold);
-}
-.stat-label {
-  font-size: var(--text-sm);
-  color: rgba(255,255,255,0.8);
-  margin-top: var(--space-xs);
-}
-
-/* ===== Footer ===== */
-.footer {
-  background: #1a3a20;
-  color: rgba(255,255,255,0.7);
-  padding: var(--space-2xl) 0 var(--space-xl);
-}
-.footer-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 40px;
-  margin-bottom: var(--space-xl);
-}
-.footer h4 {
-  color: var(--white);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  margin-bottom: var(--space-md);
-}
-.footer p, .footer li {
-  font-size: var(--text-sm);
+.hero-lead {
+  font-size: 17px; color: var(--ink-300);
+  max-width: 440px; margin: 0 auto var(--space-xl);
   line-height: 1.8;
 }
-.footer ul { list-style: none; padding: 0; }
-.footer a { color: rgba(255,255,255,0.6); }
-.footer a:hover { color: var(--brand-gold); }
-.footer-bottom {
-  border-top: 1px solid rgba(255,255,255,0.1);
-  padding-top: 20px;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: rgba(255,255,255,0.45);
+.hero-cta-wrap { display: flex; gap: var(--space-md); justify-content: center; flex-wrap: wrap; margin-bottom: 48px; }
+.hero-cta-wrap .btn { min-width: 148px; }
+.hero-trust { font-size: 13px; color: var(--ink-300); }
+.hero-trust em { font-style: normal; color: var(--brand-gold); font-weight: 600; }
+
+/* Divider */
+.section-divider { border: none; height: 0.5px; background: var(--brand-warm-dark); margin: 0; }
+
+/* Sections */
+.section { padding: 56px 0; }
+.section-label {
+  text-align: center; font-size: 11px; font-weight: 600; color: var(--ink-300);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--space-sm);
 }
+.section-header { text-align: center; margin-bottom: var(--space-xl); }
+.section-header h2 { margin-bottom: var(--space-sm); }
+.section-header p { color: var(--ink-300); max-width: 420px; margin: 0 auto; font-size: 15px; }
+
+/* Demo Q&A — foldable cards */
+.qa-list { display: flex; flex-direction: column; gap: var(--space-md); }
+.qa-card {
+  background: var(--white); border-radius: var(--radius-lg);
+  border: 0.5px solid var(--brand-warm-dark);
+  overflow: hidden; transition: box-shadow 0.25s;
+}
+.qa-card:hover { box-shadow: var(--shadow-lg); }
+.qa-card.open { border-color: var(--brand-green); }
+.qa-question {
+  width: 100%; padding: 18px var(--space-lg);
+  background: #FAF8F4; border: none; cursor: pointer;
+  font-weight: var(--font-medium); color: var(--ink-900);
+  font-size: 15px; font-family: inherit; text-align: left;
+  display: flex; align-items: flex-start; gap: 12px;
+  transition: background 0.2s;
+}
+.qa-question:hover { background: #F3F0E8; }
+.qa-question .q-icon {
+  flex-shrink: 0; width: 22px; height: 22px; background: var(--brand-green);
+  color: var(--white); border-radius: var(--radius-full);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; margin-top: 1px;
+}
+.qa-question .q-text { flex: 1; }
+.qa-question .q-arrow {
+  flex-shrink: 0; color: var(--ink-300); font-size: 12px;
+  transition: transform 0.25s; margin-top: 3px;
+}
+.qa-card.open .q-arrow { transform: rotate(180deg); }
+.qa-answer {
+  display: none; padding: 0 var(--space-lg) var(--space-lg);
+}
+.qa-card.open .qa-answer { display: block; }
+.qa-answer-block { margin-bottom: var(--space-md); }
+.qa-answer-block:last-child { margin-bottom: 0; }
+.qa-answer-label {
+  font-size: 11px; font-weight: 600; color: var(--brand-gold);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.qa-answer-label::before {
+  content: ''; display: inline-block;
+  width: 3px; height: 3px; background: var(--brand-gold);
+  border-radius: var(--radius-full);
+}
+.qa-answer-text { color: var(--ink-500); font-size: 14px; line-height: 1.85; }
+
+/* Stats Bar — minimal */
+.stats-bar {
+  background: var(--brand-green); color: var(--white);
+  padding: 44px 0;
+}
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); text-align: center; }
+.stat-number { font-size: 32px; font-weight: 700; color: var(--brand-gold); }
+.stat-label { font-size: 13px; color: rgba(255,255,255,0.75); margin-top: var(--space-xs); }
+
+/* Pricing — spacious, centered, MUJI restraint */
+.pricing-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg); align-items: start; max-width: 780px; margin: 0 auto;
+}
+.pricing-card {
+  background: var(--white); border-radius: var(--radius-lg);
+  border: 0.5px solid var(--brand-warm-dark);
+  padding: var(--space-xl) var(--space-lg) 28px;
+  text-align: center; transition: all 0.25s; position: relative;
+}
+.pricing-card:hover { border-color: var(--brand-gold); box-shadow: var(--shadow-lg); }
+.pricing-card.featured {
+  border-color: var(--brand-gold); box-shadow: var(--shadow-lg);
+  background: #FFFDF7;
+}
+.pricing-badge {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  background: var(--brand-gold); color: var(--white);
+  font-size: 12px; font-weight: 600; padding: 4px 16px;
+  border-radius: var(--radius-full); white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.pricing-name { font-size: 16px; font-weight: 600; color: var(--ink-900); margin-bottom: var(--space-md); }
+.pricing-price { font-size: 38px; font-weight: 700; color: var(--brand-green); margin-bottom: 2px; }
+.pricing-price sub { font-size: 16px; font-weight: 400; color: var(--ink-300); }
+.pricing-period { font-size: 12px; color: var(--ink-300); margin-bottom: var(--space-lg); }
+.pricing-features { list-style: none; padding: 0; text-align: left; margin-bottom: 28px; }
+.pricing-features li {
+  padding: 7px 0; font-size: 13px; color: var(--ink-500);
+  display: flex; align-items: center; gap: var(--space-sm);
+  border-bottom: 0.5px solid var(--brand-warm);
+}
+.pricing-features li:last-child { border-bottom: none; }
+.pricing-features li .check { color: var(--brand-green); font-weight: 600; font-size: 14px; }
+.pricing-cta .btn { display: block; width: 100%; text-align: center; }
+
+/* Footer — clean, minimal */
+.footer {
+  background: #1E3322; color: rgba(255,255,255,0.65);
+  padding: 40px 0 28px;
+}
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; margin-bottom: var(--space-xl); }
+.footer h4 { color: var(--white); font-size: 13px; font-weight: 600; margin-bottom: var(--space-md); }
+.footer p, .footer li { font-size: 13px; line-height: 1.8; }
+.footer ul { list-style: none; padding: 0; }
+.footer a { color: rgba(255,255,255,0.55); }
+.footer a:hover { color: var(--brand-gold); }
 .footer-contact-hint {
-  display: inline-block;
-  background: rgba(200,146,43,0.2);
-  color: var(--brand-gold);
-  font-size: var(--text-sm);
+  display: inline-block; background: rgba(200,146,43,0.18);
+  color: var(--brand-gold); font-size: 13px;
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-sm);
-  margin-top: var(--space-sm);
+  border-radius: var(--radius-sm); margin-top: var(--space-sm);
+}
+.footer-bottom {
+  border-top: 0.5px solid rgba(255,255,255,0.08);
+  padding-top: 20px; text-align: center;
+  font-size: 12px; color: rgba(255,255,255,0.35);
 }
 
-/* ===== Responsive ===== */
+/* Responsive */
 @media (max-width: 768px) {
-  h1 { font-size: 1.55rem; }
-  .hero { padding: var(--space-2xl) 0 var(--space-xl); }
-  .pricing-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
-  .stats-grid { grid-template-columns: 1fr; gap: var(--space-md); }
+  h1 { font-size: 26px; }
+  .hero { padding: 48px 0 36px; }
+  .hero-lead { font-size: 15px; }
+  .pricing-grid { grid-template-columns: 1fr; max-width: 360px; }
+  .stats-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
   .footer-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
+  .section { padding: 40px 0; }
 }
 @media (max-width: 480px) {
-  h1 { font-size: 1.35rem; }
-  .hero-subtitle { font-size: var(--text-base); }
+  h1 { font-size: 22px; }
+  .hero { padding: 36px 0 28px; }
+  .hero-lead { font-size: 14px; }
   .hero-cta-wrap .btn { width: 100%; }
   .container { padding: 0 var(--space-md); }
-  .qa-question { padding: var(--space-md); font-size: var(--text-sm); }
-  .qa-answer { padding: var(--space-md); }
+  .qa-question { padding: var(--space-md); font-size: 14px; }
+  .qa-answer { padding: 0 var(--space-md) var(--space-md); }
+  .pricing-card { padding: var(--space-lg) var(--space-md) 20px; }
+  .pricing-price { font-size: 30px; }
+  .stat-number { font-size: 26px; }
 }
 </style>
 </head>
@@ -397,9 +251,9 @@ a { color: var(--brand-green); text-decoration: none; }
   <div class="container">
     <div class="navbar-brand">
       <span class="icon">乡</span>
-      乡村振兴知识助手
+      稻也
     </div>
-    <a href="#pricing" class="btn btn-primary navbar-cta">免费试用</a>
+    <a href="#pricing" class="btn btn-primary" style="padding:8px 20px;font-size:14px;">免费试用</a>
   </div>
 </nav>
 
@@ -407,13 +261,13 @@ a { color: var(--brand-green); text-decoration: none; }
 <section class="hero">
   <div class="container">
     <div class="hero-badge">聚焦四川</div>
-    <h1>四川乡村振兴操盘手的第一知识工具</h1>
-    <p class="hero-subtitle">AI问答助手 &mdash; 像旁边坐了个20年老师傅在告诉你。<br>政策怎么用、项目怎么推、坑在哪里。</p>
+    <h1>乡村振兴操盘手的第一知识工具</h1>
+    <p class="hero-lead">AI问答助手，像旁边坐了个20年老师傅在告诉你。<br>政策怎么用、项目怎么推、坑在哪里。</p>
     <div class="hero-cta-wrap">
       <a href="#pricing" class="btn btn-gold">免费试用7天</a>
       <a href="#demo" class="btn btn-outline">看看效果</a>
     </div>
-    <p class="hero-trust"><span>1832条</span>四川乡村振兴专业知识 &middot; <span>15个</span>业务领域 &middot; <span>老唐20年</span>实战经验</p>
+    <p class="hero-trust"><em>1,832条</em>四川乡村振兴专业知识 &middot; <em>15个</em>业务领域 &middot; <em>老唐20年</em>实战经验</p>
   </div>
 </section>
 
@@ -422,111 +276,78 @@ a { color: var(--brand-green); text-decoration: none; }
 <!-- Demo Q&A -->
 <section class="section" id="demo">
   <div class="container">
+    <div class="section-label">Demo</div>
     <div class="section-header">
       <h2>AI问答助手能做什么？</h2>
-      <p>不是搜政策原文——是告诉你政策背后怎么落地、有什么坑、该怎么操作。</p>
+      <p>不是搜政策原文，是告诉你政策背后怎么落地、有什么坑、该怎么操作。</p>
     </div>
-
     <div class="qa-list">
 
-      <!-- Q1 -->
+      <!-- Q1: 增减挂钩 -->
       <div class="qa-card">
-        <div class="qa-question">
+        <button class="qa-question" onclick="toggleQaCard(this)" type="button" aria-expanded="false">
           <span class="q-icon">Q</span>
-          增减挂钩项目在绵阳遇到土地指标不够怎么办？
-        </div>
+          <span class="q-text">增减挂钩项目在绵阳遇到土地指标不够怎么办？</span>
+          <span class="q-arrow">&#9660;</span>
+        </button>
         <div class="qa-answer">
           <div class="qa-answer-block">
             <div class="qa-answer-label">直接回答</div>
-            <div class="qa-answer-text">
-              绵阳增减挂钩指标不够，有两条路可以走，不是非此即彼，可以组合用。第一，跟市级沟通申请跨县域调剂指标&mdash;&mdash;省厅2019年就出文允许县际调剂，绵阳境内涪城、游仙指标偏紧但三台、盐亭还有空间。第二，走"指标预支"通道，前提是你的拆旧复垦方案已经通过评审、施工进度符合预期，就可以申请预支不超过总指标的30%。我见过涪城区一个项目，预支了28%的指标先启动了安置区建设，剩下的等验收再补。
-            </div>
-          </div>
-          <div class="qa-answer-block">
-            <div class="qa-answer-label">政策依据</div>
-            <div class="qa-answer-text">
-              四川省自然资源厅《关于进一步规范城乡建设用地增减挂钩工作的通知》(川自然资发[2019]xxx号)明确允许县域间指标调剂；同时《绵阳市增减挂钩实施细则》对预支比例和条件有具体规定。
-            </div>
+            <div class="qa-answer-text">绵阳增减挂钩指标不够，有两条路可以走，不是非此即彼，可以组合用。第一，跟市级沟通申请跨县域调剂指标——省厅2019年就出文允许县际调剂，绵阳境内涪城、游仙指标偏紧但三台、盐亭还有空间。第二，走"指标预支"通道，前提是你的拆旧复垦方案已经通过评审、施工进度符合预期，就可以申请预支不超过总指标的30%。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">操作步骤</div>
-            <div class="qa-answer-text">
-              第一步：找县自规局确认指标缺口的具体数字和原因；第二步：同步启动调济申请和预支方案（两条腿走路不等）；第三步：准备好拆旧复垦进度证明材料和安置区建设计划；第四步：县局报市局审批，通常15个工作日答复。
-            </div>
+            <div class="qa-answer-text">第一步：找县自规局确认指标缺口具体数字和原因；第二步：同步启动调剂申请和预支方案（两条腿走路不等）；第三步：准备好拆旧复垦进度证明材料和安置区建设计划；第四步：县局报市局审批，通常15个工作日答复。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">风险提示</div>
-            <div class="qa-answer-text">
-              预支指标到期还不上会冻结后续指标，严重的影响你乡镇以后所有土地项目的指标分配。我见过两个镇因为这个被暂停一整年。政策窗口:跨县调剂要看市级年度指标调剂额度,9月以后通常额度紧张,建议上半年推动。
-            </div>
+            <div class="qa-answer-text">预支指标到期还不上会冻结后续指标，严重影响乡镇以后所有土地项目的指标分配。政策窗口：跨县调剂要看市级年度指标调剂额度，9月以后额度通常紧张，建议上半年推动。</div>
           </div>
         </div>
       </div>
 
-      <!-- Q2 -->
+      <!-- Q2: 高标准农田 -->
       <div class="qa-card">
-        <div class="qa-question">
+        <button class="qa-question" onclick="toggleQaCard(this)" type="button" aria-expanded="false">
           <span class="q-icon">Q</span>
-          高标准农田建设的资金来源有哪些？
-        </div>
+          <span class="q-text">高标准农田建设的资金来源有哪些？</span>
+          <span class="q-arrow">&#9660;</span>
+        </button>
         <div class="qa-answer">
           <div class="qa-answer-block">
             <div class="qa-answer-label">资金来源详解</div>
-            <div class="qa-answer-text">
-              高标准农田资金不是只有财政一条路，我给你梳理五条通道:<br>
-              <strong>(1) 中央财政农田建设补助资金</strong>&mdash;&mdash;亩均补助1500元，这是大头，2024年四川拿到约42亿，覆盖280万亩。申请窗口每年3-4月，由县农业农村局统一上报。<br>
-              <strong>(2) 省级配套资金</strong>&mdash;&mdash;四川省级每亩配套500元左右，贫困县和丘陵山区适当上浮。绵阳、广元、巴中等丘陵地区可以亩均拿到600-700元。<br>
-              <strong>(3) 地方政府专项债</strong>&mdash;&mdash;2023年起高标准农田纳入专项债支持范围，我们测算每亩可融资2000-3000元，还款来源是新增耕地指标出让收益。<br>
-              <strong>(4) 社会资本参与</strong>&mdash;&mdash;走PPP或"先建后补"模式，企业先投钱建设，验收后财政补70-80%，剩下20-30%企业从耕地指标收益中回收。<br>
-              <strong>(5) 政策性银行信贷</strong>&mdash;&mdash;农发行"农地贷"专门支持高标准农田，利率比商贷低2-3个点。
-            </div>
+            <div class="qa-answer-text">高标准农田资金不是只有财政一条路，五条通道：(1) <strong>中央财政农田建设补助</strong>——亩均补助1500元，2024年四川拿到约42亿，覆盖280万亩，申请窗口每年3-4月；(2) <strong>省级配套资金</strong>——每亩配套500元左右，丘陵山区适当上浮，绵阳、广元、巴中等可以亩均拿到600-700元；(3) <strong>地方政府专项债</strong>——2023年起纳入支持范围，每亩可融资2000-3000元，还款来源是新增耕地指标出让收益；(4) <strong>社会资本</strong>——PPP或"先建后补"，企业先投建设，验收后财政补70-80%；(5) <strong>农发行"农地贷"</strong>——利率比商贷低2-3个点。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">申报条件</div>
-            <div class="qa-answer-text">
-              地块要求：集中连片50亩以上（平原）/ 30亩以上（丘陵）；不在生态红线和水源保护区内；与"两区划定"（粮食生产功能区、重要农产品保护区）相衔接。项目要求：要有县级农田建设规划批复 + 年度实施方案 + 论证意见三个文件，缺一不可。
-            </div>
+            <div class="qa-answer-text">地块要求：集中连片50亩以上（平原）或30亩以上（丘陵）；不在生态红线和水源保护区内；与"两区划定"相衔接。项目要求：县级农田建设规划批复 + 年度实施方案 + 论证意见，三个文件缺一不可。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">注意事项</div>
-            <div class="qa-answer-text">
-              第一，不要等所有资金到位再开工——可以先启动中央资金覆盖的部分，边干边跑配套。第二，专项债申请要提前6个月准备"一案两书"（实施方案+财务评估报告+法律意见书），我见过太多乡镇因为"一案两书"准备不充分被刷下来。第三，社会资本进来前把利益分配机制谈清楚，建完再分账一定扯皮。
-            </div>
+            <div class="qa-answer-text">不要等所有资金到位再开工——可以先启动中央资金覆盖的部分，边干边跑配套。专项债申请要提前6个月准备"一案两书"（实施方案+财务评估报告+法律意见书）。社会资本进来前把利益分配机制谈清楚，建完再分账一定扯皮。</div>
           </div>
         </div>
       </div>
 
-      <!-- Q3 -->
+      <!-- Q3: 集体建设用地 -->
       <div class="qa-card">
-        <div class="qa-question">
+        <button class="qa-question" onclick="toggleQaCard(this)" type="button" aria-expanded="false">
           <span class="q-icon">Q</span>
-          集体经营性建设用地入市需要什么条件？
-        </div>
+          <span class="q-text">集体经营性建设用地入市需要什么条件？</span>
+          <span class="q-arrow">&#9660;</span>
+        </button>
         <div class="qa-answer">
           <div class="qa-answer-block">
             <div class="qa-answer-label">法律依据</div>
-            <div class="qa-answer-text">
-              《土地管理法》(2019修正)第六十三条明确规定:土地利用总体规划、城乡规划确定为工业、商业等经营性用途，并经依法登记的集体经营性建设用地，土地所有权人可以通过出让、出租等方式交由单位或者个人使用。2022年中央一号文件进一步要求"稳妥有序推进农村集体经营性建设用地入市"。四川省2023年印发《深化农村集体经营性建设用地入市试点工作方案》，首批在郫都、泸县等17个县市区开展试点。
-            </div>
+            <div class="qa-answer-text">《土地管理法》(2019修正)第六十三条明确规定：规划确定为工业、商业等经营性用途，并经依法登记的集体经营性建设用地，可以通过出让、出租等方式交由单位或个人使用。四川省2023年印发试点工作方案，首批在郫都、泸县等17个县市区开展试点。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">操作流程</div>
-            <div class="qa-answer-text">
-              (1) 规划合规：地块必须在村庄规划或乡镇国土空间规划中明确为经营性建设用地——不是你自己说是就是，要有规划批文。这是第一步也是最容易被卡的一步。<br>
-              (2) 确权登记：完成集体土地所有权和使用权的不动产登记，拿到不动产权证。没证的入市=违法。<br>
-              (3) 村民决议：入市方案（地块、年限、底价、收益分配）必须经村民会议三分之二以上或者村民代表会议三分之二以上同意——这是法律硬杠子，少一个百分点都不行，已经有试点因为这个被纪检问责。<br>
-              (4) 政府审查：方案报县自然资源局和农业农村局联合审查，重点审核规划合规性和收益分配公平性。<br>
-              (5) 公开交易：进县公共资源交易平台挂牌，不低于底价，价高者得。<br>
-              (6) 收益分配：扣除土地增值收益调节金(20-50%归政府)后，剩余部分按村集体提留公积金+村民分配的方案执行。
-            </div>
+            <div class="qa-answer-text">六步走：(1) 规划合规——地块必须在村庄规划或乡镇国土空间规划中明确为经营性建设用地；(2) 确权登记——完成不动产登记，拿到不动产权证，没证的入市=违法；(3) 村民决议——入市方案须经村民会议三分之二以上同意，少一个点都不行；(4) 政府审查——报县自然资源局和农业农村局联合审查；(5) 公开交易——进县公共资源交易平台挂牌；(6) 收益分配——扣除土地增值收益调节金(20-50%)后，按村集体提留+村民分配方案执行。</div>
           </div>
           <div class="qa-answer-block">
             <div class="qa-answer-label">常见问题</div>
-            <div class="qa-answer-text">
-              <strong>问题一：宅基地算不算？</strong>不算。闲置宅基地要转化成集体经营性建设用地必须先退出（农户自愿）再调整规划用途，不能直接入市。这块现在政策还没完全理顺。<br>
-              <strong>问题二：收益怎么分才不闹矛盾？</strong>底线原则：先把政府的调节金留足，村集体提留30-40%做公益和发展基金，剩下的按持股分配到户。郫都区战旗村的做法是"3331"——30%村集体留存、30%公益金、30%股东分红、10%风险金，这么多年没闹过矛盾。<br>
-              <strong>问题三：能不能搞房地产？</strong>绝对不能。入市只能用于工商业、仓储、养老、文旅等经营性用途，商品住宅是红线碰了就出事。
-            </div>
+            <div class="qa-answer-text"><strong>宅基地算不算？</strong>不算。闲置宅基地要转化成集体经营性建设用地必须先退出再调整规划用途，不能直接入市。<br><strong>能不能搞房地产？</strong>绝对不能。入市只能用于工商业、仓储、养老、文旅等，商品住宅是红线。</div>
           </div>
         </div>
       </div>
@@ -539,18 +360,9 @@ a { color: var(--brand-green); text-decoration: none; }
 <div class="stats-bar">
   <div class="container">
     <div class="stats-grid">
-      <div>
-        <div class="stat-number">1,832</div>
-        <div class="stat-label">条四川乡村振兴专业知识</div>
-      </div>
-      <div>
-        <div class="stat-number">15+</div>
-        <div class="stat-label">业务领域全覆盖</div>
-      </div>
-      <div>
-        <div class="stat-number">20年</div>
-        <div class="stat-label">老唐一线实战经验</div>
-      </div>
+      <div><div class="stat-number">1,832</div><div class="stat-label">条四川乡村振兴专业知识</div></div>
+      <div><div class="stat-number">15+</div><div class="stat-label">业务领域全覆盖</div></div>
+      <div><div class="stat-number">20年</div><div class="stat-label">老唐一线实战经验</div></div>
     </div>
   </div>
 </div>
@@ -558,14 +370,13 @@ a { color: var(--brand-green); text-decoration: none; }
 <!-- Pricing -->
 <section class="section" id="pricing">
   <div class="container">
+    <div class="section-label">Pricing</div>
     <div class="section-header">
       <h2>选一个适合你的方案</h2>
-      <p>七天免费试用，不满意随时取消。三个版本按需选择，不搞强制升级。</p>
+      <p>七天免费试用，不满意随时取消。三个版本按需选择。</p>
     </div>
-
     <div class="pricing-grid">
 
-      <!-- Basic -->
       <div class="pricing-card">
         <div class="pricing-name">基础版</div>
         <div class="pricing-price">19.9<sub>元</sub></div>
@@ -576,12 +387,9 @@ a { color: var(--brand-green); text-decoration: none; }
           <li><span class="check">&#10003;</span> 1个领域深度查询</li>
           <li><span class="check">&#10003;</span> 七日试用支持</li>
         </ul>
-        <div class="pricing-cta">
-          <a href="#pricing" class="btn btn-outline">免费试用7天</a>
-        </div>
+        <div class="pricing-cta"><a href="#pricing" class="btn btn-outline">免费试用7天</a></div>
       </div>
 
-      <!-- Pro (featured) -->
       <div class="pricing-card featured">
         <div class="pricing-badge">最受欢迎</div>
         <div class="pricing-name">专业版</div>
@@ -589,33 +397,26 @@ a { color: var(--brand-green); text-decoration: none; }
         <div class="pricing-period">/月</div>
         <ul class="pricing-features">
           <li><span class="check">&#10003;</span> 无限问答</li>
-          <li><span class="check">&#10003;</span> 政策速查</li>
           <li><span class="check">&#10003;</span> 政策对比分析</li>
           <li><span class="check">&#10003;</span> 实战案例库</li>
           <li><span class="check">&#10003;</span> 5个领域深度查询</li>
           <li><span class="check">&#10003;</span> 优先响应</li>
         </ul>
-        <div class="pricing-cta">
-          <a href="#pricing" class="btn btn-gold">免费试用7天</a>
-        </div>
+        <div class="pricing-cta"><a href="#pricing" class="btn btn-gold">免费试用7天</a></div>
       </div>
 
-      <!-- Expert -->
       <div class="pricing-card">
         <div class="pricing-name">专家版</div>
         <div class="pricing-price">199<sub>元</sub></div>
         <div class="pricing-period">/月</div>
         <ul class="pricing-features">
           <li><span class="check">&#10003;</span> 无限问答 + 全功能</li>
-          <li><span class="check">&#10003;</span> 政策速查 + 对比</li>
           <li><span class="check">&#10003;</span> 合规自检工具</li>
           <li><span class="check">&#10003;</span> 指标测算模型</li>
           <li><span class="check">&#10003;</span> 15个领域全开</li>
           <li><span class="check">&#10003;</span> 每月一次深度咨询</li>
         </ul>
-        <div class="pricing-cta">
-          <a href="#pricing" class="btn btn-outline">免费试用7天</a>
-        </div>
+        <div class="pricing-cta"><a href="#pricing" class="btn btn-outline">免费试用7天</a></div>
       </div>
 
     </div>
@@ -627,9 +428,8 @@ a { color: var(--brand-green); text-decoration: none; }
   <div class="container">
     <div class="footer-grid">
       <div>
-        <h4>乡村振兴知识助手</h4>
-        <p>基于1,832条四川乡村振兴专业知识，覆盖增减挂钩、高标准农田、集体建设用地入市、宅基地改革、乡村规划、产业融合等15个业务领域。</p>
-        <p>老唐20年实战经验 &times; AI技术，打造四川乡村振兴操盘手的第一知识工具。</p>
+        <h4>稻也</h4>
+        <p>基于1,832条四川乡村振兴专业知识，覆盖增减挂钩、高标准农田、集体建设用地入市、宅基地改革、乡村规划等15个业务领域。老唐20年实战经验与AI技术融合，打造四川乡村振兴操盘手的第一知识工具。</p>
       </div>
       <div>
         <h4>快速链接</h4>
@@ -641,18 +441,32 @@ a { color: var(--brand-green); text-decoration: none; }
       </div>
       <div>
         <h4>联系方式</h4>
-        <p>扫码添加老唐微信<br>获取1v1深度咨询</p>
+        <p>添加老唐微信<br>获取1v1深度咨询</p>
         <div class="footer-contact-hint">老唐微信: tanglaoshi_sc</div>
       </div>
     </div>
     <div class="footer-bottom">
-      <p>2026 稻也 &middot; 聚焦四川 &middot; 产品驱动知识管道</p>
+      <p>&copy; 2026 稻也 &middot; 聚焦四川 &middot; 产品驱动知识管道</p>
     </div>
   </div>
 </footer>
 
 <script>
-if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/js/sw.js')}
+/* ===== QA Card Toggle (ES5) ===== */
+function toggleQaCard(btn) {
+  var card = btn.parentElement;
+  var isOpen = card.classList.contains('open');
+  if (isOpen) {
+    card.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  } else {
+    card.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+}
+
+/* ===== Service Worker ===== */
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/static/js/sw.js'); }
 </script>
 </body>
 </html>
