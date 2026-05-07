@@ -10,6 +10,8 @@
 ## Feedback
 - [Project File Sync](feedback_doc_sync.md) — 项目文件更新规范: 改动前先读后改,版本号同步
 - [Never Drop Tasks](feedback_never_drop_tasks.md) — **立规则82**: 新任务不挤旧任务,所有Phase并行追踪
+- [System Thinking](feedback_system_thinking.md) — **立规则83**: 触类旁通,说到一个问题解决一类问题
+- [Never Stop Tasks](feedback_never_stop_tasks.md) — **立规则84**: 新要求不终止运行任务,加入队列并行跑
 
 ## Reference
 - [Memory Index](MEMORY.md) — 本文件
