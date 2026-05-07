@@ -94,7 +94,8 @@ def ceo_decide(state):
     candidates.append(('系统运维', 'GPU持续负载', run_gpu, 70))
     candidates.append(('系统运维', 'KPI快照', run_kpi, 30))
     candidates.append(('系统运维', '内存清理', run_cleanup, 20))
-    candidates.append(('系统运维', '代码审计(每100轮)', run_code_audit, 15))
+    candidates.append(('系统运维', '代码审计', run_code_audit, 15))
+    candidates.append(('质量保障', '爬取文件巡检(CEO自动)', run_crawled_quality_audit, 75))
 
     # CEO按优先级排序,选择top-3(错峰执行,避免同时爆发)
     candidates.sort(key=lambda x: x[3], reverse=True)
@@ -295,6 +296,31 @@ def run_cleanup():
         gc.collect(2)
     except Exception:
         pass
+
+
+def run_crawled_quality_audit():
+    """CEO定期巡检爬取文件质量(每20轮执行1次)"""
+    try:
+        import os
+        crawled='data/crawled'
+        if not os.path.exists(crawled): return
+        rural_kw=['土地','耕地','农村','农业','农民','乡村','农田','振兴',
+                  '整治','规划','建设','保护','生态','水利','补贴','项目',
+                  '高标准农田','增减挂钩','占补平衡','集体建设']
+        cleaned=0
+        for f in os.listdir(crawled):
+            path=os.path.join(crawled,f)
+            if not os.path.isfile(path): continue
+            try:
+                with open(path,'r',encoding='utf-8',errors='replace') as fh:
+                    content=fh.read()
+                hits=sum(1 for kw in rural_kw if kw in content)
+                if hits<3 or len(content)<500:
+                    os.remove(path);cleaned+=1
+            except:pass
+        remaining=len([f for f in os.listdir(crawled) if os.path.isfile(os.path.join(crawled,f))])
+        if cleaned>0: log(f'[Audit] Cleaned {cleaned} bad files, {remaining} remain')
+    except Exception: pass
 
 
 def run_code_audit():
