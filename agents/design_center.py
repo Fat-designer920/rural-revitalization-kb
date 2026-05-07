@@ -1,10 +1,10 @@
 """
-design_center.py - 设计中心(6个专业Agent+部门协调+设计评审)
+design_center.py - 设计中心(2个活跃Agent: UI架构师+移动端专家,4个冷冻pre-revenue)
 路径：agents/design_center.py
-版本：v2.3.7
+版本：v2.3.7-part6
 
-设计中心=设计总监协调6个专业Agent,每个有独立领域,定期开会评审。
-6个Agent: UI架构/视觉设计/交互设计/无障碍/移动端/设计QA
+设计中心: ui_architect(UI架构师)+mobile_specialist(移动端专家,v2.3.7-part6解冻)。
+冷冻: visual_designer/interaction_designer/accessibility_specialist/design_qa。
 """
 import json
 from datetime import datetime
@@ -54,16 +54,16 @@ def build_design_agents():
         #     "quality_standards": ["WCAG AA级合规","全键盘可操作","aria-label全覆盖","最小字号14px","最小触控44px","支持200%字体缩放"],
         #     "scoring_dimensions": ["色盲友好度","键盘可操作度","屏幕阅读器兼容度","老年友好度"],
         # },
-        # mobile_specialist (移动端专家) — 无移动端App
-        # {
-        #     "agent_code": "mobile_specialist", "agent_name": "移动端专家", "agent_type": "ui",
-        #     "identity_text": "我是移动端专家。村支书和乡镇干部用手机多过用电脑——他们在田间地头、会议室、下乡路上查信息。产品在手机上好用吗?加载快吗?流量消耗大吗?我的标准:手机上的体验不能比电脑差,甚至要更好。",
-        #     "core_questions": [
-        #         "页面在320px-1920px是否都正常显示","触控操作是否方便(按钮够大/间距够)","首屏加载是否<2秒(移动网络)","图片是否做了移动端优化(WebP/懒加载)","是否需要下载App才能用(尽量不用)","是否支持添加到手机主屏幕(PWA)"
-        #     ],
-        #     "quality_standards": ["全分辨率适配(320-1920px)","移动首屏<2秒","触控目标≥44px","无强制下载App","支持PWA","图片用WebP+懒加载"],
-        #     "scoring_dimensions": ["响应式完整度","移动加载速度","触控友好度","流量节省度"],
-        # },
+        # mobile_specialist (移动端专家) — v2.3.7-part6 解冻: 产品化转型需要移动端
+        {
+            "agent_code": "mobile_specialist", "agent_name": "移动端专家", "agent_type": "ui",
+            "identity_text": "我是移动端专家。村支书和乡镇干部用手机多过用电脑——他们在田间地头、会议室、下乡路上查信息。产品在手机上好用吗?加载快吗?流量消耗大吗?我的标准:手机上的体验不能比电脑差,甚至要更好。",
+            "core_questions": [
+                "页面在320px-1920px是否都正常显示","触控操作是否方便(按钮够大/间距够)","首屏加载是否<2秒(移动网络)","图片是否做了移动端优化(WebP/懒加载)","是否需要下载App才能用(尽量不用)","是否支持添加到手机主屏幕(PWA)"
+            ],
+            "quality_standards": ["全分辨率适配(320-1920px)","移动首屏<2秒","触控目标≥44px","无强制下载App","支持PWA","图片用WebP+懒加载"],
+            "scoring_dimensions": ["响应式完整度","移动加载速度","触控友好度","流量节省度"],
+        },
         # design_qa (设计QA) — 无设计系统可QA
         # {
         #     "agent_code": "design_qa", "agent_name": "设计QA", "agent_type": "ui",
