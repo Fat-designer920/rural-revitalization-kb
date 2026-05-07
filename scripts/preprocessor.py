@@ -211,7 +211,7 @@ class Preprocessor:
 
     def run(self, doc_origin="external", force_reprocess=False):
         print("="*60)
-        print("  乡知 - 文件预处理")
+        print("  稻也 - 文件预处理")
         print("="*60)
         if force_reprocess:
             print("  [!] 强制重新处理模式: 已完成文件将删除旧知识点后重新处理")

@@ -536,7 +536,7 @@ def _upgrade_schema_to_current(db_path):
 
 def main():
     print("=" * 60)
-    print("  乡知 - 系统初始化  v%s" % get_version())
+    print("  稻也 - 系统初始化  v%s" % get_version())
     print("=" * 60)
 
     config = get_config()
@@ -642,7 +642,7 @@ def main():
         if desktop.exists():
             vbs = (
                 'Set s=WScript.CreateObject("WScript.Shell")\n'
-                'Set lnk=s.CreateShortcut("%s\\乡知.lnk")\n'
+                'Set lnk=s.CreateShortcut("%s\\稻也.lnk")\n'
                 'lnk.TargetPath="%s\\启动后台.bat"\n'
                 'lnk.WorkingDirectory="%s"\n'
                 'lnk.Save'
@@ -691,7 +691,7 @@ def main():
         print("  系统初始化完成!")
         print("\n  接下来:")
         print("  1. 将文件放入 data/pending/")
-        print("  2. 双击桌面[乡知]快捷方式启动管理后台")
+        print("  2. 双击桌面[稻也]快捷方式启动管理后台")
         print("  3. 在Tab2系统管理中完成文件预处理和知识提取")
     else:
         print("  初始化完成，但有文件缺失，请检查。")

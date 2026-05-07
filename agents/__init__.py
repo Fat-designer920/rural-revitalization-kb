@@ -1,5 +1,5 @@
 """
-agents/ - 乡知 Agent 智慧体系
+agents/ - 稻也 Agent 智慧体系
 路径：agents/
 版本：v2.3.7
 

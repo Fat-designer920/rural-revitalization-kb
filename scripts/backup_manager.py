@@ -429,7 +429,7 @@ def run_backup():
     """一键备份"""
     print("")
     print("=" * 50)
-    print("  乡知 - 一键备份")
+    print("  稻也 - 一键备份")
     print("=" * 50)
     print("")
 
@@ -451,7 +451,7 @@ def run_restore():
     """一键恢复"""
     print("")
     print("=" * 50)
-    print("  乡知 - 一键恢复")
+    print("  稻也 - 一键恢复")
     print("=" * 50)
     print("")
     print("[重要] 如果审核界面正在运行, 请先关闭再恢复!")
@@ -508,7 +508,7 @@ def run_cleanup():
     """清理旧备份"""
     print("")
     print("=" * 50)
-    print("  乡知 - 清理旧备份")
+    print("  稻也 - 清理旧备份")
     print("=" * 50)
     print("")
 

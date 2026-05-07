@@ -632,7 +632,7 @@ def _placeholder_page(title, desc):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>{title} — 乡知</title>
+<title>{title} — 稻也</title>
 <link rel="stylesheet" href="/static/css/design-tokens.css">
 <link rel="stylesheet" href="/static/css/typography-chinese.css">
 <link rel="stylesheet" href="/static/css/components.css">
@@ -657,7 +657,7 @@ def _placeholder_page(title, desc):
 </head>
 <body>
 <header class="ph-header">
-  <a href="/" class="ph-header-brand"><span class="brand-icon">乡</span>乡知</a>
+  <a href="/" class="ph-header-brand"><span class="brand-icon">乡</span>稻也</a>
 </header>
 <main class="container">
   <section class="ph-hero">
@@ -671,8 +671,8 @@ def _placeholder_page(title, desc):
   </div>
 </main>
 <footer class="ph-footer">
-  <p>四川乡村振兴操盘手的第一知识工具 — <a href="/">乡知</a></p>
-  <div class="ph-footer-bottom">&copy; 2026 乡知 &middot; 聚焦四川 &middot; 产品驱动知识管道</div>
+  <p>四川乡村振兴操盘手的第一知识工具 — <a href="/">稻也</a></p>
+  <div class="ph-footer-bottom">&copy; 2026 稻也 &middot; 聚焦四川 &middot; 产品驱动知识管道</div>
 </footer>
 <script>
 if('serviceWorker' in navigator){{navigator.serviceWorker.register('/static/js/sw.js')}}
@@ -5722,7 +5722,7 @@ def main():
             port=cfg.get("flask_port",5000)
             host=cfg.get("flask_host","0.0.0.0")
     print("="*60)
-    print(f"  乡知 - 管理后台 v2.3.7-part5")
+    print(f"  稻也 - 管理后台 v2.3.7-part5")
     print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答(手机可刷)")
     print("="*60)
     print(f"  本机访问: http://localhost:{port}")

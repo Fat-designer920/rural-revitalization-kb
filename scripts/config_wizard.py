@@ -51,7 +51,7 @@ def save_config(config):
 class ConfigWizard:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("乡知·乡村振兴AI助手 - 配置向导")
+        self.root.title("稻也·乡村振兴AI助手 - 配置向导")
         self.root.geometry("680x780")
         self.root.resizable(False, False)
         self.root.update_idletasks()
@@ -64,7 +64,7 @@ class ConfigWizard:
     def create_widgets(self):
         tf = tk.Frame(self.root, bg="#2E75B6", height=70)
         tf.pack(fill="x"); tf.pack_propagate(False)
-        tk.Label(tf, text="乡知·乡村振兴AI助手", font=("Microsoft YaHei",18,"bold"), fg="white", bg="#2E75B6").pack(pady=(12,2))
+        tk.Label(tf, text="稻也·乡村振兴AI助手", font=("Microsoft YaHei",18,"bold"), fg="white", bg="#2E75B6").pack(pady=(12,2))
         tk.Label(tf, text="配置向导  v2.3.6-part1", font=("Microsoft YaHei",10), fg="#B0D4F1", bg="#2E75B6").pack()
 
         mf = tk.Frame(self.root, padx=30, pady=15); mf.pack(fill="both", expand=True)

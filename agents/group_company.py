@@ -1,5 +1,5 @@
 """
-group_company.py - 乡知(7子公司×全链条×24/7自动化)
+group_company.py - 稻也(7子公司×全链条×24/7自动化)
 路径：agents/group_company.py
 版本：v2.3.7
 
@@ -16,7 +16,7 @@ from datetime import datetime
 # ================================================================
 GROUP_STRUCTURE = {
     "parent": {
-        "name": "乡知",
+        "name": "稻也",
         "ceo": "ceo_strategist",
         "departments": ["战略中心", "财务中心", "技术中心"],
     },
@@ -158,7 +158,7 @@ class SubsidiaryPipeline(object):
 
 
 class GroupCompany(object):
-    """乡知。管理7个子公司+母公司,24/7自动化运转。"""
+    """稻也。管理7个子公司+母公司,24/7自动化运转。"""
 
     def __init__(self, db=None, client=None):
         self.db = db
@@ -196,7 +196,7 @@ class GroupCompany(object):
             total_kps = 0; daily_kps = 0; avg_depth = 0
 
         return {
-            "group_name": "乡知",
+            "group_name": "稻也",
             "subsidiaries": len(self.subsidiaries),
             "total_kps": total_kps,
             "daily_new_kps": daily_kps,
@@ -210,7 +210,7 @@ class GroupCompany(object):
         """CEO季度审查:评估各子公司绩效,决定是否调整架构"""
         status = self.get_group_status()
 
-        system_prompt = f"""你是乡知的CEO。集团有7个子公司,当前状态:
+        system_prompt = f"""你是稻也的CEO。集团有7个子公司,当前状态:
 总KPs: {status['total_kps']}, 日均新增: {status['daily_new_kps']}, 平均摘录深度: {status['avg_excerpt_depth']}字
 
 7个子公司:
