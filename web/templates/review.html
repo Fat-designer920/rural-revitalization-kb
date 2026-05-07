@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>乡村振兴知识库 v2.3.7</title>
+<link rel="stylesheet" href="/static/css/design-tokens.css">
+<link rel="stylesheet" href="/static/css/typography-chinese.css">
+<link rel="stylesheet" href="/static/css/components.css">
 <style>
 :root {
   --primary: #0A9B80;
@@ -5199,6 +5202,9 @@ function cancelCeoInstr(){
 
 function toggleProductMenu(){var d=document.getElementById("productDropdown");d.style.display=d.style.display==="none"?"block":"none"}
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init();startNpuPolling()})}else{init();startNpuPolling()}
+</script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/js/sw.js')}
 </script>
 </body>
 </html>

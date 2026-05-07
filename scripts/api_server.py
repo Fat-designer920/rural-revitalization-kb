@@ -614,14 +614,60 @@ def premium_viewer_page():
 
 # === 计划上线产品页(占位) ===
 def _placeholder_page(title, desc):
-    return Response(f"""<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">
+    return Response(f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>{title} — 乡村振兴知识工厂</title>
-<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">
-<style>body{{font-family:-apple-system,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;
-background:#F5F2ED;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
-.box{{background:#fff;border-radius:16px;padding:60px 40px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.06);max-width:400px}}
-h1{{color:#1a5632;font-size:24px}}p{{color:#666;line-height:1.8}}</style></head>
-<body><div class=\"box\"><h1>{title}</h1><p>{desc}</p></div></body></html>""", mimetype="text/html; charset=utf-8")
+<link rel="stylesheet" href="/static/css/design-tokens.css">
+<link rel="stylesheet" href="/static/css/typography-chinese.css">
+<link rel="stylesheet" href="/static/css/components.css">
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:var(--font-sans);background:var(--brand-warm);color:var(--ink-900);line-height:var(--leading-normal)}}
+  .ph-header{{padding:var(--space-lg) 0;text-align:center;border-bottom:.5px solid var(--border)}}
+  .ph-header a{{color:var(--brand-green);font-weight:var(--font-semibold);font-size:15px;text-decoration:none}}
+  .ph-hero{{padding:var(--space-3xl) 0 var(--space-2xl);text-align:center}}
+  .ph-hero h1{{font-size:var(--text-3xl);font-weight:800;color:var(--brand-green);letter-spacing:-0.02em;margin-bottom:var(--space-md)}}
+  .ph-hero .sub{{font-size:var(--text-lg);color:var(--ink-500);max-width:480px;margin:0 auto;line-height:1.8}}
+  .ph-card{{background:var(--white);border-radius:var(--radius-lg);padding:var(--space-xl);box-shadow:var(--shadow-sm);margin-bottom:var(--space-xl)}}
+  .ph-card h2{{font-size:var(--text-xl);color:var(--brand-green);margin-bottom:var(--space-md)}}
+  .ph-features{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-lg);margin:var(--space-xl) 0}}
+  .ph-feat-item{{text-align:center;padding:var(--space-lg)}}
+  .ph-feat-item .icon{{font-size:2rem;margin-bottom:var(--space-sm);color:var(--brand-gold)}}
+  .ph-feat-item h3{{font-size:var(--text-base);font-weight:var(--font-semibold);color:var(--ink-900);margin-bottom:var(--space-xs)}}
+  .ph-feat-item p{{font-size:var(--text-sm);color:var(--ink-500);line-height:1.6}}
+  .ph-cta{{background:var(--brand-green-light);border-radius:var(--radius-lg);padding:var(--space-xl);text-align:center;margin:var(--space-xl) 0}}
+  .ph-cta h3{{font-size:var(--text-lg);color:var(--brand-green);margin-bottom:var(--space-sm)}}
+  .ph-cta p{{color:var(--ink-500);font-size:var(--text-sm);margin-bottom:var(--space-md)}}
+  .ph-footer{{text-align:center;padding:var(--space-lg) 0;color:var(--ink-300);font-size:var(--text-xs)}}
+  @media(max-width:640px){{.ph-hero h1{{font-size:var(--text-2xl)}}}}
+</style>
+</head>
+<body>
+<header class="ph-header">
+  <a href="/">乡村振兴知识工厂</a>
+</header>
+<main class="container">
+  <section class="ph-hero">
+    <h1>{title}</h1>
+    <p class="sub">{desc}</p>
+  </section>
+  <div class="ph-cta">
+    <h3>即将上线</h3>
+    <p>本产品正在打磨中，老唐团队在确保每一个细节都对你有用后再发布。</p>
+    <a href="/" class="btn btn-primary">返回首页</a>
+  </div>
+</main>
+<footer class="ph-footer">
+  <p>四川乡村振兴操盘手的第一知识工具 &copy; 2026</p>
+</footer>
+<script>
+if('serviceWorker' in navigator){{navigator.serviceWorker.register('/static/js/sw.js')}}
+</script>
+</body>
+</html>""", mimetype="text/html; charset=utf-8")
 
 @app.route("/course")
 def course_page():
@@ -641,14 +687,16 @@ def templates_page():
 
 @app.route("/static/<path:filename>")
 def static_files(filename):
-    """静态资源: CSS/JS/图片"""
-    p = PROJECT_ROOT / "web" / "templates" / filename
-    if p.exists() and p.suffix in (".css", ".js", ".png", ".jpg", ".svg", ".ico"):
-        mime_map = {".css": "text/css", ".js": "application/javascript",
-                    ".png": "image/png", ".jpg": "image/jpeg",
-                    ".svg": "image/svg+xml", ".ico": "image/x-icon"}
-        with open(p, "rb") as f:
-            return Response(f.read(), mimetype=mime_map.get(p.suffix, "application/octet-stream"))
+    """静态资源: CSS/JS/图片 (优先 templates/, 回退 static/)"""
+    for base in (PROJECT_ROOT / "web" / "templates", PROJECT_ROOT / "static"):
+        p = base / filename
+        if p.exists() and p.suffix in (".css", ".js", ".png", ".jpg", ".svg", ".ico", ".json"):
+            mime_map = {".css": "text/css", ".js": "application/javascript",
+                        ".png": "image/png", ".jpg": "image/jpeg",
+                        ".svg": "image/svg+xml", ".ico": "image/x-icon",
+                        ".json": "application/json"}
+            with open(p, "rb") as f:
+                return Response(f.read(), mimetype=mime_map.get(p.suffix, "application/octet-stream"))
     return "Not Found", 404
 
 # 知识点 CRUD

@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>全域土地综合整治项目策划与融资实战 — 四川乡村振兴操盘手训练营</title>
 <meta name="description" content="2天集训+3个月线上支持。把老唐20年全域土地综合整治操盘经验变成你自己的项目策划和融资能力。限30人，¥3,980/人。">
-<link rel="stylesheet" href="/static/design_system.css">
+<link rel="stylesheet" href="/static/css/design-tokens.css">
+<link rel="stylesheet" href="/static/css/typography-chinese.css">
+<link rel="stylesheet" href="/static/css/components.css">
 <style>
 /* ===== Hero ===== */
 .hero-section {
@@ -840,6 +842,9 @@ function switchAgenda(day) {
   document.querySelector('[onclick="switchAgenda(\'' + day + '\')"]').classList.add('active');
   document.getElementById('panel-' + day).classList.add('active');
 }
+</script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/js/sw.js')}
 </script>
 </body>
 </html>
