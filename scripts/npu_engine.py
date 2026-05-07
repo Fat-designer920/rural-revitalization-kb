@@ -1,9 +1,10 @@
 """
-npu_engine.py - NPU加速引擎(TF-IDF语义搜索+ONNX DirectML+批量质量分类)
+npu_engine.py - NPU加速引擎(TF-IDF语义搜索+BM25混合检索+ONNX DirectML+批量质量分类)
 路径：scripts/npu_engine.py
-版本：v2.3.7
+版本：v2.3.7-part5
 
 三路径: sklearn TfidfVectorizer(主) / 纯numpy TF-IDF(备选) / ONNX DirectML(可选加速)
+A1升级: hybrid_search(TF-IDF dense + BM25 re-rank) + get_embedding_dim + is_hybrid_ready
 """
 import os
 import re
@@ -374,8 +375,11 @@ class NPUEngine(object):
             "vector_dim": int(self._corpus_matrix.shape[1])
                           if self._corpus_matrix is not None else 0,
             "engine_mode": self._engine_mode(),
-            "capabilities": ["semantic_search", "quality_classify_batch",
+            "capabilities": ["semantic_search", "hybrid_search",
+                             "quality_classify_batch",
                              "build_index", "benchmark"],
+            "hybrid_ready": self.is_hybrid_ready(),
+            "embedding_dim": self.get_embedding_dim(),
         }
 
     def benchmark(self, n_items=1000, n_queries=10):

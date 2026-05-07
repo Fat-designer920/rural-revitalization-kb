@@ -1,7 +1,8 @@
 """
 qa_assistant.py - 问答助手模块
 路径：scripts/qa_assistant.py
-版本：v2.3.6-part1
+版本：v2.3.7-part5
+A2升级: NPU混合检索 + policy_basis来源追溯 + 低分I don't know + auto_score自动反馈
 """
 import json
 import re
@@ -20,6 +21,11 @@ except ImportError:
         QA_ANSWER_GEN_PROMPT,
         QA_FOLLOWUP_GEN_PROMPT,
     )
+
+try:
+    from scripts.npu_engine import NPUEngine
+except ImportError:
+    NPUEngine = None  # type: ignore
 
 
 QA_RETRIEVAL_LIMIT = 30          # 关键词召回上限(db 层 LIMIT)
@@ -179,11 +185,26 @@ class QaAssistantEngine:
         if self._is_canceled():
             return self._canceled_result(start_ts, "retrieve 前取消")
 
-        candidates = self._retrieve_and_score(keywords)
+        npu_used = False
+        candidates = []
+        if NPUEngine is not None:
+            candidates = self._retrieve_via_npu(query)
+            if candidates:
+                npu_used = True
+        if not candidates:
+            candidates = self._retrieve_and_score(keywords)
         if not candidates:
             # 0 召回 → 直接走 L3
             return self._handle_zero_recall(query, mode, is_test_query,
                                               start_ts, friend_tag=friend_tag)
+
+        # NPU 低分检测: top-3 全部 < 0.10 → I don't know
+        if npu_used:
+            top3_scores = [kp.get('_npu_score', 0) for kp in candidates[:3]]
+            if top3_scores and all(s < 0.10 for s in top3_scores):
+                return self._handle_low_confidence(
+                    query, mode, is_test_query, start_ts, candidates,
+                    friend_tag=friend_tag)
 
         # ---- Stage 3: rerank ----
         self._emit_progress("rerank", 2, "重排序中(候选 %d 条)" % len(candidates))
@@ -213,6 +234,9 @@ class QaAssistantEngine:
                         answer['followup_questions'] = fups2
                 except Exception:
                     pass
+
+        # 注入 policy_basis(来源追溯)
+        self._add_policy_basis(answer, top_n)
 
         # ---- Stage 5: record ----
         self._emit_progress("record", 4, "写入历史 + 使用埋点")
@@ -269,6 +293,9 @@ class QaAssistantEngine:
             "ai_calls": self._ai_calls,
             "cost_cny": round(self._cost, 4),
         })
+
+        # 自动打分(accuracy/completeness/actionability → qa_feedback)
+        self._auto_score_answer(answer, query, history_id, source)
 
         self._emit_progress("record", 5, "完成")
 
@@ -623,6 +650,268 @@ class QaAssistantEngine:
             "cost_estimate_cny": round(self._cost, 4),
             "error": None,
             "model_used": None,  # 规则兜底不调 AI
+        }
+
+    # ================================================================
+    # NPU 混合检索(v2.3.7 A1)
+    # ================================================================
+    def _retrieve_via_npu(self, query: str, top_k: int = 50) -> List[Dict]:
+        """NPU hybrid search: TF-IDF dense + BM25 re-rank.
+
+        检索池同 get_qa_retrieval_candidates: premium + quotable + confirmed.
+        返回 candidates 列表, 含 _npu_score 字段; 失败返回 [].
+        """
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("""
+                SELECT kp.id AS kp_id, kp.title, kp.original_excerpt
+                FROM knowledge_points kp
+                WHERE kp.review_status='confirmed'
+                  AND (kp.premium_client=1 OR kp.premium_rfp=1
+                       OR kp.content_readiness IN ('quotable','premium'))
+            """)
+            pool_rows = [dict(r) for r in c.fetchall()]
+            conn.close()
+            if not pool_rows:
+                return []
+
+            kp_texts = [
+                (str(r.get('title') or '') + ' '
+                 + str(r.get('original_excerpt') or ''))[:2000]
+                for r in pool_rows
+            ]
+            kp_id_map = {i: r['kp_id'] for i, r in enumerate(pool_rows)}
+
+            engine = NPUEngine()
+            engine.build_index(kp_texts)
+            results = engine.hybrid_search(
+                query, top_k=min(top_k, len(kp_texts)))
+            if not results:
+                return []
+
+            top_ids_with_scores = {}
+            for idx, score in results:
+                kid = kp_id_map.get(idx)
+                if kid is not None:
+                    top_ids_with_scores[kid] = score
+            if not top_ids_with_scores:
+                return []
+
+            id_list = list(top_ids_with_scores.keys())
+            qmarks = ','.join(['?'] * len(id_list))
+            conn2 = self.db.get_connection()
+            c2 = conn2.cursor()
+            c2.execute(f"""
+                SELECT kp.id AS kp_id,
+                       kp.title,
+                       kp.original_excerpt,
+                       kp.ai_extracted_content,
+                       kp.final_category_id,
+                       kp.final_category_tags,
+                       kp.final_keywords,
+                       kp.practical_insights,
+                       kp.qa_score,
+                       kp.source_authority,
+                       kp.content_readiness,
+                       kp.access_level,
+                       kp.premium_client,
+                       kp.premium_rfp,
+                       kp.premium_tier,
+                       kp.premium_freshness_status,
+                       kp.used_count,
+                       kp.last_used_at,
+                       cat.level1_name AS category,
+                       cat.level2_name AS subcategory,
+                       sf.original_filename,
+                       sf.renamed_filename,
+                       (SELECT COUNT(*) FROM annotations a
+                         WHERE a.knowledge_point_id=kp.id) AS annotation_count
+                FROM knowledge_points kp
+                LEFT JOIN source_files sf ON kp.source_file_id=sf.id
+                LEFT JOIN categories cat ON cat.id=kp.final_category_id
+                WHERE kp.id IN ({qmarks})
+            """, id_list)
+            rows = [dict(r) for r in c2.fetchall()]
+            conn2.close()
+
+            for r in rows:
+                for field in ('final_category_tags', 'final_keywords',
+                              'practical_insights'):
+                    val = r.get(field)
+                    if isinstance(val, str):
+                        try:
+                            r[field] = json.loads(val)
+                        except (json.JSONDecodeError, ValueError):
+                            r[field] = []
+                ai = r.get('ai_extracted_content')
+                if isinstance(ai, str):
+                    try:
+                        r['ai_extracted_content'] = json.loads(ai)
+                    except (json.JSONDecodeError, ValueError):
+                        r['ai_extracted_content'] = {}
+                r['has_annotation'] = (r.get('annotation_count') or 0) > 0
+                r['_npu_score'] = top_ids_with_scores.get(r['kp_id'], 0.0)
+
+            # composite_score(同 _retrieve_and_score 逻辑, 加 NPU 加权)
+            for kp in rows:
+                score = 0.0
+                if ((kp.get('premium_client') or 0) == 1
+                        or (kp.get('premium_rfp') or 0) == 1):
+                    score += WEIGHT_PREMIUM
+                if kp.get('has_annotation'):
+                    score += WEIGHT_ANNOTATION
+                qa = kp.get('qa_score')
+                try:
+                    qa_v = float(qa) if qa is not None else 0.0
+                except (ValueError, TypeError):
+                    qa_v = 0.0
+                score += qa_v * WEIGHT_QA_FACTOR
+                auth = kp.get('source_authority') or ''
+                score += _AUTHORITY_BOOST.get(auth, 0)
+                score += (kp.get('_npu_score') or 0.0) * 30
+                kp['_composite_score'] = score
+
+            rows.sort(key=lambda x: x.get('_composite_score', 0),
+                      reverse=True)
+            return rows
+
+        except Exception as e:
+            self._safe_log_event("qa_npu_retrieval_failed", "warning",
+                                  {"err": str(e)[:300]})
+            return []
+
+    # ================================================================
+    # policy_basis 来源追溯 / 自动打分 / 低置信度兜底
+    # ================================================================
+    def _add_policy_basis(self, answer: Dict, top_n: List[Dict]) -> None:
+        """注入 policy_basis 字段: 每条检索 KP 的 id/title/excerpt."""
+        if not answer or not isinstance(answer, dict):
+            return
+        basis = []
+        for kp in (top_n or [])[:5]:
+            excerpt = (kp.get('original_excerpt') or '')[:200]
+            basis.append({
+                "kp_id": kp.get('kp_id'),
+                "title": (kp.get('title') or '')[:80],
+                "excerpt": excerpt,
+            })
+        answer['policy_basis'] = basis
+
+    def _auto_score_answer(self, answer: Dict, query: str,
+                           history_id: int, source: str) -> None:
+        """启发式自动打分(accuracy/completeness/actionability), 写入 qa_feedback."""
+        if not history_id or not answer or not isinstance(answer, dict):
+            return
+        try:
+            direct = str(answer.get('direct_answer') or '')
+            ev_ids = answer.get('evidence_kp_ids') or []
+            fups = answer.get('followup_questions') or []
+            gap = str(answer.get('coverage_gap') or '')
+
+            accuracy = 3
+            if ev_ids:
+                accuracy = min(5, 3 + min(len(ev_ids), 2))
+            if source == 'rule_fallback':
+                accuracy = max(1, accuracy - 2)
+
+            completeness = 3
+            if direct and len(direct) >= 50:
+                completeness += 1
+            if fups:
+                completeness += 1
+            if '无法充分覆盖' in gap:
+                completeness = max(2, completeness - 1)
+            completeness = min(5, max(1, completeness))
+
+            actionability = 3
+            if direct:
+                if re.search(r'\d+', direct):
+                    actionability += 1
+                if re.search(r'[一-鿿]+[市县乡村镇]', direct):
+                    actionability += 1
+                if len(direct) >= 100:
+                    actionability = min(5, actionability + 1)
+
+            score_data = {
+                "accuracy": accuracy,
+                "completeness": completeness,
+                "actionability": actionability,
+                "overall": round((accuracy + completeness + actionability) / 3, 1),
+                "auto_generated": True,
+            }
+            comment = json.dumps(score_data, ensure_ascii=False)
+            self.db.save_qa_feedback(history_id, 'comment', comment)
+            self._safe_log_event("qa_auto_scored", "info", {
+                "history_id": history_id,
+                "scores": score_data,
+            })
+        except Exception as e:
+            self._safe_log_event("qa_auto_score_failed", "warning",
+                                  {"err": str(e)[:300]})
+
+    def _handle_low_confidence(self, query: str, mode: str,
+                                is_test_query: int, start_ts: float,
+                                candidates: List[Dict],
+                                friend_tag: Optional[str] = None) -> Dict:
+        """NPU top-3 全 < 0.10 时的特殊 L3 兜底: 诚实告知覆盖不足."""
+        self._emit_progress("generate", 3, "检索置信度过低, 走规则兜底")
+        top3 = candidates[:3]
+        ev_ids = []
+        policy_items = []
+        for kp in top3:
+            kid = kp.get('kp_id')
+            if kid is not None:
+                ev_ids.append(int(kid))
+            policy_items.append({
+                "kp_id": kid,
+                "title": (kp.get('title') or '无标题')[:80],
+                "excerpt": (kp.get('original_excerpt') or '')[:200],
+            })
+        ans = {
+            "direct_answer":
+                "抱歉，当前知识库中暂无与您问题高度匹配的内容。"
+                "以下列出库内相对最相关的 %d 条知识点供参考，建议老唐优先补充该主题的精品级知识点。" % len(policy_items),
+            "evidence_kp_ids": ev_ids,
+            "followup_questions": [],
+            "coverage_gap":
+                "此问题当前知识库无法充分覆盖，已记录并将优先补充。"
+                "建议补充该主题相关的政策原文 / 实操案例 / 投标素材。",
+            "policy_basis": policy_items,
+            "confidence": "uncertain",
+        }
+        latency_ms = int((time.time() - start_ts) * 1000)
+
+        history_id = 0
+        try:
+            history_id = self.db.save_qa_history(
+                query=query, answer_json=ans, retrieved_kp_ids=ev_ids,
+                mode=mode, source='rule_fallback',
+                latency_ms=latency_ms, is_test_query=is_test_query,
+                friend_tag=friend_tag,
+            )
+        except Exception as e:
+            self._safe_log_event("qa_save_history_failed", "error",
+                                  {"err": str(e)[:300]})
+
+        self._safe_log_event("qa_low_confidence_npu", "warning", {
+            "query": query[:200], "mode": mode,
+            "is_test_query": int(is_test_query),
+            "friend_tag": friend_tag,
+            "history_id": history_id,
+            "top3_scores": [kp.get('_npu_score', 0) for kp in top3],
+        })
+
+        self._auto_score_answer(ans, query, history_id, 'rule_fallback')
+        self._emit_progress("record", 5, "完成(低置信度 → L3)")
+
+        return {
+            "ok": True, "history_id": history_id, "answer": ans,
+            "source": "rule_fallback", "latency_ms": latency_ms,
+            "retrieved_kp_ids": ev_ids, "canceled": False,
+            "cost_estimate_cny": round(self._cost, 4),
+            "error": None,
+            "model_used": None,
         }
 
     # ================================================================

@@ -501,6 +501,13 @@ for _p in [PROJECT_ROOT/"web"/"templates"/"qa_public.html", PROJECT_ROOT/"web"/"
     if _p.exists():
         with open(_p,"r",encoding="utf-8") as _f: QA_PUBLIC_HTML = _f.read()
         print(f"  [OK] qa_public.html: {_p}"); break
+# v2.3.7-part5: 产品着陆页(LANDING_HTML)
+LANDING_HTML = None
+for _p in [PROJECT_ROOT/"web"/"templates"/"landing.html", PROJECT_ROOT/"web"/"landing.html", PROJECT_ROOT/"landing.html"]:
+    if _p.exists():
+        with open(_p,"r",encoding="utf-8") as _f: LANDING_HTML = _f.read()
+        print(f"  [OK] landing.html: {_p}"); break
+
 if QA_PUBLIC_HTML is None:
     # part1a 占位:友好提示朋友 + 引导自用 Tab 3
     QA_PUBLIC_HTML = """<!DOCTYPE html>
@@ -572,8 +579,9 @@ def _404(e): return jsonify({"error":"not found:"+request.path}),404
 
 @app.route("/")
 def index():
+    if LANDING_HTML: return Response(LANDING_HTML, mimetype="text/html; charset=utf-8")
     if REVIEW_HTML: return Response(REVIEW_HTML, mimetype="text/html; charset=utf-8")
-    return "<h1>review.html not found</h1>",404
+    return "<h1>landing.html not found</h1>",404
 
 @app.route("/qa")
 def qa_public_page():
