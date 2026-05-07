@@ -1,13 +1,12 @@
 """
 brand_redlines.py - 品牌红线清单(所有对外内容必须通过的合规检查)
 路径：agents/brand_redlines.py
-版本：v2.3.7-part6
-
-品牌把关人的执法依据。所有对外发布内容(文章/视频/课程/图文)必须通过此清单。
-一票否决制 — 任何一条红线触发=内容不得发布。
+版本：v2.3.7-part7
+品牌把关人执法依据, 含DFA关键词+语义级安全检查.
 """
 import json
 import os
+import re
 
 
 # 红线清单(五类, 18条)
@@ -42,6 +41,13 @@ REDLINES = {
     ],
     "敏感词检测": [
         {"id": "S1", "rule": "敏感词检测 — 自动DFA匹配,一票否决(>10命中或政治/色情/暴力类命中)", "reason": "内容安全红线,自动扫描,零容忍"},
+    ],
+    "语义安全红线": [
+        {"id": "R1", "rule": "不得使用'保证100%获批''包过''绝对没问题'等夸大承诺表述", "reason": "乡村振兴项目无100%获批,夸大承诺=法律风险+信誉崩塌"},
+        {"id": "R2", "rule": "涉及医疗/食品安全的内容必须标注'仅供参考,具体请咨询专业机构'", "reason": "无资质提供医疗/食安建议=法律红线"},
+        {"id": "R3", "rule": "涉及投资/融资/理财建议必须标注'不构成投资建议,投资有风险'", "reason": "无牌照提供投资建议=被认定为非法金融活动"},
+        {"id": "R4", "rule": "不得点名贬低/攻击特定政府部门、官员或审批流程", "reason": "合规风险,可能被认定为诽谤或寻衅滋事"},
+        {"id": "R5", "rule": "不得包含未经授权的个人隐私数据(手机号、身份证号、银行卡号、具体住址)", "reason": "隐私泄露=严重法律后果+品牌自杀"},
     ],
 }
 
@@ -200,10 +206,17 @@ class BrandRedlineChecker(object):
                 },
             })
 
-        # B. 跑原有18条规则关键词检查
+        # B. 语义级安全检查(R1-R5): 超越关键词的意图分析
+        semantic_result = self.semantic_check(content_text)
+        if semantic_result.get("violations"):
+            violations.extend(semantic_result["violations"])
+        if semantic_result.get("warnings"):
+            warnings.extend(semantic_result["warnings"])
+
+        # C. 跑原有18条+新增5条规则关键词检查
         for category, rules in REDLINES.items():
-            if category == "敏感词检测":
-                continue  # 已由DFA处理
+            if category in ("敏感词检测", "语义安全红线"):
+                continue  # S1已由DFA处理, R1-R5已由semantic_check处理
             for rule in rules:
                 triggered = self._check_rule(content_text, rule)
                 if triggered:
@@ -300,12 +313,179 @@ class BrandRedlineChecker(object):
             "B1": [],
             "B2": ["最好", "第一", "唯一", "100%"],
             "B3": [],
+            # 语义安全红线关键词触发
+            "R1": ["保证100%", "包过", "绝对没问题", "肯定能批", "一定通过",
+                   "100%获批", "保证获批", "必定成功", "铁定能行"],
+            "R2": ["治疗", "治愈", "特效药", "偏方治病", "药到病除",
+                   "食品安全不达标", "吃了没事", "不用检测"],
+            "R3": ["稳赚", "保本", "高收益", "无风险投资", "躺着赚钱",
+                   "内部消息", "必涨", "荐股", "跟投"],
+            "R4": [],   # 部门点名由semantic_check处理
+            "R5": [],   # 隐私数据由semantic_check处理
         }
 
         for keyword in triggers.get(rule_id, []):
             if keyword in content_lower:
                 return True
         return False
+
+    def semantic_check(self, text):
+        """语义级安全检查: 超越关键词, 检测有害INTENT。
+
+        五维度模式分析:
+          R4: 部门机构点名 — 识别涉及"XX局/XX厅/XX部"的批评性表述
+          R5: 隐私数据泄露 — 识别手机号/身份证/银行卡/地址等PII模式
+          R1: 夸大承诺 — 识别"100%保证/绝对/肯定"等确定性承诺上下文
+          R2: 医疗食安建议 — 识别医疗/食品安全诊断性表述
+          R3: 投资建议 — 识别推荐/建议具体金融产品的表述
+
+        返回: {passed: bool, violations: [], warnings: []}
+        """
+        violations = []
+        warnings = []
+
+        # --- R4: 部门点名检测 ---
+        # 匹配中国政府机构常见命名模式
+        gov_patterns = [
+            r'(省|市|县|区|镇|乡)(.{1,6})(局|厅|部|委|办|处)',
+            r'(自然资源局|农业农村局|发改委|财政局|住建局|生态环境局'
+            r'|水利局|交通局|林业局|市场监管局)',
+        ]
+        gov_mentions = []
+        for pat in gov_patterns:
+            gov_mentions.extend(re.findall(pat, text))
+        if gov_mentions:
+            # 检查附近是否有批评/贬低性词汇
+            neg_window = 50
+            for m in re.finditer(
+                r'(腐败|不作为|乱作为|吃拿卡要|刁难|拖延|推诿'
+                r'|效率低|态度差|官僚|黑幕|暗箱|关系户|走后门'
+                r'|贪污|受贿|徇私|滥用|违规审批|故意卡)',
+                text,
+            ):
+                start = max(0, m.start() - neg_window)
+                end = min(len(text), m.end() + neg_window)
+                near_context = text[start:end]
+                for pat in gov_patterns:
+                    if re.search(pat, near_context):
+                        violations.append({
+                            "category": "语义安全红线",
+                            "rule_id": "R4",
+                            "rule": self.redlines["语义安全红线"][3]["rule"],
+                            "reason": self.redlines["语义安全红线"][3]["reason"],
+                            "severity": "BLOCK",
+                            "detail": {
+                                "matched_term": m.group(0),
+                                "context": near_context[:100],
+                            },
+                        })
+                        break
+
+        # --- R5: 隐私数据(PII)检测 ---
+        pii_patterns = {
+            "phone": (r'1[3-9]\d{9}', "手机号"),
+            "id_card": (r'\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])'
+                        r'(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]', "身份证号"),
+            "bank_card": (r'(?:62\d{14,17}|60\d{14,17}|'
+                          r'[45]\d{15,18})', "银行卡号"),
+        }
+        for key, (pat, label) in pii_patterns.items():
+            pii_matches = [m.group(0) for m in re.finditer(pat, text)]
+            if pii_matches:
+                violations.append({
+                    "category": "语义安全红线",
+                    "rule_id": "R5",
+                    "rule": self.redlines["语义安全红线"][4]["rule"],
+                    "reason": self.redlines["语义安全红线"][4]["reason"],
+                    "severity": "BLOCK",
+                    "detail": {
+                        "pii_type": label,
+                        "count": len(pii_matches),
+                        "samples": [m[:3] + "****" + m[-2:]
+                                    for m in pii_matches[:3]],
+                    },
+                })
+
+        # --- R1: 夸大承诺语义检测 ---
+        # 检测"保证/绝对/100%" + 审批/通过/成功 等结果词
+        r1_pairs = re.findall(
+            r'(保证|绝对|100%|肯定|必定|铁定).{0,20}'
+            r'(获批|通过|成功|能行|没问题|能批)',
+            text,
+        )
+        if r1_pairs:
+            violations.append({
+                "category": "语义安全红线",
+                "rule_id": "R1",
+                "rule": self.redlines["语义安全红线"][0]["rule"],
+                "reason": self.redlines["语义安全红线"][0]["reason"],
+                "severity": "BLOCK",
+                "detail": {
+                    "pattern_type": "guarantee_result_pair",
+                    "matches": [m[0] + "..." + m[1] for m in r1_pairs[:3]],
+                },
+            })
+
+        # --- R2: 医疗/食安声明检测 ---
+        r2_matches = re.findall(
+            r'(治好|治愈|治疗|诊断|这药|这个偏方|这个方子).{0,30}'
+            r'(保证|肯定|一定|绝对|没问题|放心)',
+            text,
+        )
+        if r2_matches:
+            # 检查是否有免责声明
+            has_disclaimer = bool(re.search(
+                r'(仅供参考|请咨询|请遵医嘱|请咨询医生'
+                r'|具体请咨询|不构成医疗建议)',
+                text,
+            ))
+            if not has_disclaimer:
+                violations.append({
+                    "category": "语义安全红线",
+                    "rule_id": "R2",
+                    "rule": self.redlines["语义安全红线"][1]["rule"],
+                    "reason": self.redlines["语义安全红线"][1]["reason"],
+                    "severity": "BLOCK",
+                    "detail": {
+                        "has_disclaimer": False,
+                        "samples": list(r2_matches[:3]),
+                    },
+                })
+
+        # --- R3: 投资建议检测 ---
+        r3_phrases = re.findall(
+            r'(推荐.{0,8}(股票|基金|投资|理财|币|项目))'
+            r'|(这个(项目|投资|股票).{0,8}(肯定|绝对|一定|稳))'
+            r'|((买入|卖出|持有|满仓|空仓|抄底|逃顶))',
+            text,
+        )
+        # 展平元组
+        r3_flat = [m for t in r3_phrases for m in t if m]
+        if r3_flat:
+            has_fin_disclaimer = bool(re.search(
+                r'(不构成投资建议|投资有风险|理财有风险'
+                r'|入市需谨慎|仅供参考.{0,5}投资)',
+                text,
+            ))
+            if not has_fin_disclaimer:
+                violations.append({
+                    "category": "语义安全红线",
+                    "rule_id": "R3",
+                    "rule": self.redlines["语义安全红线"][2]["rule"],
+                    "reason": self.redlines["语义安全红线"][2]["reason"],
+                    "severity": "BLOCK",
+                    "detail": {
+                        "has_disclaimer": False,
+                        "samples": r3_flat[:3],
+                    },
+                })
+
+        passed = len(violations) == 0
+        return {
+            "passed": passed,
+            "violations": violations,
+            "warnings": warnings,
+        }
 
     def get_redline_document(self):
         """获取完整的红线文档(供品牌把关人使用)"""
