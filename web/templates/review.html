@@ -9,13 +9,13 @@
 <link rel="stylesheet" href="/static/css/components.css">
 <style>
 :root {
-  --primary: #0A9B80;
-  --primary-light: #E8F5F2;
-  --primary-hover: #088F75;
+  --primary: var(--brand-green);
+  --primary-light: var(--brand-green-light);
+  --primary-hover: var(--brand-green-hover);
   --primary-soft: #B2E0D6;
   --bg: #F5F5F7;
-  --card: #FFFFFF;
-  --sidebar-bg: #FFFFFF;
+  --card: var(--white);
+  --sidebar-bg: var(--white);
   --border: #E5E5EA;
   --border-light: #F2F2F7;
   --text: #1D1D1F;
@@ -26,22 +26,18 @@
   --warning: #FF9500;
   --warning-bg: #FFF4E6;
   --danger: #FF3B30;
-  --danger-bg: #FFEFEE;
+  --danger-bg: var(--red-light);
   --info: #007AFF;
   --info-bg: #EBF2FC;
-  --tag-A-bg:#E8F5F2; --tag-A-text:#0A9B80; --tag-A-border:#B2E0D6;
+  --tag-A-bg: var(--brand-green-light); --tag-A-text: var(--brand-green); --tag-A-border:#B2E0D6;
   --tag-B-bg:#EBF2FC; --tag-B-text:#2565C7; --tag-B-border:#B3CDEE;
   --tag-C-bg:#FFF4E6; --tag-C-text:#C97A2C; --tag-C-border:#FDDCAB;
   --tag-D-bg:#F3EEFA; --tag-D-text:#7B42C6; --tag-D-border:#D4BEF0;
   --tag-E-bg:#FDE8EC; --tag-E-text:#C93D60; --tag-E-border:#F5B5C5;
   --tag-F-bg:#F2F2F7; --tag-F-text:#4A4A5A; --tag-F-border:#D1D1D6;
   --kw-bg:#F5F5F7; --kw-text:#6E6E73; --kw-border:#E5E5EA;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.04);
   --shadow: 0 2px 8px rgba(0,0,0,.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,.1);
   --radius: 10px;
-  --radius-lg: 14px;
   --radius-xl: 20px;
   --transition: all .25s cubic-bezier(.4,0,.2,1);
 }
@@ -177,7 +173,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .kp-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
 .kp-cb{width:16px;height:16px;cursor:pointer;margin-top:3px;accent-color:var(--primary)}
 .kp-seq{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;margin-top:1px}
-.kp-seq.type-policy{background:#0A9B80}
+.kp-seq.type-policy{background:var(--brand-green)}
 .kp-seq.type-case{background:#34C759}
 .kp-seq.type-experience{background:#FF9500}
 .kp-seq.type-tool{background:#AF52DE}
@@ -600,7 +596,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .monetize-row{display:flex;gap:10px;align-items:center;padding:8px 0;font-size:12px}
 .monetize-row .mr-name{min-width:80px;font-weight:600;color:var(--text-secondary)}
 .monetize-row .mr-bar-wrap{flex:1;background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
-.monetize-row .mr-bar{height:100%;background:linear-gradient(90deg,#0A9B80,#34C759);border-radius:6px;transition:width .3s ease}
+.monetize-row .mr-bar{height:100%;background:linear-gradient(90deg,var(--brand-green),#34C759);border-radius:6px;transition:width .3s ease}
 .monetize-row .mr-score{min-width:36px;text-align:right;font-weight:700;color:var(--text)}
 .monetize-row .mr-gap{flex-basis:100%;margin-left:90px;margin-top:2px;font-size:11px;color:var(--text-muted)}
 /* 喂料方向建议 */
@@ -705,7 +701,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 
 /* ===== v2.3.1 F2/F6 精品候选模块样式 ===== */
 .prem-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px}
-.prem-badge-client{background:#E8F5F2;color:#0A9B80;border:1px solid #0A9B80}
+.prem-badge-client{background:var(--brand-green-light);color:var(--brand-green);border:1px solid var(--brand-green)}
 .prem-badge-rfp{background:#E6F3FB;color:#1F7AAC;border:1px solid #1F7AAC}
 .prem-badge-tier{background:#FFF4E6;color:#C97A2C;border:1px solid #E4A85A}
 .prem-badge-tier.tier-verified{background:#FDE8EC;color:#C93D60;border-color:#C93D60}
@@ -975,7 +971,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">补跑未校验知识点</div>
       </div>
       <div class="tool-card" id="tc-qaBackfill" onclick="runTool('qaBackfill')">
-        <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">Q</div>
+        <div class="tool-icon" style="background:var(--brand-green-light);color:var(--brand-green)">Q</div>
         <div class="tool-name">质检补跑</div>
         <div class="tool-desc">未质检/异常条目(三级降级链)</div>
       </div>
@@ -1011,7 +1007,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-desc">AI 双视角推荐 + 批量封神</div>
       </div>
       <div class="tool-card" id="tc-premiumExport" onclick="runTool('premiumExport')">
-        <div class="tool-icon" style="background:#E8F5F2;color:#0A9B80">&#8615;</div>
+        <div class="tool-icon" style="background:var(--brand-green-light);color:var(--brand-green)">&#8615;</div>
         <div class="tool-name">精品导出</div>
         <div class="tool-desc">Markdown / JSON 打包下载</div>
       <div class="tool-card" id="tc-ceo" onclick="runTool('ceo')" style="position:relative">
@@ -1965,7 +1961,7 @@ var ah="";
 if(kp.review_status==="pending"){ah='<button class="btn btn-success btn-sm" onclick="confirmKp('+kp.id+')">确认入库</button><button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="ignoreKp('+kp.id+')">忽略</button>';if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}ah+='<button class="btn btn-sm" style="color:var(--text-muted);border-color:var(--border)" onclick="deleteKp('+kp.id+')">删除</button>'}
 else if(kp.review_status==="confirmed"){ah='<button class="btn btn-sm" onclick="openEditModal('+kp.id+')">编辑</button><button class="btn btn-warn btn-sm" onclick="openHistory('+kp.id+')">修改历史</button>';if(!isOutdated){if(frSt==="expired"||frSt==="expiring"){ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">确认仍有效</button><button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="markOutdated('+kp.id+')">标记过时</button>'}else{ah+='<button class="btn btn-sm" style="color:var(--success);border-color:var(--success)" onclick="renewFreshness('+kp.id+')">续期</button>'}}if(pvVal===2){ah+='<button class="btn btn-sm" style="color:var(--info);border-color:var(--info)" onclick="exemptPolicy('+kp.id+')">豁免校验</button><button class="btn btn-sm" style="color:#AF52DE;border-color:#AF52DE" onclick="revalidatePolicy('+kp.id+')">重新校验</button>'}
 /* v2.3.1 F3 精品撤销按钮:条目已封某视角时显示对应撤销 */
-if(kp.premium_client){ah+='<button class="btn btn-sm" style="color:#0A9B80;border-color:#0A9B80" onclick="premiumUnblessFromCard('+kp.id+',\'client\')">撤销客户型</button>'}
+if(kp.premium_client){ah+='<button class="btn btn-sm" style="color:var(--brand-green);border-color:var(--brand-green)" onclick="premiumUnblessFromCard('+kp.id+',\'client\')">撤销客户型</button>'}
 if(kp.premium_rfp){ah+='<button class="btn btn-sm" style="color:#1F7AAC;border-color:#1F7AAC" onclick="premiumUnblessFromCard('+kp.id+',\'rfp\')">撤销投标型</button>'}
 /* 精品成色升降:硬货 ↔ 铁货 / 硬货 ↔ 候选(只在已是精品时显示) */
 if(kp.premium_tier==="trusted"){ah+='<button class="btn btn-sm" style="color:#C93D60;border-color:#C93D60" onclick="premiumSetTier('+kp.id+',\'verified\')">升铁货</button><button class="btn btn-sm" style="color:#888;border-color:#888" onclick="premiumSetTier('+kp.id+',\'candidate\')">降候选</button>'}

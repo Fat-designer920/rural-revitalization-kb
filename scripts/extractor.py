@@ -1,7 +1,7 @@
 """
-extractor.py - 知识点提取引擎(并行双模型架构)
+extractor.py - 知识点提取引擎(并行双Pro架构, Flash→Pro统一)
 路径：scripts/extractor.py
-版本：v2.3.6-part1
+版本：v2.3.7-part7
 """
 import os, sys, json, re, shutil, hashlib, time
 from pathlib import Path
@@ -39,9 +39,9 @@ class Extractor:
             "segment_max": 6000  # v2.3.6-part1: 3000→6000,充分利用 V4-Pro 384K 输出能力
         },
         "2": {
-            "model": "deepseek-v4-flash",  # v2.3.5-part2: V4-Flash Non-Thinking 辅助(替代 V3)
-            "name": "V4-Flash 快速提取",
-            "desc": "速度快,性价比极高(输入 ¥1/百万 输出 ¥2/百万),适合批量草稿",
+            "model": "deepseek-v4-pro",   # v2.3.7-part7: 统一V4-Pro(老唐: V4-Flash效果不好,全用Pro)
+            "name": "V4-Pro 全覆盖提取",
+            "desc": "V4-Pro全覆盖(替代原Flash),384K max_output,1M context,质量优先",
             "segment_max": 6000
         },
         # 老 model 保留作"逃生回滚"档(7/24 退役前 DeepSeek 路由到 V4-Flash 兼容)
@@ -229,7 +229,7 @@ class Extractor:
 
     # v2.3.4 D9: 单段提取 — JSON Lines 输出 + prefix 续写支持
     def _extract_single(self, content, filename, prompt, ctype, relay_prefix=""):
-        """调用V4-Pro/V4-Flash提取单段内容,返回统一dict契约。
+        """调用V4-Pro提取单段内容,返回统一dict契约。
 
         v2.3.4 改动:
         - 改用 self.client.chat_with_jsonl()(JSON Lines 输出)
@@ -337,7 +337,7 @@ class Extractor:
         # L0 成功的 kp 打标 r1
         for k in kps:
             if isinstance(k, dict):
-                k["_extracted_by_model"] = self.extraction_model or "v4-flash"
+                k["_extracted_by_model"] = self.extraction_model or "v4-pro"
 
         # v2.3.4-hotfix3 BUG#2A 修复:未截断时一律返回,0 条 kp 也是合理结果
         # ─────────────────────────────────────────────────────────────
@@ -2044,10 +2044,10 @@ class Extractor:
         if supp_rounds > 0:
             supp_part = f" / 跨段补漏{supp_rounds}轮(新增{supp_added}条)"
 
-        # v2.3.6-part1: 并行双模型前缀
+        # v2.3.7-part7: 并行双Pro前缀
         parallel_part = ""
         if flash_kps > 0 or pro_kps > 0:
-            parallel_part = f"Flash提取{flash_kps} / Pro提取{pro_kps}"
+            parallel_part = f"Pro全覆盖{flash_kps} / Pro深度{pro_kps}"
             if merged_dup > 0:
                 parallel_part += f" / 合并去重{merged_dup}"
             parallel_part += " / "
@@ -2057,8 +2057,8 @@ class Extractor:
         else:
             parts = []
             if flash_kps > 0 or pro_kps > 0:
-                parts.append(f"Flash{flash_kps}")
-                parts.append(f"Pro{pro_kps}")
+                parts.append(f"Pro全{flash_kps}")
+                parts.append(f"Pro深{pro_kps}")
                 if merged_dup > 0:
                     parts.append(f"合并重{merged_dup}")
             parts.append(f"截断{truncations}次")
@@ -2194,9 +2194,9 @@ class Extractor:
             # v2.3.5-part2 跨段补漏闭环统计
             "supplementary_rounds": 0,    # 总执行的补漏轮数(含首轮+所有重提轮)
             "supplementary_kps_added": 0, # 补提取阶段新增的 kp 数(去重后)
-            # v2.3.6-part1: 并行双模型统计
-            "parallel_flash_kps": 0,      # V4-Flash 链提取的 kp 数
-            "parallel_pro_kps": 0,        # V4-Pro 链提取的 kp 数
+            # v2.3.7-part7: 并行双Pro统计(Flash→Pro统一)
+            "parallel_flash_kps": 0,      # V4-Pro 全覆盖链提取的 kp 数
+            "parallel_pro_kps": 0,        # V4-Pro 深度链提取的 kp 数
             "merged_duplicates": 0,       # 合并时去重的数量
         }
         try:
@@ -2330,16 +2330,16 @@ class Extractor:
                                 result["error"] = "用户暂缓(费用)"; return result
                             else: print(f"     请输入 Y 或 N")
 
-            # === Step 4: 并行双模型提取(v2.3.6-part1) ===
-            # 架构: V4-Flash 快速全覆盖 + V4-Pro 深度核心段 → 合并去重
-            print(f"     [Step 4] 并行双模型提取...")
-            self._report_progress(current_step="Step 4/8 并行双模型提取")
+            # === Step 4: 并行双Pro提取(v2.3.7-part7: 统一V4-Pro, Flash→Pro) ===
+            # 架构: V4-Pro 全覆盖 + V4-Pro 深度核心段 → 合并去重
+            print(f"     [Step 4] 并行双Pro提取...")
+            self._report_progress(current_step="Step 4/8 并行双Pro提取")
 
-            # 4.1 V4-Flash 快速全覆盖
-            print(f"\n     [4.1] V4-Flash 快速全覆盖提取...")
+            # 4.1 V4-Pro 全覆盖提取
+            print(f"\n     [4.1] V4-Pro 全覆盖提取...")
             flash_kps = self._extract_with_flash(segs, fn, prompt, ctype, file_structure, source_nature, fid)
             self._truncation_stats["parallel_flash_kps"] = len(flash_kps)
-            print(f"     V4-Flash 提取: {len(flash_kps)} 条知识点")
+            print(f"     V4-Pro 全覆盖: {len(flash_kps)} 条知识点")
 
             # 4.2 V4-Pro 深度核心段提取
             print(f"\n     [4.2] V4-Pro 深度核心段提取...")
@@ -2348,9 +2348,9 @@ class Extractor:
                 core_segs = self._identify_core_segments(file_structure, segs)
                 pro_kps = self._extract_with_pro(core_segs, fn, prompt, ctype, file_structure, source_nature, fid)
                 self._truncation_stats["parallel_pro_kps"] = len(pro_kps)
-                print(f"     V4-Pro 提取: {len(pro_kps)} 条知识点")
+                print(f"     V4-Pro 深度: {len(pro_kps)} 条知识点")
             except Exception as e:
-                print(f"     [V4-Pro 降级] {type(e).__name__}: {e} — 退回到 Flash 结果")
+                print(f"     [V4-Pro 降级] {type(e).__name__}: {e} — 保留全覆盖结果")
 
             # 4.3 合并去重
             print(f"\n     [4.3] 合并去重...")
@@ -2671,21 +2671,21 @@ class Extractor:
         return {"success": True, "ok": ok, "fail": fail, "skip": skip, "total_kps": total_kps,
                 "message": "提取完成"}
 
-    # v2.3.6-part1: 并行双模型提取方法
+    # v2.3.6-part1: 并行双Pro提取方法(v2.3.7-part7: Flash→Pro统一)
     def _extract_with_flash(self, segs, filename, prompt, ctype, file_structure, source_nature, file_id):
-        """V4-Flash 快速全覆盖提取(v2.3.6-part1)"""
+        """V4-Pro 全覆盖提取(v2.3.7-part7: Flash→Pro,质量优先)"""
         flash_kps = []
         for i, seg in enumerate(segs, 1):
             if len(segs) > 1:
-                print(f"     Flash 第{i}/{len(segs)}段 ({len(seg)}字)")
+                print(f"     Pro全覆盖 第{i}/{len(segs)}段 ({len(seg)}字)")
 
             relay_prefix = self._build_context_relay(i, len(segs), file_structure, flash_kps, source_nature=source_nature)
 
-            # 临时切换到 V4-Flash
+            # v2.3.7-part7: 统一使用 V4-Pro(老唐: Flash效果不好)
             original_model = self.extraction_model
             original_name = self.extraction_model_name
-            self.extraction_model = "deepseek-v4-flash"
-            self.extraction_model_name = "V4-Flash"
+            self.extraction_model = "deepseek-v4-pro"
+            self.extraction_model_name = "V4-Pro"
 
             try:
                 seg_kps = self._extract_with_auto_split(

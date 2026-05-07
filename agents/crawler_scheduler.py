@@ -1,17 +1,15 @@
 """
-crawler_scheduler.py - 爬虫调度器(gov.cn政策搜索+自动分类+变化检测+编码修复)
+crawler_scheduler.py - 爬虫调度器(深度爬取+政策搜索+自动分类+变化检测+质量门禁)
 路径：agents/crawler_scheduler.py
-版本：v2.3.7-part6
+版本：v2.3.7-part7
 
-P1.2-A2 增强: gov.cn政策搜索(search_gov_policy) + 自动分类(classify_policy_doc:
-  政策类型/发文字号/发布日期/发文机关/生效日期) + 政策变化检测
-  (detect_policy_changes) + 全自动管道(crawl_classify_extract_chain:
-  crawl→classify→detect→ready)。借鉴China-Central-Policy-MCP的
-  gov.cn全文检索思路。
+深度爬取: 不从仅首页HTML→改为进入文章页→提取正文→质量门禁→CEO审核。
+立规则77强制: <500字=丢弃, 乱码=丢弃, 无政策关键词=丢弃。
 """
 import json, time, hashlib, os, re
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import urljoin, urlparse
 try:
     import requests
 except ImportError:
@@ -464,6 +462,341 @@ class CrawlerScheduler(object):
         return True
 
     # ================================================================
+    # 深度爬取: 从首页/列表页提取文章链接→跟进→提取正文
+    # ================================================================
+    def _extract_article_links(self, html, base_url, max_links=50):
+        """从任意gov页面HTML中提取政策/文章链接。
+        优先级: 政策频道URL模式 > 含政策关键词的链接文本 > 长文本链接。
+        返回 [{url, title, link_type}] 唯一列表。
+        """
+        if not html:
+            return []
+
+        # 政策频道URL模式(政府网站常见)
+        policy_url_patterns = [
+            r'/zwgk/', r'/zhengce/', r'/xxgk/', r'/content/', r'/article/',
+            r'/govinfo/', r'/gongbao/', r'/zcfg/', r'/flfg/', r'/zfxxgk/',
+            r'/信息公开/', r'/政策/', r'/通知/', r'/意见/', r'/政策解读/',
+            r'/tdzl/', r'/nync/', r'/fgw/', r'/czt/', r'/zrzy/',
+        ]
+
+        # 政策文章标题关键词
+        policy_title_keywords = [
+            '通知', '意见', '办法', '规定', '方案', '标准', '公告', '公示',
+            '政策', '解读', '措施', '规划', '条例', '指南', '规程',
+            '耕地', '土地', '农村', '农业', '乡村振兴', '农田', '粮食',
+            '整治', '挂钩', '占补', '入市', '建设',
+        ]
+
+        links = []
+        seen_urls = set()
+        parsed_base = urlparse(base_url)
+
+        link_pattern = re.compile(
+            r'<a[^>]*href\s*=\s*["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+            re.IGNORECASE | re.DOTALL
+        )
+
+        scored_links = []
+        for match in link_pattern.finditer(html):
+            href = match.group(1).strip()
+            title_raw = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+            title_raw = re.sub(r'\s+', ' ', title_raw)
+
+            if not href or href.startswith('#') or href.startswith('javascript:'):
+                continue
+
+            # 构建绝对URL
+            full_url = urljoin(base_url, href)
+
+            # 只保留同域链接(避免跨站跳转)
+            try:
+                parsed_link = urlparse(full_url)
+                if parsed_link.netloc != parsed_base.netloc:
+                    continue
+            except Exception:
+                continue
+
+            # 去.html/.htm/.shtml后缀, 去首页/锚点
+            path = parsed_link.path.lower()
+            if path in ('', '/', '/index.html', '/index.htm', '/index.shtml'):
+                continue
+            if '#' in full_url:
+                full_url = full_url.split('#')[0]
+
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
+
+            # 过滤静态资源
+            skip_exts = ('.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx',
+                         '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.css', '.js')
+            if any(full_url.lower().endswith(ext) for ext in skip_exts):
+                continue
+
+            # 评分: URL模式匹配 + 标题关键词匹配
+            score = 0
+            match_reason = []
+            for pat in policy_url_patterns:
+                if pat in path:
+                    score += 3
+                    match_reason.append(f'URL:{pat}')
+                    break
+
+            if title_raw:
+                title_len = len(title_raw)
+                if title_len > 10:
+                    score += 1  # 长标题更可能是文章
+                if title_len > 20:
+                    score += 1
+                for kw in policy_title_keywords:
+                    if kw in title_raw:
+                        score += 2
+                        match_reason.append(f'标题:{kw}')
+                        break
+                # 中文字符占比
+                chinese = sum(1 for c in title_raw if '一' <= c <= '鿿')
+                if len(title_raw) > 0 and chinese / len(title_raw) > 0.3:
+                    score += 1
+
+            if score >= 2:  # 至少有一定相关性
+                scored_links.append((score, full_url, title_raw, match_reason))
+
+        scored_links.sort(key=lambda x: x[0], reverse=True)
+        for score, url, title, reason in scored_links[:max_links]:
+            links.append({
+                "url": url,
+                "title": title[:120] if title else '',
+                "link_type": '|'.join(reason[:2]),
+                "score": score,
+            })
+
+        return links
+
+    def _deep_fetch(self, url, max_depth=2, max_articles=20, timeout=30):
+        """深度爬取: 首页→提取文章链接→跟进文章页→提取正文→质量门禁。
+        不是只抓首页HTML,而是真正进入政策文章页面提取全文。
+        返回 {articles: [{url, title, text, char_count, quality, filepath}], stats}
+        """
+        all_articles = []
+        visited_urls = set()
+        article_queue = [(url, 0)]  # (url, depth)
+        stats = {"pages_fetched": 0, "links_found": 0, "articles_extracted": 0,
+                 "quality_fail": 0}
+
+        while article_queue and len(all_articles) < max_articles:
+            current_url, depth = article_queue.pop(0)
+            if current_url in visited_urls:
+                continue
+            visited_urls.add(current_url)
+
+            fetched = self._fetch_url(current_url, timeout=timeout)
+            stats["pages_fetched"] += 1
+
+            if not fetched.get("success"):
+                continue
+
+            html_content = fetched.get("content", "")
+
+            # 乱码检测
+            if not self._clean_text_for_save(html_content):
+                continue
+
+            # 在首页/列表页(depth=0)提取文章链接
+            if depth < max_depth:
+                links = self._extract_article_links(html_content, current_url)
+                stats["links_found"] += len(links)
+                for link in links:
+                    link_url = link["url"]
+                    if link_url not in visited_urls:
+                        article_queue.append((link_url, depth + 1))
+
+            # 对文章页(depth>=1)提取正文内容
+            if depth >= 1:
+                main_content = self._extract_main_content(html_content)
+                if main_content:
+                    char_count = len(main_content)
+                    page_title = fetched.get("title", "")
+                    article = {
+                        "url": current_url,
+                        "title": page_title[:120] if page_title else "",
+                        "text": main_content,
+                        "char_count": char_count,
+                        "quality": "unknown",
+                        "filepath": None,
+                    }
+                    all_articles.append(article)
+                    stats["articles_extracted"] += 1
+
+            time.sleep(CRAWL_INTERVAL_SEC)
+
+        # 对每篇文章保存并跑质量门禁
+        review_dir = PROJECT_ROOT / REVIEW_DIR_NAME
+        os.makedirs(review_dir, exist_ok=True)
+        qualified = []
+
+        for article in all_articles:
+            safe_name = self._safe_filename(article["url"], article["title"])
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{safe_name}_{timestamp}.txt"
+            save_path = review_dir / filename
+
+            # 加元数据头
+            header = (
+                f"# 来源: {article['url']}\n"
+                f"# 标题: {article['title']}\n"
+                f"# 抓取时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                f"# 深度爬取: depth≥1文章页正文提取\n"
+                f"{'='*50}\n\n"
+            )
+            full_text = header + article["text"]
+
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(full_text[:MAX_CONTENT_CHARS])
+
+            article["filepath"] = str(save_path)
+
+            # 立规则77质量门禁
+            passed, reason_code, reason_detail = self._quality_gate(str(save_path))
+            if passed:
+                article["quality"] = "good"
+                qualified.append(article)
+            else:
+                article["quality"] = reason_code
+                article["quality_reason"] = reason_detail
+                stats["quality_fail"] += 1
+                # 不合格立即删除(立规则77: 乱码=直接丢弃)
+                try:
+                    os.remove(save_path)
+                    article["filepath"] = None
+                except Exception:
+                    pass
+
+        stats["qualified_count"] = len(qualified)
+        return {"articles": qualified, "stats": stats}
+
+    def _extract_main_content(self, html):
+        """从文章页HTML提取正文内容(剔除导航/侧栏/页脚等噪音)。
+        返回纯文本字符串,失败返回空字符串。
+        """
+        if not html:
+            return ""
+
+        # 1. 去除噪音标签(script/style/head/nav/footer/header/aside/form/noscript)
+        for tag in ('script', 'style', 'head', 'nav', 'footer', 'header', 'aside',
+                     'noscript', 'iframe', 'svg', 'form', 'select', 'button',
+                     'input', 'textarea', 'link', 'meta', 'base', 'map', 'canvas'):
+            html = re.sub(rf'<{tag}[^>]*>.*?</{tag}>', ' ', html,
+                         flags=re.DOTALL | re.IGNORECASE)
+            html = re.sub(rf'<{tag}[^>]*/?>', ' ', html, flags=re.IGNORECASE)
+
+        # 2. 去除HTML注释
+        html = re.sub(r'<!--.*?-->', ' ', html, flags=re.DOTALL)
+
+        # 3. 尝试定位正文容器(优先匹配gov.cn常见正文区)
+        content_area = ""
+        main_patterns = [
+            r'<div[^>]*(?:class|id)\s*=\s*["\'][^"\']*?(?:content|article|main|text|body|TRS_Editor|zoom|pages_content|con_main|xxgk_content|zwgk_content|zhengce_content|info_content|detail_content|UCAP-CONTENT|Content|MainContent|ArticleContent|NewsContent)[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<article[^>]*>(.*?)</article>',
+            r'<main[^>]*>(.*?)</main>',
+            r'<div[^>]*(?:id|class)\s*=\s*["\'][^"\']*?(?:content|article|main|text|body)[^"\']*["\'][^>]*>(.*?)</div>',
+        ]
+        for pat in main_patterns:
+            m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+            if m:
+                content_area = m.group(1)
+                break
+
+        # 没有找到明确的正文容器,回退到全页处理
+        if not content_area or len(content_area) < 200:
+            content_area = html
+
+        # 4. 去除所有HTML标签
+        text = re.sub(r'<[^>]+>', ' ', content_area)
+
+        # 5. 解码HTML实体
+        text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
+        text = text.replace('&amp;', '&').replace('&quot;', '"').replace('&apos;', "'")
+        text = re.sub(r'&[a-z]+;', ' ', text)
+        text = re.sub(r'&#\d+;', ' ', text)
+
+        # 6. 去除URL和长数字串
+        text = re.sub(r'https?://\S+', ' ', text)
+
+        # 7. 按行保留有意义的内容
+        lines = []
+        for line in text.split('\n'):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # 跳过短导航行(纯链接、纯数字、纯日期)
+            if re.match(r'^[\s\d\-\.,;:|\/\\]+$', stripped):
+                continue
+            if len(stripped) < 8:
+                continue
+            chinese_chars = len(re.findall(r'[一-鿿]', stripped))
+            # 保留含中文的行或足够长的文本行
+            if chinese_chars >= 5 or (len(stripped) > 30 and chinese_chars > 0):
+                lines.append(stripped)
+
+        text = '\n'.join(lines)
+
+        # 8. 压缩连续空白行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = text.strip()
+
+        return text
+
+    def _quality_gate(self, filepath):
+        """立规则77强制质量门禁: 检查爬取文件是否合格。
+        三条红线(任一不通过=直接丢弃):
+          1. 正文<500字(低质量)
+          2. 中文字符<5%(乱码)
+          3. 不含任何政策关键词(非政策内容)
+        返回 (passed: bool, reason_code: str, detail: str)
+        """
+        if not os.path.exists(filepath):
+            return False, "file_missing", "文件不存在"
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            return False, "read_error", str(e)
+
+        # 切掉元数据头(从第一个'='分隔线后取正文)
+        text = content
+        separator_idx = content.find('\n\n')
+        if separator_idx > 0:
+            text = content[separator_idx:]
+
+        text = text.strip()
+
+        # 红线1: 长度检查(<500字=低质量)
+        if len(text) < MIN_CONTENT_CHARS:
+            return False, "low_quality", f"正文{len(text)}字<{MIN_CONTENT_CHARS}字门槛"
+
+        # 红线2: 乱码检查(<5%中文字符=疑似乱码/非中文页)
+        if len(text) > 0:
+            chinese_chars = sum(1 for c in text if '一' <= c <= '鿿')
+            if chinese_chars / len(text) < 0.05:
+                return False, "garbled", f"中文字符{chinese_chars}个({chinese_chars/len(text)*100:.1f}%)<5%"
+
+        # 红线3: 政策关键词检查
+        policy_keywords = [
+            '政策', '通知', '意见', '办法', '规定', '方案', '标准',
+            '耕地', '土地', '农村', '农业', '乡村振兴', '农田', '粮食',
+            '整治', '挂钩', '占补', '入市', '建设', '规划', '管理',
+            '项目', '资金', '补贴', '补助', '审批', '督察', '考核',
+            '申报', '示范', '试点', '补贴',
+        ]
+        has_policy = any(kw in text for kw in policy_keywords)
+        if not has_policy:
+            return False, "no_policy_content", "无政策关键词"
+
+        return True, "good", f"正文{len(text)}字,合格"
+
+    # ================================================================
     # Gov.cn政策搜索(借鉴China-Central-Policy-MCP的gov.cn全文检索思路)
     # ================================================================
     def search_gov_policy(self, keyword_group=None, keywords=None, max_results=10):
@@ -746,25 +1079,88 @@ class CrawlerScheduler(object):
     # ================================================================
     # 爬取+自动喂入提取管道
     # ================================================================
-    def crawl_and_feed(self, schedule="weekly", max_urls=5):
-        """爬取→CEO审核→手动批准→入库。
-        v2.3.7-part3变更: 爬取文件先放data/crawled/等待CEO审核,
-        CEO调用approve_to_pipeline()确认后才进入提取管道。
-        返回 {crawl_result}
+    def crawl_and_feed(self, schedule="weekly", max_urls=5, max_articles=20):
+        """深度爬取→质量门禁→CEO审核→手动批准→入库。
+        v2.3.7-part7: 重构为深度爬取——不是抓首页HTML,而是进入文章页提取正文。
+        每篇合格文章产出一个独立文件。低质量/乱码自动丢弃。
+        返回 {crawl_result, quality_report, ceo_action}
         """
-        crawl_result = self.run_scheduled(schedule=schedule)
-        good_count = crawl_result.get("new", 0)
-        low_count = crawl_result.get("low_quality", 0)
+        review_dir = PROJECT_ROOT / REVIEW_DIR_NAME
+        os.makedirs(review_dir, exist_ok=True)
+
+        targets = [t for t in self._targets if t["schedule"] in (schedule, "daily", "weekly")
+                   or (schedule == "weekly" and t["schedule"] in ("daily", "weekly"))]
+
+        all_articles = []
+        total_stats = {
+            "targets_processed": 0,
+            "pages_fetched": 0,
+            "links_found": 0,
+            "articles_extracted": 0,
+            "quality_fail": 0,
+            "qualified": 0,
+            "errors": 0,
+        }
+        crawl_details = []
+        quality_report = {"qualified": 0, "low_quality": 0, "garbled": 0, "no_policy": 0,
+                         "details": []}
+
+        for t in targets[:max_urls]:
+            url = t["url"]
+            category = t.get("category", "policy")
+            try:
+                result = self._deep_fetch(url, max_depth=2, max_articles=max_articles)
+                total_stats["pages_fetched"] += result["stats"]["pages_fetched"]
+                total_stats["links_found"] += result["stats"]["links_found"]
+                total_stats["articles_extracted"] += result["stats"]["articles_extracted"]
+                total_stats["quality_fail"] += result["stats"]["quality_fail"]
+                total_stats["targets_processed"] += 1
+
+                for article in result["articles"]:
+                    if article["quality"] == "good":
+                        total_stats["qualified"] += 1
+                        quality_report["qualified"] += 1
+                        crawl_details.append({
+                            "url": article["url"],
+                            "saved": article.get("filepath", ""),
+                            "quality": "good",
+                            "chars": article["char_count"],
+                            "title": article["title"][:60],
+                            "source_domain": url,
+                            "category": category,
+                        })
+                        # 记录爬取历史
+                        content_hash = hashlib.md5(article["text"].encode('utf-8')).hexdigest()
+                        self._record_crawl(article["url"], content_hash, article.get("filepath", ""))
+                    else:
+                        qr = article.get("quality", "low_quality")
+                        quality_report[qr] = quality_report.get(qr, 0) + 1
+                        quality_report["details"].append({
+                            "url": article["url"],
+                            "title": article["title"][:60],
+                            "quality": qr,
+                            "reason": article.get("quality_reason", "?"),
+                        })
+            except Exception as e:
+                total_stats["errors"] += 1
+                crawl_details.append({"url": url, "error": str(e)[:200]})
 
         return {
             "success": True,
-            "crawl": crawl_result,
+            "crawl_stats": total_stats,
+            "quality_report": quality_report,
+            "details": crawl_details,
             "message": (
-                f"爬取完成: 合格{good_count}个, 低质量{low_count}个。"
+                f"深度爬取完成: 处理{total_stats['targets_processed']}个源站, "
+                f"抓取{total_stats['pages_fetched']}页, "
+                f"发现{total_stats['links_found']}个链接, "
+                f"提取{total_stats['articles_extracted']}篇文章, "
+                f"合格{total_stats['qualified']}个, "
+                f"丢弃{total_stats['quality_fail']}个(低质量/乱码/非政策)。"
                 f"文件已保存到{REVIEW_DIR_NAME}/。"
-                f"请CEO审核后决定: 批准→入库 / 拒绝→重爬 / 低质量→手动补充。"
+                f"请CEO审核后决定: 批准→入库 / 拒绝→重爬。"
             ),
-            "ceo_action": "请打开 data/crawled/ 查看爬取文件",
+            "ceo_action": f"请打开 {REVIEW_DIR_NAME}/ 查看{total_stats['qualified']}个合格爬取文件",
         }
 
     # ================================================================

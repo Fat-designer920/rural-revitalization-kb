@@ -28,73 +28,81 @@
 -->
 <style>
 :root{
-  --primary:#2D7B5F;
-  --bg:#F5F2ED;
-  --card:#fff;
-  --text:#1A1A1A;
-  --text-secondary:#555;
-  --text-muted:#888;
-  --border:#E5E0D8;
+  --primary: var(--brand-green);
+  --bg: var(--brand-warm);
+  --card: var(--white);
+  --text: var(--ink-900);
+  --text-secondary: var(--ink-500);
+  --text-muted: var(--ink-300);
+  --border: var(--brand-warm-dark);
   --info:#3B82A8;
   --info-bg:#E0F4FF;
-  --success:#3D8B62;
+  --success: var(--green-500);
   --warning:#C97A2C;
   --warning-bg:#FFF3E0;
-  --shadow:0 1px 3px rgba(0,0,0,.08);
+  --shadow: var(--shadow-sm);
+  --shadow-card: var(--shadow-md);
+  --radius: var(--radius-md);
 }
 *{box-sizing:border-box}
 body{
-  font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-  background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;margin:0;
+  font-family:var(--font-sans);
+  background:var(--bg);color:var(--text);font-size:14px;line-height:var(--leading-normal);margin:0;
   -webkit-font-smoothing:antialiased
 }
 .fv-container{display:flex;height:100vh;overflow:hidden}
-.fv-header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 20px;
-  display:flex;align-items:center;gap:16px;box-shadow:var(--shadow);z-index:10;flex-wrap:wrap}
-.fv-header-title{font-weight:700;font-size:16px;color:var(--primary)}
-.fv-meta-pills{display:flex;gap:8px;flex-wrap:wrap}
+.fv-header{background:var(--card);border-bottom:1px solid var(--border);padding:var(--space-sm) var(--space-lg);
+  display:flex;align-items:center;gap:var(--space-md);box-shadow:var(--shadow-sm);z-index:10;flex-wrap:wrap}
+.fv-header-brand{font-weight:700;font-size:15px;color:var(--brand-green);display:flex;align-items:center;gap:var(--space-sm)}
+.fv-header-brand .icon{width:28px;height:28px;background:var(--brand-green);border-radius:var(--radius-sm);display:inline-flex;align-items:center;justify-content:center;color:var(--white);font-size:14px;font-weight:800}
+.fv-header-title{font-weight:700;font-size:15px;color:var(--primary)}
+.fv-meta-pills{display:flex;gap:var(--space-sm);flex-wrap:wrap}
 .fv-pill{font-size:11px;padding:3px 10px;border-radius:12px;background:var(--bg);color:var(--text-secondary)}
 .fv-pill-ok{background:#E8F5E9;color:var(--success)}
 .fv-pill-warn{background:var(--warning-bg);color:var(--warning)}
 .fv-pill-error{background:#FFEBEE;color:#C62828}
 .fv-search{flex:1;max-width:300px;margin-left:auto}
-.fv-search input{width:100%;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:var(--bg)}
+.fv-search input{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);padding:6px 10px;font-size:13px;background:var(--bg)}
 .fv-search input:focus{outline:none;border-color:var(--primary)}
 .fv-body{display:flex;flex:1;overflow:hidden}
-.fv-list{width:340px;background:var(--card);border-right:1px solid var(--border);overflow-y:auto;padding:8px}
-.fv-list-item{padding:10px 12px;margin-bottom:4px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text);transition:all .15s}
+.fv-list{width:340px;background:var(--card);border-right:1px solid var(--border);overflow-y:auto;padding:var(--space-sm)}
+.fv-list-item{padding:10px 12px;margin-bottom:var(--space-xs);border-radius:var(--radius-md);cursor:pointer;font-size:13px;color:var(--text);transition:all .15s}
 .fv-list-item:hover{background:var(--bg)}
-.fv-list-item.active{background:var(--primary);color:#fff}
+.fv-list-item.active{background:var(--primary);color:var(--white)}
 .fv-list-item.active .fv-list-meta{color:rgba(255,255,255,.85)}
 .fv-list-title{font-weight:500;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fv-list-meta{font-size:10px;color:var(--text-muted);display:flex;gap:6px}
 .fv-list-meta .lm-tag{padding:1px 5px;border-radius:6px;background:var(--bg);color:var(--text-secondary)}
-.fv-list-item.active .lm-tag{background:rgba(255,255,255,.2);color:#fff}
+.fv-list-item.active .lm-tag{background:rgba(255,255,255,.2);color:var(--white)}
 .fv-list-meta .lm-prem{background:var(--warning-bg);color:var(--warning);font-weight:600}
-.fv-detail{flex:1;overflow-y:auto;padding:24px 32px;background:var(--bg)}
-.fv-detail h2{margin:0 0 8px 0;font-size:18px;color:var(--text)}
-.fv-detail-meta{font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap}
-.fv-section{background:var(--card);border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:var(--shadow)}
+.fv-detail{flex:1;overflow-y:auto;padding:var(--space-lg) var(--space-xl);background:var(--bg)}
+.fv-detail h2{margin:0 0 var(--space-sm) 0;font-size:18px;color:var(--text)}
+.fv-detail-meta{font-size:12px;color:var(--text-muted);margin-bottom:var(--space-md);display:flex;gap:var(--space-md);flex-wrap:wrap}
+.fv-section{background:var(--card);border-radius:10px;padding:var(--space-md) 20px;margin-bottom:12px;box-shadow:var(--shadow)}
 .fv-section-title{font-weight:600;font-size:13px;color:var(--primary);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-.fv-field{margin-bottom:8px;display:flex;font-size:13px}
+.fv-field{margin-bottom:var(--space-sm);display:flex;font-size:13px}
 .fv-field-key{font-weight:500;color:var(--text-secondary);min-width:140px;flex-shrink:0}
 .fv-field-val{color:var(--text);flex:1;word-break:break-word}
 .fv-field-val pre{margin:0;white-space:pre-wrap;font-family:inherit}
 .fv-field-list{margin:0;padding-left:18px}
-.fv-field-list li{margin-bottom:4px}
+.fv-field-list li{margin-bottom:var(--space-xs)}
 .fv-tag{display:inline-block;padding:2px 8px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:11px;margin:2px 4px 2px 0}
 .fv-tag-prem{background:var(--warning-bg);color:var(--warning);font-weight:600}
 .fv-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-muted);text-align:center;padding:40px}
 .fv-empty-title{font-size:24px;color:var(--primary);margin-bottom:12px;font-weight:300}
-.fv-drop-zone{border:2px dashed var(--border);border-radius:12px;padding:80px 40px;cursor:pointer;
+.fv-drop-zone{border:2px dashed var(--border);border-radius:var(--radius-lg);padding:80px 40px;cursor:pointer;
   transition:all .2s;background:var(--card);max-width:480px;text-align:center}
 .fv-drop-zone:hover,.fv-drop-zone.dragover{border-color:var(--primary);background:#f0f8f4}
-.fv-drop-zone-icon{font-size:48px;color:var(--text-muted);margin-bottom:16px;font-weight:200}
+.fv-drop-zone-icon{font-size:48px;color:var(--text-muted);margin-bottom:var(--space-md);font-weight:200}
 .fv-drop-zone-text{font-size:14px;color:var(--text-secondary);margin-bottom:6px}
 .fv-drop-zone-hint{font-size:11px;color:var(--text-muted)}
-.fv-validation-errors{background:#FFEBEE;border:1px solid #FFCDD2;border-radius:8px;padding:10px 14px;margin:10px 0;color:#C62828;font-size:12px}
-.fv-validation-errors strong{display:block;margin-bottom:4px}
-.fv-validation-errors ul{margin:4px 0 0 18px;padding:0}
+.fv-validation-errors{background:#FFEBEE;border:1px solid #FFCDD2;border-radius:var(--radius-md);padding:10px 14px;margin:10px 0;color:#C62828;font-size:12px}
+.fv-validation-errors strong{display:block;margin-bottom:var(--space-xs)}
+.fv-validation-errors ul{margin:var(--space-xs) 0 0 18px;padding:0}
+/* footer */
+.fv-footer{text-align:center;padding:var(--space-sm);color:var(--text-muted);font-size:11px;border-top:1px solid var(--border);background:var(--card)}
+.fv-footer a{color:var(--brand-green);text-decoration:none}
+.fv-footer a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -102,13 +110,15 @@ body{
   <div style="display:flex;flex-direction:column;flex:1;height:100vh">
 
     <div class="fv-header">
-      <div class="fv-header-title">F056 精品 JSON 查看器</div>
+      <a href="/" class="fv-header-brand" title="返回首页"><span class="icon">乡</span>乡村振兴知识工厂</a>
+	      <span style="color:var(--text-muted);font-size:18px;font-weight:200;margin:0 4px">&middot;</span>
+	      <div class="fv-header-title">精品查看器</div>
       <div class="fv-meta-pills" id="fvMetaPills"></div>
       <div class="fv-search" id="fvSearchWrap" style="display:none">
         <input type="text" id="fvSearch" placeholder="搜索标题/分类/标签..." oninput="fvFilterList()">
       </div>
       <input type="file" id="fvFileInput" accept=".json,application/json" style="display:none" onchange="fvHandleFileInput(event)">
-      <button id="fvLoadBtn" onclick="document.getElementById('fvFileInput').click()" style="display:none;padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:12px;cursor:pointer;color:var(--primary)">换一个 JSON</button>
+      <button id="fvLoadBtn" onclick="document.getElementById('fvFileInput').click()" class="btn btn-secondary" style="display:none;padding:6px 14px;font-size:12px;">换一个 JSON</button>
     </div>
 
     <div class="fv-body">
@@ -502,6 +512,9 @@ function fvObjectFields(obj){
   return h;
 }
 </script>
+<div class="fv-footer">
+  <a href="/">乡村振兴知识工厂</a> &middot; 精品内容查看器 &middot; <a href="https://github.com/Fat-designer920/rural-revitalization-kb">GitHub</a>
+</div>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/js/sw.js')}
 </script>

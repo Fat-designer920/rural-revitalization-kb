@@ -1,7 +1,7 @@
 """
-run_pipeline.py - 知识管道CLI入口(喂料→提取→质检→关系→精品)
+run_pipeline.py - 知识管道CLI入口(深度爬取→喂料→提取→质检→关系→精品)
 路径：scripts/run_pipeline.py
-版本：v2.3.7-part2
+版本：v2.3.7-part7
 用法:
   python scripts/run_pipeline.py --full              # 全管道
   python scripts/run_pipeline.py --feed-only         # 仅喂料+提取
@@ -210,14 +210,62 @@ def main():
         db = get_db()
         from agents.crawler_scheduler import CrawlerScheduler
         cs = CrawlerScheduler(db=db)
-        result = cs.run_scheduled(schedule='weekly')
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print("深度爬取中 (提取文章链接→跟进文章页→提取正文→质量门禁)...")
+        result = cs.crawl_and_feed(schedule='weekly')
+        # 打印质量报告
+        qr = result.get("quality_report", {})
+        stats = result.get("crawl_stats", {})
+        print(f"\n{'='*60}")
+        print(f"  爬取质量报告")
+        print(f"{'='*60}")
+        print(f"  处理源站:         {stats.get('targets_processed', 0):>6}")
+        print(f"  抓取页面:         {stats.get('pages_fetched', 0):>6}")
+        print(f"  发现链接:         {stats.get('links_found', 0):>6}")
+        print(f"  提取文章:         {stats.get('articles_extracted', 0):>6}")
+        print(f"  合格:             {qr.get('qualified', 0):>6}  <- 进入CEO审核")
+        print(f"  丢弃:             {stats.get('quality_fail', 0):>6}")
+        print(f"    - 低质量(<500字): {qr.get('low_quality', 0):>4}")
+        print(f"    - 乱码:          {qr.get('garbled', 0):>4}")
+        print(f"    - 非政策内容:    {qr.get('no_policy_content', 0):>4}")
+        print(f"  错误:             {stats.get('errors', 0):>6}")
+        print(f"{'='*60}")
+        print(f"\n  {result.get('message', '')}")
+        print(f"  {result.get('ceo_action', '')}")
+        if qr.get("details"):
+            print(f"\n  丢弃详情:")
+            for d in qr["details"]:
+                print(f"    - [{d['quality']}] {d['title'][:50]} — {d['reason']}")
     elif "--crawl-and-feed" in sys.argv:
         db = get_db()
         from agents.crawler_scheduler import CrawlerScheduler
         cs = CrawlerScheduler(db=db)
+        print("深度爬取+自动喂料中...")
         result = cs.crawl_and_feed(schedule='weekly')
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # 打印质量报告
+        qr = result.get("quality_report", {})
+        stats = result.get("crawl_stats", {})
+        print(f"\n{'='*60}")
+        print(f"  爬取质量报告")
+        print(f"{'='*60}")
+        print(f"  合格: {qr.get('qualified', 0)} | 丢弃: {stats.get('quality_fail', 0)} (低质量{ qr.get('low_quality',0)} / 乱码{qr.get('garbled',0)} / 非政策{qr.get('no_policy_content',0)})")
+        print(f"  {result.get('message', '')}")
+        print(f"  {result.get('ceo_action', '')}")
+        print(f"{'='*60}")
+        # 合格文件自动喂入提取管道
+        qualified_count = qr.get("qualified", 0)
+        if qualified_count > 0:
+            print(f"\n  自动将{qualified_count}个合格文件喂入提取管道...")
+            from agents.auto_feeder import AutoFeeder
+            feeder = AutoFeeder(db=db, client=get_client())
+            # 扫描crawled目录下的合格文件
+            crawled_dir = Path(__file__).parent.parent / "data" / "crawled"
+            if crawled_dir.exists():
+                for f in crawled_dir.glob("*.txt"):
+                    print(f"    喂入: {f.name}")
+                # feed操作由AutoFeeder处理pending目录下的文件
+                print(f"  提示: 请CEO审核data/crawled/后调用approve_to_pipeline()移入pending/")
+        else:
+            print(f"\n  无合格文件,跳过提取管道。")
     elif "--search" in sys.argv:
         db = get_db(); client = get_client()
         from agents.smart_search_agent import SmartSearchAgent
@@ -256,8 +304,8 @@ def main():
         print("  python scripts/run_pipeline.py --dry-run        预览待处理文件")
         print("  python scripts/run_pipeline.py --feed-only      仅喂料+提取")
         print("  python scripts/run_pipeline.py --exp-inbox      扫描经验收件箱")
-        print("  python scripts/run_pipeline.py --crawl          执行爬虫(weekly目标)")
-        print("  python scripts/run_pipeline.py --crawl-and-feed 爬虫+自动提取")
+        print("  python scripts/run_pipeline.py --crawl          深度爬取(文章页正文+质量门禁)")
+        print("  python scripts/run_pipeline.py --crawl-and-feed 深度爬取+自动提取(含质量报告)")
         print("  python scripts/run_pipeline.py --search         智能搜索(缺口驱动)")
         print("  python scripts/run_pipeline.py --qc-only        质检补跑+就绪度联动")
         print("  python scripts/run_pipeline.py --relations-only 关系全量扫描")

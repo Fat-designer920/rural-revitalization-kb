@@ -639,28 +639,25 @@ def _placeholder_page(title, desc):
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:var(--font-sans);background:var(--brand-warm);color:var(--ink-900);line-height:var(--leading-normal)}}
-  .ph-header{{padding:var(--space-lg) 0;text-align:center;border-bottom:.5px solid var(--border)}}
-  .ph-header a{{color:var(--brand-green);font-weight:var(--font-semibold);font-size:15px;text-decoration:none}}
-  .ph-hero{{padding:var(--space-3xl) 0 var(--space-2xl);text-align:center}}
-  .ph-hero h1{{font-size:var(--text-3xl);font-weight:800;color:var(--brand-green);letter-spacing:-0.02em;margin-bottom:var(--space-md)}}
+  .ph-header{{background:var(--white);border-bottom:1px solid var(--brand-warm-dark);padding:var(--space-sm) var(--space-lg);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100}}
+  .ph-header-brand{{font-weight:700;font-size:15px;color:var(--brand-green);text-decoration:none;display:flex;align-items:center;gap:var(--space-sm)}}
+  .ph-header-brand .brand-icon{{width:28px;height:28px;background:var(--brand-green);border-radius:var(--radius-sm);display:inline-flex;align-items:center;justify-content:center;color:var(--white);font-size:14px;font-weight:800}}
+  .ph-hero{{padding:var(--space-3xl) var(--space-xl) var(--space-2xl);text-align:center}}
+  .ph-hero h1{{font-size:var(--text-3xl);font-weight:800;color:var(--ink-900);letter-spacing:-0.02em;margin-bottom:var(--space-md)}}
   .ph-hero .sub{{font-size:var(--text-lg);color:var(--ink-500);max-width:480px;margin:0 auto;line-height:1.8}}
-  .ph-card{{background:var(--white);border-radius:var(--radius-lg);padding:var(--space-xl);box-shadow:var(--shadow-sm);margin-bottom:var(--space-xl)}}
-  .ph-card h2{{font-size:var(--text-xl);color:var(--brand-green);margin-bottom:var(--space-md)}}
-  .ph-features{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-lg);margin:var(--space-xl) 0}}
-  .ph-feat-item{{text-align:center;padding:var(--space-lg)}}
-  .ph-feat-item .icon{{font-size:2rem;margin-bottom:var(--space-sm);color:var(--brand-gold)}}
-  .ph-feat-item h3{{font-size:var(--text-base);font-weight:var(--font-semibold);color:var(--ink-900);margin-bottom:var(--space-xs)}}
-  .ph-feat-item p{{font-size:var(--text-sm);color:var(--ink-500);line-height:1.6}}
-  .ph-cta{{background:var(--brand-green-light);border-radius:var(--radius-lg);padding:var(--space-xl);text-align:center;margin:var(--space-xl) 0}}
+  .ph-cta{{background:var(--white);border-radius:var(--radius-lg);padding:var(--space-2xl);text-align:center;box-shadow:var(--shadow-md);max-width:640px;margin:0 auto}}
   .ph-cta h3{{font-size:var(--text-lg);color:var(--brand-green);margin-bottom:var(--space-sm)}}
   .ph-cta p{{color:var(--ink-500);font-size:var(--text-sm);margin-bottom:var(--space-md)}}
-  .ph-footer{{text-align:center;padding:var(--space-lg) 0;color:var(--ink-300);font-size:var(--text-xs)}}
-  @media(max-width:640px){{.ph-hero h1{{font-size:var(--text-2xl)}}}}
+  .ph-footer{{background:#1a3a20;color:rgba(255,255,255,0.7);text-align:center;padding:var(--space-xl) var(--space-lg);font-size:var(--text-sm);margin-top:var(--space-2xl)}}
+  .ph-footer a{{color:var(--brand-gold);text-decoration:none}}
+  .ph-footer a:hover{{text-decoration:underline}}
+  .ph-footer-bottom{{font-size:var(--text-xs);color:rgba(255,255,255,0.45);margin-top:var(--space-md)}}
+  @media(max-width:640px){{.ph-hero h1{{font-size:var(--text-2xl)}}.ph-header{{padding:var(--space-sm) var(--space-md)}}}}
 </style>
 </head>
 <body>
 <header class="ph-header">
-  <a href="/">乡村振兴知识工厂</a>
+  <a href="/" class="ph-header-brand"><span class="brand-icon">乡</span>乡村振兴知识工厂</a>
 </header>
 <main class="container">
   <section class="ph-hero">
@@ -674,7 +671,8 @@ def _placeholder_page(title, desc):
   </div>
 </main>
 <footer class="ph-footer">
-  <p>四川乡村振兴操盘手的第一知识工具 &copy; 2026</p>
+  <p>四川乡村振兴操盘手的第一知识工具 — <a href="/">乡村振兴知识工厂</a></p>
+  <div class="ph-footer-bottom">&copy; 2026 乡村振兴知识工厂 &middot; 聚焦四川 &middot; 产品驱动知识管道</div>
 </footer>
 <script>
 if('serviceWorker' in navigator){{navigator.serviceWorker.register('/static/js/sw.js')}}
