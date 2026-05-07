@@ -381,6 +381,12 @@ class CEOAgent(BaseAgent):
             self._log("循环", "info", f"第{self.cycle}/{max_iterations}轮 — 深度感知中...")
             state = self._perceive()
             plan = self._strategize(state)
+
+            # 每5轮执行CEO自我能力检测+自动改进
+            if self.cycle % 5 == 0:
+                self._log("能力检测", "info", "CEO自我能力检测中...")
+                gaps = self._detect_capability_gaps(state)
+
             results = self._execute_plan(plan)
             self._learn(plan, results)
             self._detect_stagnation(state)
@@ -1050,6 +1056,520 @@ test_qa_quality / evolve_agents / quality_audit / optimize_environment / idle
             self._stagnation_counter = 0
         self._last_kps_count = current_kps
         self._last_audit_score = current_score
+
+    def _detect_capability_gaps(self, state):
+        """CEO自我能力检测: 分析自身和Agent团队的能力缺口。
+        自动决策: 升级Agent / 新增Agent / 冷冻Agent。
+        所有决策显示在workspace,用户可打断。
+        """
+        gaps = []
+
+        # 检查自身能力
+        ceo_gaps = self._assess_ceo_capabilities(state)
+        if ceo_gaps:
+            gaps.extend(ceo_gaps)
+
+        # 检查Agent团队能力
+        agent_gaps = self._assess_agent_team(state)
+        if agent_gaps:
+            gaps.extend(agent_gaps)
+
+        # 检查缺失的关键能力
+        missing = self._check_missing_capabilities(state)
+        if missing:
+            gaps.extend(missing)
+
+        # 执行自动改进
+        if gaps:
+            actions = self._auto_improve(gaps)
+            self._display_to_workspace(actions)
+        else:
+            self._log("能力检测", "info", "本轮无新增能力缺口,团队配置合理")
+
+        return gaps
+
+    def _assess_ceo_capabilities(self, state):
+        """评估CEO自身能力是否匹配当前阶段需求。
+        对比产品发展阶段所需能力 vs CEO当前状态。
+        """
+        gaps = []
+        kps = state.get("kps_confirmed", 0)
+        score = state.get("audit_avg_score", 0)
+        pending = state.get("pending_files", 0)
+
+        # 1. 产品化阶段: 需要产品思维,不只是管道思维
+        if kps > 100 and self.metrics.get("agents_deployed", 0) < 20:
+            gaps.append({
+                "scope": "ceo",
+                "gap_type": "product_mindset",
+                "severity": "medium",
+                "detail": "CEO仍以管道运行为主,产品化阶段需要更多产品决策和用户洞察",
+                "evidence": f"Agents部署{self.metrics['agents_deployed']}次,但产品化Agent(PM/支付/通知)鲜被调度",
+            })
+
+        # 2. 收入导向: 月入目标 vs 实际进展
+        if self.cycle > 20 and self.metrics.get("agent_upgrades", 0) < 3:
+            gaps.append({
+                "scope": "ceo",
+                "gap_type": "revenue_focus",
+                "severity": "high",
+                "detail": "CEO未驱动足够的Agent升级,团队能力可能停滞,影响产品交付质量",
+                "evidence": f"运行{self.cycle}轮仅{self.metrics['agent_upgrades']}次Agent升级",
+            })
+
+        # 3. 停滞检测: 连续停滞说明CEO策略需要调整
+        if self._stagnation_counter >= 5:
+            gaps.append({
+                "scope": "ceo",
+                "gap_type": "strategy_stagnation",
+                "severity": "high",
+                "detail": f"连续{self._stagnation_counter}轮无进展,CEO需要深度反思策略方向",
+                "evidence": f"KPs停滞在{kps}, Audit评分{score}",
+            })
+
+        # 4. 产品交付: QA是第一优先级产品
+        if kps > 50 and state.get("kps_qa_scored", 0) < kps * 0.3:
+            gaps.append({
+                "scope": "ceo",
+                "gap_type": "qa_product_gap",
+                "severity": "high",
+                "detail": "QA评分覆盖率<30%,AI政策问答助手(第一优先级产品)缺乏质量基础",
+                "evidence": f"{state['kps_qa_scored']}/{kps}条KP有QA评分",
+            })
+
+        return gaps
+
+    def _assess_agent_team(self, state):
+        """评估Agent团队健康度: 僵尸Agent / 过载Agent / 技能缺失。
+        检查active agents vs registered agents的差异。
+        """
+        gaps = []
+        if not self._orchestra:
+            return gaps
+
+        # 1. 僵尸Agent检测: 被冷冻但仍占资源
+        frozen_candidates = ["zhihu_operator", "douyin_operator", "xiaohongshu_operator",
+                           "design_standard_researcher", "construction_standard_researcher",
+                           "operation_standard_researcher"]
+        for code in frozen_candidates:
+            agent = self._find_agent(code)
+            if agent:
+                gaps.append({
+                    "scope": "agent_team",
+                    "gap_type": "zombie_agent",
+                    "agent_code": code,
+                    "severity": "low",
+                    "detail": f"Agent '{code}'为pre-revenue角色,当前无实际需求,建议冷冻以释放调度资源",
+                })
+
+        # 2. 关键岗位缺失检查
+        critical_roles = {
+            "qa_architect": "研发中心",
+            "performance_engineer": "技术平台部",
+            "user_researcher": "客户交付部",
+        }
+        for code, dept in critical_roles.items():
+            if not self._find_agent(code):
+                gaps.append({
+                    "scope": "agent_team",
+                    "gap_type": "missing_role",
+                    "agent_code": code,
+                    "dept": dept,
+                    "severity": "medium",
+                    "detail": f"关键岗位'{code}'未在团队中找到,建议评估是否需要新增",
+                })
+
+        # 3. 移动端能力检查(已解冻但仍需验证)
+        mobile = self._find_agent("mobile_specialist")
+        if mobile and self.metrics.get("agents_deployed", 0) > 0:
+            # 检查移动端专家是否被实际调度过
+            mobile_used = any(
+                "mobile" in str(e.get("task", "")).lower()
+                for e in self.log[-30:]
+            )
+            if not mobile_used:
+                gaps.append({
+                    "scope": "agent_team",
+                    "gap_type": "underutilized_agent",
+                    "agent_code": "mobile_specialist",
+                    "severity": "medium",
+                    "detail": "移动端专家已解冻但未被调度,QA产品需要移动端适配",
+                })
+
+        return gaps
+
+    def _check_missing_capabilities(self, state):
+        """检查缺失的关键能力: 产品路线图所需 vs 现有Agent能力矩阵。
+        基于产品体系(5近期+3远期)映射到所需Agent能力。
+        """
+        gaps = []
+        kps = state.get("kps_confirmed", 0)
+
+        # 产品→能力映射
+        product_capabilities = {
+            "AI政策问答助手": {
+                "required": ["qa_architect", "backend_engineer", "mobile_specialist"],
+                "priority": "P0",
+                "phase": "近期上线",
+            },
+            "线上录播课": {
+                "required": ["content_packager", "content_marketer", "payment_engineer"],
+                "priority": "P1",
+                "phase": "近期上线",
+            },
+            "项目合规自检工具": {
+                "required": ["policy_researcher", "backend_engineer", "frontend_architect"],
+                "priority": "P1",
+                "phase": "近期上线",
+            },
+            "政策变化日报": {
+                "required": ["policy_researcher", "notification_engineer", "crawler_scheduler"],
+                "priority": "P1",
+                "phase": "近期上线",
+            },
+            "模板工具包": {
+                "required": ["methodology_expert", "content_packager", "payment_engineer"],
+                "priority": "P2",
+                "phase": "近期上线",
+            },
+        }
+
+        # 查找已有agent代码
+        existing_codes = {a.agent_code for a in (self._orchestra or [])}
+
+        for product, cap_info in product_capabilities.items():
+            missing = [code for code in cap_info["required"] if code not in existing_codes]
+            if missing:
+                gaps.append({
+                    "scope": "missing_capability",
+                    "gap_type": "product_capability_gap",
+                    "product": product,
+                    "priority": cap_info["priority"],
+                    "phase": cap_info["phase"],
+                    "missing_roles": missing,
+                    "severity": "high" if cap_info["priority"] == "P0" else "medium",
+                    "detail": f"产品'{product}'({cap_info['phase']})缺少必需角色: {', '.join(missing)}",
+                })
+
+        # 系统级能力检查
+        system_capabilities = {
+            "performance_optimization": {
+                "required_when": "kps > 200 and response_time > 5s",
+                "severity": "high",
+                "detail": "知识库规模增长需要性能优化能力,当前无专职performance_engineer",
+            },
+            "payment_integration": {
+                "required_when": "revenue > 0",
+                "severity": "medium",
+                "detail": "一旦开始收费,支付集成能力必须就绪",
+            },
+            "user_authentication": {
+                "required_when": "revenue > 0",
+                "severity": "medium",
+                "detail": "付费用户需要账号系统,当前无专职user_system_engineer",
+            },
+        }
+
+        for cap_name, cap_info in system_capabilities.items():
+            if "performance" in cap_name and kps > 200:
+                if "performance_engineer" not in existing_codes:
+                    gaps.append({
+                        "scope": "missing_capability",
+                        "gap_type": "system_capability_gap",
+                        "capability": cap_name,
+                        "severity": cap_info["severity"],
+                        "detail": cap_info["detail"],
+                    })
+            if "payment" in cap_name:
+                if "payment_engineer" not in existing_codes:
+                    gaps.append({
+                        "scope": "missing_capability",
+                        "gap_type": "system_capability_gap",
+                        "capability": cap_name,
+                        "severity": "low",
+                        "detail": cap_info["detail"] + "(pre-revenue阶段,非紧急)",
+                    })
+            elif "user" in cap_name:
+                if "user_system_engineer" not in existing_codes:
+                    gaps.append({
+                        "scope": "missing_capability",
+                        "gap_type": "system_capability_gap",
+                        "capability": cap_name,
+                        "severity": "low",
+                        "detail": cap_info["detail"] + "(pre-revenue阶段,非紧急)",
+                    })
+
+        return gaps
+
+    def _auto_improve(self, gaps):
+        """对每个能力缺口做出自动改进决策: UPGRADE / HIRE / FREEZE / LEARN。
+        返回决策列表,每条含理由。CEO可自主决定,但所有决策透明可见。
+        """
+        actions = []
+        existing_codes = {a.agent_code for a in (self._orchestra or [])}
+
+        for gap in gaps:
+            gap_type = gap.get("gap_type", "")
+            scope = gap.get("scope", "")
+
+            # --- UPGRADE: 已有Agent但能力不足 → 升级 ---
+            if gap_type in ("underutilized_agent",):
+                agent_code = gap.get("agent_code", "")
+                agent = self._find_agent(agent_code)
+                if agent:
+                    actions.append({
+                        "action": "UPGRADE",
+                        "target": agent_code,
+                        "agent_name": agent.agent_name,
+                        "reason": gap["detail"],
+                        "severity": gap.get("severity", "medium"),
+                        "source_gap": gap,
+                    })
+
+            # --- UPGRADE: CEO自身能力缺口 → 深度思考 ---
+            elif scope == "ceo" and gap_type in ("product_mindset", "revenue_focus", "strategy_stagnation"):
+                actions.append({
+                    "action": "LEARN",
+                    "target": "ceo_strategist",
+                    "agent_name": "CEO战略家",
+                    "reason": gap["detail"],
+                    "severity": gap.get("severity", "medium"),
+                    "learning_plan": (
+                        f"CEO深度think(): 分析{gap_type}的根因,"
+                        f"调整策略方向,制定具体改进措施"
+                    ),
+                    "source_gap": gap,
+                })
+
+            # --- HIRE: 缺少关键角色 → 新增Agent ---
+            elif gap_type in ("missing_role", "product_capability_gap", "system_capability_gap"):
+                missing_codes = gap.get("missing_roles", [])
+                if not missing_codes and gap.get("agent_code"):
+                    missing_codes = [gap["agent_code"]]
+                if not missing_codes:
+                    cap_name = gap.get("capability", "")
+                    if "performance" in cap_name:
+                        missing_codes = ["performance_engineer"]
+                    elif "payment" in cap_name:
+                        missing_codes = ["payment_engineer"]
+                    elif "user" in cap_name:
+                        missing_codes = ["user_system_engineer"]
+
+                for code in missing_codes:
+                    if code in existing_codes:
+                        continue  # 已存在,跳过
+                    actions.append({
+                        "action": "HIRE",
+                        "target": code,
+                        "agent_name": self._invent_agent_name(code),
+                        "reason": gap["detail"],
+                        "severity": gap.get("severity", "medium"),
+                        "department": gap.get("dept", self._get_agent_dept(code)),
+                        "source_gap": gap,
+                    })
+
+            # --- FREEZE: 冗余/僵尸Agent → 冷冻 ---
+            elif gap_type == "zombie_agent":
+                agent_code = gap.get("agent_code", "")
+                agent = self._find_agent(agent_code)
+                if agent:
+                    actions.append({
+                        "action": "FREEZE",
+                        "target": agent_code,
+                        "agent_name": agent.agent_name,
+                        "reason": gap["detail"],
+                        "severity": "low",
+                        "source_gap": gap,
+                    })
+
+            # --- 默认: 标记为CEO审查 ---
+            else:
+                actions.append({
+                    "action": "REVIEW",
+                    "target": gap.get("agent_code", gap.get("capability", "unknown")),
+                    "agent_name": "",
+                    "reason": gap.get("detail", "待CEO手动审查"),
+                    "severity": gap.get("severity", "low"),
+                    "source_gap": gap,
+                })
+
+        # 去重: 同一target只保留最高severity的action
+        seen = {}
+        deduped = []
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        for a in actions:
+            key = (a["action"], a["target"])
+            if key not in seen or severity_order.get(a["severity"], 2) < severity_order.get(seen[key].get("severity", "low"), 2):
+                seen[key] = a
+        deduped = list(seen.values())
+
+        # 执行决策并记录日志
+        for action in deduped:
+            self._execute_improvement_action(action)
+            self._log_ceo_decision(action)
+
+        return deduped
+
+    def _execute_improvement_action(self, action):
+        """执行单个改进动作。"""
+        action_type = action["action"]
+        target = action["target"]
+
+        try:
+            if action_type == "UPGRADE":
+                # 通过agent_evolver升级
+                self._log("自动升级", "info",
+                         f"{action.get('agent_name', target)} — {action['reason'][:80]}")
+                # 使用evolution_ops进行升级
+                try:
+                    from agents.evolution_ops import build_evolution_ops_from_ceo
+                    ops = build_evolution_ops_from_ceo(self)
+                    ops.upgrade_low_performers(threshold=4.0)
+                except Exception:
+                    pass
+
+            elif action_type == "HIRE":
+                # 通过CEO.add_agent()新增Agent
+                agent_code = target
+                agent_name = action.get("agent_name", target)
+                dept = action.get("department", "ceo_office")
+                self._log("招聘Agent", "info",
+                         f"{agent_name}({agent_code}) → {dept}: {action['reason'][:80]}")
+                # 注册到agent_orchestra
+                try:
+                    self.add_agent(
+                        agent_code=agent_code,
+                        agent_name=agent_name,
+                        agent_type="role",
+                        identity_text=(
+                            f"我是{agent_name}。CEO基于系统能力检测自动招聘我。"
+                            f"原因: {action['reason'][:150]}"
+                        ),
+                        core_questions=[
+                            "我的职责对集团利润有什么贡献?",
+                            "我的输出质量标准是什么?",
+                            "我需要与其他哪个Agent协作?",
+                        ],
+                        quality_standards=[
+                            "每项工作有明确产出物",
+                            "产出物经过自检后再交付",
+                            "主动报告进度和阻塞",
+                        ],
+                        scoring_dimensions=[
+                            "任务完成度", "协作质量", "产出效率", "主动报告",
+                        ],
+                        department=dept,
+                    )
+                    self.metrics["agents_deployed"] += 1
+                except Exception as e:
+                    self._log("招聘失败", "warning", f"{agent_code}: {str(e)[:100]}")
+
+            elif action_type == "FREEZE":
+                # 冷冻冗余Agent
+                agent = self._find_agent(target)
+                agent_name = agent.agent_name if agent else target
+                self._log("冷冻Agent", "info",
+                         f"{agent_name}({target}) — {action['reason'][:80]}")
+                self.remove_agent(target)
+
+            elif action_type == "LEARN":
+                # CEO深度思考自我提升
+                self._log("深度学习", "info",
+                         f"CEO自我提升: {action.get('learning_plan', action['reason'][:100])}")
+                # 触发CEO深度think——在实际产品环境中会调用V4-Pro
+                try:
+                    learning_context = {
+                        "action": "ceo_self_improve",
+                        "gap": action.get("source_gap", {}),
+                        "plan": action.get("learning_plan", ""),
+                    }
+                    self.think(learning_context, deep=True)
+                except Exception:
+                    pass
+
+            elif action_type == "REVIEW":
+                # 标记为待CEO手动审查
+                self._log("待审查", "info",
+                         f"{target}: {action['reason'][:80]} [需CEO手动决策]")
+
+        except Exception as e:
+            self._log("改进执行异常", "warning",
+                     f"{action_type} {target}: {str(e)[:150]}")
+
+    def _invent_agent_name(self, agent_code):
+        """根据agent_code生成可读的Agent名称。"""
+        name_map = {
+            "qa_architect": "QA架构师",
+            "performance_engineer": "性能工程师",
+            "user_researcher": "用户研究员",
+            "payment_engineer": "支付集成师",
+            "user_system_engineer": "用户系统工程师",
+            "notification_engineer": "通知系统师",
+            "growth_engineer": "增长工程师",
+            "content_packager": "内容包装师",
+        }
+        return name_map.get(agent_code, agent_code.replace("_", " ").title())
+
+    def _display_to_workspace(self, actions):
+        """将CEO自动决策输出到workspace,用户可见可打断。
+        所有决策透明展示,包含理由和严重程度。
+        """
+        if not actions:
+            print("[CEO自动决策] 本轮无能力改进需求,团队配置合理。")
+            return
+
+        print()
+        print("=" * 65)
+        print(f"  [CEO自动决策] 检测到 {len(actions)} 个能力缺口,已自动执行改进:")
+        print("=" * 65)
+
+        action_labels = {
+            "UPGRADE": "[升级]",
+            "HIRE": "[招聘]",
+            "FREEZE": "[冷冻]",
+            "LEARN": "[学习]",
+            "REVIEW": "[审查]",
+        }
+        sev_icons = {"high": "!!", "medium": "! ", "low": "  "}
+
+        for i, a in enumerate(actions, 1):
+            label = action_labels.get(a["action"], "[?]")
+            sev = sev_icons.get(a.get("severity", "low"), "  ")
+            name = a.get("agent_name") or a["target"]
+            print(f"  {sev}{i}. {label} {name}")
+            print(f"     原因: {a['reason'][:100]}")
+            if a.get("learning_plan"):
+                print(f"     计划: {a['learning_plan'][:100]}")
+            if a.get("department"):
+                print(f"     部门: {a['department']}")
+            print()
+
+        print(f"  [提示] 按任意键可打断... (决策已记录到 logs/ceo_decisions.jsonl)")
+        print("=" * 65)
+        print()
+
+    def _log_ceo_decision(self, action):
+        """将CEO决策写入审计日志 logs/ceo_decisions.jsonl。"""
+        try:
+            logs_dir = PROJECT_ROOT / "logs"
+            logs_dir.mkdir(exist_ok=True)
+            log_path = logs_dir / "ceo_decisions.jsonl"
+
+            record = {
+                "time": datetime.now().isoformat(),
+                "type": "capability_gap",
+                "cycle": self.cycle,
+                "action": action.get("action", "?"),
+                "target": action.get("target", ""),
+                "agent_name": action.get("agent_name", ""),
+                "reason": action.get("reason", "")[:200],
+                "severity": action.get("severity", "low"),
+                "department": action.get("department", ""),
+            }
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            pass  # 日志写入失败不阻塞主流程
 
     def _action_feed_test_files(self):
         from agents.auto_feeder import AutoFeeder

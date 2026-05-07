@@ -119,6 +119,9 @@ def _tokenize_query(query: str) -> List[str]:
 class QaAssistantEngine:
     """F055 问答主引擎,与 PremiumJudgeEngine 类结构对齐."""
 
+    # NPU engine pool: reuse instance across calls to avoid repeated ONNX init
+    _npu_engine_cache = None
+
     def __init__(
         self,
         db: Any,
@@ -135,6 +138,8 @@ class QaAssistantEngine:
         # 运行时统计
         self._ai_calls = 0
         self._cost = 0.0   # 本次问答累计成本(元)
+        self._retrieval_ms = 0  # 检索耗时(ms)
+        self._generation_ms = 0  # 生成耗时(ms)
 
     # ================================================================
     # 主入口
@@ -185,6 +190,7 @@ class QaAssistantEngine:
         if self._is_canceled():
             return self._canceled_result(start_ts, "retrieve 前取消")
 
+        retrieval_start = time.time()
         npu_used = False
         candidates = []
         if NPUEngine is not None:
@@ -193,6 +199,7 @@ class QaAssistantEngine:
                 npu_used = True
         if not candidates:
             candidates = self._retrieve_and_score(keywords)
+        self._retrieval_ms = int((time.time() - retrieval_start) * 1000)
         if not candidates:
             # 0 召回 → 直接走 L3
             return self._handle_zero_recall(query, mode, is_test_query,
@@ -221,8 +228,10 @@ class QaAssistantEngine:
         if self._is_canceled():
             return self._canceled_result(start_ts, "generate 前取消")
 
+        gen_start = time.time()
         answer, source, gen_err, model_used = self._generate_with_fallback_chain(
             query, top_n, model_pref=model_pref)
+        self._generation_ms = int((time.time() - gen_start) * 1000)
 
         # followup 补救(主链/L1/R1 成功但 板块 3 空)
         if source != 'rule_fallback':
@@ -237,6 +246,11 @@ class QaAssistantEngine:
 
         # 注入 policy_basis(来源追溯)
         self._add_policy_basis(answer, top_n)
+
+        # 速度日志: 分离检索时间和生成时间
+        print(f"[QA] 检索{self._retrieval_ms}ms + 生成{self._generation_ms}ms = "
+              f"总{int((time.time() - start_ts) * 1000)}ms "
+              f"(来源: {source}, 模型: {model_used or '无'})")
 
         # ---- Stage 5: record ----
         self._emit_progress("record", 4, "写入历史 + 使用埋点")
@@ -305,6 +319,8 @@ class QaAssistantEngine:
             "answer": answer,
             "source": source,
             "latency_ms": latency_ms,
+            "retrieval_ms": self._retrieval_ms,
+            "generation_ms": self._generation_ms,
             "retrieved_kp_ids": retrieved_ids,
             "canceled": False,
             "cost_estimate_cny": round(self._cost, 4),
@@ -590,9 +606,11 @@ class QaAssistantEngine:
                 "coverage_gap":
                     "本次检索 0 条命中, 当前知识库未覆盖此主题. "
                     "建议补充该主题相关的政策原文 / 实操案例 / 投标素材.",
+                "policy_basis": [],
             }
         bullets = []
         ev_ids = []
+        policy_items = []
         for kp in top3:
             title = kp.get('title') or '无标题'
             src = (kp.get('renamed_filename')
@@ -601,6 +619,11 @@ class QaAssistantEngine:
             kid = kp.get('kp_id')
             if kid is not None:
                 ev_ids.append(int(kid))
+            policy_items.append({
+                "kp_id": kid,
+                "title": title[:80],
+                "excerpt": (kp.get('original_excerpt') or '')[:200],
+            })
         return {
             "direct_answer":
                 "本次 AI 服务暂时不稳定, 系统列出库内最相关的 %d 条知识点供老唐自行参考:\n%s"
@@ -610,6 +633,7 @@ class QaAssistantEngine:
             "coverage_gap":
                 "本次因 AI 调用失败走规则兜底, 板块 3 / 板块 4 暂未生成. "
                 "建议查看依据后自行判断, 或稍后重试.",
+            "policy_basis": policy_items,
         }
 
     # ================================================================
@@ -683,7 +707,9 @@ class QaAssistantEngine:
             ]
             kp_id_map = {i: r['kp_id'] for i, r in enumerate(pool_rows)}
 
-            engine = NPUEngine()
+            if QaAssistantEngine._npu_engine_cache is None:
+                QaAssistantEngine._npu_engine_cache = NPUEngine()
+            engine = QaAssistantEngine._npu_engine_cache
             engine.build_index(kp_texts)
             results = engine.hybrid_search(
                 query, top_k=min(top_k, len(kp_texts)))

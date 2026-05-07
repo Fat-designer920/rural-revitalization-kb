@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "agents"))
 
 from base_agent import BaseAgent
+from agents.hardware_profile import HardwareProfile
 
 
 def _get_windows_memory():
@@ -75,8 +76,10 @@ class InfrastructureAgent(BaseAgent):
             client=client, db=db, model="deepseek-v4-flash",
         )
 
-        # 硬件检测
-        self.capabilities = self._detect_all()
+        # 硬件检测(使用通用HardwareProfile)
+        self.hardware = HardwareProfile()
+        self.capabilities = self._derive_capabilities_from_hardware()
+        self._previous_hw_snapshot = self.hardware.to_dict()
         self._monitor_thread = None
         self._monitor_running = False
         self._last_mem_pct = 0
@@ -96,59 +99,21 @@ class InfrastructureAgent(BaseAgent):
     # ================================================================
     # 硬件检测
     # ================================================================
-    def _detect_all(self):
-        """全面检测系统硬件能力"""
-        caps = {
-            "platform": platform.system(),
-            "platform_release": platform.release(),
-            "cpu_cores": os.cpu_count() or 1,
+    def _derive_capabilities_from_hardware(self):
+        """从HardwareProfile派生向后兼容的capabilities字典。"""
+        hw = self.hardware
+        return {
+            "platform": hw.cpu.get("platform", platform.system()),
+            "platform_release": hw.cpu.get("platform_release", platform.release()),
+            "cpu_cores": hw.cpu.get("cores", 1),
             "python_version": platform.python_version(),
-            "npu_available": False,
-            "npu_provider": None,
-            "gpu_available": False,
-            "gpu_name": None,
-            "ram_gb": 0,
-            "disk_free_gb": 0,
+            "npu_available": hw.npu.get("available", False),
+            "npu_provider": hw.npu.get("provider"),
+            "gpu_available": hw.gpu.get("available", False),
+            "gpu_name": hw.gpu.get("name"),
+            "ram_gb": hw.ram.get("total_gb", 0),
+            "disk_free_gb": hw.disk.get("free_gb", 0),
         }
-
-        # RAM
-        mem = _get_windows_memory()
-        if mem:
-            caps["ram_gb"] = mem["total_gb"]
-
-        # NPU (ONNX Runtime DirectML)
-        try:
-            import onnxruntime as ort
-            providers = ort.get_available_providers()
-            if 'DmlExecutionProvider' in providers:
-                caps["npu_available"] = True
-                caps["npu_provider"] = "DirectML (Intel NPU / AMD / Qualcomm)"
-            elif 'CUDAExecutionProvider' in providers:
-                caps["gpu_available"] = True
-                caps["npu_provider"] = "CUDA"
-        except ImportError:
-            pass
-
-        # GPU (torch CUDA)
-        if not caps["gpu_available"]:
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    caps["gpu_available"] = True
-                    caps["gpu_name"] = torch.cuda.get_device_name(0)
-            except ImportError:
-                pass
-
-        # GPU (DirectML via ONNX)
-        if not caps["gpu_available"] and caps.get("npu_provider") == "DirectML (Intel NPU / AMD / Qualcomm)":
-            caps["gpu_available"] = True
-            caps["gpu_name"] = "DirectML (NPU/GPU统一加速)"
-
-        # Disk
-        disk = _get_disk_usage()
-        caps["disk_free_gb"] = disk.get("free_gb", 0)
-
-        return caps
 
     # ================================================================
     # 核心能力: 系统快照
@@ -177,6 +142,7 @@ class InfrastructureAgent(BaseAgent):
                 "cpu_cores": self.capabilities.get("cpu_cores", "?"),
                 "npu": f"{'ON' if self.capabilities.get('npu_available') else 'OFF'} ({self.capabilities.get('npu_provider', 'N/A')})",
                 "gpu": f"{'ON' if self.capabilities.get('gpu_available') else 'OFF'} ({self.capabilities.get('gpu_name', 'N/A')})",
+                "capacity_score": self.hardware.assess_capacity(),
             },
             "tasks": {"total": total_tasks, "npu": self._task_stats.get("npu", 0),
                       "gpu": self._task_stats.get("gpu", 0), "cpu": self._task_stats.get("cpu", 0)},
@@ -184,6 +150,24 @@ class InfrastructureAgent(BaseAgent):
                             "uptime_minutes": round(elapsed / 60, 1)},
             "alerts": self._alerts[-5:],
         }
+
+    # ================================================================
+    # 容量规划(新增, 基于HardwareProfile)
+    # ================================================================
+    def get_capacity_plan(self, task_types=None):
+        """根据硬件能力获取任务并行度和批处理计划。"""
+        return self.hardware.plan_tasks(task_types)
+
+    def detect_hardware_change(self):
+        """检测硬件是否有变化(升级/降级)。
+        返回: {changed: bool, changes: [str], summary: str}。
+        """
+        result = self.hardware.compare_to(self._previous_hw_snapshot)
+        if result["changed"]:
+            self._previous_hw_snapshot = self.hardware.to_dict()
+            self.capabilities = self._derive_capabilities_from_hardware()
+            self._alert("INFO", "硬件变化检测: " + result["summary"])
+        return result
 
     # ================================================================
     # 内存管理
