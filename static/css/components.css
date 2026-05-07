@@ -1,0 +1,56 @@
+/* Components v1.0 — 18个组件,MUJI原则:无边框,用间距和背景色区分 */
+/* 1.按钮 */
+.btn{display:inline-flex;align-items:center;gap:var(--space-xs);padding:8px 24px;
+  font-size:var(--text-base);font-weight:var(--font-medium);border:none;border-radius:var(--radius-md);
+  cursor:pointer;transition:transform .15s,opacity .15s;text-decoration:none}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--brand-green);color:var(--white)}
+.btn-primary:hover{background:var(--brand-green-hover)}
+.btn-secondary{background:transparent;color:var(--brand-green);border:1px solid var(--brand-green)}
+.btn-secondary:hover{background:var(--brand-green-light)}
+.btn-ghost{background:transparent;color:var(--brand-green)}
+.btn-ghost:hover{text-decoration:underline}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+/* 2.输入框 */
+.input{height:48px;padding:0 var(--space-md);font-size:var(--text-base);font-family:var(--font-sans);
+  border:1px solid var(--border);border-radius:var(--radius-md);background:var(--white);color:var(--ink-500);
+  outline:none;transition:border-color .15s;width:100%;box-sizing:border-box}
+.input:focus{border-color:var(--brand-green)}
+.input::placeholder{color:var(--ink-100)}
+textarea.input{height:auto;padding:var(--space-md);resize:vertical;min-height:100px}
+/* 3.卡片 */
+.card{background:var(--white);border-radius:var(--radius-lg);padding:var(--space-lg);
+  box-shadow:var(--shadow-md);margin-bottom:var(--space-lg)}
+/* 4.导航(Apple HIG sticky) */
+.nav{position:sticky;top:0;z-index:100;height:52px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 var(--space-lg);
+  background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--border)}
+.nav-title{font-size:15px;font-weight:var(--font-semibold);color:var(--ink-900)}
+/* 5.标签 */
+.tag{display:inline-flex;align-items:center;padding:2px 8px;font-size:var(--text-xs);
+  border-radius:var(--radius-sm);font-weight:var(--font-medium)}
+.tag-green{background:var(--brand-green-light);color:var(--brand-green)}
+.tag-gold{background:var(--brand-gold-light);color:var(--brand-gold)}
+.tag-red{background:var(--red-light);color:var(--red-500)}
+/* 6.分隔线 */
+.divider{height:.5px;background:var(--border);margin:var(--space-lg) 0;border:none}
+/* 7.容器 */
+.container{max-width:800px;margin:0 auto;padding:var(--space-xl)}
+@media(max-width:640px){.container{padding:var(--space-md)}}
+/* 8.弹性间距 */
+.stack-sm>*+*{margin-top:var(--space-sm)}
+.stack-md>*+*{margin-top:var(--space-md)}
+.stack-lg>*+*{margin-top:var(--space-lg)}
+/* 9.骨架屏 */
+.skeleton{background:linear-gradient(90deg,var(--border-light) 25%,var(--brand-warm) 50%,var(--border-light) 75%);
+  background-size:200% 100%;animation:skeleton-shimmer 1.5s infinite;border-radius:var(--radius-md)}
+@keyframes skeleton-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* 10.Toast */
+.toast{position:fixed;bottom:var(--space-lg);left:50%;transform:translateX(-50%);z-index:200;
+  padding:12px 24px;border-radius:var(--radius-md);font-size:var(--text-sm);box-shadow:var(--shadow-lg);
+  animation:toast-in .3s ease}
+.toast-success{background:var(--green-500);color:var(--white)}
+.toast-error{background:var(--red-500);color:var(--white)}
+@keyframes toast-in{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+/* 11-18 预留:dialog/tooltip/switch/select/progress/pagination/empty-state/prose */

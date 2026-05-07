@@ -92,6 +92,7 @@
 | **79** | **Agent自主进化** | **每个Agent都是真人型思考实体。AgentEvolutionEngine每月评估全部Agent。评分<3.0连续2月=淘汰。新Agent 30天试用期。所有变更CEO审批。** | **AGENT-EVO** |
 | **80** | **安全防幻觉双保险** | **所有外部内容入口→SafetyFilter(强制门禁)。所有AI输出→HallucinationGuard(来源追溯+置信度分层)。uncertain=禁止输出。** | **SAFETY** |
 | **81** | **.bat编码铁律** | **.bat/.cmd含中文=必须UTF-8 BOM。窗口标题=必须Python SetConsoleTitleW,禁用cmd title。改完用python utf-8-sig重写确保BOM。** | **BAT-ENC** |
+| **82** | **新任务不挤旧任务** | **任何新规划必须列出与已有Phase的关系。汇报状态必须列出所有Phase。新任务加入todo时保留旧Phase追踪。** | **NO-DROP** |
 
 ## 7. 项目文件导航(读什么去哪查)
 
