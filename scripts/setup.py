@@ -511,7 +511,9 @@ def _upgrade_schema_to_current(db_path):
             existing = {r[1] for r in c.fetchall()}
             if col_name not in existing:
                 c.execute(f"ALTER TABLE knowledge_points ADD COLUMN {col_name} {col_def}")
-                summary["fields_added"].append(col_name)
+                summary["columns_added"].append(col_name)
+            else:
+                summary["columns_skipped"].append(col_name)
 
         # Step 22: v2.3.7-part2 新字段索引
         for idx_sql in [

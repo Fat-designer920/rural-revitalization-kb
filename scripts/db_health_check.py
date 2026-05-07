@@ -23,7 +23,7 @@ except Exception:
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 DB_PATH = os.path.join(PROJECT_DIR, 'data', 'database', 'knowledge_base.db')
-BACKUP_DIR = os.path.join(PROJECT_DIR, 'backups')
+BACKUP_DIR = os.path.join(PROJECT_DIR, 'data', 'backups')
 REPORT_PATH = os.path.join(PROJECT_DIR, 'db_health_check_report.txt')
 
 # ===== 预期锚点 =====

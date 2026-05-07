@@ -5588,16 +5588,18 @@ def _open(port):
     import time; time.sleep(1.5); webbrowser.open(f"http://localhost:{port}")
 
 def main():
-    p=PROJECT_ROOT/"config"/"settings.json"; port=5000
+    p=PROJECT_ROOT/"config"/"settings.json"; port=5000; host="0.0.0.0"
     if p.exists():
-        with open(p,"r",encoding="utf-8") as f: port=json.load(f).get("flask_port",5000)
+        with open(p,"r",encoding="utf-8") as f:
+            cfg=json.load(f)
+            port=cfg.get("flask_port",5000)
+            host=cfg.get("flask_host","0.0.0.0")
     print("="*60)
-    print(f"  乡村振兴知识库 - 管理后台 v2.3.6-part1")
-    print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答")
-    print(f"  v2.3.6-part1: 并行双模型提取(V4-Flash 全覆盖 + V4-Pro 深挖核心段 + 合并去重)")
+    print(f"  乡村振兴知识库 - 管理后台 v2.3.7-part5")
+    print(f"  Tab1 知识审核 | Tab2 系统管理 | Tab3 智能问答(手机可刷)")
     print("="*60)
-    print(f"  地址: http://localhost:{port}")
-    print(f"  诊断: http://localhost:{port}/api/debug")
+    print(f"  本机访问: http://localhost:{port}")
+    print(f"  系统诊断: http://localhost:{port}/api/debug")
     print("-"*60)
     try:
         conn=db.get_connection();c=conn.cursor()
@@ -5606,6 +5608,11 @@ def main():
     except Exception as e: print(f"  [WARN] DB: {e}")
     print("-"*60)
     threading.Thread(target=_open,args=(port,),daemon=True).start()
-    app.run(host="127.0.0.1",port=port,debug=False)
+    try:
+        app.run(host=host,port=port,debug=False)
+    except OSError as e:
+        print(f"\n  [FATAL] 端口 {port} 被占用: {e}")
+        print(f"  解决方法: 修改 config/settings.json 中 flask_port 为其他值(如5001)")
+        input("\n按回车退出...")
 
 if __name__=="__main__": main()

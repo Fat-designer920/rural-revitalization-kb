@@ -184,7 +184,7 @@ class ConfigWizard:
         config["pending_path"] = str(Path(kb)/"data"/"pending")
         config["processing_path"] = str(Path(kb)/"data"/"processing")
         config["completed_path"] = str(Path(kb)/"data"/"completed")
-        config["backup_path"] = str(Path(kb)/"backups")
+        config["backup_path"] = str(Path(kb)/"data"/"backups")
         config["log_path"] = str(Path(kb)/"logs")
         config["daily_cost_limit"] = cost
 
@@ -207,7 +207,7 @@ class ConfigWizard:
         config.setdefault("max_file_size_mb", 50)
         config["version"] = "2.3.7-part2"
         config["last_configured_at"] = datetime.now().isoformat()
-        config["allowed_paths"] = [str(Path(kb)/"data"), str(Path(kb)/"config"), str(Path(kb)/"logs"), str(Path(kb)/"backups")]
+        config["allowed_paths"] = [str(Path(kb)/"data"), str(Path(kb)/"config"), str(Path(kb)/"logs")]
 
         save_config(config)
         messagebox.showinfo("完成","配置已保存!\n\n如需处理扫描件PDF,请确保已配置硅基流动 API Key。")

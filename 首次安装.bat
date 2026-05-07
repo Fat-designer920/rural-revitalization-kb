@@ -1,50 +1,55 @@
 @echo off
 cd /d "%~dp0"
 
-REM === ¼ì²âPython»·¾³ ===
+REM === æ£€æµ‹Pythonç¯å¢ƒ ===
 if exist "python\python.exe" (set PYTHON_CMD=python\python.exe) else (set PYTHON_CMD=python)
 
-title Ïç´åÕñĞËÖªÊ¶¿â - Ê×´Î°²×°
+title ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£…
+chcp 65001 >nul
+
 echo.
 echo   ========================================
-echo   Ïç´åÕñĞËÖªÊ¶¿â - Ê×´Î°²×°Ïòµ¼
+echo   ä¹¡æ‘æŒ¯å…´çŸ¥è¯†åº“ - é¦–æ¬¡å®‰è£… v2.3.7-part5
 echo   ========================================
 echo.
-echo   ¼´½«Ö´ĞĞ:
-echo     [1] °²×°PythonÒÀÀµ¿â
-echo     [2] ³õÊ¼»¯ÏµÍ³(´´½¨Êı¾İ¿â+ÎÄ¼ş¼Ğ)
-echo     [3] ÅäÖÃAPIÃÜÔ¿
+echo   å°†æ‰§è¡Œ:
+echo     [1] å®‰è£…Pythonä¾èµ–åŒ…
+echo     [2] é…ç½®APIå¯†é’¥å’Œè·¯å¾„
+echo     [3] åˆå§‹åŒ–ç³»ç»Ÿ(åˆ›å»ºæ–‡ä»¶å¤¹+æ•°æ®åº“)
 echo   ----------------------------------------
 echo.
 
-echo   [1/3] °²×°ÒÀÀµ¿â...
+echo   [1/3] å®‰è£…ä¾èµ–åŒ…...
 echo.
 %PYTHON_CMD% -m pip install --upgrade pip 2>nul
 %PYTHON_CMD% -m pip install requests flask flask-cors cryptography pdfplumber python-docx openpyxl Pillow PyMuPDF 2>nul
 if %errorlevel% neq 0 (
     echo.
-    echo   ³¢ÊÔ±¸ÓÃ°²×°·½Ê½...
+    echo   å°è¯•å¤‡ç”¨å®‰è£…æ–¹å¼...
     %PYTHON_CMD% -m pip install --break-system-packages requests flask flask-cors cryptography pdfplumber python-docx openpyxl Pillow PyMuPDF
 )
 echo.
 
-echo   [2/3] ³õÊ¼»¯ÏµÍ³...
+echo   [2/3] é…ç½®APIå¯†é’¥å’Œè·¯å¾„...
+echo   è¯·åœ¨å¼¹å‡ºçš„é…ç½®å‘å¯¼ä¸­å¡«å†™:
+echo     - DeepSeek API Key (å¿…å¡«)
+echo     - çŸ¥è¯†åº“å­˜æ”¾è·¯å¾„ (å»ºè®®Dç›˜)
+echo     - æ¯æ—¥è´¹ç”¨ä¸Šé™
+echo     - ç¡…åŸºæµåŠ¨ API Key (æ‰«æä»¶PDFå¿…å¡«)
 echo.
 
-REM === ÇĞ»»UTF-8£¨ÔÚÖĞÎÄechoÖ®ºó£¬PythonÖ®Ç°£© ===
-chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
+%PYTHON_CMD% scripts/config_wizard.py
+
+echo.
+echo   [3/3] åˆå§‹åŒ–ç³»ç»Ÿ...
+echo.
 
 %PYTHON_CMD% scripts/setup.py
 
 echo.
-echo   [3/3] ...
-echo.
-%PYTHON_CMD% scripts/config_wizard.py
-
-echo.
 echo   ========================================
 echo   Done!
-echo   Next: run Æô¶¯ºóÌ¨.bat
+echo   Next: åŒå‡»è¿è¡Œ "å¯åŠ¨åå°.bat"
 echo   ========================================
 pause
