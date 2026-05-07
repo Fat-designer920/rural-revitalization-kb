@@ -1096,10 +1096,10 @@ class CrawlerScheduler(object):
     # ================================================================
     # 爬取+自动喂入提取管道
     # ================================================================
-    def crawl_and_feed(self, schedule="weekly", max_urls=5, max_articles=20):
+    def crawl_and_feed(self, schedule="weekly", max_urls=30, max_articles=200):
         """深度爬取→质量门禁→CEO审核→手动批准→入库。
-        v2.3.7-part7: 重构为深度爬取——不是抓首页HTML,而是进入文章页提取正文。
-        每篇合格文章产出一个独立文件。低质量/乱码自动丢弃。
+        v2.3.7-part7: 深度爬取——max_depth=3,每源最多200篇文章,每篇产出一个文件。
+        不是首页HTML→进入文章页提取正文。四级红线质量门禁。
         返回 {crawl_result, quality_report, ceo_action}
         """
         review_dir = PROJECT_ROOT / REVIEW_DIR_NAME
