@@ -40,7 +40,6 @@ data_backup/
 source_library/
 
 # 项目文档(商业秘密:商业战略/客户画像/定价策略)
-docs/
 
 # 备份和快照
 backups/
