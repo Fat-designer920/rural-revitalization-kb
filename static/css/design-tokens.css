@@ -1,23 +1,24 @@
-/* Design Tokens v1.0 — Open Props精选 + 宋代水墨 + MUJI自然色
-   19个颜色 + 10个字体 + 7个间距 + 4个圆角 + 5个阴影 */
+/* Design Tokens v2.0 — Pantone 2025大地色系 + 宋代水墨 + MUJI自然色
+   Golden Palm #AA8805 / Eco Fern #3D6B4F / Warm Gray #D6D3D1
+   20个颜色 + 10个字体 + 7个间距 + 4个圆角 + 5个阴影 */
 :root {
-  /* === 水墨文字(5色) === */
-  --ink-900: #1A1A1A; --ink-700: #333333; --ink-500: #666666;
-  --ink-300: #999999; --ink-100: #CCCCCC;
+  /* === 水墨文字(5色,Pantone暖化) === */
+  --ink-900: #3E3A35; --ink-700: #4A4540; --ink-500: #6B6560;
+  --ink-300: #999590; --ink-100: #C4C0BC;
 
-  /* === 土地品牌(7色) === */
-  --brand-green:      #1A5632; --brand-green-light: #E8F5F2;
-  --brand-green-hover:#154828; --brand-gold:        #C8922B;
-  --brand-gold-light: #FFF8ED; --brand-warm:        #F5F0E8;
-  --brand-warm-dark:  #EBE4D8;
+  /* === 土地品牌(7色,Pantone 2025) === */
+  --brand-green:      #3D6B4F; --brand-green-light: #DCE8E0;
+  --brand-green-hover:#2D4F3A; --brand-gold:        #AA8805;
+  --brand-gold-light: #FFF6E5; --brand-warm:        #D6D3D1;
+  --brand-warm-dark:  #C4C0BC;
 
   /* === 功能色(6色) === */
   --red-500:#C5281C; --red-light:#FFEFEE;
   --amber-500:#B85C00; --amber-light:#FFF9F0;
-  --green-500:#2D7B5F; --green-light:#EDF5F1;
+  --green-500:#3D6B4F; --green-light:#DCE8E0;
 
   /* === 基础 === */
-  --white:#FFFFFF; --border:#E5E5EA; --border-light:#F2F2F7;
+  --white:#FFFFFF; --border:#C4C0BC; --border-light:#D6D3D1;
 
   /* === 字体 === */
   --font-sans:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
