@@ -579,17 +579,77 @@ def _404(e): return jsonify({"error":"not found:"+request.path}),404
 
 @app.route("/")
 def index():
-    if LANDING_HTML: return Response(LANDING_HTML, mimetype="text/html; charset=utf-8")
+    """管理后台 — 老唐入口"""
     if REVIEW_HTML: return Response(REVIEW_HTML, mimetype="text/html; charset=utf-8")
-    return "<h1>landing.html not found</h1>",404
+    return "<h1>管理后台加载失败</h1>",404
+
+@app.route("/admin")
+def admin():
+    """管理后台 — 显式入口"""
+    if REVIEW_HTML: return Response(REVIEW_HTML, mimetype="text/html; charset=utf-8")
+    return "<h1>管理后台加载失败</h1>",404
+
+@app.route("/landing")
+def landing():
+    """产品落地页 — 客户入口"""
+    if LANDING_HTML: return Response(LANDING_HTML, mimetype="text/html; charset=utf-8")
+    return "<h1>产品页加载中...</h1>",404
 
 @app.route("/qa")
 def qa_public_page():
-    """v2.3.3-mvp-part1a: 朋友试用产品页(双客户端架构,物理隔离)
-    朋友访问路径: http://[本机IP]:5000/qa?u=张三
-    URL 参数 ?u= 为朋友身份标记(传给 qa_ask 写入 friend_tag)
-    """
-    return Response(QA_PUBLIC_HTML, mimetype="text/html; charset=utf-8")
+    """AI问答助手 — 朋友试用页"""
+    if QA_PUBLIC_HTML: return Response(QA_PUBLIC_HTML, mimetype="text/html; charset=utf-8")
+    return Response("<h1>AI问答助手 — 即将上线</h1>", mimetype="text/html; charset=utf-8")
+
+@app.route("/premium")
+def premium_viewer_page():
+    """精品查看器 — 拖JSON文件查看精品包"""
+    try:
+        p = PROJECT_ROOT / "web" / "templates" / "premium_viewer.html"
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return Response(f.read(), mimetype="text/html; charset=utf-8")
+    except Exception: pass
+    return Response("<h1>精品查看器 — 加载中...</h1>", mimetype="text/html; charset=utf-8")
+
+# === 计划上线产品页(占位) ===
+def _placeholder_page(title, desc):
+    return Response(f"""<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">
+<title>{title} — 乡村振兴知识工厂</title>
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">
+<style>body{{font-family:-apple-system,\"PingFang SC\",\"Microsoft YaHei\",sans-serif;
+background:#F5F2ED;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.box{{background:#fff;border-radius:16px;padding:60px 40px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.06);max-width:400px}}
+h1{{color:#1a5632;font-size:24px}}p{{color:#666;line-height:1.8}}</style></head>
+<body><div class=\"box\"><h1>{title}</h1><p>{desc}</p></div></body></html>""", mimetype="text/html; charset=utf-8")
+
+@app.route("/course")
+def course_page():
+    return _placeholder_page("线上录播课", "5模块20课,老唐经验为核心。<br>即将上线,敬请期待。")
+
+@app.route("/compliance")
+def compliance_page():
+    return _placeholder_page("项目合规自检工具", "政策条款→检查点→风险提示。<br>即将上线,敬请期待。")
+
+@app.route("/daily")
+def daily_page():
+    return _placeholder_page("政策变化日报", "20+四川政府源自动监控+AI摘要。<br>即将上线,敬请期待。")
+
+@app.route("/templates")
+def templates_page():
+    return _placeholder_page("模板工具包", "50+老唐实战模板,可直接使用。<br>即将上线,敬请期待。")
+
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    """静态资源: CSS/JS/图片"""
+    p = PROJECT_ROOT / "web" / "templates" / filename
+    if p.exists() and p.suffix in (".css", ".js", ".png", ".jpg", ".svg", ".ico"):
+        mime_map = {".css": "text/css", ".js": "application/javascript",
+                    ".png": "image/png", ".jpg": "image/jpeg",
+                    ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+        with open(p, "rb") as f:
+            return Response(f.read(), mimetype=mime_map.get(p.suffix, "application/octet-stream"))
+    return "Not Found", 404
 
 # 知识点 CRUD
 @app.route("/api/knowledge-points", methods=["GET"])

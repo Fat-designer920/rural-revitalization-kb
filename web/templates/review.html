@@ -384,6 +384,14 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .dup-group-wrap>.dup-group{flex:1;margin-bottom:0}
 .dup-member-cb{width:14px;height:14px;cursor:pointer;accent-color:var(--primary);flex-shrink:0}
 
+/* === Product Preview Dropdown === */
+.product-dropdown{position:absolute;top:46px;right:120px;background:#fff;border:1px solid #E5E5EA;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.12);min-width:180px;padding:8px 0;z-index:200}
+.product-dropdown a{display:block;padding:8px 16px;font-size:13px;color:#1D1D1F;text-decoration:none;transition:background .15s}
+.product-dropdown a:hover{background:#F5F5F7}
+.product-dropdown a.planned{color:#86868B;font-style:italic}
+.product-dropdown a.planned:hover{background:#FFF9F0;color:#C8922B}
+.product-dropdown a.planned small{font-size:10px;color:#C8922B}
+
 /* === NPU Status Badge === */
 .npu-badge-wrap{display:inline-flex;align-items:center;gap:6px}
 .npu-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -768,7 +776,20 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     <div class="stat-pill clickable" onclick="openStatsModal()">分类概览</div>
     <div class="stat-pill">API<span class="num" id="statCost">-</span>元</div>
     <div class="stat-pill" id="npuBadge"><span class="npu-badge-wrap"><span class="npu-dot off" id="npuDot"></span>NPU<span class="num" id="npuStatus">-</span></span></div>
+    <div class="stat-pill clickable" onclick="toggleProductMenu()" title="预览所有产品页面">产品预览 ▾</div>
     <div class="stat-pill clickable" onclick="window.open('/qa','_blank')" title="新标签页打开朋友试用产品页">朋友试用 ↗</div>
+    <!-- 产品预览下拉菜单 -->
+    <div id="productDropdown" class="product-dropdown" style="display:none" onmouseleave="this.style.display='none'">
+      <a href="/landing" target="_blank">📄 产品落地页</a>
+      <a href="/qa" target="_blank">🤖 AI问答助手</a>
+      <a href="/premium" target="_blank">📦 精品查看器</a>
+      <div style="border-top:1px solid #E5E5EA;margin:6px 0"></div>
+      <span style="display:block;padding:4px 14px;font-size:10px;color:#86868B;text-transform:uppercase">即将上线</span>
+      <a href="/course" target="_blank" class="planned">📚 线上录播课</a>
+      <a href="/compliance" target="_blank" class="planned">✅ 合规自检工具</a>
+      <a href="/daily" target="_blank" class="planned">📰 政策变化日报</a>
+      <a href="/templates" target="_blank" class="planned">📋 模板工具包</a>
+    </div>
   </div>
 </div>
 
@@ -5176,6 +5197,7 @@ function cancelCeoInstr(){
   document.getElementById("ceoResponseBox").innerHTML="";
 }
 
+function toggleProductMenu(){var d=document.getElementById("productDropdown");d.style.display=d.style.display==="none"?"block":"none"}
 if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init();startNpuPolling()})}else{init();startNpuPolling()}
 </script>
 </body>

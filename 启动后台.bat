@@ -25,8 +25,7 @@ REM 窗口标题用Python Unicode API设置, 彻底避免cmd title命令的GBK/U
 
 echo.
 echo ============================================================
-echo   乡村振兴知识库 - 管理后台 v2.3.7-part6
-echo   Tab1 知识库 ^| Tab2 系统管理 ^| Tab3 智能问答(手机可刷)
+echo   乡村振兴知识工厂 管理后台 v2.3.7-part6
 echo ============================================================
 
 REM 获取本机局域网IP
@@ -37,21 +36,21 @@ for /f "tokens=2 delims=:" %%i in ('ipconfig ^| findstr "IPv4"') do (
 set "LOCAL_IP=%LOCAL_IP: =%"
 
 echo.
+echo [管理后台 - 老唐入口]
+echo   http://localhost:5000/
+echo.
+echo [产品页 - 客户入口]
+echo   产品落地页:  http://localhost:5000/landing
+echo   AI问答助手:  http://localhost:5000/qa
+echo   精品查看器:  http://localhost:5000/premium
+echo.
 if defined LOCAL_IP (
-    echo [手机端产品页 - 把地址发给对方]
+    echo [手机端 - 发给朋友试用]
     echo   http://%LOCAL_IP%:5000/qa?u=对方名字
-    echo.
-    echo   说明: 把 ?u=对方名字 改成对方的名字, 用于分人记录
-    echo         你和对方需在同一 WiFi 下才能访问
-    echo.
-    echo [本机后台管理页 - 你自己用]
-    echo   http://localhost:5000/
-) else (
-    echo [本机后台管理页]
-    echo   http://localhost:5000/
-    echo [提示] 未检测到本机 IP, 手机端产品页暂不可用
+    echo   (同一 WiFi 下可访问)
 )
 echo.
+echo   计划上线: /course /compliance /daily /templates
 echo ============================================================
 echo.
 
