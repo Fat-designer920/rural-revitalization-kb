@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI问答助手 — 乡村振兴知识工厂</title>
+<meta name="description" content="乡村振兴AI问答助手，像旁边坐了个20年老师傅在告诉你。政策怎么用、项目怎么推、坑在哪里。">
+<link rel="stylesheet" href="/static/css/design-tokens.css">
+<link rel="stylesheet" href="/static/css/typography-chinese.css">
+<link rel="stylesheet" href="/static/css/components.css">
+<link rel="stylesheet" href="/static/css/water.min.css">
+<style>
+/* ===== Page Variables ===== */
+:root {
+  --qa-green: #1A5632;
+  --qa-gold: #C8922B;
+  --qa-warm: #F5F0E8;
+  --qa-warm-dark: #EBE4D8;
+  --qa-white: #FFFFFF;
+  --qa-ink: #2D2A24;
+  --qa-ink-light: #6E6E73;
+  --qa-ink-muted: #999999;
+  --qa-amber-bg: #FFF9F0;
+  --qa-amber-border: #F5D48B;
+  --qa-red-light: #FFEFEE;
+  --qa-shadow: 0 2px 16px rgba(0,0,0,.04);
+  --qa-radius: 12px;
+  --qa-transition: all .25s ease;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  background: var(--qa-warm);
+  color: var(--qa-ink);
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  min-width: 320px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Subtle Nav ===== */
+.qa-nav {
+  position: sticky; top: 0; z-index: 100;
+  height: 52px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  background: rgba(245,240,232,.88);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: .5px solid var(--qa-warm-dark);
+}
+.qa-nav a {
+  color: var(--qa-ink-light); font-size: 14px; text-decoration: none;
+  font-weight: 500; letter-spacing: .02em;
+}
+.qa-nav a:hover { color: var(--qa-green); }
+
+/* ===== Main Content Area ===== */
+.qa-main {
+  flex: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-2xl) var(--space-lg) var(--space-3xl);
+  width: 100%;
+}
+
+/* ===== Hero ===== */
+.qa-hero {
+  text-align: center;
+  padding: var(--space-xl) 0 var(--space-2xl);
+  margin-bottom: var(--space-xl);
+}
+.qa-hero h1 {
+  font-size: 36px; font-weight: 800; color: var(--qa-green);
+  letter-spacing: -.01em; line-height: 1.25; margin-bottom: var(--space-sm);
+}
+.qa-hero .qa-subtitle {
+  font-size: 18px; color: var(--qa-ink-light); font-weight: 400;
+  letter-spacing: .02em;
+}
+
+/* ===== Search Card ===== */
+.qa-search-card {
+  background: var(--qa-white);
+  border-radius: var(--qa-radius);
+  padding: var(--space-xl);
+  box-shadow: var(--qa-shadow);
+  margin-bottom: var(--space-xl);
+}
+.qa-input-row {
+  display: flex; gap: var(--space-sm); align-items: stretch;
+}
+.qa-input-row textarea {
+  flex: 1; min-height: 56px; max-height: 120px;
+  padding: var(--space-md); font-size: 16px; font-family: inherit;
+  border: 1px solid var(--qa-warm-dark); border-radius: var(--radius-md);
+  background: #FAFAF7; color: var(--qa-ink); outline: none;
+  resize: vertical; line-height: 1.6;
+  transition: var(--qa-transition);
+}
+.qa-input-row textarea:focus {
+  border-color: var(--qa-green); background: var(--qa-white);
+}
+.qa-input-row textarea::placeholder { color: var(--qa-ink-muted); }
+.qa-voice-btn {
+  width: 48px; min-width: 48px; height: 56px;
+  background: var(--qa-warm); border: 1px solid var(--qa-warm-dark);
+  border-radius: var(--radius-md); cursor: pointer;
+  font-size: 20px; display: flex; align-items: center; justify-content: center;
+  transition: var(--qa-transition); color: var(--qa-ink-light);
+}
+.qa-voice-btn:hover { background: var(--qa-warm-dark); }
+.qa-voice-btn.listening { background: var(--qa-green); color: #fff; animation: pulse-voice 1s infinite; }
+@keyframes pulse-voice { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+.qa-submit-row { margin-top: var(--space-md); text-align: right; }
+.qa-submit-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 32px; font-size: 16px; font-weight: 600; font-family: inherit;
+  background: var(--qa-green); color: #fff; border: none;
+  border-radius: var(--radius-md); cursor: pointer;
+  transition: var(--qa-transition);
+}
+.qa-submit-btn:hover { background: #154828; }
+.qa-submit-btn:active { transform: scale(.97); }
+.qa-submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ===== Example Questions ===== */
+.qa-examples {
+  margin-bottom: var(--space-xl);
+}
+.qa-examples h3 {
+  font-size: 15px; font-weight: 600; color: var(--qa-ink-light);
+  margin-bottom: var(--space-md); letter-spacing: .02em;
+}
+.qa-example-list { list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.qa-example-item {
+  display: inline-block; padding: 8px 16px;
+  background: var(--qa-white); border: 1px solid var(--qa-warm-dark);
+  border-radius: var(--radius-full); font-size: 14px; color: var(--qa-ink);
+  cursor: pointer; transition: var(--qa-transition); white-space: nowrap;
+}
+.qa-example-item:hover { border-color: var(--qa-green); color: var(--qa-green); background: #F8FDF9; }
+
+/* ===== Answer Section Header ===== */
+.qa-section-title {
+  font-size: 15px; font-weight: 600; color: var(--qa-ink-light);
+  margin-bottom: var(--space-md); letter-spacing: .02em;
+}
+
+/* ===== Loading Skeleton ===== */
+.qa-skeleton { margin-bottom: var(--space-xl); }
+.qa-skeleton-bar {
+  height: 18px; background: linear-gradient(90deg, #EDE8DF 25%, #F5F0E8 50%, #EDE8DF 75%);
+  background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm);
+  margin-bottom: var(--space-sm);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.qa-skeleton-bar.w60 { width: 60%; }
+.qa-skeleton-bar.w80 { width: 80%; }
+.qa-skeleton-bar.w40 { width: 40%; }
+.qa-skeleton-bar.h12 { height: 12px; }
+
+/* ===== Empty State ===== */
+.qa-empty {
+  text-align: center; padding: var(--space-2xl) var(--space-lg);
+  color: var(--qa-ink-muted); font-size: 15px; line-height: 1.8;
+}
+.qa-empty .qa-empty-icon { font-size: 40px; margin-bottom: var(--space-sm); opacity: .4; }
+
+/* ===== Answer Card ===== */
+.qa-answer-card {
+  background: var(--qa-white); border-radius: var(--qa-radius);
+  padding: var(--space-xl); box-shadow: var(--qa-shadow); margin-bottom: var(--space-lg);
+}
+.qa-direct-answer {
+  font-size: 18px; line-height: 1.8; color: var(--qa-ink);
+  margin-bottom: var(--space-lg); letter-spacing: .01em;
+}
+.qa-direct-answer p { margin-bottom: var(--space-sm); }
+
+/* Policy Basis Foldable */
+.qa-policy-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; color: var(--qa-green); cursor: pointer;
+  font-weight: 500; padding: 6px 0; background: none; border: none;
+  font-family: inherit; transition: var(--qa-transition);
+}
+.qa-policy-toggle:hover { color: #154828; }
+.qa-policy-toggle .arrow { transition: transform .2s; display: inline-block; }
+.qa-policy-toggle.open .arrow { transform: rotate(180deg); }
+.qa-policy-body { display: none; margin-top: var(--space-sm); }
+.qa-policy-body.open { display: block; }
+.qa-policy-item {
+  padding: var(--space-sm) var(--space-md); margin-bottom: 6px;
+  background: #FAFAF7; border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--qa-ink-light); line-height: 1.6;
+  border-left: 3px solid var(--qa-green);
+}
+.qa-policy-item .policy-title { font-weight: 600; color: var(--qa-ink); font-size: 14px; }
+
+/* Operational Steps */
+.qa-steps { margin-top: var(--space-lg); }
+.qa-steps h4 {
+  font-size: 16px; font-weight: 600; color: var(--qa-ink); margin-bottom: var(--space-md);
+}
+.qa-step-card {
+  display: flex; gap: var(--space-md); padding: var(--space-md);
+  background: #FAFAF7; border-radius: var(--radius-md);
+  margin-bottom: var(--space-sm); align-items: flex-start;
+}
+.qa-step-num {
+  width: 28px; min-width: 28px; height: 28px;
+  background: var(--qa-green); color: #fff; border-radius: var(--radius-full);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; margin-top: 2px;
+}
+.qa-step-text { font-size: 15px; color: var(--qa-ink); line-height: 1.7; }
+
+/* Risk Flags */
+.qa-risks { margin-top: var(--space-lg); }
+.qa-risks h4 {
+  font-size: 16px; font-weight: 600; color: var(--qa-ink); margin-bottom: var(--space-md);
+}
+.qa-risk-item {
+  padding: var(--space-sm) var(--space-md); margin-bottom: 6px;
+  background: var(--qa-amber-bg); border: 1px solid var(--qa-amber-border);
+  border-radius: var(--radius-sm); font-size: 14px; color: #8B6914; line-height: 1.6;
+}
+.qa-risk-item::before { content: '\26A0\00A0'; }
+
+/* Action Buttons */
+.qa-actions {
+  display: flex; gap: var(--space-sm); margin-top: var(--space-lg);
+  flex-wrap: wrap;
+}
+.qa-action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; font-size: 14px; font-family: inherit; font-weight: 500;
+  border: 1px solid var(--qa-warm-dark); border-radius: var(--radius-md);
+  background: var(--qa-white); color: var(--qa-ink-light); cursor: pointer;
+  transition: var(--qa-transition);
+}
+.qa-action-btn:hover { border-color: var(--qa-green); color: var(--qa-green); }
+.qa-action-btn.primary-action { background: var(--qa-green); color: #fff; border-color: var(--qa-green); }
+.qa-action-btn.primary-action:hover { background: #154828; }
+
+/* Source Traceability */
+.qa-sources {
+  margin-top: var(--space-lg); padding-top: var(--space-md);
+  border-top: 1px solid var(--qa-warm-dark);
+  font-size: 13px; color: var(--qa-ink-muted); line-height: 1.6;
+}
+.qa-sources a { color: var(--qa-green); text-decoration: none; }
+.qa-sources a:hover { text-decoration: underline; }
+
+/* ===== Error State ===== */
+.qa-error {
+  text-align: center; padding: var(--space-2xl) var(--space-lg);
+  background: var(--qa-white); border-radius: var(--qa-radius);
+  box-shadow: var(--qa-shadow); margin-bottom: var(--space-lg);
+}
+.qa-error .qa-error-icon { font-size: 40px; margin-bottom: var(--space-sm); opacity: .6; }
+.qa-error h3 { font-size: 18px; font-weight: 600; color: var(--qa-ink); margin-bottom: var(--space-xs); }
+.qa-error p { font-size: 14px; color: var(--qa-ink-light); margin-bottom: var(--space-md); }
+.qa-retry-btn {
+  display: inline-block; padding: 10px 28px; font-size: 15px; font-weight: 500;
+  background: var(--qa-warm); border: 1px solid var(--qa-warm-dark);
+  border-radius: var(--radius-md); cursor: pointer; font-family: inherit;
+  color: var(--qa-ink); transition: var(--qa-transition);
+}
+.qa-retry-btn:hover { background: var(--qa-warm-dark); }
+
+/* ===== Footer ===== */
+.qa-footer {
+  text-align: center; padding: var(--space-xl) var(--space-lg) var(--space-2xl);
+  color: var(--qa-ink-muted); font-size: 13px; line-height: 1.8;
+  border-top: .5px solid var(--qa-warm-dark); margin-top: auto;
+}
+.qa-footer strong { color: var(--qa-ink-light); font-weight: 600; }
+.qa-footer .qa-footer-divider { margin: 0 8px; color: var(--qa-warm-dark); }
+
+/* ===== Toast ===== */
+.qa-toast {
+  position: fixed; bottom: var(--space-lg); left: 50%;
+  transform: translateX(-50%); z-index: 200;
+  padding: 12px 24px; border-radius: var(--radius-md);
+  font-size: 14px; box-shadow: var(--shadow-lg);
+  opacity: 0; transition: opacity .3s; pointer-events: none;
+  background: var(--qa-ink); color: #fff;
+}
+.qa-toast.show { opacity: 1; }
+
+/* ===== Print Styles ===== */
+@media print {
+  body { background: #fff; color: #000; }
+  .qa-nav, .qa-search-card, .qa-examples, .qa-actions, .qa-skeleton, .qa-error, .qa-toast { display: none !important; }
+  .qa-footer { border-top: 1px solid #ccc; }
+  .qa-answer-card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
+  .qa-direct-answer { font-size: 14px; }
+  .qa-policy-body { display: block !important; }
+  a { color: #000; text-decoration: underline; }
+}
+
+/* ===== Responsive ===== */
+@media (min-width: 768px) {
+  .qa-hero h1 { font-size: 44px; }
+  .qa-hero .qa-subtitle { font-size: 20px; }
+  .qa-main { padding: var(--space-3xl) var(--space-2xl); }
+  .qa-search-card { padding: var(--space-2xl); }
+}
+@media (min-width: 1024px) {
+  .qa-main { max-width: 760px; }
+  .qa-hero { padding: var(--space-2xl) 0 var(--space-3xl); }
+}
+@media (max-width: 400px) {
+  .qa-input-row textarea { font-size: 15px; }
+  .qa-voice-btn { width: 44px; min-width: 44px; }
+  .qa-example-item { font-size: 13px; padding: 6px 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Nav ===== -->
+<nav class="qa-nav">
+  <a href="/">乡村振兴知识工厂</a>
+</nav>
+
+<!-- ===== Main Content ===== -->
+<main class="qa-main">
+
+  <!-- Hero -->
+  <section class="qa-hero">
+    <h1>AI问答助手</h1>
+    <p class="qa-subtitle">像旁边坐了个20年老师傅</p>
+  </section>
+
+  <!-- Search Card -->
+  <div class="qa-search-card" id="searchCard">
+    <div class="qa-input-row">
+      <textarea
+        id="qaQuery"
+        placeholder="请输入您的问题，例如：增减挂钩项目怎么申报？"
+        maxlength="500"
+        rows="1"
+        autofocus
+      ></textarea>
+      <button class="qa-voice-btn" id="voiceBtn" title="语音输入" type="button">&#127908;</button>
+    </div>
+    <div class="qa-submit-row">
+      <button class="qa-submit-btn" id="submitBtn" type="button">
+        发送
+      </button>
+    </div>
+  </div>
+
+  <!-- Example Questions -->
+  <div class="qa-examples" id="examplesSection">
+    <h3>示例问题</h3>
+    <div class="qa-example-list">
+      <span class="qa-example-item" data-query="增减挂钩项目怎么申报？">增减挂钩项目怎么申报？</span>
+      <span class="qa-example-item" data-query="高标准农田建设补助标准">高标准农田建设补助标准</span>
+      <span class="qa-example-item" data-query="集体建设用地入市条件">集体建设用地入市条件</span>
+      <span class="qa-example-item" data-query="全域土地综合整治资金从哪里来？">全域土地综合整治资金从哪里来？</span>
+    </div>
+  </div>
+
+  <!-- Answer Section -->
+  <div id="answerSection">
+    <h3 class="qa-section-title">最近回答</h3>
+    <div id="answerContent" class="qa-empty">
+      <div class="qa-empty-icon">&#128172;</div>
+      <p>还没有问答记录<br>输入您的问题开始使用</p>
+    </div>
+  </div>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer class="qa-footer">
+  <p>基于 <strong>1832条</strong> 四川乡村振兴专业知识</p>
+  <p>老唐20年实战经验 <span class="qa-footer-divider">×</span> AI</p>
+</footer>
+
+<!-- ===== Toast ===== -->
+<div class="qa-toast" id="qaToast"></div>
+
+<!-- ===== WeChat Bridge ===== -->
+<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js" id="wechatJssdk"></script>
+
+<script>
+/* ================================================================
+   QA Product Page — ES5 Strict
+   No arrow functions, no const/let, no template strings.
+   ================================================================ */
+(function() {
+  'use strict';
+
+  /* ---- DOM Refs ---- */
+  var queryEl = document.getElementById('qaQuery');
+  var submitBtn = document.getElementById('submitBtn');
+  var voiceBtn = document.getElementById('voiceBtn');
+  var answerContent = document.getElementById('answerContent');
+  var answerSection = document.getElementById('answerSection');
+  var examplesSection = document.getElementById('examplesSection');
+  var searchCard = document.getElementById('searchCard');
+  var toastEl = document.getElementById('qaToast');
+
+  /* ---- State ---- */
+  var isAsking = false;
+  var pollingTimer = null;
+  var currentQuery = '';
+  var isWechat = /MicroMessenger/i.test(navigator.userAgent);
+
+  /* ---- Polyfill: Element.closest (IE11 compat) ---- */
+  if (!Element.prototype.closest) {
+    Element.prototype.closest = function(selector) {
+      var el = this;
+      while (el && el.nodeType === 1) {
+        if (el.matches(selector)) return el;
+        el = el.parentNode;
+      }
+      return null;
+    };
+  }
+
+  /* ---- Toast ---- */
+  function showToast(msg, duration) {
+    duration = duration || 2000;
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(function() {
+      toastEl.classList.remove('show');
+    }, duration);
+  }
+
+  /* ---- Submit Question ---- */
+  function submitQuestion(queryText) {
+    if (isAsking) { showToast('正在回答中，请稍候'); return; }
+    queryText = (queryText || '').trim();
+    if (!queryText) { showToast('请输入您的问题'); return; }
+    if (queryText.length > 500) { showToast('问题不能超过500字'); return; }
+
+    currentQuery = queryText;
+    isAsking = true;
+    submitBtn.disabled = true;
+    submitBtn.textContent = '思考中...';
+    queryEl.disabled = true;
+
+    showLoadingSkeleton();
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/qa/ask');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function() {
+      if (xhr.status === 202) {
+        startPolling();
+      } else if (xhr.status === 429) {
+        showErrorState('今日额度已用完，明天再来吧');
+        resetAskState();
+      } else {
+        var resp = {};
+        try { resp = JSON.parse(xhr.responseText); } catch(e) {}
+        showErrorState(resp.error || '请求失败，请重试');
+        resetAskState();
+      }
+    };
+    xhr.onerror = function() {
+      showErrorState('网络连接失败，请检查网络后重试');
+      resetAskState();
+    };
+    xhr.send(JSON.stringify({ query: queryText, mode: 'friend' }));
+  }
+
+  /* ---- Polling ---- */
+  function startPolling() {
+    clearInterval(pollingTimer);
+    pollingTimer = setInterval(pollProgress, 1500);
+  }
+
+  function stopPolling() {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+
+  function pollProgress() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/qa/progress');
+    xhr.onload = function() {
+      var data = {};
+      try { data = JSON.parse(xhr.responseText); } catch(e) { return; }
+
+      if (!data.running) {
+        stopPolling();
+        if (data.result && data.result.ok) {
+          renderAnswer(data.result);
+        } else if (data.error) {
+          showErrorState(data.error);
+        } else if (data.result && !data.result.ok) {
+          showErrorState(data.result.error || 'AI正在休息，请稍后再试');
+        } else {
+          showErrorState('AI正在休息，请稍后再试');
+        }
+        resetAskState();
+      }
+    };
+    xhr.onerror = function() {
+      stopPolling();
+      showErrorState('连接中断，请检查网络');
+      resetAskState();
+    };
+    xhr.send();
+  }
+
+  function resetAskState() {
+    isAsking = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = '发送';
+    queryEl.disabled = false;
+    queryEl.focus();
+  }
+
+  /* ---- Render: Loading Skeleton ---- */
+  function showLoadingSkeleton() {
+    var html = '<div class="qa-skeleton">' +
+      '<div class="qa-skeleton-bar w80"></div>' +
+      '<div class="qa-skeleton-bar w60"></div>' +
+      '<div class="qa-skeleton-bar w40"></div>' +
+      '<div class="qa-skeleton-bar w60 h12"></div>' +
+      '<div class="qa-skeleton-bar w80 h12"></div>' +
+      '<div class="qa-skeleton-bar w40 h12"></div>' +
+      '</div>';
+    answerContent.className = '';
+    answerContent.innerHTML = html;
+  }
+
+  /* ---- Render: Answer ---- */
+  function renderAnswer(result) {
+    var answer = result.answer || {};
+    var directAnswer = answer.direct_answer || '';
+    var policyBasis = answer.policy_basis || [];
+    var followups = answer.followup_questions || [];
+    var evidenceIds = answer.evidence_kp_ids || [];
+    var coverageGap = answer.coverage_gap || '';
+    var historyId = result.history_id || 0;
+
+    var html = '';
+
+    /* Direct Answer */
+    html += '<div class="qa-answer-card">';
+    html += '<div class="qa-direct-answer">' + escapeHtml(directAnswer).replace(/\n/g, '<br>') + '</div>';
+
+    /* Policy Basis Foldable */
+    if (policyBasis.length > 0) {
+      html += '<button class="qa-policy-toggle" onclick="togglePolicyBasis(this)" type="button">';
+      html += '展开查看政策依据 <span class="arrow">&#9660;</span>';
+      html += '</button>';
+      html += '<div class="qa-policy-body">';
+      for (var i = 0; i < policyBasis.length; i++) {
+        var pb = policyBasis[i];
+        html += '<div class="qa-policy-item">';
+        html += '<div class="policy-title">' + escapeHtml(pb.title || '无标题') + '</div>';
+        html += '<div>' + escapeHtml((pb.excerpt || '').substring(0, 150)) + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    /* Operational Steps (followup questions as numbered cards) */
+    if (followups.length > 0) {
+      html += '<div class="qa-steps">';
+      html += '<h4>操作步骤</h4>';
+      for (var j = 0; j < followups.length; j++) {
+        html += '<div class="qa-step-card">';
+        html += '<span class="qa-step-num">' + (j + 1) + '</span>';
+        html += '<span class="qa-step-text">' + escapeHtml(followups[j]) + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    /* Coverage Gap / Risk Warning */
+    if (coverageGap) {
+      html += '<div class="qa-risks">';
+      html += '<h4>风险提示</h4>';
+      html += '<div class="qa-risk-item">' + escapeHtml(coverageGap) + '</div>';
+      html += '</div>';
+    }
+
+    /* Action Buttons */
+    html += '<div class="qa-actions">';
+    html += '<button class="qa-action-btn primary-action" onclick="shareAnswer(' + historyId + ')" type="button">分享给同事</button>';
+    html += '<button class="qa-action-btn" onclick="window.print()" type="button">打印</button>';
+    html += '</div>';
+
+    /* Source Traceability */
+    if (evidenceIds.length > 0) {
+      html += '<div class="qa-sources">';
+      html += '以上回答基于 <strong>' + evidenceIds.length + '</strong> 条知识点';
+      html += '</div>';
+    }
+
+    html += '</div>'; /* close qa-answer-card */
+
+    answerContent.className = '';
+    answerContent.innerHTML = html;
+  }
+
+  /* ---- Render: Error State ---- */
+  function showErrorState(msg) {
+    var html = '<div class="qa-error">' +
+      '<div class="qa-error-icon">&#128564;</div>' +
+      '<h3>AI正在休息</h3>' +
+      '<p>' + escapeHtml(msg || '暂时无法回答，请稍后再试') + '</p>' +
+      '<button class="qa-retry-btn" onclick="retryQuestion()" type="button">重试</button>' +
+      '</div>';
+    answerContent.className = '';
+    answerContent.innerHTML = html;
+  }
+
+  /* ---- Helper: Escape HTML ---- */
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  /* ---- Auto-resize textarea ---- */
+  function autoResizeTextarea() {
+    queryEl.style.height = 'auto';
+    queryEl.style.height = Math.min(queryEl.scrollHeight, 120) + 'px';
+  }
+
+  /* ---- Event Listeners ---- */
+  submitBtn.addEventListener('click', function() {
+    submitQuestion(queryEl.value);
+  });
+
+  queryEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitQuestion(queryEl.value);
+    }
+  });
+
+  queryEl.addEventListener('input', autoResizeTextarea);
+
+  /* Example Questions Click */
+  examplesSection.addEventListener('click', function(e) {
+    var item = e.target.closest('.qa-example-item');
+    if (item) {
+      var q = item.getAttribute('data-query') || item.textContent.trim();
+      queryEl.value = q;
+      autoResizeTextarea();
+      submitQuestion(q);
+    }
+  });
+
+  /* Voice Input */
+  voiceBtn.addEventListener('click', function() {
+    if (isWechat) {
+      startWechatVoice();
+    } else {
+      startWebSpeech();
+    }
+  });
+
+  /* ---- WeChat Voice Input ---- */
+  function startWechatVoice() {
+    if (!window.wx) {
+      showToast('微信JS-SDK未加载，请重试');
+      return;
+    }
+    voiceBtn.classList.add('listening');
+    /* Attempt WeChat voice record */
+    window.wx.ready(function() {
+      window.wx.startRecord({
+        success: function() {
+          window.wx.stopRecord({
+            success: function(res) {
+              var localId = res.localId;
+              window.wx.translateVoice({
+                localId: localId,
+                isShowProgressTips: 1,
+                success: function(transRes) {
+                  var text = transRes.translateResult || '';
+                  queryEl.value = text;
+                  autoResizeTextarea();
+                  voiceBtn.classList.remove('listening');
+                },
+                fail: function() {
+                  voiceBtn.classList.remove('listening');
+                  showToast('语音识别失败，请手动输入');
+                }
+              });
+            },
+            fail: function() {
+              voiceBtn.classList.remove('listening');
+            }
+          });
+        },
+        cancel: function() {
+          voiceBtn.classList.remove('listening');
+        }
+      });
+    });
+    window.wx.error(function() {
+      voiceBtn.classList.remove('listening');
+      showToast('微信接口错误，请手动输入');
+    });
+  }
+
+  /* ---- Web Speech API Fallback ---- */
+  function startWebSpeech() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToast('您的浏览器不支持语音输入，请手动输入');
+      return;
+    }
+    var recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    voiceBtn.classList.add('listening');
+    recognition.start();
+
+    recognition.onresult = function(event) {
+      var text = event.results[0][0].transcript;
+      queryEl.value = text;
+      autoResizeTextarea();
+      voiceBtn.classList.remove('listening');
+    };
+
+    recognition.onerror = function() {
+      voiceBtn.classList.remove('listening');
+      showToast('语音识别失败，请手动输入');
+    };
+
+    recognition.onend = function() {
+      voiceBtn.classList.remove('listening');
+    };
+  }
+
+  /* ---- Share Answer ---- */
+  window.shareAnswer = function(historyId) {
+    var shareUrl = window.location.origin + '/qa-product?answer=' + historyId;
+    if (navigator.share) {
+      navigator.share({
+        title: '乡村振兴AI问答助手',
+        text: '来看看这个问题的答案：' + currentQuery,
+        url: shareUrl
+      }).catch(function() {});
+    } else if (isWechat && window.wx) {
+      /* WeChat share via custom menu */
+      showToast('请点击右上角分享给朋友');
+    } else {
+      /* Fallback: copy link */
+      copyToClipboard(shareUrl);
+      showToast('链接已复制，粘贴发给同事即可');
+    }
+  };
+
+  window.retryQuestion = function() {
+    if (currentQuery) {
+      submitQuestion(currentQuery);
+    }
+  };
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function() {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+
+  /* ---- Policy Basis Toggle ---- */
+  window.togglePolicyBasis = function(btn) {
+    var body = btn.nextElementSibling;
+    if (body) {
+      var isOpen = body.classList.contains('open');
+      if (isOpen) {
+        body.classList.remove('open');
+        btn.classList.remove('open');
+        btn.innerHTML = '展开查看政策依据 <span class="arrow">&#9660;</span>';
+      } else {
+        body.classList.add('open');
+        btn.classList.add('open');
+        btn.innerHTML = '收起政策依据 <span class="arrow">&#9650;</span>';
+      }
+    }
+  };
+
+  /* ---- Service Worker ---- */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/js/sw.js').catch(function() {
+      /* offline support is best-effort */
+    });
+  }
+
+  /* ---- ES5 URL param parser ---- */
+  function getUrlParam(name) {
+    var match = window.location.search.match(new RegExp('[?&]' + name + '=([^&]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  /* ---- Initialize ---- */
+  /* Check URL for shared answer */
+  (function init() {
+    var answerId = getUrlParam('answer');
+    if (answerId) {
+      loadSharedAnswer(parseInt(answerId, 10));
+    }
+  })();
+
+  function loadSharedAnswer(hid) {
+    if (!hid) return;
+    showLoadingSkeleton();
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/qa/history/' + hid);
+    xhr.onload = function() {
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (data.success && data.item) {
+          var item = data.item;
+          var answer = {};
+          try { answer = JSON.parse(item.answer_json || '{}'); } catch(e) {}
+          var result = {
+            ok: true,
+            history_id: item.id,
+            answer: answer,
+            source: item.source || ''
+          };
+          renderAnswer(result);
+        } else {
+          showErrorState('未找到该回答');
+        }
+      } catch(e) {
+        showErrorState('加载回答失败');
+      }
+    };
+    xhr.onerror = function() {
+      showErrorState('加载回答失败');
+    };
+    xhr.send();
+  }
+
+})();
+</script>
+</body>
+</html>

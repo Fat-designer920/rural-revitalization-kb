@@ -508,6 +508,13 @@ for _p in [PROJECT_ROOT/"web"/"templates"/"landing.html", PROJECT_ROOT/"web"/"la
         with open(_p,"r",encoding="utf-8") as _f: LANDING_HTML = _f.read()
         print(f"  [OK] landing.html: {_p}"); break
 
+# v2.3.7-part7: QA产品页(QA_PRODUCT_HTML)
+QA_PRODUCT_HTML = None
+for _p in [PROJECT_ROOT/"web"/"templates"/"qa_product.html", PROJECT_ROOT/"web"/"qa_product.html", PROJECT_ROOT/"qa_product.html"]:
+    if _p.exists():
+        with open(_p,"r",encoding="utf-8") as _f: QA_PRODUCT_HTML = _f.read()
+        print(f"  [OK] qa_product.html: {_p}"); break
+
 if QA_PUBLIC_HTML is None:
     # part1a 占位:友好提示朋友 + 引导自用 Tab 3
     QA_PUBLIC_HTML = """<!DOCTYPE html>
@@ -597,9 +604,15 @@ def landing():
 
 @app.route("/qa")
 def qa_public_page():
-    """AI问答助手 — 朋友试用页"""
+    """AI问答助手 — 朋友试用页(旧版,向后兼容)"""
     if QA_PUBLIC_HTML: return Response(QA_PUBLIC_HTML, mimetype="text/html; charset=utf-8")
     return Response("<h1>AI问答助手 — 即将上线</h1>", mimetype="text/html; charset=utf-8")
+
+@app.route("/qa-product")
+def qa_product_page():
+    """AI问答助手 — 产品页(新版)"""
+    if QA_PRODUCT_HTML: return Response(QA_PRODUCT_HTML, mimetype="text/html; charset=utf-8")
+    return Response("<h1>AI问答助手 — 产品页加载中...</h1>", mimetype="text/html; charset=utf-8")
 
 @app.route("/premium")
 def premium_viewer_page():
