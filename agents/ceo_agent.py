@@ -24,7 +24,13 @@ MIN_KPS_BEFORE_AUDIT = 50
 AUDIT_INTERVAL_MINUTES = 30
 PROMPT_OPTIMIZE_THRESHOLD = 3.0
 MAX_LOOP_ITERATIONS = 50
-MAX_CONCURRENT_AGENTS = 3
+try:
+    from agents.hardware_profile import HardwareProfile
+    _hw = HardwareProfile()
+    _plan = _hw.plan_tasks()
+    MAX_CONCURRENT_AGENTS = _plan.get('max_concurrent', 6)
+except Exception:
+    MAX_CONCURRENT_AGENTS = 6
 EVOLUTION_CYCLE_INTERVAL = 10
 
 
@@ -748,6 +754,90 @@ class CEOAgent(BaseAgent):
         if isinstance(result, str) and "error" in result.lower()[:50]:
             return False, "result contains error"
         return True, "OK"
+
+    def _delegate_all_departments(self, state):
+        """全量启动: 同时调动所有10个部门长,每个部门长独立驱动其成员。
+        这是'一人公司'模式的核心——CEO不用微观管理61个Agent,只管理10个部门长。"""
+        self._log("全量启动", "info", f"同时调动10个部门,{len(self._orchestra or [])}个Agent")
+        results = {}
+
+        # 定义每个部门的核心任务
+        dept_tasks = {
+            "content_production": "当前KP 1832条,80个爬虫源。本周应重点补充哪些领域的内容?检查知识缺口。",
+            "client_delivery": "QA助手即将上线。从付费客户视角,当前QA系统最大的不足是什么?回答质量够不够?",
+            "market_expansion": "目标:前100个付费用户。分析四川乡镇干部的触达渠道和付费意愿。",
+            "quality_assurance": "854条低质量KP(qa<3.5)。系统性质量提升方案是什么?",
+            "tech_platform": "系统RAM 88%,61Agent加载。内存优化和硬件利用方案?",
+            "rd_center": "技术架构中最大的技术债是什么?QA检索从TF-IDF升级到语义嵌入的路径?",
+            "revenue": "月入25万目标的收入模型:各产品定价和用户数假设是否合理?",
+            "archives": "80个爬虫源的文件分类和元数据管理方案?",
+            "safety_compliance": "政策解读内容的合规风险扫描:当前品牌红线是否需要补充?",
+        }
+
+        # 并行调度: 每个部门长独立think()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, MAX_CONCURRENT_AGENTS)) as executor:
+            futures = {}
+            for dept_key, task in dept_tasks.items():
+                chief = self._find_chief(dept_key)
+                if chief:
+                    futures[executor.submit(self._dept_think, chief, dept_key, task)] = dept_key
+
+            for future in concurrent.futures.as_completed(futures):
+                dept_key = futures[future]
+                try:
+                    result = future.result()
+                    results[dept_key] = result
+                    self.metrics["agents_deployed"] += 1
+                except Exception as e:
+                    results[dept_key] = {"error": str(e)[:200]}
+                self._log("部门完成", "info", f"{dept_key}: {str(results[dept_key])[:120]}")
+
+        return results
+
+    def _dept_think(self, chief, dept_key, task):
+        """部门长深度思考 + 驱动成员并行思考"""
+        # 1. 部门长先用V4-Pro深度思考
+        chief_result = chief.think(
+            {"dept": dept_key, "task": task, "cycle": self.cycle, "from_ceo": True},
+            deep=True
+        )
+        # 2. 驱动本部门成员并行思考(如果部门长有list_members)
+        member_results = {}
+        if hasattr(chief, 'list_members'):
+            members = chief.list_members()
+            if members:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(members), 5)) as executor:
+                    mfutures = {}
+                    for m in members[:10]:  # 最多10个成员
+                        member = self._find_agent(m["code"])
+                        if member:
+                            mfutures[executor.submit(
+                                member.think,
+                                {"task": f"在{chief.agent_name}的领导下,从你的专业视角分析:{task[:200]}", "from_ceo": True, "cycle": self.cycle},
+                                deep=False
+                            )] = m["code"]
+                    for mf in concurrent.futures.as_completed(mfutures):
+                        code = mfutures[mf]
+                        try:
+                            member_results[code] = mf.result().get("analysis", "")[:200]
+                        except Exception as e:
+                            member_results[code] = f"error:{str(e)[:80]}"
+        return {"chief_analysis": chief_result.get("analysis", "")[:300], "member_count": len(member_results)}
+
+    def _find_chief(self, dept_key):
+        """查找部门长Agent"""
+        if not self._orchestra:
+            return None
+        # 查找DepartmentChief实例或被upgrade过的agent
+        for a in self._orchestra:
+            if hasattr(a, '_dept_key') and a._dept_key == dept_key:
+                return a
+        # 通过agent_code查找(infrastructure_agent等特殊情况)
+        for a in self._orchestra:
+            if a.agent_code == 'infrastructure_agent' and dept_key == 'tech_platform':
+                return a
+        return None
 
     def _convene_strategy_meeting(self, state):
         """召开战略会议: 召集核心Agent→独立表态→辩论→CEO裁决"""
