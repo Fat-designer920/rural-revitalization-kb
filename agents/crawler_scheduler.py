@@ -749,7 +749,8 @@ class CrawlerScheduler(object):
 
     def _quality_gate(self, filepath):
         """立规则77强制质量门禁: 检查爬取文件是否合格。
-        三条红线(任一不通过=直接丢弃):
+        四条红线(任一不通过=直接丢弃):
+          0. 乡村振兴相关性不足(采矿/人事/招标等不相关内容排除)
           1. 正文<500字(低质量)
           2. 中文字符<5%(乱码)
           3. 不含任何政策关键词(非政策内容)
@@ -771,6 +772,22 @@ class CrawlerScheduler(object):
             text = content[separator_idx:]
 
         text = text.strip()
+
+        # 红线0: 乡村振兴相关性(排除采矿/人事/招标等无关内容)
+        exclude_keywords = ['采矿权','探矿权','煤矿','出让收益','评估结果','评估项目',
+                          '招聘','任免','人事','天气预报','放假安排',
+                          '招标公告','中标','成交公告','招租','招商','拍卖']
+        for kw in exclude_keywords:
+            if kw in text:
+                return False, "irrelevant", f"不相关内容(含'{kw}'),与乡村振兴无关"
+        # 至少包含2个乡村振兴关键词
+        rural_keywords = ['土地','耕地','农村','农业','乡村','农田','宅基地',
+                         '振兴','整治','规划','建设','保护','生态','水利',
+                         '交通','补偿','补贴','补助','资金','项目','政策',
+                         '指标','审批','登记','管理办法','实施方案','意见','通知']
+        rural_count = sum(1 for kw in rural_keywords if kw in text)
+        if rural_count < 2:
+            return False, "irrelevant", f"乡村振兴相关度不足(仅{rural_count}个关键词)"
 
         # 红线1: 长度检查(<500字=低质量)
         if len(text) < MIN_CONTENT_CHARS:
