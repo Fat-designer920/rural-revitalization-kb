@@ -1,14 +1,13 @@
 """
-crawler_scheduler.py - 爬虫调度器(URL管理+去重+变化检测+限速+编码修复)
+crawler_scheduler.py - 爬虫调度器(gov.cn政策搜索+自动分类+变化检测+编码修复)
 路径：agents/crawler_scheduler.py
-版本：v2.3.7-part3
+版本：v2.3.7-part6
 
-CEO爬取规则(v2.3.7-part3):
-  爬什么: 政策文件/通知公告/解读文章(不含首页/导航/纯链接页)
-  怎么爬: 原始编码检测→UTF-8清洗→提取正文≥500字→CEO审核→入库
-  文件命名: 来源域名_页面标题_日期.txt(可读,非机器码)
-  质量门槛: 正文<500字=低质量,标记待重爬; 乱码=直接丢弃
-  限速: 每URL间隔2秒,每轮最多5个URL
+P1.2-A2 增强: gov.cn政策搜索(search_gov_policy) + 自动分类(classify_policy_doc:
+  政策类型/发文字号/发布日期/发文机关/生效日期) + 政策变化检测
+  (detect_policy_changes) + 全自动管道(crawl_classify_extract_chain:
+  crawl→classify→detect→ready)。借鉴China-Central-Policy-MCP的
+  gov.cn全文检索思路。
 """
 import json, time, hashlib, os, re
 from pathlib import Path
@@ -65,6 +64,71 @@ DEFAULT_TARGETS = [
     {"url": "https://www.ganzi.gov.cn", "category": "policy", "schedule": "monthly"},
     {"url": "https://www.liangshan.gov.cn", "category": "policy", "schedule": "monthly"},
 ]
+
+# === Gov.cn 政策搜索关键词组(四川乡村振兴5大核心领域) ===
+GOV_SEARCH_KEYWORD_GROUPS = {
+    "全域土地综合整治": [
+        "全域土地综合整治", "国土综合整治", "田水路林村", "土地整治试点",
+        "村庄规划", "农用地整理", "建设用地整理"
+    ],
+    "增减挂钩+占补平衡": [
+        "增减挂钩", "占补平衡", "城乡建设用地增减挂钩", "耕地占补平衡",
+        "指标交易", "节余指标流转", "建设用地指标"
+    ],
+    "集体经营性建设用地入市": [
+        "集体经营性建设用地入市", "农村集体建设用地", "同权同价",
+        "入市收益分配", "集体土地入市", "农村土地制度改革"
+    ],
+    "高标准农田建设": [
+        "高标准农田建设", "高标准农田", "农田建设补助", "耕地质量提升",
+        "粮食安全", "永久基本农田", "高标准农田管护"
+    ],
+    "乡村振兴专项债": [
+        "乡村振兴专项债", "地方政府专项债", "涉农资金整合", "乡村振兴基金",
+        "政策性金融", "农村金融", "乡村振兴债券"
+    ],
+}
+
+# Gov.cn 搜索端点(Sichuan-specific policy search)
+GOV_SEARCH_ENDPOINTS = [
+    {"domain": "www.gov.cn", "search_url": "https://sousuo.www.gov.cn/sousuo/search.shtml?searchWord={keyword}&searchType=all"},
+    {"domain": "www.sc.gov.cn", "search_url": "https://www.sc.gov.cn/search?keyword={keyword}"},
+    {"domain": "dnr.sc.gov.cn", "search_url": "https://dnr.sc.gov.cn/search?keyword={keyword}"},
+    {"domain": "nynct.sc.gov.cn", "search_url": "https://nynct.sc.gov.cn/search?keyword={keyword}"},
+    {"domain": "fgw.sc.gov.cn", "search_url": "https://fgw.sc.gov.cn/search?keyword={keyword}"},
+]
+
+# 政策类型检测模式 (法律/行政法规/部门规章/地方性法规/规范性文件/通知公告)
+POLICY_TYPE_PATTERNS = [
+    ("法律", [r"中华人民共和国\w+法", r"主席令\s*第\s*\d+号", r"全国人民代表大会"]),
+    ("行政法规", [r"国务院令\s*第\s*\d+号", r"中华人民共和国\w+条例", r"国务院.*公布"]),
+    ("部门规章", [r"(自然资源部|农业农村部|财政部|国家发展改革委|住房和城乡建设部|生态环境部|水利部)\s*令", r"部令\s*第\s*\d+号"]),
+    ("地方性法规", [r"四川省\w+条例", r"四川省人民代表大会常务委员会", r"成都市\w+条例"]),
+    ("规范性文件", [r"关于印发[\w\s]+的通知", r"实施意见", r"指导意见", r"实施办法", r"暂行办法", r"若干措施"]),
+    ("通知公告", [r"关于\w+的通知\s*$", r"公告", r"公示", r"通告"]),
+]
+
+# 发文字号 regex: 匹配 国发〔2024〕1号 / 川府发〔2023〕15号 / 自然资发〔2024〕10号
+DOC_NUMBER_RE = re.compile(
+    r'([一-鿿]+发|[一-鿿]+办发|[一-鿿]+函|[一-鿿]+规'
+    r'|[一-鿿]+字|[一-鿿]+令)'
+    r'[〈《\[\(【〔]?(\d{4})[〉》\]\)】〕]?\s*(\d+)\s*号'
+)
+
+# 日期匹配模式(中国政府公文格式)
+DATE_PATTERNS = [
+    re.compile(r'(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日'),
+    re.compile(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})'),
+]
+
+# 发文机关匹配(四川省乡村振兴相关常见发文主体)
+ISSUING_BODY_RE = re.compile(
+    r'(国务院|四川省人民政府|四川省自然资源厅|四川省农业农村厅|四川省财政厅'
+    r'|四川省发展和改革委员会|四川省住房和城乡建设厅|自然资源部|农业农村部'
+    r'|财政部|国家发展和改革委员会|成都市人民政府|成都市规划和自然资源局'
+    r'|四川省生态环境厅|生态环境部|四川省水利厅|水利部'
+    r'|四川省乡村振兴局|国家乡村振兴局)'
+)
 
 
 class CrawlerScheduler(object):
@@ -400,6 +464,286 @@ class CrawlerScheduler(object):
         return True
 
     # ================================================================
+    # Gov.cn政策搜索(借鉴China-Central-Policy-MCP的gov.cn全文检索思路)
+    # ================================================================
+    def search_gov_policy(self, keyword_group=None, keywords=None, max_results=10):
+        """搜索gov.cn政策文档。支持按关键字组或自定义关键字搜索。
+        返回 {success, results: [{title, url, snippet, source_domain}]}
+        """
+        if keyword_group and keyword_group in GOV_SEARCH_KEYWORD_GROUPS:
+            kw_list = GOV_SEARCH_KEYWORD_GROUPS[keyword_group]
+        elif keywords:
+            kw_list = keywords if isinstance(keywords, list) else [keywords]
+        else:
+            kw_list = []
+            for v in GOV_SEARCH_KEYWORD_GROUPS.values():
+                kw_list.extend(v[:2])
+
+        all_results = []
+        for endpoint in GOV_SEARCH_ENDPOINTS[:3]:
+            for kw in kw_list[:3]:
+                try:
+                    search_url = endpoint["search_url"].format(keyword=kw)
+                    fetched = self._fetch_url(search_url, timeout=25)
+                    if not fetched.get("success"):
+                        continue
+                    links = self._extract_policy_links(
+                        fetched.get("content", ""),
+                        base_domain=endpoint["domain"]
+                    )
+                    for link in links[:max_results]:
+                        if not any(r["url"] == link["url"] for r in all_results):
+                            all_results.append(link)
+                    time.sleep(1)
+                except Exception:
+                    continue
+
+        return {"success": True, "keyword_group": keyword_group,
+                "keywords_used": kw_list[:9], "total_found": len(all_results),
+                "results": all_results[:max_results]}
+
+    def _extract_policy_links(self, html, base_domain):
+        """从gov.cn搜索结果页提取政策文档链接。"""
+        links = []
+        link_pattern = re.compile(
+            r'<a[^>]*href="([^"]*(?:zhengce|zwgk|xxgk|content|article'
+            r'|govinfo|gongbao|zcfg|flfg)[^"]*)"[^>]*>(.*?)</a>',
+            re.IGNORECASE | re.DOTALL
+        )
+        for match in link_pattern.finditer(html):
+            href = match.group(1)
+            title_raw = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+            if not title_raw or len(title_raw) < 6:
+                continue
+            if href.startswith("http"):
+                full_url = href
+            elif href.startswith("//"):
+                full_url = "https:" + href
+            elif href.startswith("/"):
+                full_url = "https://{}{}".format(base_domain, href)
+            else:
+                continue
+            links.append({
+                "url": full_url,
+                "title": title_raw[:120],
+                "snippet": title_raw[:200],
+                "source_domain": base_domain,
+            })
+        return links
+
+    # ================================================================
+    # 爬取文档自动分类
+    # ================================================================
+    def classify_policy_doc(self, text, url="", page_title=""):
+        """对新爬取的政策文档自动分类。
+        返回 {policy_type, doc_number, publish_date, issuing_body,
+               effective_date, matched_categories, confidence}
+        """
+        if not text:
+            return {"policy_type": "未知", "matched_categories": [], "confidence": 0}
+
+        policy_type, type_confidence = self._detect_policy_type(text, url, page_title)
+        metadata = self._extract_doc_metadata(text, page_title)
+        matched_categories = self._match_keyword_categories(text, page_title)
+
+        confidence = type_confidence
+        if metadata.get("doc_number"):
+            confidence += 0.15
+        if metadata.get("publish_date"):
+            confidence += 0.10
+        if matched_categories:
+            confidence += 0.15
+        confidence = min(confidence, 1.0)
+
+        return {
+            "policy_type": policy_type,
+            "doc_number": metadata.get("doc_number", ""),
+            "publish_date": metadata.get("publish_date", ""),
+            "issuing_body": metadata.get("issuing_body", ""),
+            "effective_date": metadata.get("effective_date", ""),
+            "matched_categories": matched_categories,
+            "confidence": round(confidence, 2),
+        }
+
+    def _detect_policy_type(self, text, url="", page_title=""):
+        """检测政策文档类型。返回 (type_name, confidence)。"""
+        combined = (page_title + " " + text[:3000]).replace("\n", " ")
+
+        for ptype, patterns in POLICY_TYPE_PATTERNS:
+            matches = 0
+            for pat in patterns:
+                if re.search(pat, combined):
+                    matches += 1
+            if matches >= 2:
+                return ptype, 0.8
+            elif matches == 1:
+                return ptype, 0.5
+
+        if "zhengce" in url or "zwgk" in url:
+            if "content" in url:
+                return "规范性文件", 0.4
+            return "通知公告", 0.3
+
+        return "通知公告", 0.2
+
+    def _extract_doc_metadata(self, text, page_title=""):
+        """提取文档元数据: 发文字号、发布日期、发文机关、生效日期。"""
+        metadata = {}
+        combined = (page_title + " " + text[:5000]).replace("\n", " ")
+
+        doc_match = DOC_NUMBER_RE.search(combined)
+        if doc_match:
+            metadata["doc_number"] = doc_match.group(0)
+
+        for date_pat in DATE_PATTERNS:
+            date_match = date_pat.search(combined)
+            if date_match:
+                try:
+                    y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+                    if 2000 <= y <= 2030 and 1 <= m <= 12 and 1 <= d <= 31:
+                        metadata["publish_date"] = "{:04d}-{:02d}-{:02d}".format(y, m, d)
+                        break
+                except (ValueError, IndexError):
+                    pass
+
+        body_matches = ISSUING_BODY_RE.findall(combined)
+        if body_matches:
+            seen = set()
+            bodies = []
+            for b in body_matches:
+                if b not in seen:
+                    seen.add(b)
+                    bodies.append(b)
+            metadata["issuing_body"] = "、".join(bodies[:3])
+
+        effective_patterns = [
+            r'自\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*起\s*(?:施行|生效)',
+            r'施行日期[：:]\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日',
+            r'自\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s*起\s*(?:施行|生效)',
+        ]
+        for eff_pat in effective_patterns:
+            eff_match = re.search(eff_pat, combined)
+            if eff_match:
+                try:
+                    y, m, d = int(eff_match.group(1)), int(eff_match.group(2)), int(eff_match.group(3))
+                    if 2000 <= y <= 2030 and 1 <= m <= 12 and 1 <= d <= 31:
+                        metadata["effective_date"] = "{:04d}-{:02d}-{:02d}".format(y, m, d)
+                        break
+                except (ValueError, IndexError):
+                    pass
+
+        return metadata
+
+    def _match_keyword_categories(self, text, page_title=""):
+        """将文档匹配到5大四川乡村振兴关键词组。返回匹配到的组名列表。"""
+        combined = (page_title + " " + text[:2000])
+        matched = []
+        for group_name, keywords in GOV_SEARCH_KEYWORD_GROUPS.items():
+            score = 0
+            for kw in keywords:
+                if kw in combined:
+                    score += 1
+            if score >= 2 or (keywords[0] in combined and score >= 1):
+                matched.append(group_name)
+        return matched
+
+    # ================================================================
+    # 政策变化检测(借鉴MCP的全文对比思路→轻量版:标题语义匹配)
+    # ================================================================
+    def detect_policy_changes(self, doc_title, doc_url=""):
+        """检测新爬取文档是否更新/替代已有政策。
+        策略: 提取标题核心名词→查KP库→标题语义匹配→标记"政策更新"。
+        返回 {is_update, matched_kps: [{kp_id, title, match_reason}], action}
+        """
+        if not self.db or not doc_title:
+            return {"is_update": False, "matched_kps": [], "action": "new"}
+
+        core_title = doc_title
+        for wrapper in [
+            r'关于印发[〈《]\s*', r'[〉》]\s*的通知$', r'^关于',
+            r'的通知$', r'的批复$', r'的函$', r'的公告$',
+        ]:
+            core_title = re.sub(wrapper, '', core_title).strip()
+
+        if len(core_title) < 4:
+            return {"is_update": False, "matched_kps": [], "action": "new"}
+
+        matched_kps = []
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("""SELECT kp.id, kp.title, kp.review_status,
+                                c.level1_name as category
+                         FROM knowledge_points kp
+                         LEFT JOIN categories c ON c.id = kp.final_category_id
+                         WHERE kp.title LIKE ? AND kp.review_status = 'confirmed'
+                         LIMIT 10""", ('%' + core_title[:20] + '%',))
+            rows = c.fetchall()
+
+            c.execute("""SELECT kp.id, kp.title, kp.review_status,
+                                c.level1_name as category
+                         FROM knowledge_points kp
+                         LEFT JOIN categories c ON c.id = kp.final_category_id
+                         WHERE kp.ai_extracted_content LIKE ?
+                           AND kp.review_status = 'confirmed'
+                         LIMIT 10""", ('%' + core_title[:30] + '%',))
+            rows2 = c.fetchall()
+            conn.close()
+
+            seen_ids = set()
+            all_rows = []
+            for row in (rows or []) + (rows2 or []):
+                kp_id = row[0]
+                if kp_id not in seen_ids:
+                    seen_ids.add(kp_id)
+                    all_rows.append(row)
+
+            for row in all_rows:
+                kp_id, title, status, category = row[0], row[1], row[2], row[3]
+                match_reason = self._analyze_update_relationship(doc_title, title)
+                if match_reason:
+                    matched_kps.append({
+                        "kp_id": kp_id, "title": title[:80],
+                        "category": category or "", "match_reason": match_reason,
+                    })
+        except Exception:
+            pass
+
+        if matched_kps:
+            return {
+                "is_update": True,
+                "matched_kps": matched_kps,
+                "action": "policy_update",
+                "warning": "以下已有KP可能被此文档更新/替代,建议人工确认"
+            }
+        return {"is_update": False, "matched_kps": [], "action": "new"}
+
+    def _analyze_update_relationship(self, new_title, old_title):
+        """分析新旧标题之间的更新关系。返回 match_reason 或空字符串。"""
+        common_words = set()
+        for word in ['办法', '条例', '规定', '意见', '方案', '规划', '标准', '指南']:
+            if word in new_title and word in old_title:
+                common_words.add(word)
+
+        if not common_words:
+            return ""
+
+        update_signals = ['修订', '修正', '修改', '废止', '替代', '更新', '新版', '试行']
+        for sig in update_signals:
+            if sig in new_title:
+                return u"新文档标题含'{}'信号词,可能更新/替代已有同名政策".format(sig)
+
+        simplified_new = re.sub(r'[〈〉《》（）\s]', '', new_title)
+        simplified_old = re.sub(r'[〈〉《》（）\s]', '', old_title)
+
+        common = sum(1 for c in simplified_new if c in simplified_old)
+        max_len = max(len(simplified_new), len(simplified_old))
+        if max_len > 0 and common / max_len > 0.5:
+            return u"标题核心词高度相似({:.0%}),可能是同名政策的不同版本".format(common / max_len)
+
+        return ""
+
+    # ================================================================
     # 爬取+自动喂入提取管道
     # ================================================================
     def crawl_and_feed(self, schedule="weekly", max_urls=5):
@@ -422,3 +766,169 @@ class CrawlerScheduler(object):
             ),
             "ceo_action": "请打开 data/crawled/ 查看爬取文件",
         }
+
+    # ================================================================
+    # 全自动管道: 爬取→分类→变化检测→提取就绪
+    # ================================================================
+    def crawl_classify_extract_chain(self, schedule="weekly", keyword_groups=None):
+        """全自动管道: 爬取→自动分类→变化检测→提取就绪→日志完整链。
+        返回 {crawl, classify, policy_changes, chain_summary}
+        """
+        results = {
+            "crawl": None, "classify": [], "policy_changes": [],
+            "pending_copies": [], "chain_summary": {},
+        }
+
+        crawl_result = self.run_scheduled(schedule=schedule)
+        results["crawl"] = crawl_result
+
+        if not crawl_result.get("success"):
+            results["chain_summary"] = {"status": "crawl_failed",
+                                         "error": crawl_result.get("error", "?")}
+            return results
+
+        review_dir = PROJECT_ROOT / REVIEW_DIR_NAME
+        classified_count = 0
+        update_flags = 0
+
+        for detail in crawl_result.get("details", []):
+            saved_path = detail.get("saved")
+            if not saved_path or detail.get("status") == "unchanged":
+                continue
+
+            spath = Path(saved_path)
+            if not spath.exists():
+                continue
+
+            try:
+                with open(spath, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                continue
+
+            classification = self.classify_policy_doc(
+                content, url=detail.get("url", ""),
+                page_title=detail.get("title", "")
+            )
+            results["classify"].append({
+                "file": spath.name,
+                "url": detail.get("url", ""),
+                "policy_type": classification.get("policy_type", ""),
+                "doc_number": classification.get("doc_number", ""),
+                "publish_date": classification.get("publish_date", ""),
+                "issuing_body": classification.get("issuing_body", ""),
+                "matched_categories": classification.get("matched_categories", []),
+                "confidence": classification.get("confidence", 0),
+            })
+            classified_count += 1
+
+            page_title = detail.get("title", "")
+            if page_title:
+                changes = self.detect_policy_changes(page_title, detail.get("url", ""))
+                if changes.get("is_update"):
+                    results["policy_changes"].append({
+                        "file": spath.name,
+                        "matched_kps": changes.get("matched_kps", []),
+                        "action": changes.get("action", ""),
+                        "warning": changes.get("warning", ""),
+                    })
+                    update_flags += 1
+
+            self._update_crawl_classification(
+                detail.get("url", ""), saved_path, classification
+            )
+
+        chain_log = {
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "total_fetched": crawl_result.get("fetched", 0),
+            "new_files": crawl_result.get("new", 0),
+            "low_quality": crawl_result.get("low_quality", 0),
+            "classified": classified_count,
+            "policy_updates_flagged": update_flags,
+            "errors": crawl_result.get("errors", 0),
+        }
+        results["chain_summary"] = {
+            "status": "completed",
+            "pipeline": "crawl->classify->detect->ready",
+            "log": chain_log,
+            "message": (
+                u"管道完成: 爬取{}→分类{}→变化检测{}。"
+                u"文件位于{}/,待CEO审核后批准入库。"
+            ).format(
+                crawl_result.get("fetched", 0),
+                classified_count,
+                update_flags,
+                REVIEW_DIR_NAME,
+            ),
+        }
+
+        return results
+
+    def _update_crawl_classification(self, url, saved_path, classification):
+        """更新crawl_history的notes字段,记录分类元数据。"""
+        if not self.db or not url:
+            return
+        try:
+            import json as _json
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            notes = _json.dumps({
+                "policy_type": classification.get("policy_type", ""),
+                "doc_number": classification.get("doc_number", ""),
+                "publish_date": classification.get("publish_date", ""),
+                "issuing_body": classification.get("issuing_body", ""),
+                "matched_categories": classification.get("matched_categories", []),
+                "confidence": classification.get("confidence", 0),
+            }, ensure_ascii=False)
+            c.execute("""UPDATE crawl_history SET notes=?
+                         WHERE url=? AND saved_path=? AND notes=''""",
+                      (notes, url, saved_path))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def get_pipeline_report(self):
+        """获取管道运行报告: 最近爬取+分类统计+变化检测概览。"""
+        report = {"recent_crawls": [], "classification_stats": {}, "policy_updates": []}
+        if not self.db:
+            return report
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("""SELECT url, status, category, fetched_at, notes
+                         FROM crawl_history
+                         ORDER BY fetched_at DESC LIMIT 20""")
+            for row in c.fetchall():
+                entry = {"url": row[0], "status": row[1], "category": row[2],
+                         "fetched_at": row[3]}
+                if row[4]:
+                    try:
+                        entry["classification"] = json.loads(row[4])
+                    except Exception:
+                        pass
+                report["recent_crawls"].append(entry)
+
+            c.execute("""SELECT notes FROM crawl_history
+                         WHERE notes != '' AND fetched_at >= date('now','-7 days')""")
+            type_counts = {}
+            cat_counts = {}
+            for (notes,) in c.fetchall():
+                try:
+                    cls = json.loads(notes)
+                    pt = cls.get("policy_type", u"未知")
+                    type_counts[pt] = type_counts.get(pt, 0) + 1
+                    for cat in cls.get("matched_categories", []):
+                        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+                except Exception:
+                    pass
+            report["classification_stats"] = {
+                "by_policy_type": type_counts,
+                "by_category": cat_counts,
+                "period": u"最近7天",
+            }
+
+            conn.close()
+        except Exception:
+            pass
+        return report

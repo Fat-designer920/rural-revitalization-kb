@@ -1,10 +1,10 @@
 """
-npu_engine.py - NPU加速引擎(TF-IDF语义搜索+BM25混合检索+ONNX DirectML+批量质量分类)
+npu_engine.py - NPU加速引擎(语义搜索+BM25混合检索+ONNX DirectML+批量质量分类)
 路径：scripts/npu_engine.py
-版本：v2.3.7-part5
+版本：v2.3.7-part6
 
-三路径: sklearn TfidfVectorizer(主) / 纯numpy TF-IDF(备选) / ONNX DirectML(可选加速)
-A1升级: hybrid_search(TF-IDF dense + BM25 re-rank) + get_embedding_dim + is_hybrid_ready
+三路径: ONNX DirectML(优先,需模型文件) / sklearn TfidfVectorizer(主) / 纯numpy TF-IDF(备选)
+P1.2-A1升级: BGE ONNX slot + 增强TF-IDF(子线性缩放+trigram+查询扩展)+get_engine_info
 """
 import os
 import re
@@ -30,26 +30,39 @@ except ImportError:
     HAS_NUMBA = False
 
 
-# =====================================================================
-# Pure-numpy TF-IDF (Chinese bigram tokenization, zero external deps)
-# =====================================================================
+# Pure-numpy TF-IDF (unigram+bigram+trigram tokenization, zero external deps)
 
 def _tokenize_cn(text):
-    """Whitespace tokens + overlapping bigrams on Chinese character runs."""
+    """Enhanced Chinese tokenizer: unigrams + bigrams + trigrams on CJK runs.
+
+    Bigrams and trigrams capture multi-character terms that dominate Chinese
+    policy vocabulary (e.g. '耕地保护','全域土地整治'). Unigrams preserve
+    single-char recall that char_wb provides. Non-CJK tokens kept as-is.
+    """
     tokens = []
     for part in str(text).split():
         cn = re.findall(r'[一-鿿]+', part)
         for seg in cn:
-            tokens.append(seg) if len(seg) == 1 else [
-                tokens.append(seg[i:i + 2]) for i in range(len(seg) - 1)]
+            L = len(seg)
+            if L == 1:
+                tokens.append(seg)
+            else:
+                # Unigrams (individual chars, for char-level recall)
+                tokens.extend(seg[i] for i in range(L))
+                # Bigrams (overlapping 2-gram, core Chinese term unit)
+                tokens.extend(seg[i:i + 2] for i in range(L - 1))
+                # Trigrams (overlapping 3-gram, longer phrase capture)
+                if L >= 3:
+                    tokens.extend(seg[i:i + 3] for i in range(L - 2))
+        # Keep non-CJK tokens (numbers, English acronyms, etc.)
         tokens.extend(re.sub(r'[一-鿿]+', ' ', part).split())
     return tokens
 
 
 class _NumpyTfidf(object):
-    """Self-contained TF-IDF vectorizer. Only numpy required."""
+    """Self-contained TF-IDF vectorizer with sublinear TF scaling. Only numpy required."""
 
-    def __init__(self, max_features=5000):
+    def __init__(self, max_features=10000):
         self.max_features = max_features
         self.vocabulary_ = {}
         self.idf_ = None
@@ -70,6 +83,9 @@ class _NumpyTfidf(object):
                 idx = self.vocabulary_.get(t)
                 if idx is not None:
                     tf[i, idx] += 1.0
+        # Sublinear TF scaling: dampen the effect of high-frequency terms
+        # 1 + log(tf) is more robust than raw tf for long documents
+        tf = np.where(tf > 0, 1.0 + np.log(tf), 0.0)
         return tf
 
     def fit_transform(self, texts):
@@ -77,7 +93,9 @@ class _NumpyTfidf(object):
         if tf.shape[1] == 0:
             self.idf_ = np.array([], dtype=np.float32)
             return tf
-        tf /= np.maximum(tf.sum(axis=1, keepdims=True), 1.0)
+        # L2 normalize rows for cosine similarity
+        norms = np.maximum(np.linalg.norm(tf, axis=1, keepdims=True), 1e-10)
+        tf = tf / norms
         df = (tf > 0).sum(axis=0).astype(np.float32)
         self.idf_ = np.log((len(texts) + 1.0) / (df + 1.0)) + 1.0
         return tf * self.idf_[np.newaxis, :]
@@ -86,13 +104,12 @@ class _NumpyTfidf(object):
         tf = self._build_tf(texts)
         if tf.shape[1] == 0:
             return tf
-        tf /= np.maximum(tf.sum(axis=1, keepdims=True), 1.0)
+        norms = np.maximum(np.linalg.norm(tf, axis=1, keepdims=True), 1e-10)
+        tf = tf / norms
         return tf * self.idf_[np.newaxis, :]
 
 
-# =====================================================================
 # ONNX DirectML helpers
-# =====================================================================
 
 def _detect_dml():
     if not HAS_ONNX:
@@ -123,9 +140,64 @@ def _cosine_batch(query_vec, doc_matrix):
     return (np.dot(doc_matrix, q) / (qn * dn)).astype(np.float32)
 
 
-# =====================================================================
+# Domain synonym dictionary for query expansion.
+# Maps a query term to additional terms that appear in policy documents.
+# Conservative expansion: only highly-reliable synonyms within the policy domain.
+_QUERY_SYNONYMS = {
+    '耕地': ['农田', '基本农田', '永久基本农田', '农用地'],
+    '土地': ['用地', '地块', '国土', '土地资源'],
+    '补偿': ['补助', '补贴', '赔偿', '安置补助费'],
+    '资金': ['经费', '财政', '投资', '融资', '拨款', '专项资金'],
+    '项目': ['工程', '建设项目', '工程项目', '实施项目'],
+    '规划': ['方案', '计划', '布局', '总体规划', '专项规划'],
+    '农村': ['乡村', '村庄', '村镇', '乡镇', '村级'],
+    '农业': ['种植', '养殖', '农产品', '农业生产', '现代农业'],
+    '农民': ['农户', '村民', '农民群众', '新型职业农民'],
+    '建设': ['修建', '兴建', '建设施工', '工程建设'],
+    '管理': ['监管', '管控', '治理', '管护'],
+    '标准': ['规范', '规程', '准则', '技术标准'],
+    '政策': ['文件', '通知', '意见', '办法', '规定', '条例'],
+    '整治': ['整理', '治理', '修复', '综合整治'],
+    '保护': ['防护', '保育', '维护', '生态保护'],
+    '产业': ['行业', '业态', '产业链', '特色产业'],
+    '指标': ['目标', '任务', '考核指标', '约束性指标'],
+    '生态': ['环境', '绿色', '自然资源', '生态环境'],
+    '振兴': ['发展', '繁荣', '复兴', '乡村振兴'],
+    '融资': ['贷款', '信贷', '借贷', '资金筹措', '投融资'],
+    '策划': ['谋划', '规划', '设计', '方案编制'],
+    '实施': ['执行', '落实', '推进', '落地'],
+    '运营': ['经营', '运行', '维护', '管理运营'],
+    '申报': ['申请', '报批', '审批申报', '上报'],
+    '专项债': ['地方政府专项债券', '专项债券', '地方债'],
+    '宅基地': ['农村宅基地', '宅基地制度改革', '农房'],
+    '全域土地': ['全域土地综合整治', '土地综合整治', '全域整治'],
+    '和美乡村': ['美丽乡村', '宜居乡村', '和美乡村建设'],
+    '集体经济': ['村集体经济', '集体经济组织', '农村集体经济'],
+}
+
+
+def _expand_query(query):
+    """Expand a query with domain synonyms for better recall.
+
+    For each word in the query, looks up the synonym dictionary and appends
+    the top-3 most relevant synonyms. The original query text is prepended
+    (with higher implicit weight from being listed first).
+    """
+    expansions = [query]
+    seen = set()
+    for term, synonyms in _QUERY_SYNONYMS.items():
+        if term in query:
+            for syn in synonyms[:3]:
+                if syn not in seen and syn not in query:
+                    expansions.append(syn)
+                    seen.add(syn)
+    # Limit expansion to avoid query drift
+    if len(expansions) > 1:
+        return ' '.join(expansions[:8])  # cap at 8 terms
+    return query
+
+
 # Pre-compiled regexes (module level, compiled once)
-# =====================================================================
 
 _KW_RE = re.compile('|'.join([
     '政策', '耕地', '指标', '补偿', '项目', '规划', '资金',
@@ -142,14 +214,13 @@ _STRUCT_RE = re.compile(
     r'[：:。；;]')
 
 
-# =====================================================================
 # NPUEngine
-# =====================================================================
 
 class NPUEngine(object):
     """NPU加速引擎。零API成本/零网络依赖/零模型下载。
 
-    主路径(sklearn/numpy-TFIDF)永远可用,ONNX模型仅作可选加速。
+    优先ONNX DirectML(需 data/models/embedding_model.onnx),
+    降级增强TF-IDF(sklearn char_wb trigram + 子线性缩放 + 查询扩展 + numpy备选)。
     """
 
     _MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)),
@@ -178,12 +249,12 @@ class NPUEngine(object):
         self._corpus_texts = list(texts)
         if HAS_SKLEARN:
             self._vectorizer = TfidfVectorizer(
-                max_features=5000, analyzer='char_wb', ngram_range=(2,4),
-                dtype=np.float32)
+                max_features=10000, analyzer='char_wb', ngram_range=(2, 3),
+                sublinear_tf=True, dtype=np.float32)
             self._corpus_matrix = self._vectorizer.fit_transform(
                 self._corpus_texts).toarray()
         else:
-            self._numpy_tfidf = _NumpyTfidf(max_features=5000)
+            self._numpy_tfidf = _NumpyTfidf(max_features=10000)
             self._corpus_matrix = self._numpy_tfidf.fit_transform(
                 self._corpus_texts)
         return True
@@ -191,6 +262,7 @@ class NPUEngine(object):
     def semantic_search(self, query, texts=None, top_k=5):
         """TF-IDF vectorize query -> cosine similarity -> top-k results.
 
+        Uses query expansion for better recall on domain-specific queries.
         Returns [[index, score], ...] sorted by descending score.
         """
         if texts is not None:
@@ -198,11 +270,14 @@ class NPUEngine(object):
         if self._corpus_matrix is None or self._corpus_matrix.shape[0] == 0:
             return []
 
+        # Query expansion for domain-specific vocabulary
+        expanded_query = _expand_query(query)
+
         try:
             if self._vectorizer is not None:
-                query_vec = self._vectorizer.transform([query]).toarray()
+                query_vec = self._vectorizer.transform([expanded_query]).toarray()
             elif self._numpy_tfidf is not None:
-                query_vec = self._numpy_tfidf.transform([query])
+                query_vec = self._numpy_tfidf.transform([expanded_query])
             else:
                 return []
         except (ValueError, AttributeError):
@@ -221,7 +296,7 @@ class NPUEngine(object):
         """Hybrid search: TF-IDF dense retrieval + BM25 re-ranking.
 
         Steps:
-          1. char_wb TF-IDF -> cosine similarity -> top-50 candidates
+          1. Query expansion -> char_wb TF-IDF -> cosine similarity -> top-50
           2. BM25 re-rank within top-50 (IDF-weighted keyword overlap)
           3. Merge scores (0.4 dense + 0.6 BM25) -> return top-k
 
@@ -232,12 +307,13 @@ class NPUEngine(object):
         if self._corpus_matrix is None or self._corpus_matrix.shape[0] == 0:
             return []
 
-        # Step 1: Dense TF-IDF retrieval -> top-50
+        # Step 1: Query expansion + Dense TF-IDF retrieval -> top-50
+        expanded_query = _expand_query(query)
         try:
             if self._vectorizer is not None:
-                query_vec = self._vectorizer.transform([query]).toarray()
+                query_vec = self._vectorizer.transform([expanded_query]).toarray()
             elif self._numpy_tfidf is not None:
-                query_vec = self._numpy_tfidf.transform([query])
+                query_vec = self._numpy_tfidf.transform([expanded_query])
             else:
                 return []
         except (ValueError, AttributeError):
@@ -361,6 +437,17 @@ class NPUEngine(object):
                kw_score * 0.25 + data_score * 0.15 + struct_score * 0.20)
         return np.clip(np.rint(raw * 5.0), 1.0, 5.0).astype(int).tolist()
 
+    def get_engine_info(self):
+        """Return human-readable engine identification string.
+
+        Returns one of: 'ONNX_DirectML' / 'sklearn_TFIDF_enhanced' / 'numpy_TFIDF_enhanced'.
+        """
+        if self._onnx_session is not None:
+            return "ONNX_DirectML"
+        if HAS_SKLEARN:
+            return "sklearn_TFIDF_enhanced"
+        return "numpy_TFIDF_enhanced"
+
     def get_status(self):
         """Hardware capabilities and engine state."""
         return {
@@ -375,6 +462,7 @@ class NPUEngine(object):
             "vector_dim": int(self._corpus_matrix.shape[1])
                           if self._corpus_matrix is not None else 0,
             "engine_mode": self._engine_mode(),
+            "engine_info": self.get_engine_info(),
             "capabilities": ["semantic_search", "hybrid_search",
                              "quality_classify_batch",
                              "build_index", "benchmark"],
@@ -434,4 +522,4 @@ class NPUEngine(object):
     def _engine_mode(self):
         if self._onnx_session is not None:
             return "ONNX_DirectML"
-        return "sklearn_TFIDF" if HAS_SKLEARN else "numpy_TFIDF"
+        return "sklearn_TFIDF_enhanced" if HAS_SKLEARN else "numpy_TFIDF_enhanced"
