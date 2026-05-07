@@ -100,9 +100,13 @@
 | 立规则全文 + 模块结构 + 架构速查 | docs/01_工程手册.md |
 | 客户画像 + 分类标签 + 元数据 | docs/02_知识体系.md |
 | 31 个 Prompt 接口契约 | docs/03_Prompt手册.md |
+| Agent体系 + 部门架构 | docs/04_Agent体系手册.md |
+| 产品体系 + 定价 + 路线图 | docs/05_产品体系手册.md |
+| 自动迭代任务队列 | docs/06_自动迭代任务队列.md |
+| 商业战略 + 竞品 + 定价 | docs/07_商业战略.md |
+| 产品改造升级方案(颗粒度) | docs/08_产品改造升级方案.md |
 | 版本变更详情 | CHANGELOG.md |
 | 对外文档 + 系统简介 | README.md |
-| 自动化测试引擎 + 用法 | scripts/auto_tester.py + §12 |
 
 **改动前必读**:改 .py → docs/01_工程手册.md §一 + §六模块速查;改 review.html → docs/01_工程手册.md ES5 严格约束;改 Prompt → docs/03_Prompt手册.md;改客户画像 → docs/02_知识体系.md。
 

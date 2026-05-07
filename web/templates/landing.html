@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>四川乡村振兴操盘手的第一知识工具 — AI问答助手</title>
+<meta name="description" content="乡村振兴AI问答助手，聚焦四川，像旁边坐了个20年老师傅在告诉你。政策怎么用、项目怎么推、坑在哪里——直接回答、政策依据、操作步骤、风险提示。">
+<style>
+/* ===== Reset & Base ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  background: #f5f0e8;
+  color: #2d2a24;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  min-width: 320px;
+}
+
+/* ===== Typography ===== */
+h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.3; }
+h2 { font-size: 1.35rem; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+a { color: #1a5632; text-decoration: none; }
+
+/* ===== Container ===== */
+.container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-block;
+  padding: 14px 36px;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  border: none;
+  transition: all 0.2s ease;
+}
+.btn-primary {
+  background: #1a5632;
+  color: #fff;
+}
+.btn-primary:hover {
+  background: #154829;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(26,86,50,0.3);
+}
+.btn-outline {
+  background: transparent;
+  color: #1a5632;
+  border: 2px solid #1a5632;
+}
+.btn-outline:hover {
+  background: #1a5632;
+  color: #fff;
+}
+.btn-gold {
+  background: #c8922b;
+  color: #fff;
+}
+.btn-gold:hover {
+  background: #b07d24;
+  box-shadow: 0 4px 16px rgba(200,146,43,0.35);
+}
+
+/* ===== Nav ===== */
+.navbar {
+  background: #fff;
+  border-bottom: 1px solid #e5dfd6;
+  padding: 12px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.navbar .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #1a5632;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.navbar-brand .icon {
+  width: 32px;
+  height: 32px;
+  background: #1a5632;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.navbar-cta {
+  font-size: 0.88rem;
+  padding: 8px 20px;
+}
+
+/* ===== Hero ===== */
+.hero {
+  text-align: center;
+  padding: 72px 0 48px;
+  background: linear-gradient(180deg, #fff 0%, #f5f0e8 100%);
+}
+.hero-badge {
+  display: inline-block;
+  background: rgba(26,86,50,0.08);
+  color: #1a5632;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+}
+.hero h1 {
+  max-width: 680px;
+  margin: 0 auto 16px;
+  color: #1a3a20;
+}
+.hero-subtitle {
+  font-size: 1.15rem;
+  color: #6b5e4e;
+  max-width: 520px;
+  margin: 0 auto 32px;
+  line-height: 1.7;
+}
+.hero-cta-wrap {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+.hero-cta-wrap .btn { min-width: 160px; }
+.hero-trust {
+  font-size: 0.85rem;
+  color: #8b7e6e;
+}
+.hero-trust span { color: #c8922b; font-weight: 600; }
+
+/* ===== Divider ===== */
+.section-divider {
+  border: none;
+  border-top: 1px solid #e0d8ca;
+  margin: 0;
+}
+
+/* ===== Section Headers ===== */
+.section {
+  padding: 64px 0;
+}
+.section-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+.section-header h2 {
+  color: #1a3a20;
+  margin-bottom: 8px;
+}
+.section-header p {
+  color: #6b5e4e;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ===== Demo Q&A ===== */
+.qa-list { display: flex; flex-direction: column; gap: 24px; }
+.qa-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5dfd6;
+  overflow: hidden;
+  transition: box-shadow 0.25s ease;
+}
+.qa-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
+.qa-question {
+  padding: 20px 24px;
+  background: #faf7f2;
+  border-bottom: 1px solid #e5dfd6;
+  font-weight: 600;
+  color: #1a3a20;
+  font-size: 1.02rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.qa-question .q-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background: #1a5632;
+  color: #fff;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.qa-answer {
+  padding: 24px;
+}
+.qa-answer-block {
+  margin-bottom: 16px;
+}
+.qa-answer-block:last-child { margin-bottom: 0; }
+.qa-answer-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #c8922b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qa-answer-label::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: #c8922b;
+  border-radius: 50%;
+}
+.qa-answer-text {
+  color: #3d3830;
+  font-size: 0.95rem;
+  line-height: 1.8;
+}
+
+/* ===== Pricing ===== */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.pricing-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 2px solid #e5dfd6;
+  padding: 32px 24px;
+  text-align: center;
+  transition: all 0.25s ease;
+  position: relative;
+}
+.pricing-card:hover {
+  border-color: #c8922b;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+}
+.pricing-card.featured {
+  border-color: #c8922b;
+  box-shadow: 0 4px 24px rgba(200,146,43,0.15);
+}
+.pricing-badge {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #c8922b;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 16px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.pricing-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1a3a20;
+  margin-bottom: 8px;
+}
+.pricing-price {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #1a5632;
+  margin-bottom: 4px;
+}
+.pricing-price sub { font-size: 0.9rem; font-weight: 500; color: #6b5e4e; }
+.pricing-period { font-size: 0.82rem; color: #8b7e6e; margin-bottom: 24px; }
+.pricing-features { list-style: none; padding: 0; text-align: left; margin-bottom: 28px; }
+.pricing-features li {
+  padding: 8px 0;
+  font-size: 0.9rem;
+  color: #3d3830;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #f5f0e8;
+}
+.pricing-features li:last-child { border-bottom: none; }
+.pricing-features li .check { color: #1a5632; font-weight: 700; }
+.pricing-cta .btn { display: block; width: 100%; text-align: center; }
+
+/* ===== Stats Bar ===== */
+.stats-bar {
+  background: #1a5632;
+  color: #fff;
+  padding: 40px 0;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  text-align: center;
+}
+.stat-number {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #c8922b;
+}
+.stat-label {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.8);
+  margin-top: 4px;
+}
+
+/* ===== Footer ===== */
+.footer {
+  background: #1a3a20;
+  color: rgba(255,255,255,0.7);
+  padding: 48px 0 32px;
+}
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 40px;
+  margin-bottom: 32px;
+}
+.footer h4 {
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.footer p, .footer li {
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+.footer ul { list-style: none; padding: 0; }
+.footer a { color: rgba(255,255,255,0.6); }
+.footer a:hover { color: #c8922b; }
+.footer-bottom {
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 20px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.45);
+}
+.footer-contact-hint {
+  display: inline-block;
+  background: rgba(200,146,43,0.2);
+  color: #c8922b;
+  font-size: 0.85rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  h1 { font-size: 1.55rem; }
+  .hero { padding: 48px 0 32px; }
+  .pricing-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
+  .stats-grid { grid-template-columns: 1fr; gap: 16px; }
+  .footer-grid { grid-template-columns: 1fr; gap: 24px; }
+}
+@media (max-width: 480px) {
+  h1 { font-size: 1.35rem; }
+  .hero-subtitle { font-size: 1rem; }
+  .hero-cta-wrap .btn { width: 100%; }
+  .container { padding: 0 16px; }
+  .qa-question { padding: 16px; font-size: 0.95rem; }
+  .qa-answer { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="navbar">
+  <div class="container">
+    <div class="navbar-brand">
+      <span class="icon">乡</span>
+      乡村振兴知识助手
+    </div>
+    <a href="#pricing" class="btn btn-primary navbar-cta" style="padding:8px 20px;font-size:0.88rem;">免费试用</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">聚焦四川</div>
+    <h1>四川乡村振兴操盘手的第一知识工具</h1>
+    <p class="hero-subtitle">AI问答助手 &mdash; 像旁边坐了个20年老师傅在告诉你。<br>政策怎么用、项目怎么推、坑在哪里。</p>
+    <div class="hero-cta-wrap">
+      <a href="#pricing" class="btn btn-gold">免费试用7天</a>
+      <a href="#demo" class="btn btn-outline">看看效果</a>
+    </div>
+    <p class="hero-trust"><span>1832条</span>四川乡村振兴专业知识 &middot; <span>15个</span>业务领域 &middot; <span>老唐20年</span>实战经验</p>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- Demo Q&A -->
+<section class="section" id="demo">
+  <div class="container">
+    <div class="section-header">
+      <h2>AI问答助手能做什么？</h2>
+      <p>不是搜政策原文——是告诉你政策背后怎么落地、有什么坑、该怎么操作。</p>
+    </div>
+
+    <div class="qa-list">
+
+      <!-- Q1 -->
+      <div class="qa-card">
+        <div class="qa-question">
+          <span class="q-icon">Q</span>
+          增减挂钩项目在绵阳遇到土地指标不够怎么办？
+        </div>
+        <div class="qa-answer">
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">直接回答</div>
+            <div class="qa-answer-text">
+              绵阳增减挂钩指标不够，有两条路可以走，不是非此即彼，可以组合用。第一，跟市级沟通申请跨县域调剂指标&mdash;&mdash;省厅2019年就出文允许县际调剂，绵阳境内涪城、游仙指标偏紧但三台、盐亭还有空间。第二，走"指标预支"通道，前提是你的拆旧复垦方案已经通过评审、施工进度符合预期，就可以申请预支不超过总指标的30%。我见过涪城区一个项目，预支了28%的指标先启动了安置区建设，剩下的等验收再补。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">政策依据</div>
+            <div class="qa-answer-text">
+              四川省自然资源厅《关于进一步规范城乡建设用地增减挂钩工作的通知》(川自然资发[2019]xxx号)明确允许县域间指标调剂；同时《绵阳市增减挂钩实施细则》对预支比例和条件有具体规定。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">操作步骤</div>
+            <div class="qa-answer-text">
+              第一步：找县自规局确认指标缺口的具体数字和原因；第二步：同步启动调济申请和预支方案（两条腿走路不等）；第三步：准备好拆旧复垦进度证明材料和安置区建设计划；第四步：县局报市局审批，通常15个工作日答复。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">风险提示</div>
+            <div class="qa-answer-text">
+              预支指标到期还不上会冻结后续指标，严重的影响你乡镇以后所有土地项目的指标分配。我见过两个镇因为这个被暂停一整年。政策窗口:跨县调剂要看市级年度指标调剂额度,9月以后通常额度紧张,建议上半年推动。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q2 -->
+      <div class="qa-card">
+        <div class="qa-question">
+          <span class="q-icon">Q</span>
+          高标准农田建设的资金来源有哪些？
+        </div>
+        <div class="qa-answer">
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">资金来源详解</div>
+            <div class="qa-answer-text">
+              高标准农田资金不是只有财政一条路，我给你梳理五条通道:<br>
+              <strong>(1) 中央财政农田建设补助资金</strong>&mdash;&mdash;亩均补助1500元，这是大头，2024年四川拿到约42亿，覆盖280万亩。申请窗口每年3-4月，由县农业农村局统一上报。<br>
+              <strong>(2) 省级配套资金</strong>&mdash;&mdash;四川省级每亩配套500元左右，贫困县和丘陵山区适当上浮。绵阳、广元、巴中等丘陵地区可以亩均拿到600-700元。<br>
+              <strong>(3) 地方政府专项债</strong>&mdash;&mdash;2023年起高标准农田纳入专项债支持范围，我们测算每亩可融资2000-3000元，还款来源是新增耕地指标出让收益。<br>
+              <strong>(4) 社会资本参与</strong>&mdash;&mdash;走PPP或"先建后补"模式，企业先投钱建设，验收后财政补70-80%，剩下20-30%企业从耕地指标收益中回收。<br>
+              <strong>(5) 政策性银行信贷</strong>&mdash;&mdash;农发行"农地贷"专门支持高标准农田，利率比商贷低2-3个点。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">申报条件</div>
+            <div class="qa-answer-text">
+              地块要求：集中连片50亩以上（平原）/ 30亩以上（丘陵）；不在生态红线和水源保护区内；与"两区划定"（粮食生产功能区、重要农产品保护区）相衔接。项目要求：要有县级农田建设规划批复 + 年度实施方案 + 论证意见三个文件，缺一不可。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">注意事项</div>
+            <div class="qa-answer-text">
+              第一，不要等所有资金到位再开工——可以先启动中央资金覆盖的部分，边干边跑配套。第二，专项债申请要提前6个月准备"一案两书"（实施方案+财务评估报告+法律意见书），我见过太多乡镇因为"一案两书"准备不充分被刷下来。第三，社会资本进来前把利益分配机制谈清楚，建完再分账一定扯皮。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q3 -->
+      <div class="qa-card">
+        <div class="qa-question">
+          <span class="q-icon">Q</span>
+          集体经营性建设用地入市需要什么条件？
+        </div>
+        <div class="qa-answer">
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">法律依据</div>
+            <div class="qa-answer-text">
+              《土地管理法》(2019修正)第六十三条明确规定:土地利用总体规划、城乡规划确定为工业、商业等经营性用途，并经依法登记的集体经营性建设用地，土地所有权人可以通过出让、出租等方式交由单位或者个人使用。2022年中央一号文件进一步要求"稳妥有序推进农村集体经营性建设用地入市"。四川省2023年印发《深化农村集体经营性建设用地入市试点工作方案》，首批在郫都、泸县等17个县市区开展试点。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">操作流程</div>
+            <div class="qa-answer-text">
+              (1) 规划合规：地块必须在村庄规划或乡镇国土空间规划中明确为经营性建设用地——不是你自己说是就是，要有规划批文。这是第一步也是最容易被卡的一步。<br>
+              (2) 确权登记：完成集体土地所有权和使用权的不动产登记，拿到不动产权证。没证的入市=违法。<br>
+              (3) 村民决议：入市方案（地块、年限、底价、收益分配）必须经村民会议三分之二以上或者村民代表会议三分之二以上同意——这是法律硬杠子，少一个百分点都不行，已经有试点因为这个被纪检问责。<br>
+              (4) 政府审查：方案报县自然资源局和农业农村局联合审查，重点审核规划合规性和收益分配公平性。<br>
+              (5) 公开交易：进县公共资源交易平台挂牌，不低于底价，价高者得。<br>
+              (6) 收益分配：扣除土地增值收益调节金(20-50%归政府)后，剩余部分按村集体提留公积金+村民分配的方案执行。
+            </div>
+          </div>
+          <div class="qa-answer-block">
+            <div class="qa-answer-label">常见问题</div>
+            <div class="qa-answer-text">
+              <strong>问题一：宅基地算不算？</strong>不算。闲置宅基地要转化成集体经营性建设用地必须先退出（农户自愿）再调整规划用途，不能直接入市。这块现在政策还没完全理顺。<br>
+              <strong>问题二：收益怎么分才不闹矛盾？</strong>底线原则：先把政府的调节金留足，村集体提留30-40%做公益和发展基金，剩下的按持股分配到户。郫都区战旗村的做法是"3331"——30%村集体留存、30%公益金、30%股东分红、10%风险金，这么多年没闹过矛盾。<br>
+              <strong>问题三：能不能搞房地产？</strong>绝对不能。入市只能用于工商业、仓储、养老、文旅等经营性用途，商品住宅是红线碰了就出事。
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+  <div class="container">
+    <div class="stats-grid">
+      <div>
+        <div class="stat-number">1,832</div>
+        <div class="stat-label">条四川乡村振兴专业知识</div>
+      </div>
+      <div>
+        <div class="stat-number">15+</div>
+        <div class="stat-label">业务领域全覆盖</div>
+      </div>
+      <div>
+        <div class="stat-number">20年</div>
+        <div class="stat-label">老唐一线实战经验</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pricing -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="section-header">
+      <h2>选一个适合你的方案</h2>
+      <p>七天免费试用，不满意随时取消。三个版本按需选择，不搞强制升级。</p>
+    </div>
+
+    <div class="pricing-grid">
+
+      <!-- Basic -->
+      <div class="pricing-card">
+        <div class="pricing-name">基础版</div>
+        <div class="pricing-price">19.9<sub>元</sub></div>
+        <div class="pricing-period">/月</div>
+        <ul class="pricing-features">
+          <li><span class="check">&#10003;</span> 50次/月问答</li>
+          <li><span class="check">&#10003;</span> 政策速查</li>
+          <li><span class="check">&#10003;</span> 1个领域深度查询</li>
+          <li><span class="check">&#10003;</span> 七日试用支持</li>
+        </ul>
+        <div class="pricing-cta">
+          <a href="#pricing" class="btn btn-outline">免费试用7天</a>
+        </div>
+      </div>
+
+      <!-- Pro (featured) -->
+      <div class="pricing-card featured">
+        <div class="pricing-badge">最受欢迎</div>
+        <div class="pricing-name">专业版</div>
+        <div class="pricing-price">99<sub>元</sub></div>
+        <div class="pricing-period">/月</div>
+        <ul class="pricing-features">
+          <li><span class="check">&#10003;</span> 无限问答</li>
+          <li><span class="check">&#10003;</span> 政策速查</li>
+          <li><span class="check">&#10003;</span> 政策对比分析</li>
+          <li><span class="check">&#10003;</span> 实战案例库</li>
+          <li><span class="check">&#10003;</span> 5个领域深度查询</li>
+          <li><span class="check">&#10003;</span> 优先响应</li>
+        </ul>
+        <div class="pricing-cta">
+          <a href="#pricing" class="btn btn-gold">免费试用7天</a>
+        </div>
+      </div>
+
+      <!-- Expert -->
+      <div class="pricing-card">
+        <div class="pricing-name">专家版</div>
+        <div class="pricing-price">199<sub>元</sub></div>
+        <div class="pricing-period">/月</div>
+        <ul class="pricing-features">
+          <li><span class="check">&#10003;</span> 无限问答 + 全功能</li>
+          <li><span class="check">&#10003;</span> 政策速查 + 对比</li>
+          <li><span class="check">&#10003;</span> 合规自检工具</li>
+          <li><span class="check">&#10003;</span> 指标测算模型</li>
+          <li><span class="check">&#10003;</span> 15个领域全开</li>
+          <li><span class="check">&#10003;</span> 每月一次深度咨询</li>
+        </ul>
+        <div class="pricing-cta">
+          <a href="#pricing" class="btn btn-outline">免费试用7天</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h4>乡村振兴知识助手</h4>
+        <p>基于1,832条四川乡村振兴专业知识，覆盖增减挂钩、高标准农田、集体建设用地入市、宅基地改革、乡村规划、产业融合等15个业务领域。</p>
+        <p style="margin-top:8px;">老唐20年实战经验 &times; AI技术，打造四川乡村振兴操盘手的第一知识工具。</p>
+      </div>
+      <div>
+        <h4>快速链接</h4>
+        <ul>
+          <li><a href="#demo">问答示例</a></li>
+          <li><a href="#pricing">价格方案</a></li>
+          <li><a href="https://github.com/Fat-designer920/rural-revitalization-kb">GitHub</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>联系方式</h4>
+        <p>扫码添加老唐微信<br>获取1v1深度咨询</p>
+        <div class="footer-contact-hint">老唐微信: tanglaoshi_sc</div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>2026 乡村振兴知识工厂 &middot; 聚焦四川 &middot; 产品驱动知识管道</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

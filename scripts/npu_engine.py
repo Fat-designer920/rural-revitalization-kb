@@ -216,6 +216,109 @@ class NPUEngine(object):
         order = np.argsort(-top_scores)
         return [[int(top_idx[o]), float(top_scores[o])] for o in order]
 
+    def hybrid_search(self, query, texts=None, top_k=5):
+        """Hybrid search: TF-IDF dense retrieval + BM25 re-ranking.
+
+        Steps:
+          1. char_wb TF-IDF -> cosine similarity -> top-50 candidates
+          2. BM25 re-rank within top-50 (IDF-weighted keyword overlap)
+          3. Merge scores (0.4 dense + 0.6 BM25) -> return top-k
+
+        Returns [[index, score], ...] sorted by descending merged score.
+        """
+        if texts is not None:
+            self.build_index(texts)
+        if self._corpus_matrix is None or self._corpus_matrix.shape[0] == 0:
+            return []
+
+        # Step 1: Dense TF-IDF retrieval -> top-50
+        try:
+            if self._vectorizer is not None:
+                query_vec = self._vectorizer.transform([query]).toarray()
+            elif self._numpy_tfidf is not None:
+                query_vec = self._numpy_tfidf.transform([query])
+            else:
+                return []
+        except (ValueError, AttributeError):
+            return []
+
+        dense_scores = _cosine_batch(query_vec, self._corpus_matrix)
+        n_docs = len(dense_scores)
+        if n_docs == 0:
+            return []
+
+        k_dense = min(50, n_docs)
+        if k_dense < n_docs:
+            top_idx = np.argpartition(-dense_scores, k_dense)[:k_dense]
+        else:
+            top_idx = np.arange(n_docs)
+
+        # Step 2: BM25 re-ranking on top-50 candidates
+        top_texts = [str(self._corpus_texts[i]) for i in top_idx]
+        query_tokens = _tokenize_cn(query)
+        if not query_tokens:
+            # Fallback: dense scores only
+            final_idx = top_idx
+            final_scores = dense_scores[top_idx]
+        else:
+            doc_tokens = [_tokenize_cn(t) for t in top_texts]
+            # IDF on top-50 subset
+            N = len(doc_tokens)
+            df = {}
+            for tokens in doc_tokens:
+                for t in set(tokens):
+                    df[t] = df.get(t, 0) + 1
+
+            k1, b_param = 1.5, 0.75
+            doc_lens = np.array([len(tk) for tk in doc_tokens], dtype=np.float32)
+            avgdl = max(float(doc_lens.mean()), 1.0)
+
+            bm25_scores = np.zeros(N, dtype=np.float32)
+            for i, tokens in enumerate(doc_tokens):
+                tf_dict = {}
+                for t in tokens:
+                    tf_dict[t] = tf_dict.get(t, 0) + 1
+                score = 0.0
+                for qt in query_tokens:
+                    df_t = df.get(qt, 0)
+                    if df_t == 0:
+                        continue
+                    idf = float(np.log((N - df_t + 0.5) / (df_t + 0.5) + 1.0))
+                    tf = tf_dict.get(qt, 0)
+                    if tf == 0:
+                        continue
+                    score += idf * (tf * (k1 + 1)) / (
+                        tf + k1 * (1 - b_param + b_param * doc_lens[i] / avgdl))
+                bm25_scores[i] = score
+
+            # Normalize to [0,1] for merging
+            bm25_max = float(bm25_scores.max())
+            bm25_norm = bm25_scores / bm25_max if bm25_max > 0 else bm25_scores
+
+            dense_subset = dense_scores[top_idx]
+            dense_max = float(dense_subset.max())
+            dense_norm = dense_subset / dense_max if dense_max > 0 else dense_subset
+
+            # Merge: 0.4 dense + 0.6 BM25
+            merged = 0.4 * dense_norm + 0.6 * bm25_norm
+            final_order = np.argsort(-merged)
+            final_idx = top_idx[final_order]
+            final_scores = merged[final_order]
+
+        k = min(top_k, len(final_idx))
+        return [[int(final_idx[i]), float(final_scores[i])] for i in range(k)]
+
+    def get_embedding_dim(self):
+        """Return the embedding dimension of the current index."""
+        if self._corpus_matrix is not None:
+            return int(self._corpus_matrix.shape[1])
+        return 0
+
+    def is_hybrid_ready(self):
+        """Check if hybrid search is available (requires built index)."""
+        return (self._corpus_matrix is not None
+                and len(self._corpus_texts or []) > 0)
+
     def quality_classify(self, title, excerpt):
         """Score a single item (1-5). Convenience wrapper."""
         scores = self.quality_classify_batch([title], [excerpt])
