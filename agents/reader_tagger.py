@@ -3,15 +3,29 @@ reader_tagger.py - V3 自动读者定位打标器(15角色×5场景×4深度)
 路径：agents/reader_tagger.py
 版本：v2.3.7
 """
-import json, time
-from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded
+
+import json
+import time
+
+from scripts.deepseek_client import CostLimitExceeded, DeepSeekClient
 from scripts.prompts.prompt_templates import READER_TAGGING_PROMPT
 
 READER_ROLES = [
-    "township_cadre", "county_land", "county_agri", "dev_reform",
-    "finance_bureau", "platform_pm", "planning_institute", "consulting_firm",
-    "construction_pm", "industry_operator", "social_capital",
-    "village_secretary", "cooperative_head", "legal_counsel", "bank_credit",
+    "township_cadre",
+    "county_land",
+    "county_agri",
+    "dev_reform",
+    "finance_bureau",
+    "platform_pm",
+    "planning_institute",
+    "consulting_firm",
+    "construction_pm",
+    "industry_operator",
+    "social_capital",
+    "village_secretary",
+    "cooperative_head",
+    "legal_counsel",
+    "bank_credit",
 ]
 
 READER_SCENARIOS = ["policy", "funding", "land", "approval", "execution"]
@@ -30,8 +44,14 @@ class ReaderAutoTagger(object):
         try:
             title = kp_dict.get("title", "")[:200]
             ctype = kp_dict.get("content_type", "policy")
-            excerpt = (kp_dict.get("original_excerpt") or kp_dict.get("excerpt") or "")[:800]
-            tags = kp_dict.get("suggested_category_tags") or kp_dict.get("category_tags") or []
+            excerpt = (kp_dict.get("original_excerpt") or kp_dict.get("excerpt") or "")[
+                :800
+            ]
+            tags = (
+                kp_dict.get("suggested_category_tags")
+                or kp_dict.get("category_tags")
+                or []
+            )
 
             user_prompt = READER_TAGGING_PROMPT["user_prompt_template"].format(
                 title=title,
@@ -64,10 +84,13 @@ class ReaderAutoTagger(object):
             kp_id = kp.get("kp_id") or kp.get("id")
             results.append((kp_id, tags))
             if progress_callback:
-                progress_callback({
-                    "current": i + 1, "total": total,
-                    "message": f"读者打标 {i+1}/{total}"
-                })
+                progress_callback(
+                    {
+                        "current": i + 1,
+                        "total": total,
+                        "message": f"读者打标 {i+1}/{total}",
+                    }
+                )
         return results
 
     def _sanitize_reader_tags(self, raw):
@@ -132,7 +155,12 @@ class ReaderAutoTagger(object):
             "search_keywords": [],
             "question_examples": [],
             "answer_template": "",
-            "quality_score": {"accuracy": 3, "practicality": 3, "timeliness": 3, "uniqueness": 3},
+            "quality_score": {
+                "accuracy": 3,
+                "practicality": 3,
+                "timeliness": 3,
+                "uniqueness": 3,
+            },
         }
 
 
@@ -141,7 +169,12 @@ def run_reader_backfill(db, client, progress_callback=None, batch_size=50):
     tagger = ReaderAutoTagger(client=client, db=db)
     kps = db.get_kps_missing_reader_fields(limit=500)
     if not kps:
-        return {"success": True, "message": "无缺失读者字段的知识点", "total": 0, "tagged": 0}
+        return {
+            "success": True,
+            "message": "无缺失读者字段的知识点",
+            "total": 0,
+            "tagged": 0,
+        }
 
     total = len(kps)
     tagged = 0
@@ -151,10 +184,9 @@ def run_reader_backfill(db, client, progress_callback=None, batch_size=50):
             db.batch_update_reader_fields(kp["id"], tags)
             tagged += 1
         if progress_callback:
-            progress_callback({
-                "current": i + 1, "total": total,
-                "message": f"读者回填 {i+1}/{total}"
-            })
+            progress_callback(
+                {"current": i + 1, "total": total, "message": f"读者回填 {i+1}/{total}"}
+            )
         if (i + 1) % 10 == 0:
             time.sleep(0.1)
     return {"success": True, "total": total, "tagged": tagged}

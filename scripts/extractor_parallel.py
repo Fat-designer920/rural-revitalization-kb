@@ -3,11 +3,12 @@
 并行双模型提取辅助模块 (v2.3.6-part1)
 提供 V4-Flash 快速全覆盖 + V4-Pro 深度核心段的并行提取逻辑
 """
-import json
-from typing import List, Dict, Tuple, Any
+from typing import Dict, List, Tuple
 
 
-def identify_core_segments(file_structure: Dict, segs: List[str]) -> List[Tuple[int, str]]:
+def identify_core_segments(
+    file_structure: Dict, segs: List[str]
+) -> List[Tuple[int, str]]:
     """
     识别核心段落(需要 V4-Pro 深度提取的段落)
 
@@ -45,7 +46,9 @@ def identify_core_segments(file_structure: Dict, segs: List[str]) -> List[Tuple[
     return [(i, segs[i]) for i in sorted(core_indices)]
 
 
-def merge_and_deduplicate(flash_kps: List[Dict], pro_kps: List[Dict]) -> Tuple[List[Dict], int]:
+def merge_and_deduplicate(
+    flash_kps: List[Dict], pro_kps: List[Dict]
+) -> Tuple[List[Dict], int]:
     """
     合并两个模型的提取结果并去重
 
@@ -120,7 +123,7 @@ def _title_similarity(t1: str, t2: str) -> float:
 
     # 字符级 bigram
     def get_bigrams(s):
-        return set(s[i:i+2] for i in range(len(s)-1))
+        return set(s[i : i + 2] for i in range(len(s) - 1))
 
     b1 = get_bigrams(t1)
     b2 = get_bigrams(t2)

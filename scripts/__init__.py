@@ -1,2 +1,1 @@
-# scripts package
-# 版本: v2.3.5-part2-hotfix1.1
+# scripts/ — 核心引擎

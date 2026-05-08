@@ -23,17 +23,14 @@ except ImportError:
         LAYER3_KEYWORD_RULES, get_metadata_for_prompt
     )
 
-
 # Prompt版本号（v2.1.0-c新增）
 # extractor.py提取时记录此版本号到knowledge_points表
 
 PROMPT_VERSION = "v2.3.7"
 
-
 def get_prompt_version():
     """返回当前Prompt版本号，供extractor.py调用"""
     return PROMPT_VERSION
-
 
 # 通用策略块（各Prompt共享）
 
@@ -231,7 +228,6 @@ COMMON_TAG_OUTPUT_DESC = """
 "practical_insights": [{"insight":"实操启示(一句话)","basis":"推导依据","confidence":"high或medium或low"}]
 """
 
-
 # 分段上下文接力模板（v2.1.0-c新增，供extractor.py使用）
 # extractor.py在分段提取时，将此模板填充后附加到user_prompt前面
 
@@ -254,7 +250,6 @@ CONTEXT_RELAY_TEMPLATE = """
 3. 如果本段出现"前述""上述""按照第X条规定"等引用，请查找上下文补全具体内容
 """
 
-
 # 文件重命名Prompt（不变）
 
 FILE_RENAME_PROMPT = {
@@ -272,9 +267,6 @@ FILE_RENAME_PROMPT = {
 请严格按JSON格式输出。"""
 }
 
-
-# 标签建议Prompt（v2.0.0，不变）
-
 TAG_SUGGESTION_PROMPT = {
     "system_prompt": """你是乡村振兴领域的知识管理专家。为知识内容进行三层标签打标。
 输出JSON格式：
@@ -288,7 +280,6 @@ TAG_SUGGESTION_PROMPT = {
 摘要：{content_summary}
 请严格按JSON格式输出。"""
 }
-
 
 # 5个提取Prompt（v2.1.0-c 深度重写，v2.2.1 字段职责修正）
 # 核心升级：产品导向+颗粒度标准+正反示例+自检+四川标注+数据精确
@@ -769,7 +760,6 @@ _DATA_EXTRACT_BASE = {
 请逐段逐表通读上述全文，精确提取每一组有参考价值的数据，务必保留数值和单位，按 JSON Lines 格式输出(每行一个独立完整 JSON 对象，最后一行可选输出 _meta 元数据)。"""
 }
 
-
 # V3辅助Prompt（v2.1.0-c新增，v2.2.1 QC升级）
 # 预分析/质检/结构摘要/跨段补漏，均使用V3模型
 
@@ -987,7 +977,6 @@ CROSS_SEGMENT_CHECK_PROMPT = {
 请对比大纲和知识点标题，找出未被覆盖的重要内容，按JSON格式输出。"""
 }
 
-
 # 政策依赖扫描Prompt（v2.1.0-d F028新增）
 # V3模型扫描非政策类知识点中的政策引用
 
@@ -1041,66 +1030,6 @@ POLICY_SCAN_PROMPT = {
 请逐条分析，按JSON格式输出。"""
 }
 
-
-# 待激活Prompt（保留不变）
-
-ARCHITECTURE_SUGGESTION_PROMPT = {
-    "system_prompt": "知识架构扩充建议Prompt(v1.1.0激活)",
-    "user_prompt_template": "现有分类:{category_tree}\n待归类知识点:{knowledge_points_preview}"
-}
-CONFLICT_DETECTION_PROMPT = {
-    "system_prompt": "联动冲突检测Prompt(v1.1.0激活)",
-    "user_prompt_template": "新知识:{new_knowledge}\n已有列表:{existing_knowledge_list}"
-}
-VERSION_DIFF_PROMPT = {
-    "system_prompt": "版本差异对比Prompt(v1.1.0激活)",
-    "user_prompt_template": "旧版:{old_version_content}\n新版:{new_version_content}"
-}
-
-# v2.0.0 新增（待激活，v2.2.0启用）
-QA_DERIVATION_PROMPT = {
-    "system_prompt": """你是乡村振兴领域的问答内容专家。你的任务是将已审核的知识点转化为问答语料，直接服务于C端问答助手。
-
-## 衍生规则
-1. 每条知识点衍生3-8个问答对
-2. 问题要模拟真实用户的提问方式：
-   - 乡镇干部问法：直接、口语化，如"增减挂钩指标怎么卖？""我们县能搞全域整治吗？"
-   - 项目经理问法：操作导向，如"EPC招标评分标准怎么定？""资金拼盘方案怎么报审？"
-   - 新人问法：入门级，如"什么是占补平衡？""全域土地综合整治和高标准农田有什么区别？"
-3. 答案必须基于知识点原文，不得编造
-4. 答案长度控制在50-200字，口语化但准确
-5. 每个问答对标注适用客户类型
-
-## 输出格式
-{"qa_pairs": [
-  {"question":"问题", "answer":"答案（基于原文）", "target_audience":"决策者/操盘者/专业人士/新人",
-   "difficulty":"入门/进阶/专业", "source_kp_id":"原知识点ID"}
-]}""",
-    "user_prompt_template": """请将以下已审核知识点转化为问答语料。
-
-知识点ID：{kp_id}
-标题：{title}
-类型：{content_type}
-原文摘录：{original_excerpt}
-AI提取内容：{ai_content}
-分类标签：{category_tags}
-关键词：{keywords}
-
-请生成多角度的问答对，模拟不同身份用户的真实提问。按JSON格式输出。"""
-}
-
-
-# 核心函数：获取提取Prompt（动态注入标签清单）
-
-_EXTRACT_BASES = {
-    "policy": _POLICY_EXTRACT_BASE,
-    "case": _CASE_EXTRACT_BASE,
-    "experience": _EXPERIENCE_EXTRACT_BASE,
-    "tool": _TOOL_EXTRACT_BASE,
-    "data": _DATA_EXTRACT_BASE,
-}
-
-
 def _build_tag_reference(content_type):
     """构建注入到user_prompt中的三层标签参考清单"""
     layer1_text = get_layer1_for_prompt()
@@ -1121,7 +1050,6 @@ def _build_tag_reference(content_type):
 【元数据判断参考】
 {metadata_text}"""
 
-
 def get_extraction_prompt(content_type):
     """获取提取Prompt，动态注入三层标签清单。
 
@@ -1141,7 +1069,6 @@ def get_extraction_prompt(content_type):
         "system_prompt": base["system_prompt"],
         "user_prompt_template": user_template
     }
-
 
 # v2.1.1 F039: 重复知识点关系判断Prompt（V3模型）
 DUPLICATE_JUDGE_PROMPT = {
@@ -1170,49 +1097,6 @@ DUPLICATE_JUDGE_PROMPT = {
 - 如果是unrelated，suggested_keep_id随意填一个即可
 - 不要输出JSON以外的任何内容""",
     "description": "重复知识点关系判断(V3模型,F039)"
-}
-
-
-# v2.2.0 F045: 经验速记结构化Prompt（V3模型）
-# 将老唐的自由文本经验转为知识库标准结构
-EXPERIENCE_STRUCTURE_PROMPT = {
-    "system": """你是乡村振兴领域的知识结构化专家。你的任务是将一线操盘人员口述或快速记录的实战经验，转化为知识库标准格式的结构化知识点。
-
-输入是用户快速记录的经验文本（可能口语化、不完整），你需要：
-1. 提炼核心经验判断，补全必要上下文使知识点独立可用
-2. 判断经验类型（策略判断/操盘方法/踩坑记录/反常识洞察/沟通话术）
-3. 打三层标签（分类标签/属性标签/关键词）
-4. 推导实操启示（如果经验本身就是启示则不重复）
-5. 评估验证状态（已验证/部分验证/待验证）
-
-输出严格JSON格式，不要有其他文字：
-{
-  "title": "20字内精确标题（包含核心判断或方法）",
-  "original_excerpt": "结构化整理后的经验全文（保留核心信息，补全上下文，100-500字）",
-  "experience_type": "strategy/method/pitfall/insight/communication",
-  "applicable_scenario": "适用场景描述（50字内）",
-  "core_conclusion": "核心结论（一句话）",
-  "detailed_method": "具体做法或步骤",
-  "supporting_evidence": "支撑依据（如有）",
-  "counterintuitive_level": "高/中/低/无",
-  "field_verified": "已验证/部分验证/待验证",
-  "context_dependencies": "背景依赖（适用条件和边界）",
-  "common_mistakes": "常见误区（如有）",
-  "suggested_category_tags": ["从分类标签清单选3-6个"],
-  "suggested_attribute_tags": {"维度": "值"},
-  "suggested_keywords": ["关键词1", "关键词2", "..."],
-  "suggested_readiness": "draft或quotable",
-  "suggested_authority": "firsthand",
-  "practical_insights": [{"insight":"启示","basis":"依据","confidence":"high或medium"}]
-}
-
-注意：
-- 用户输入可能很简短，你需要合理推断和补全，但不要编造不存在的细节
-- suggested_authority固定为firsthand（一线经验）
-- suggested_readiness通常为draft（等待人工审核确认后升级）
-- 如果用户提供了关键词则优先使用，否则自动提取5-10个
-- 四川地域相关的经验要标注"四川特有"或具体市县""",
-    "description": "经验速记V3结构化(F045)"
 }
 
 
@@ -1269,7 +1153,6 @@ HEALTH_DIAGNOSIS_PROMPT = {
 
 请按上述 JSON 格式输出单个诊断对象。"""
 }
-
 
 # ----------------------------------------------------------------
 # 2) HEALTH_POLISH_PROMPT (R1, 创造性打磨)
@@ -1339,7 +1222,6 @@ HEALTH_POLISH_PROMPT = {
 请按上述 JSON 数组格式输出打磨结果(即使单条也用数组)。"""
 }
 
-
 # ----------------------------------------------------------------
 # 3) HEALTH_POLISH_VERIFY_PROMPT (V3, 打磨结果校验)
 # 职责: 校验 R1 的打磨稿是否幻觉 / 偏题 / 数据篡改 / 过度发挥,给出是否通过
@@ -1392,7 +1274,6 @@ R1 打磨后的知识点 JSON(若是 split 场景可能是数组):
 
 请按上述 JSON 格式输出单个校验对象。"""
 }
-
 
 # ----------------------------------------------------------------
 # 4) HEALTH_POLISH_CONSERVATIVE_PROMPT (V3, L2 保守打磨)
@@ -1457,7 +1338,6 @@ HEALTH_POLISH_CONSERVATIVE_PROMPT = {
 请按上述 JSON 格式输出单个保守微调对象(不要数组包裹)。记住:禁止新增任何原文没有的信息。"""
 }
 
-
 # ----------------------------------------------------------------
 # 5) HEALTH_ISLAND_JUDGE_PROMPT (V3, 孤岛精判)
 # 职责: 对本地规则粗筛后的"疑似孤岛"kp 做精判,区分 4 种孤岛类型 + 1 种非孤岛
@@ -1503,7 +1383,6 @@ HEALTH_ISLAND_JUDGE_PROMPT = {
 
 请严格按 JSON 格式输出单个孤岛精判对象。"""
 }
-
 
 # ----------------------------------------------------------------
 # 6) HEALTH_MONETIZE_REPORT_PROMPT (V3, 变现匹配度报告)
@@ -1585,7 +1464,6 @@ HEALTH_MONETIZE_REPORT_PROMPT = {
 
 请严格按 JSON 格式输出单个变现匹配度报告对象。"""
 }
-
 
 # v2.3.0-part3-alpha1 F062 端到端健康测试 Agent Prompt（1 个）
 # 对话 1/3 基础层 - 契约 → 骨架关卡
@@ -1684,9 +1562,7 @@ HTTP 状态码: {status_code}
 请严格按上述 JSON 格式输出单个判断对象。"""
 }
 
-
 # v2.3.1 F2 精品候选双视角判定 Prompt(2 个,新 key 规范)
-# 对应立规则第 13 条新规范:system_prompt + user_prompt_template
 # 方案 B + N=1:每条 kp 分两视角各调一次 V3,不合并(老唐 Phase 2 决策)
 # 降级链:主链失败 → L1 同条重试 1 次 → L2 本地规则兜底
 # 强推门槛 10-15%:AI 返回 score 0-100,前端按 composite_score Top 10-15% 标 strong
@@ -1740,7 +1616,6 @@ PREMIUM_JUDGE_CLIENT_PROMPT = {
 请按上述 JSON 格式输出单个判定对象。"""
 }
 
-
 # ----------------------------------------------------------------
 # PREMIUM_JUDGE_RFP_PROMPT (V3, 投标视角精品判定)
 # 判定标准核心:权威性 + 引用价值 + 出处清晰度
@@ -1791,7 +1666,6 @@ PREMIUM_JUDGE_RFP_PROMPT = {
 请按上述 JSON 格式输出单个判定对象。"""
 }
 
-
 # F055 本地问答助手(v2.3.2)— 3 个 Prompt
 # ----------------------------------------------------------------
 # 调用顺序:
@@ -1836,7 +1710,6 @@ QA_RETRIEVAL_RANK_PROMPT = {
 
 请从上述候选中选出最相关的 3-5 条 ID, 按相关度从高到低排列, 并给出简短理由。"""
 }
-
 
 QA_ANSWER_GEN_PROMPT = {
     "system_prompt": """你是老唐——20年四川乡村振兴实战派。说话风格: 直接、具体、不绕弯子。用乡镇干部能听懂的话讲清楚。不写学术论文，写操作手册。
@@ -1887,7 +1760,6 @@ QA_ANSWER_GEN_PROMPT = {
 
 请按 4 板块结构生成回答, 严格基于上述 KP 内容, 不要补充库外信息。"""
 }
-
 
 QA_FOLLOWUP_GEN_PROMPT = {
     "system_prompt": """你是延伸问题生成助手。
@@ -1969,8 +1841,6 @@ READER_TAGGING_PROMPT = {
 请标注这条知识点的读者定位信息。"""
 }
 
-
-
 # get_all_prompt_names(): 供外部查询所有 Prompt 登记
 # v2.3.0-part2.2 新增 6 条 F048 登记
 # v2.3.1 新增 2 条 F2 精品判定登记
@@ -1987,7 +1857,6 @@ def get_all_prompt_names():
         {"id": "architecture_suggestion", "name": "架构扩充建议", "version": "v1.1.0"},
         {"id": "conflict_detection", "name": "联动冲突检测", "version": "v1.1.0"},
         {"id": "version_diff", "name": "版本差异对比", "version": "v1.1.0"},
-        {"id": "qa_derivation", "name": "问答语料衍生(待激活)", "version": "v2.0.0"},
         {"id": "pre_analysis", "name": "提取前预分析", "version": PROMPT_VERSION},
         {"id": "qc_check", "name": "提取后质检", "version": PROMPT_VERSION},
         {"id": "qc_check_single", "name": "逐条质检(F058降级L2)", "version": PROMPT_VERSION},
@@ -2015,7 +1884,6 @@ def get_all_prompt_names():
         # --- v2.3.5-part1 知识关系六态判别 1 个 ---
         {"id": "relation_judge", "name": "知识关系-六态判别(V3主+R1兜底)", "version": PROMPT_VERSION},
     ]
-
 
 # v2.3.5-part1: 知识点关系六态判别 Prompt(替代旧 DUPLICATE_JUDGE_PROMPT 二态)
 # 调用方: scripts/relation_analyzer.py

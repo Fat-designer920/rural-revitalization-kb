@@ -3,60 +3,79 @@ extractor.py - 知识点提取引擎(并行双Pro架构, Flash→Pro统一)
 路径：scripts/extractor.py
 版本：v2.3.7-part7
 """
-import os, sys, json, re, shutil, hashlib, time
-from pathlib import Path
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import time
 from datetime import datetime
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.file_reader import FileReader
-from scripts.deepseek_client import DeepSeekClient, CostLimitExceeded
-from scripts.extractor_parallel import identify_core_segments, merge_and_deduplicate
 from scripts.db_manager import DatabaseManager
-from scripts.prompts.prompt_templates import (
-    get_extraction_prompt, get_prompt_version,
-    CONTEXT_RELAY_TEMPLATE, PRE_ANALYSIS_PROMPT,
-    SEGMENT_SUMMARY_PROMPT, CROSS_SEGMENT_CHECK_PROMPT,
-    QC_CHECK_PROMPT, QC_CHECK_SINGLE_PROMPT  # v2.2.3 F058
-)
-from scripts.tag_config import get_layer1_tag_names, CONTENT_READINESS, SOURCE_AUTHORITY, LAYER1_TAGS
+from scripts.deepseek_client import CostLimitExceeded, DeepSeekClient
+from scripts.extractor_parallel import identify_core_segments, merge_and_deduplicate
+from scripts.file_reader import FileReader
 from scripts.policy_validator import PolicyValidator
+from scripts.prompts.prompt_templates import (
+    CONTEXT_RELAY_TEMPLATE,
+    CROSS_SEGMENT_CHECK_PROMPT,
+    PRE_ANALYSIS_PROMPT,
+    QC_CHECK_PROMPT,  # v2.2.3 F058
+    QC_CHECK_SINGLE_PROMPT,
+    SEGMENT_SUMMARY_PROMPT,
+    get_extraction_prompt,
+    get_prompt_version,
+)
 from scripts.relation_analyzer import RelationAnalyzer
+from scripts.tag_config import (
+    CONTENT_READINESS,
+    LAYER1_TAGS,
+    SOURCE_AUTHORITY,
+    get_layer1_tag_names,
+)
 
 
 class Extractor:
     TYPE_NAMES = {
-        "policy": "政策文件", "case": "项目案例", "experience": "操盘经验",
-        "tool": "实操工具", "data": "数据资料"
+        "policy": "政策文件",
+        "case": "项目案例",
+        "experience": "操盘经验",
+        "tool": "实操工具",
+        "data": "数据资料",
     }
 
     MODEL_OPTIONS = {
         "1": {
-            "model": "deepseek-v4-pro",   # v2.3.5-part2: V4-Pro Thinking 主链(替代 R1)
+            "model": "deepseek-v4-pro",  # v2.3.5-part2: V4-Pro Thinking 主链(替代 R1)
             "name": "V4-Pro 深度推理",
             "desc": "V4-Pro thinking 模式,384K max_output 根治截断,1M context,推理能力比 R1 更强",
-            "segment_max": 6000  # v2.3.6-part1: 3000→6000,充分利用 V4-Pro 384K 输出能力
+            "segment_max": 6000,  # v2.3.6-part1: 3000→6000,充分利用 V4-Pro 384K 输出能力
         },
         "2": {
-            "model": "deepseek-v4-pro",   # v2.3.7-part7: 统一V4-Pro(老唐: V4-Flash效果不好,全用Pro)
+            "model": "deepseek-v4-pro",  # v2.3.7-part7: 统一V4-Pro(老唐: V4-Flash效果不好,全用Pro)
             "name": "V4-Pro 全覆盖提取",
             "desc": "V4-Pro全覆盖(替代原Flash),384K max_output,1M context,质量优先",
-            "segment_max": 6000
+            "segment_max": 6000,
         },
         # 老 model 保留作"逃生回滚"档(7/24 退役前 DeepSeek 路由到 V4-Flash 兼容)
         "1_legacy": {
             "model": "deepseek-reasoner",
             "name": "R1(legacy,7/24 退役)",
             "desc": "v2.3.5-part2 前主链;若 V4 行为异常可临时回滚",
-            "segment_max": 3000
+            "segment_max": 3000,
         },
         "2_legacy": {
             "model": "deepseek-chat",
             "name": "V3(legacy,7/24 退役)",
             "desc": "v2.3.5-part2 前辅助",
-            "segment_max": 6000
-        }
+            "segment_max": 6000,
+        },
     }
 
     # 第一层标签的合法名称清单（启动时从tag_config加载）
@@ -77,14 +96,22 @@ class Extractor:
 
     # v2.2.3 F058: 类级质检flag映射（三级降级共用；从原 _quality_check 内部提升）
     QC_FLAG_MAP = {
-        "缺上下文": "independence", "独立性不足": "independence",
-        "信息空泛": "density", "信息密度低": "density",
-        "颗粒度过粗": "granularity_coarse", "过粗": "granularity_coarse",
-        "颗粒度过细": "granularity_fine", "过细": "granularity_fine",
-        "标签不符": "tag_mismatch", "标签不匹配": "tag_mismatch",
-        "疑似重复": "duplicate_suspect", "重复": "duplicate_suspect",
-        "启示无依据": "insight_no_basis", "举一反三无依据": "insight_no_basis",
-        "提炼与原文重复": "low_value_add", "提炼无增值": "low_value_add",
+        "缺上下文": "independence",
+        "独立性不足": "independence",
+        "信息空泛": "density",
+        "信息密度低": "density",
+        "颗粒度过粗": "granularity_coarse",
+        "过粗": "granularity_coarse",
+        "颗粒度过细": "granularity_fine",
+        "过细": "granularity_fine",
+        "标签不符": "tag_mismatch",
+        "标签不匹配": "tag_mismatch",
+        "疑似重复": "duplicate_suspect",
+        "重复": "duplicate_suspect",
+        "启示无依据": "insight_no_basis",
+        "举一反三无依据": "insight_no_basis",
+        "提炼与原文重复": "low_value_add",
+        "提炼无增值": "low_value_add",
     }
 
     # v2.2.3 F057: 截断补救降级最大次数 + 最小段长阈值
@@ -99,10 +126,18 @@ class Extractor:
         self.reader = FileReader(self.config)
         self.client = DeepSeekClient(self.config)
         self.db = DatabaseManager()
-        self.pending = Path(self.config.get("pending_path", PROJECT_ROOT / "data" / "pending"))
-        self.processing = Path(self.config.get("processing_path", PROJECT_ROOT / "data" / "processing"))
-        self.completed = Path(self.config.get("completed_path", PROJECT_ROOT / "data" / "completed"))
-        self.failed_dir = Path(self.config.get("failed_path", PROJECT_ROOT / "data" / "failed"))
+        self.pending = Path(
+            self.config.get("pending_path", PROJECT_ROOT / "data" / "pending")
+        )
+        self.processing = Path(
+            self.config.get("processing_path", PROJECT_ROOT / "data" / "processing")
+        )
+        self.completed = Path(
+            self.config.get("completed_path", PROJECT_ROOT / "data" / "completed")
+        )
+        self.failed_dir = Path(
+            self.config.get("failed_path", PROJECT_ROOT / "data" / "failed")
+        )
         self.completed.mkdir(parents=True, exist_ok=True)
         self.failed_dir.mkdir(parents=True, exist_ok=True)
         self.extraction_model = None
@@ -114,7 +149,7 @@ class Extractor:
         self._headless = False  # v2.1.2 bugfix: headless模式跳过所有input()
 
     def select_model(self):
-        print(f"\n  请选择提取模型:")
+        print("\n  请选择提取模型:")
         print(f"  {'=' * 50}")
         for key, opt in self.MODEL_OPTIONS.items():
             print(f"  [{key}] {opt['name']}")
@@ -129,7 +164,7 @@ class Extractor:
                 self.segment_max_len = opt["segment_max"]
                 print(f"\n  已选择: {opt['name']} ({opt['model']})")
                 return
-            print(f"  无效输入,请输入 1 或 2")
+            print("  无效输入,请输入 1 或 2")
 
     def set_model(self, model_key="1"):
         """非交互式模型选择，供API调用"""
@@ -153,7 +188,8 @@ class Extractor:
         with open(file_path, "rb") as f:
             while True:
                 chunk = f.read(8192)
-                if not chunk: break
+                if not chunk:
+                    break
                 h.update(chunk)
         return h.hexdigest()
 
@@ -161,31 +197,44 @@ class Extractor:
         file_hash = self.calculate_file_hash(file_path)
         existing = self.db.check_file_hash_exists(file_hash)
         if existing:
-            exist_name = existing.get("renamed_filename") or existing.get("original_filename")
+            exist_name = existing.get("renamed_filename") or existing.get(
+                "original_filename"
+            )
             exist_status = existing.get("process_status", "")
             exist_msg = existing.get("process_message", "")
-            if exist_status == "completed" and "提取" in exist_msg and "知识点" in exist_msg and "未提取到" not in exist_msg:
-                print(f"     [发现重复] 该文件已成功处理过(MD5指纹相同)")
+            if (
+                exist_status == "completed"
+                and "提取" in exist_msg
+                and "知识点" in exist_msg
+                and "未提取到" not in exist_msg
+            ):
+                print("     [发现重复] 该文件已成功处理过(MD5指纹相同)")
                 print(f"       原记录: {exist_name} | {exist_msg}")
                 if self._headless:
-                    print(f"     [headless] 自动重新分析")
+                    print("     [headless] 自动重新分析")
                     return False, file_hash
                 while True:
-                    answer = input("     是否重新分析? (Y=重新分析 / N=跳过): ").strip().upper()
+                    answer = (
+                        input("     是否重新分析? (Y=重新分析 / N=跳过): ")
+                        .strip()
+                        .upper()
+                    )
                     if answer == "Y":
-                        print(f"     好的,将重新分析此文件")
+                        print("     好的,将重新分析此文件")
                         return False, file_hash
                     elif answer == "N":
-                        print(f"     已跳过")
+                        print("     已跳过")
                         return True, file_hash
                     else:
-                        print(f"     请输入 Y 或 N")
+                        print("     请输入 Y 或 N")
             if exist_status == "failed":
-                print(f"     [重新处理] 该文件上次处理失败,本次将重新提取")
+                print("     [重新处理] 该文件上次处理失败,本次将重新提取")
             elif "未提取到" in exist_msg:
-                print(f"     [重新处理] 该文件上次未提取到知识点,本次将重新提取")
+                print("     [重新处理] 该文件上次未提取到知识点,本次将重新提取")
             else:
-                print(f"     [重新处理] 该文件存在旧记录(状态:{exist_status}),本次将重新提取")
+                print(
+                    f"     [重新处理] 该文件存在旧记录(状态:{exist_status}),本次将重新提取"
+                )
             return False, file_hash
         return False, file_hash
 
@@ -200,31 +249,53 @@ class Extractor:
             print(f"     ! pending文件清理失败: {e}")
 
     def get_processing_files(self):
-        conn = self.db.get_connection(); c = conn.cursor()
-        c.execute("SELECT * FROM source_files WHERE process_status='processing' ORDER BY created_at")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM source_files WHERE process_status='processing' ORDER BY created_at"
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     def _determine_type(self, rec, content):
         fn = (rec.get("renamed_filename") or rec["original_filename"]).lower()
-        if any(k in fn for k in ["政策", "通知", "办法", "规定", "意见", "规划", "zc"]): return "policy"
-        if any(k in fn for k in ["案例", "项目", "al"]): return "case"
-        if any(k in fn for k in ["经验", "心得", "复盘", "jy"]): return "experience"
-        if any(k in fn for k in ["模板", "工具", "合同", "gj"]): return "tool"
-        if any(k in fn for k in ["数据", "统计", "测算", "sj"]): return "data"
+        if any(k in fn for k in ["政策", "通知", "办法", "规定", "意见", "规划", "zc"]):
+            return "policy"
+        if any(k in fn for k in ["案例", "项目", "al"]):
+            return "case"
+        if any(k in fn for k in ["经验", "心得", "复盘", "jy"]):
+            return "experience"
+        if any(k in fn for k in ["模板", "工具", "合同", "gj"]):
+            return "tool"
+        if any(k in fn for k in ["数据", "统计", "测算", "sj"]):
+            return "data"
         preview = content[:1000]
-        if sum(1 for kw in ["发布", "施行", "通知", "各省", "第一条", "本办法"] if kw in preview) >= 2: return "policy"
+        if (
+            sum(
+                1
+                for kw in ["发布", "施行", "通知", "各省", "第一条", "本办法"]
+                if kw in preview
+            )
+            >= 2
+        ):
+            return "policy"
         return "policy"
 
     def _split(self, content, max_len=None):
-        if max_len is None: max_len = self.segment_max_len
-        if len(content) <= max_len: return [content]
+        if max_len is None:
+            max_len = self.segment_max_len
+        if len(content) <= max_len:
+            return [content]
         segs, cur = [], ""
         for para in content.split("\n\n"):
             if len(cur) + len(para) > max_len and cur:
-                segs.append(cur); cur = para
+                segs.append(cur)
+                cur = para
             else:
                 cur = cur + "\n\n" + para if cur else para
-        if cur: segs.append(cur)
+        if cur:
+            segs.append(cur)
         return segs
 
     # v2.3.4 D9: 单段提取 — JSON Lines 输出 + prefix 续写支持
@@ -249,24 +320,37 @@ class Extractor:
             "user_prompt": str,              # v2.3.4 新增:供续写时复用
         }
         """
-        up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
+        up = prompt["user_prompt_template"].format(
+            filename=filename, full_content=content
+        )
         if relay_prefix:
             up = relay_prefix + "\n\n" + up
         sp = prompt["system_prompt"]
 
         ai = self.client.chat_with_jsonl(
-            sp, up, temperature=0.2, max_tokens=65536,
-            call_type=f"extract_{ctype}", model_override=self.extraction_model)
+            sp,
+            up,
+            temperature=0.2,
+            max_tokens=65536,
+            call_type=f"extract_{ctype}",
+            model_override=self.extraction_model,
+        )
 
         # v2.3.7-part3: 防御V4-Pro返回字符串的边界情况
         if isinstance(ai, str):
-            print(f"     [V4-Pro 降级] AI返回字符串(非dict),尝试原始解析")
+            print("     [V4-Pro 降级] AI返回字符串(非dict),尝试原始解析")
             import json as _json
+
             try:
                 ai = _json.loads(ai)
             except Exception:
-                ai = {"kp_objects": [], "meta_object": None, "was_truncated": False,
-                      "estimated_cost": 0, "prefix_for_continuation": ""}
+                ai = {
+                    "kp_objects": [],
+                    "meta_object": None,
+                    "was_truncated": False,
+                    "estimated_cost": 0,
+                    "prefix_for_continuation": "",
+                }
 
         kp_objects = ai.get("kp_objects", []) or []
         meta_object = ai.get("meta_object", None)
@@ -283,11 +367,17 @@ class Extractor:
                 print(f"     ! 输出被截断且无完整知识点可解析 {cost_info}")
             else:
                 print(f"     ! JSON Lines 解析失败: {err} {cost_info}")
-            return {"kps": [], "truncated": was_truncated, "last_excerpt": "",
-                    "raw_parsed": False, "cost": cost,
-                    "prefix_for_continuation": prefix_for_continuation,
-                    "meta": meta_object,
-                    "system_prompt": sp, "user_prompt": up}
+            return {
+                "kps": [],
+                "truncated": was_truncated,
+                "last_excerpt": "",
+                "raw_parsed": False,
+                "cost": cost,
+                "prefix_for_continuation": prefix_for_continuation,
+                "meta": meta_object,
+                "system_prompt": sp,
+                "user_prompt": up,
+            }
 
         # 解析成功
         kps = kp_objects
@@ -306,18 +396,34 @@ class Extractor:
                 last_excerpt = ""
 
         if was_truncated:
-            print(f"     [注意] V4-Pro输出被截断,已解析{len(kps)}条完整知识点 {cost_info}")
+            print(
+                f"     [注意] V4-Pro输出被截断,已解析{len(kps)}条完整知识点 {cost_info}"
+            )
         else:
             print(f"     本段提取{len(kps)}个知识点 {cost_info}")
 
-        return {"kps": kps, "truncated": was_truncated,
-                "last_excerpt": last_excerpt, "raw_parsed": True, "cost": cost,
-                "prefix_for_continuation": prefix_for_continuation,
-                "meta": meta_object,
-                "system_prompt": sp, "user_prompt": up}
+        return {
+            "kps": kps,
+            "truncated": was_truncated,
+            "last_excerpt": last_excerpt,
+            "raw_parsed": True,
+            "cost": cost,
+            "prefix_for_continuation": prefix_for_continuation,
+            "meta": meta_object,
+            "system_prompt": sp,
+            "user_prompt": up,
+        }
 
-    def _extract_with_auto_split(self, content, filename, prompt, ctype,
-                                 current_max_len=None, relay_prefix="", file_id=None):
+    def _extract_with_auto_split(
+        self,
+        content,
+        filename,
+        prompt,
+        ctype,
+        current_max_len=None,
+        relay_prefix="",
+        file_id=None,
+    ):
         """单段提取的外层调度。
 
         v2.3.4-hotfix1 五级降级链(段内同步,不留事后批量重跑):
@@ -355,7 +461,7 @@ class Extractor:
             if result.get("raw_parsed"):
                 # R1 已成功解析 + 0 条 kp = 合理判定(背景段/章节标题/空白页)
                 # 不进降级链,直接返回空(不浪费时间和 token)
-                print(f"     本段无可提取知识点(R1 合理判定,跳过救援链)")
+                print("     本段无可提取知识点(R1 合理判定,跳过救援链)")
                 return []
             # 未截断 + 0 条 + 解析失败:7 步保险也救不回 → 真正的格式异常,进降级链
 
@@ -375,20 +481,31 @@ class Extractor:
         # L1.1+L1.2 全失败,真正救回都是 L2 R1 镜像。V4-Pro 384K max_output 几乎根治截断,
         # 镜像 V3.2 走硅基 endpoint 与 V4 主链(deepseek 官方)跨厂商物理冗余,立规则 62 仍成立
         if truncated and not kps:
-            print(f"     [L0 失败] V4-Pro 输出截断且 0 完整 kp,启动 L1 镜像兜底(硅基)")
+            print("     [L0 失败] V4-Pro 输出截断且 0 完整 kp,启动 L1 镜像兜底(硅基)")
         elif truncated and kps:
-            print(f"     [L0 部分] V4-Pro 截断但已解析{len(kps)}条,启动 L1 镜像兜底补全(硅基)")
+            print(
+                f"     [L0 部分] V4-Pro 截断但已解析{len(kps)}条,启动 L1 镜像兜底补全(硅基)"
+            )
         else:
             # 未截断 + 0 条 + 解析失败(走到这里说明 7 步保险也救不回)
-            print(f"     [L0 失败] V4-Pro 输出格式异常 + 7 步降级未救回,启动 L1 镜像兜底(硅基)")
+            print(
+                "     [L0 失败] V4-Pro 输出格式异常 + 7 步降级未救回,启动 L1 镜像兜底(硅基)"
+            )
 
         # v2.3.5-part2-hotfix1 C1:model_id 从类常量 SILICONFLOW_TEXT_MODEL_L2 改为
         # 实例属性 siliconflow_mirror_model(默认 V4-Pro 镜像,settings.json 可覆盖)
         # extracted_by_model 标记升级 r1_mirror → mirror_v4_pro 体现镜像模型版本
         l1_kps = self._retry_via_siliconflow(
-            content, filename, prompt, ctype, relay_prefix, file_id,
+            content,
+            filename,
+            prompt,
+            ctype,
+            relay_prefix,
+            file_id,
             model_id=self.client.siliconflow_mirror_model,
-            model_tag="mirror_v4_pro", layer_label="L1")
+            model_tag="mirror_v4_pro",
+            layer_label="L1",
+        )
 
         if l1_kps is not None:
             self._truncation_stats["r1_mirror_recoveries"] += 1
@@ -396,20 +513,27 @@ class Extractor:
                 if isinstance(k, dict):
                     k["_extracted_by_model"] = "mirror_v4_pro"
             merged = self._dedupe_kps_by_excerpt(kps + l1_kps)
-            print(f"     [L1 镜像 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条")
+            print(
+                f"     [L1 镜像 救回] L0:{len(kps)}条 + L1:{len(l1_kps)}条 = 去重后{len(merged)}条"
+            )
             return merged
 
-        print(f"     [L1 失败] 硅基镜像兜底失败,启动 L2 F057 续写补救")
+        print("     [L1 失败] 硅基镜像兜底失败,启动 L2 F057 续写补救")
         if not kps:
             # 0 partial,F057 没有 last_excerpt 可定位,跳过
             self._truncation_stats["total_failures"] += 1
-            print(f"     [L3 全失败] L0/L1 均失败且 partial=0,F057 无锚点跳过")
+            print("     [L3 全失败] L0/L1 均失败且 partial=0,F057 无锚点跳过")
             self._safe_log_event(
-                "extract_full_fail", "extractor", "error",
+                "extract_full_fail",
+                "extractor",
+                "error",
                 file_id=file_id,
-                payload={"filename": filename,
-                         "reason": "L0/L1 all failed, partial_kps=0",
-                         "last_attempted": "siliconflow_mirror"})
+                payload={
+                    "filename": filename,
+                    "reason": "L0/L1 all failed, partial_kps=0",
+                    "last_attempted": "siliconflow_mirror",
+                },
+            )
             return []
 
         self._truncation_stats["f057_fallbacks"] += 1
@@ -424,7 +548,7 @@ class Extractor:
             base_relay_prefix=relay_prefix,
             attempt=1,
             filename=filename,
-            last_excerpt=result["last_excerpt"]
+            last_excerpt=result["last_excerpt"],
         )
         # F057 救回的 kp 打标
         for k in recovered:
@@ -441,8 +565,18 @@ class Extractor:
         return merged
 
     # v2.3.4-hotfix1 H1: L1/L2 硅基流动整段重提
-    def _retry_via_siliconflow(self, content, filename, prompt, ctype, relay_prefix,
-                               file_id, model_id, model_tag, layer_label):
+    def _retry_via_siliconflow(
+        self,
+        content,
+        filename,
+        prompt,
+        ctype,
+        relay_prefix,
+        file_id,
+        model_id,
+        model_tag,
+        layer_label,
+    ):
         """走硅基流动文本模型整段重提(L1 Kimi / L2 R1 镜像 共用)。
 
         参数:
@@ -455,7 +589,9 @@ class Extractor:
           None       接口异常 / 0 partial 且解析失败 — 进入下一层
         """
         # 复用同一套 prompt 包(prompt 100% 复用,立规则 H3)
-        up = prompt["user_prompt_template"].format(filename=filename, full_content=content)
+        up = prompt["user_prompt_template"].format(
+            filename=filename, full_content=content
+        )
         if relay_prefix:
             up = relay_prefix + "\n\n" + up
         sp = prompt["system_prompt"]
@@ -465,19 +601,30 @@ class Extractor:
             # 立规则 9 第 23 次应验同根:升级主链时只看主链没看降级链
             # model_id 由调用方传入(self.client.siliconflow_mirror_model 已读 settings.json)
             ai = self.client.chat_jsonl_via_siliconflow(
-                sp, up,
+                sp,
+                up,
                 model=model_id,
-                temperature=0.2, max_tokens=32768,
-                call_type=f"extract_{model_tag}_{filename[:30]}"
+                temperature=0.2,
+                max_tokens=32768,
+                call_type=f"extract_{model_tag}_{filename[:30]}",
             )
         except Exception as e:
             err_msg = f"{type(e).__name__}: {str(e)[:200]}"
             print(f"     [{layer_label} 异常] {err_msg}")
             self._safe_log_event(
-                "siliconflow_retry", "extractor", "warning",
+                "siliconflow_retry",
+                "extractor",
+                "warning",
                 file_id=file_id,
-                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                         "reason": "exception", "error": err_msg, "filename": filename})
+                payload={
+                    "layer": layer_label,
+                    "model": model_id,
+                    "model_tag": model_tag,
+                    "reason": "exception",
+                    "error": err_msg,
+                    "filename": filename,
+                },
+            )
             return None
 
         kp_objects = ai.get("kp_objects", []) or []
@@ -496,22 +643,42 @@ class Extractor:
             # 解析失败,认为本层不可用
             print(f"     [{layer_label} 失败] {model_id} 解析 0 行 ({cost:.4f}元)")
             self._safe_log_event(
-                "siliconflow_retry", "extractor", "warning",
+                "siliconflow_retry",
+                "extractor",
+                "warning",
                 file_id=file_id,
-                payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                         "reason": "parse_failed", "was_truncated": was_truncated,
-                         "cost": cost, "filename": filename})
+                payload={
+                    "layer": layer_label,
+                    "model": model_id,
+                    "model_tag": model_tag,
+                    "reason": "parse_failed",
+                    "was_truncated": was_truncated,
+                    "cost": cost,
+                    "filename": filename,
+                },
+            )
             return None
 
         # 解析成功(包括 0 kp 但有 _meta 的合理情况)
         trunc_note = "(截断但已解析)" if was_truncated else "(完整)"
-        print(f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)")
+        print(
+            f"     [{layer_label} 成功] {model_id} 提取{len(kp_objects)}条{trunc_note} ({cost:.4f}元)"
+        )
         self._safe_log_event(
-            "siliconflow_retry", "extractor", "info",
+            "siliconflow_retry",
+            "extractor",
+            "info",
             file_id=file_id,
-            payload={"layer": layer_label, "model": model_id, "model_tag": model_tag,
-                     "kp_count": len(kp_objects), "was_truncated": was_truncated,
-                     "cost": cost, "filename": filename})
+            payload={
+                "layer": layer_label,
+                "model": model_id,
+                "model_tag": model_tag,
+                "kp_count": len(kp_objects),
+                "was_truncated": was_truncated,
+                "cost": cost,
+                "filename": filename,
+            },
+        )
         return kp_objects
 
     def _parse_jsonl_text(self, text):
@@ -520,7 +687,7 @@ class Extractor:
         与 deepseek_client.chat_with_jsonl 内部解析逻辑一致。
         """
         cleaned = (text or "").strip()
-        cb = re.search(r'```(?:json)?\s*([\s\S]*?)```', cleaned)
+        cb = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned)
         if cb:
             cleaned = cb.group(1).strip()
 
@@ -601,38 +768,59 @@ class Extractor:
             out.append(kp)
         return out
 
-    def _recover_from_truncation(self, original_content, partial_kps, prompt, ctype,
-                                 next_max_len, file_id, base_relay_prefix,
-                                 attempt, filename, last_excerpt):
+    def _recover_from_truncation(
+        self,
+        original_content,
+        partial_kps,
+        prompt,
+        ctype,
+        next_max_len,
+        file_id,
+        base_relay_prefix,
+        attempt,
+        filename,
+        last_excerpt,
+    ):
         """F057 截断补救核心：定位→取尾段→重提；支持嵌套降级，最多3次。"""
         # 降级到头
-        if attempt > self.TRUNCATION_MAX_ATTEMPTS or next_max_len < self.TRUNCATION_MIN_SEG_LEN:
+        if (
+            attempt > self.TRUNCATION_MAX_ATTEMPTS
+            or next_max_len < self.TRUNCATION_MIN_SEG_LEN
+        ):
             self._safe_log_event(
-                "truncation_recovery", "extractor", "warning",
+                "truncation_recovery",
+                "extractor",
+                "warning",
                 file_id=file_id,
                 payload={
                     "reason": "max_attempts_reached",
                     "total_attempts": attempt - 1,
                     "final_max_len": next_max_len,
                     "final_partial_count": len(partial_kps),
-                    "filename": filename
-                })
-            print(f"     [F057 补救终止] 已降级{attempt-1}次仍截断,保留已提取{len(partial_kps)}条")
+                    "filename": filename,
+                },
+            )
+            print(
+                f"     [F057 补救终止] 已降级{attempt-1}次仍截断,保留已提取{len(partial_kps)}条"
+            )
             return []
 
         # 定位切分点
         cut_pos = self._locate_cut_boundary(original_content, last_excerpt)
         if cut_pos is None:
             self._safe_log_event(
-                "truncation_recovery", "extractor", "warning",
+                "truncation_recovery",
+                "extractor",
+                "warning",
                 file_id=file_id,
                 payload={
                     "reason": "locate_boundary_failed",
                     "attempt": attempt,
                     "partial_kps_count": len(partial_kps),
                     "last_excerpt_preview": (last_excerpt or "")[:80],
-                    "filename": filename
-                })
+                    "filename": filename,
+                },
+            )
             print(f"     [F057 补救放弃] 无法定位切分点,保留已提取{len(partial_kps)}条")
             return []
 
@@ -648,7 +836,9 @@ class Extractor:
             except Exception:
                 pass
         self._safe_log_event(
-            "truncation_recovery", "extractor", "info",
+            "truncation_recovery",
+            "extractor",
+            "info",
             file_id=file_id,
             payload={
                 "attempt": attempt,
@@ -656,15 +846,21 @@ class Extractor:
                 "tail_len": len(tail_content),
                 "cut_pos": cut_pos,
                 "partial_kps_count": len(partial_kps),
-                "filename": filename
-            })
-        print(f"     [F057 补救 第{attempt}次] 从{cut_pos}字后取尾段({len(tail_content)}字),新段长{next_max_len}...")
+                "filename": filename,
+            },
+        )
+        print(
+            f"     [F057 补救 第{attempt}次] 从{cut_pos}字后取尾段({len(tail_content)}字),新段长{next_max_len}..."
+        )
 
         # 构造补救 relay：在原 relay 基础上附加已提取标题
-        titles_preview = "\n".join(
-            f"  {i+1}. {(k.get('title','') or '')[:60]}"
-            for i, k in enumerate(partial_kps[:20])
-        ) or "  (无)"
+        titles_preview = (
+            "\n".join(
+                f"  {i+1}. {(k.get('title','') or '')[:60]}"
+                for i, k in enumerate(partial_kps[:20])
+            )
+            or "  (无)"
+        )
         recovery_relay = (base_relay_prefix or "") + (
             "\n\n=== 截断补救上下文 ===\n"
             f"本段因模型输出截断已启动补救,前序已提取 {len(partial_kps)} 条知识点:\n"
@@ -692,41 +888,53 @@ class Extractor:
                     base_relay_prefix=recovery_relay,
                     attempt=attempt + 1,
                     filename=label,
-                    last_excerpt=sub_result["last_excerpt"]
+                    last_excerpt=sub_result["last_excerpt"],
                 )
                 all_recovered.extend(deeper)
             elif sub_result["truncated"] and not sub_result["last_excerpt"]:
                 # 截断但连一条完整kp都没解析出来：无锚点可定位，放弃深降
                 self._safe_log_event(
-                    "truncation_recovery", "extractor", "warning",
+                    "truncation_recovery",
+                    "extractor",
+                    "warning",
                     file_id=file_id,
                     payload={
                         "reason": "no_anchor_in_recovered_sub",
                         "attempt": attempt + 1,
-                        "filename": label
-                    })
+                        "filename": label,
+                    },
+                )
 
         return all_recovered
 
-    def _safe_log_event(self, event_type, module, severity, file_id=None, kp_id=None, payload=None):
+    def _safe_log_event(
+        self, event_type, module, severity, file_id=None, kp_id=None, payload=None
+    ):
         """包一层 try/except,防止日志失败污染主流程"""
         try:
             self.db.log_operation_event(
-                event_type, module, severity,
-                file_id=file_id, kp_id=kp_id, payload=payload or {}
+                event_type,
+                module,
+                severity,
+                file_id=file_id,
+                kp_id=kp_id,
+                payload=payload or {},
             )
         except Exception as e:
             print(f"     [事件日志失败] {event_type}: {e}")
 
     def _move_to_completed(self, fp, fn):
         try:
-            dest = self.completed / fn; c = 1
+            dest = self.completed / fn
+            c = 1
             while dest.exists():
                 stem, ext = Path(fn).stem, Path(fn).suffix
-                dest = self.completed / f"{stem}_{c}{ext}"; c += 1
+                dest = self.completed / f"{stem}_{c}{ext}"
+                c += 1
             if os.path.exists(fp):
                 shutil.copy2(fp, str(dest))
-                if str(self.processing) in str(fp): os.remove(fp)
+                if str(self.processing) in str(fp):
+                    os.remove(fp)
                 print(f"     文件已归档至: completed/{dest.name}")
             # 同时移动.md伴侣文件
             md_src = Path(fp).with_suffix(".md")
@@ -734,23 +942,28 @@ class Extractor:
                 md_dest = dest.with_suffix(".md")
                 shutil.copy2(str(md_src), str(md_dest))
                 os.remove(str(md_src))
-        except Exception as e: print(f"     ! 文件归档失败: {e}")
+        except Exception as e:
+            print(f"     ! 文件归档失败: {e}")
 
     def _move_to_failed(self, fp, fn):
         try:
-            dest = self.failed_dir / fn; c = 1
+            dest = self.failed_dir / fn
+            c = 1
             while dest.exists():
                 stem, ext = Path(fn).stem, Path(fn).suffix
-                dest = self.failed_dir / f"{stem}_{c}{ext}"; c += 1
+                dest = self.failed_dir / f"{stem}_{c}{ext}"
+                c += 1
             if os.path.exists(fp):
                 shutil.copy2(fp, str(dest))
-                if str(self.processing) in str(fp): os.remove(fp)
+                if str(self.processing) in str(fp):
+                    os.remove(fp)
                 print(f"     文件已隔离至: failed/{dest.name}")
             # 同时移动.md伴侣文件
             md_src = Path(fp).with_suffix(".md")
             if md_src.exists() and str(self.processing) in str(md_src):
                 os.remove(str(md_src))
-        except Exception as e: print(f"     ! 文件隔离失败: {e}")
+        except Exception as e:
+            print(f"     ! 文件隔离失败: {e}")
 
     # v2.0.0 新增：标签数据校验
     # v2.3.5-part2 F5:标签标准化 — 剥离 code 前缀 + code↔name 双向映射
@@ -785,6 +998,7 @@ class Extractor:
         # Case 3/4: code 前缀 + name(支持空格 / 无空格 / 任意空白)
         # 匹配 ^[A-F]\d{1,3}\s* 这类前缀,剥离后再查表
         import re
+
         m = re.match(r"^([A-F]\d{1,3})\s*(.*)$", s)
         if m:
             code, rest = m.group(1), m.group(2).strip()
@@ -833,7 +1047,9 @@ class Extractor:
             elif normalized is None and isinstance(raw, str) and raw.strip():
                 truly_removed.append(raw)
         if truly_removed:
-            print(f"     [标签校验] 过滤了{len(truly_removed)}个不在清单中的分类标签: {', '.join(truly_removed[:3])}")
+            print(
+                f"     [标签校验] 过滤了{len(truly_removed)}个不在清单中的分类标签: {', '.join(truly_removed[:3])}"
+            )
 
         # --- 第二层：属性标签 ---
         raw_attr_tags = kp.get("suggested_attribute_tags", {})
@@ -880,13 +1096,18 @@ class Extractor:
         char_count = len(content)
         prompt = PRE_ANALYSIS_PROMPT
         up = prompt["user_prompt_template"].format(
-            filename=filename, char_count=char_count, content_preview=preview)
+            filename=filename, char_count=char_count, content_preview=preview
+        )
 
         for attempt in range(1, 4):
             try:
                 ai = self.client.chat_with_json(
-                    prompt["system_prompt"], up, temperature=0.2,
-                    call_type="pre_analysis", model_override="deepseek-v4-pro")
+                    prompt["system_prompt"],
+                    up,
+                    temperature=0.2,
+                    call_type="pre_analysis",
+                    model_override="deepseek-v4-pro",
+                )
                 parsed = ai.get("parsed_json")
                 if parsed and isinstance(parsed, dict):
                     cost = ai.get("estimated_cost", 0)
@@ -899,9 +1120,9 @@ class Extractor:
                 print(f"     预分析出错(第{attempt}次): {e}")
 
         # 3次失败，暂停让用户选择
-        print(f"\n     [预分析未能完成] 可能是网络问题")
+        print("\n     [预分析未能完成] 可能是网络问题")
         if self._headless:
-            print(f"     [headless] 自动跳过预分析，使用文件名推断分类")
+            print("     [headless] 自动跳过预分析，使用文件名推断分类")
             return None
         while True:
             choice = input("     [1]重试 [2]跳过预分析直接提取 [3]跳过该文件: ").strip()
@@ -921,11 +1142,16 @@ class Extractor:
         char_count = len(content)
         prompt = SEGMENT_SUMMARY_PROMPT
         up = prompt["user_prompt_template"].format(
-            filename=filename, char_count=char_count, full_content=content[:8000])
+            filename=filename, char_count=char_count, full_content=content[:8000]
+        )
         try:
             ai = self.client.chat_with_json(
-                prompt["system_prompt"], up, temperature=0.2,
-                call_type="segment_summary", model_override="deepseek-v4-pro")
+                prompt["system_prompt"],
+                up,
+                temperature=0.2,
+                call_type="segment_summary",
+                model_override="deepseek-v4-pro",
+            )
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
                 cost = ai.get("estimated_cost", 0)
@@ -952,7 +1178,9 @@ class Extractor:
         if structure_result:
             suggested_segs = structure_result.get("suggested_segments", [])
             if suggested_segs and len(suggested_segs) >= 2:
-                segs = self._apply_v3_segments(content, suggested_segs, oversized_threshold)
+                segs = self._apply_v3_segments(
+                    content, suggested_segs, oversized_threshold
+                )
                 if segs:
                     # 构建结构摘要文本
                     doc_structure = structure_result.get("document_structure", [])
@@ -964,18 +1192,21 @@ class Extractor:
                     try:
                         self.db.update_source_file(
                             self._current_file_id,
-                            segment_plan=json.dumps(structure_result, ensure_ascii=False))
+                            segment_plan=json.dumps(
+                                structure_result, ensure_ascii=False
+                            ),
+                        )
                     except Exception:
                         pass
                     return segs, struct_text
-            print(f"     V3分段建议不可用,切换到本地规则分段")
+            print("     V3分段建议不可用,切换到本地规则分段")
         else:
-            print(f"     V3结构摘要不可用,切换到本地规则分段")
+            print("     V3结构摘要不可用,切换到本地规则分段")
 
         # --- 第二级：本地规则分段 ---
         segs = self._local_rule_segment(content, oversized_threshold)
         if segs and len(segs) >= 2:
-            print(f"     使用本地规则分段(按章节标记)")
+            print("     使用本地规则分段(按章节标记)")
             # 从预分析中提取结构信息
             struct_text = ""
             if pre_result and isinstance(pre_result, dict):
@@ -984,7 +1215,7 @@ class Extractor:
             return segs, struct_text
 
         # --- 第三级：段落边界分段 ---
-        print(f"     使用段落边界分段")
+        print("     使用段落边界分段")
         segs = self._paragraph_segment(content)
         struct_text = ""
         if pre_result and isinstance(pre_result, dict):
@@ -1027,7 +1258,7 @@ class Extractor:
 
         # 如果第一段之前有内容，加到第一段前面
         if segments[0] > 0:
-            prefix = content[:segments[0]].strip()
+            prefix = content[: segments[0]].strip()
             if prefix and result:
                 result[0] = prefix + "\n\n" + result[0]
 
@@ -1050,10 +1281,10 @@ class Extractor:
 
         # 常见章节标记模式
         patterns = [
-            r'\n(第[一二三四五六七八九十百]+[章编篇])',    # 第一章、第一编
-            r'\n(第[一二三四五六七八九十\d]+条[\s\u3000])',  # 第一条 （政策文件）
-            r'\n([一二三四五六七八九十]+、)',              # 一、二、三、
-            r'\n(附[则件录表]\s)',                        # 附则、附件
+            r"\n(第[一二三四五六七八九十百]+[章编篇])",  # 第一章、第一编
+            r"\n(第[一二三四五六七八九十\d]+条[\s\u3000])",  # 第一条 （政策文件）
+            r"\n([一二三四五六七八九十]+、)",  # 一、二、三、
+            r"\n(附[则件录表]\s)",  # 附则、附件
         ]
 
         # 尝试每种模式，选择最佳（切出2-15段的）
@@ -1074,7 +1305,7 @@ class Extractor:
 
                 # 第一段之前的内容加到第一段
                 if positions[0] > 0:
-                    prefix = content[:positions[0]].strip()
+                    prefix = content[: positions[0]].strip()
                     if prefix and segments:
                         segments[0] = prefix + "\n\n" + segments[0]
 
@@ -1155,7 +1386,9 @@ class Extractor:
         return "\n".join(lines)
 
     # v2.1.0-c 新增：上下文接力信息构建
-    def _build_context_relay(self, seg_idx, total_segs, file_structure, prev_kps, source_nature=""):
+    def _build_context_relay(
+        self, seg_idx, total_segs, file_structure, prev_kps, source_nature=""
+    ):
         """构建分段提取的上下文接力信息。
         v2.2.3: 单段文件也传递来源属性信息。"""
         # v2.2.3: 来源属性描述
@@ -1167,7 +1400,11 @@ class Extractor:
             "tool_template": "模板/合同/清单（应分到工具库）",
             "data_material": "数据表/统计资料（应分到数据库）",
         }
-        nature_text = SOURCE_NATURE_DESC.get(source_nature, "(未识别)") if source_nature else "(未识别)"
+        nature_text = (
+            SOURCE_NATURE_DESC.get(source_nature, "(未识别)")
+            if source_nature
+            else "(未识别)"
+        )
 
         if total_segs <= 1:
             # v2.2.3: 单段文件也传递来源属性
@@ -1183,9 +1420,11 @@ class Extractor:
         return CONTEXT_RELAY_TEMPLATE.format(
             total_segments=total_segs,
             current_segment=seg_idx,
-            source_nature=f"{source_nature} — {nature_text}" if source_nature else "(未识别)",
+            source_nature=(
+                f"{source_nature} — {nature_text}" if source_nature else "(未识别)"
+            ),
             file_structure_summary=file_structure or "(结构摘要不可用)",
-            previous_titles=titles_text
+            previous_titles=titles_text,
         )
 
     # v2.1.0-c 新增：跨段补漏检查
@@ -1194,32 +1433,46 @@ class Extractor:
     #                              kp 数 > 30 时分批检查(避免 coverage_analysis 输出超 max_tokens)
     CROSS_CHECK_BATCH_SIZE = 30  # 单次检查最多多少条 kp(超过则分批)
 
-    def _cross_segment_check_single_batch(self, filename, file_structure, batch_kps, batch_label=""):
+    def _cross_segment_check_single_batch(
+        self, filename, file_structure, batch_kps, batch_label=""
+    ):
         """跨段补漏单批 V4-Pro 调用。返回 dict 或 None。
         batch_label: "" 表示单批模式;"1/3" 等表示多批模式(仅控制台显示用)
         """
-        all_titles = "\n".join(f"  {i+1}. {kp.get('title', '')}" for i, kp in enumerate(batch_kps))
+        all_titles = "\n".join(
+            f"  {i+1}. {kp.get('title', '')}" for i, kp in enumerate(batch_kps)
+        )
         prompt = CROSS_SEGMENT_CHECK_PROMPT
         up = prompt["user_prompt_template"].format(
             filename=filename,
             document_structure=file_structure,
-            all_kp_titles=all_titles)
+            all_kp_titles=all_titles,
+        )
 
         try:
             ai = self.client.chat_with_json(
-                prompt["system_prompt"], up, temperature=0.2, max_tokens=32768,
-                call_type="cross_segment_check", model_override="deepseek-v4-pro")
+                prompt["system_prompt"],
+                up,
+                temperature=0.2,
+                max_tokens=32768,
+                call_type="cross_segment_check",
+                model_override="deepseek-v4-pro",
+            )
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
                 cost = ai.get("estimated_cost", 0)
                 parsed["_cost"] = cost
                 if batch_label:
-                    print(f"     [跨段补漏 批{batch_label}] 完成(花费{cost:.4f}元) | 覆盖: {parsed.get('overall_coverage','未知')}")
+                    print(
+                        f"     [跨段补漏 批{batch_label}] 完成(花费{cost:.4f}元) | 覆盖: {parsed.get('overall_coverage','未知')}"
+                    )
                 return parsed
         except CostLimitExceeded:
             raise  # 跨段批次中遇到费用上限,向上抛出
         except Exception as e:
-            print(f"     [跨段补漏 批{batch_label or '单批'}] AI 调用失败: {type(e).__name__}: {str(e)[:100]}")
+            print(
+                f"     [跨段补漏 批{batch_label or '单批'}] AI 调用失败: {type(e).__name__}: {str(e)[:100]}"
+            )
         return None
 
     def _cross_segment_check(self, filename, file_structure, all_kps):
@@ -1231,16 +1484,18 @@ class Extractor:
         修法:分批 30 条 + 切 V4-Pro + max_tokens 32K(双保险)
         """
         if not file_structure:
-            print(f"     无结构摘要,跳过补漏检查")
+            print("     无结构摘要,跳过补漏检查")
             return None
 
         n = len(all_kps)
         # 单批模式
         if n <= self.CROSS_CHECK_BATCH_SIZE:
             try:
-                parsed = self._cross_segment_check_single_batch(filename, file_structure, all_kps, batch_label="")
+                parsed = self._cross_segment_check_single_batch(
+                    filename, file_structure, all_kps, batch_label=""
+                )
             except CostLimitExceeded:
-                print(f"     费用已达上限,跳过补漏检查")
+                print("     费用已达上限,跳过补漏检查")
                 return None
             if not parsed:
                 return None
@@ -1250,20 +1505,32 @@ class Extractor:
             dupes = parsed.get("duplicate_suspects", []) or []
             print(f"     补漏检查完成(花费{cost:.4f}元) | 覆盖评估: {coverage}")
             if missed:
-                important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
+                important_missed = [
+                    m for m in missed if m.get("importance") in ("高", "中")
+                ]
                 if important_missed:
-                    print(f"     发现{len(important_missed)}个重要性=高/中 的可能遗漏章节:")
+                    print(
+                        f"     发现{len(important_missed)}个重要性=高/中 的可能遗漏章节:"
+                    )
                     for m in important_missed[:3]:
-                        print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
+                        print(
+                            f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})"
+                        )
             if dupes:
                 print(f"     [提示] 发现{len(dupes)}组疑似重复知识点")
             return parsed
 
         # 分批模式(>30 条)
         import math
+
         batch_n = math.ceil(n / self.CROSS_CHECK_BATCH_SIZE)
-        print(f"     [跨段补漏] kp 数 {n} > {self.CROSS_CHECK_BATCH_SIZE},分 {batch_n} 批检查...")
-        batches = [all_kps[i:i+self.CROSS_CHECK_BATCH_SIZE] for i in range(0, n, self.CROSS_CHECK_BATCH_SIZE)]
+        print(
+            f"     [跨段补漏] kp 数 {n} > {self.CROSS_CHECK_BATCH_SIZE},分 {batch_n} 批检查..."
+        )
+        batches = [
+            all_kps[i : i + self.CROSS_CHECK_BATCH_SIZE]
+            for i in range(0, n, self.CROSS_CHECK_BATCH_SIZE)
+        ]
         all_missed = []
         all_dupes = []
         coverage_votes = {}
@@ -1272,7 +1539,8 @@ class Extractor:
             batch_label = f"{i}/{batch_n}"
             try:
                 single = self._cross_segment_check_single_batch(
-                    filename, file_structure, batch, batch_label=batch_label)
+                    filename, file_structure, batch, batch_label=batch_label
+                )
             except CostLimitExceeded:
                 print(f"     [跨段补漏] 批{batch_label}遇费用上限,中止后续批次")
                 break
@@ -1297,19 +1565,33 @@ class Extractor:
 
         # overall_coverage 投票:优先取"严重遗漏"/"有遗漏"等悲观值
         # 排序:严重遗漏 > 有遗漏 > 基本完整 > 完整(覆盖度从低到高)
-        severity_order = {"严重遗漏": 4, "有遗漏": 3, "基本完整": 2, "完整": 1, "未知": 0}
+        severity_order = {
+            "严重遗漏": 4,
+            "有遗漏": 3,
+            "基本完整": 2,
+            "完整": 1,
+            "未知": 0,
+        }
         if coverage_votes:
             # 按严重度优先,严重度相同则按票数
-            best_cov = max(coverage_votes.keys(),
-                           key=lambda c: (severity_order.get(c, 0), coverage_votes[c]))
+            best_cov = max(
+                coverage_votes.keys(),
+                key=lambda c: (severity_order.get(c, 0), coverage_votes[c]),
+            )
         else:
             best_cov = "未知"
 
-        important_missed = [m for m in deduped_missed if m.get("importance") in ("高", "中")]
-        print(f"     [跨段补漏] 分批合并完成(总花费{total_cost:.4f}元) | 覆盖评估: {best_cov} | 高/中遗漏: {len(important_missed)}")
+        important_missed = [
+            m for m in deduped_missed if m.get("importance") in ("高", "中")
+        ]
+        print(
+            f"     [跨段补漏] 分批合并完成(总花费{total_cost:.4f}元) | 覆盖评估: {best_cov} | 高/中遗漏: {len(important_missed)}"
+        )
         if important_missed:
             for m in important_missed[:3]:
-                print(f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})")
+                print(
+                    f"       - {m.get('section_title', '')} (重要性:{m.get('importance', '')})"
+                )
         if all_dupes:
             print(f"     [提示] 共发现{len(all_dupes)}组疑似重复知识点")
 
@@ -1329,8 +1611,16 @@ class Extractor:
     # Prompt 复用 EXTRACTION_PROMPT(get_extraction_prompt),user_prompt 改为
     # "完整原文 + 已提取标题清单 + 待补章节清单",让 V4-Pro 自己定位章节内容
     # (V4 1M context 可放下完整原文,无需切片)
-    def _supplementary_extract(self, content, filename, content_type, missed_sections,
-                                existing_kps, file_id, source_nature=""):
+    def _supplementary_extract(
+        self,
+        content,
+        filename,
+        content_type,
+        missed_sections,
+        existing_kps,
+        file_id,
+        source_nature="",
+    ):
         """对 missed_sections 中的高/中重要性章节重新提取知识点。
 
         参数:
@@ -1352,10 +1642,13 @@ class Extractor:
             return []
 
         # 构造"已提取标题清单 + 待补章节清单"提示
-        existing_titles = "\n".join(f"  - {kp.get('title','')}" for kp in existing_kps if isinstance(kp, dict))
+        existing_titles = "\n".join(
+            f"  - {kp.get('title','')}" for kp in existing_kps if isinstance(kp, dict)
+        )
         missing_lines = "\n".join(
             f"  - 章节: {m.get('section_title','')} | 重要性: {m.get('importance','')} | 原因: {m.get('reason','')}"
-            for m in important)
+            for m in important
+        )
 
         # 复用提取 prompt 包,在 user_prompt 前面加一段"补漏指令"
         prompt = get_extraction_prompt(content_type)
@@ -1364,7 +1657,7 @@ class Extractor:
             f"【已提取知识点标题清单 — 不要重复提取这些】\n{existing_titles}\n\n"
             f"【待补提取的章节清单 — 请只针对这些章节提取知识点】\n{missing_lines}\n\n"
             f"【提取要求】\n"
-            f"1. 严格只提取上述\"待补章节\"对应的知识点,已提取过的概念不要再出\n"
+            f'1. 严格只提取上述"待补章节"对应的知识点,已提取过的概念不要再出\n'
             f"2. 标题用具体规定/数字/时间节点,不用章节标题\n"
             f"3. 颗粒度、原文摘录精度等其他要求,与首轮提取完全一致\n"
             f"4. 输出格式:JSON Lines(每行一个独立 JSON 对象,与首轮一致)\n\n"
@@ -1372,25 +1665,30 @@ class Extractor:
         )
         sp = prompt["system_prompt"]
         up = supp_instruction + prompt["user_prompt_template"].format(
-            filename=filename, full_content=content)
+            filename=filename, full_content=content
+        )
 
         try:
             ai = self.client.chat_with_jsonl(
-                sp, up,
+                sp,
+                up,
                 temperature=None,  # V4-Pro thinking 不传 temperature(立规则 15)
                 max_tokens=32768,  # V4 max_output 巨大,这里给个安全值,够补漏
                 call_type=f"supp_extract_{filename[:30]}",
-                model_override="deepseek-v4-pro"
+                model_override="deepseek-v4-pro",
             )
         except CostLimitExceeded:
-            print(f"     [补漏轮] 费用已达上限,中止补漏")
+            print("     [补漏轮] 费用已达上限,中止补漏")
             return []
         except Exception as e:
             print(f"     [补漏轮] AI 调用失败: {type(e).__name__}: {str(e)[:100]}")
             self._safe_log_event(
-                "supp_extract_fail", "extractor", "warning",
+                "supp_extract_fail",
+                "extractor",
+                "warning",
                 file_id=file_id,
-                payload={"filename": filename, "error": str(e)[:200]})
+                payload={"filename": filename, "error": str(e)[:200]},
+            )
             return []
 
         new_kps = ai.get("kp_objects", []) or []
@@ -1408,14 +1706,22 @@ class Extractor:
 
         # 用现有 _dedupe_kps_by_excerpt 去重(与首轮 kp 比对,排除重复)
         merged = self._dedupe_kps_by_excerpt(existing_kps + new_kps)
-        net_added = merged[len(existing_kps):]  # 真正新增的
-        print(f"     [补漏轮] AI 新提取{len(new_kps)}条 → 去重后净增{len(net_added)}条 (花费{cost:.4f}元)")
+        net_added = merged[len(existing_kps) :]  # 真正新增的
+        print(
+            f"     [补漏轮] AI 新提取{len(new_kps)}条 → 去重后净增{len(net_added)}条 (花费{cost:.4f}元)"
+        )
         self._safe_log_event(
-            "supp_extract_round", "extractor", "info",
+            "supp_extract_round",
+            "extractor",
+            "info",
             file_id=file_id,
-            payload={"filename": filename,
-                     "raw_count": len(new_kps), "net_added": len(net_added),
-                     "cost": cost})
+            payload={
+                "filename": filename,
+                "raw_count": len(new_kps),
+                "net_added": len(net_added),
+                "cost": cost,
+            },
+        )
         return net_added
 
     # v2.1.0-c 新增：费用预估
@@ -1449,7 +1755,7 @@ class Extractor:
                 "title": kp.get("title", "未命名"),
                 "original_excerpt": (kp.get("original_excerpt") or "")[:200],
                 "suggested_category_tags": kp.get("suggested_category_tags", []),
-                "suggested_keywords": kp.get("suggested_keywords", [])[:5]
+                "suggested_keywords": kp.get("suggested_keywords", [])[:5],
             }
             # v2.1.1 F038: 传递 practical_insights 供V3评估可靠性
             if i < len(kps_info):
@@ -1467,33 +1773,53 @@ class Extractor:
         """
         try:
             # V3看到的 JSON 去掉 'index' 字段（避免误导模型以全局序号作答）
-            local_items = [{k: v for k, v in it.items() if k != "index"} for it in batch_items]
-            knowledge_points_json = json.dumps(local_items, ensure_ascii=False, indent=2)
+            local_items = [
+                {k: v for k, v in it.items() if k != "index"} for it in batch_items
+            ]
+            knowledge_points_json = json.dumps(
+                local_items, ensure_ascii=False, indent=2
+            )
             up = QC_CHECK_PROMPT["user_prompt_template"].format(
                 filename=filename,
                 file_summary=file_summary or "(无摘要)",
                 kp_count=len(local_items),
-                knowledge_points_json=knowledge_points_json
+                knowledge_points_json=knowledge_points_json,
             )
             ai = self.client.chat_with_json(
-                QC_CHECK_PROMPT["system_prompt"], up, temperature=0.2,
-                call_type="qc_check", model_override="deepseek-v4-pro")
+                QC_CHECK_PROMPT["system_prompt"],
+                up,
+                temperature=0.2,
+                call_type="qc_check",
+                model_override="deepseek-v4-pro",
+            )
             parsed = ai.get("parsed_json")
             cost = ai.get("estimated_cost", 0) or 0
 
             if not parsed or not isinstance(parsed, dict):
-                return {"success": False, "results": [], "cost": cost,
-                        "error": "parsed_not_dict"}
+                return {
+                    "success": False,
+                    "results": [],
+                    "cost": cost,
+                    "error": "parsed_not_dict",
+                }
             results = parsed.get("qa_results", [])
             if not results or not isinstance(results, list):
-                return {"success": False, "results": [], "cost": cost,
-                        "error": "no_qa_results"}
+                return {
+                    "success": False,
+                    "results": [],
+                    "cost": cost,
+                    "error": "no_qa_results",
+                }
             return {"success": True, "results": results, "cost": cost, "error": ""}
         except CostLimitExceeded:
             raise
         except Exception as e:
-            return {"success": False, "results": [], "cost": 0,
-                    "error": f"{type(e).__name__}:{e}"}
+            return {
+                "success": False,
+                "results": [],
+                "cost": 0,
+                "error": f"{type(e).__name__}:{e}",
+            }
 
     def _qc_single_call(self, kp_item, filename):
         """逐条质检V3调用（L2，用 QC_CHECK_SINGLE_PROMPT）。
@@ -1504,27 +1830,42 @@ class Extractor:
             local_item = {k: v for k, v in kp_item.items() if k != "index"}
             knowledge_point_json = json.dumps(local_item, ensure_ascii=False, indent=2)
             up = QC_CHECK_SINGLE_PROMPT["user_prompt_template"].format(
-                filename=filename,
-                knowledge_point_json=knowledge_point_json
+                filename=filename, knowledge_point_json=knowledge_point_json
             )
             ai = self.client.chat_with_json(
-                QC_CHECK_SINGLE_PROMPT["system_prompt"], up, temperature=0.2,
-                call_type="qc_check_single", model_override="deepseek-v4-pro")
+                QC_CHECK_SINGLE_PROMPT["system_prompt"],
+                up,
+                temperature=0.2,
+                call_type="qc_check_single",
+                model_override="deepseek-v4-pro",
+            )
             parsed = ai.get("parsed_json")
             cost = ai.get("estimated_cost", 0) or 0
 
             if not parsed or not isinstance(parsed, dict):
-                return {"success": False, "result": None, "cost": cost,
-                        "error": "parsed_not_dict"}
+                return {
+                    "success": False,
+                    "result": None,
+                    "cost": cost,
+                    "error": "parsed_not_dict",
+                }
             if "qa_score" not in parsed:
-                return {"success": False, "result": None, "cost": cost,
-                        "error": "missing_qa_score"}
+                return {
+                    "success": False,
+                    "result": None,
+                    "cost": cost,
+                    "error": "missing_qa_score",
+                }
             return {"success": True, "result": parsed, "cost": cost, "error": ""}
         except CostLimitExceeded:
             raise
         except Exception as e:
-            return {"success": False, "result": None, "cost": 0,
-                    "error": f"{type(e).__name__}:{e}"}
+            return {
+                "success": False,
+                "result": None,
+                "cost": 0,
+                "error": f"{type(e).__name__}:{e}",
+            }
 
     def _excerpt_in_source(self, excerpt, content):
         """检查 excerpt 是否在 source_content 中出现（规则兜底用）。
@@ -1549,8 +1890,8 @@ class Extractor:
         全通过 → qa_score=3（待人工复核）
         任一不通过 → qa_score=1
         """
-        excerpt = (kp_raw.get("original_excerpt", "") or "")
-        title = (kp_raw.get("title", "") or "")
+        excerpt = kp_raw.get("original_excerpt", "") or ""
+        title = kp_raw.get("title", "") or ""
         flags = []
         passed = True
 
@@ -1585,14 +1926,14 @@ class Extractor:
                 "qa_score": 3,
                 "qa_flags": ["v3_qc_failed_manual_review"],
                 "insight_reliability": None,
-                "improvement_suggestion": ""  # 不入库
+                "improvement_suggestion": "",  # 不入库
             }
         flags.append("rule_fallback_fail")
         return {
             "qa_score": 1,
             "qa_flags": flags,
             "insight_reliability": None,
-            "improvement_suggestion": ""
+            "improvement_suggestion": "",
         }
 
     def _write_qc_result(self, kp_id, qc_fields, qa_source):
@@ -1632,7 +1973,7 @@ class Extractor:
         update_kw = {
             "qa_score": score,
             "qa_flags": json.dumps(normalized_flags, ensure_ascii=False),
-            "qa_source": qa_source
+            "qa_source": qa_source,
         }
         if insight_rel:
             update_kw["insight_reliability"] = insight_rel
@@ -1644,7 +1985,9 @@ class Extractor:
             print(f"     ! 质检结果写入失败(ID={kp_id}): {e}")
             return False
 
-    def _quality_check(self, filename, content_summary, kps, kps_info, source_content=""):
+    def _quality_check(
+        self, filename, content_summary, kps, kps_info, source_content=""
+    ):
         """V3 质检三级降级链（v2.2.3 F058）。
         kps: 原始AI提取的知识点列表（含完整内容）
         kps_info: 写入DB后的info列表（含kp_id和practical_insights）
@@ -1660,8 +2003,10 @@ class Extractor:
         processed_kp_ids = set()
 
         L0_BATCH_SIZE = 15
-        l0_batches = [all_qc_items[i:i + L0_BATCH_SIZE]
-                      for i in range(0, len(all_qc_items), L0_BATCH_SIZE)]
+        l0_batches = [
+            all_qc_items[i : i + L0_BATCH_SIZE]
+            for i in range(0, len(all_qc_items), L0_BATCH_SIZE)
+        ]
         l0_failed_items = []  # L0 失败需降级的 items
 
         if len(l0_batches) > 1:
@@ -1674,33 +2019,46 @@ class Extractor:
 
                 if r["success"]:
                     written = self._apply_batch_results(
-                        r["results"], batch, kps_info, processed_kp_ids, "batch")
+                        r["results"], batch, kps_info, processed_kp_ids, "batch"
+                    )
                     if len(l0_batches) > 1:
-                        print(f"     L0 第{batch_idx+1}/{len(l0_batches)}批 通过: {written}条(花费{r['cost']:.4f}元)")
+                        print(
+                            f"     L0 第{batch_idx+1}/{len(l0_batches)}批 通过: {written}条(花费{r['cost']:.4f}元)"
+                        )
                 else:
                     err = r.get("error", "unknown")
                     print(f"     L0 第{batch_idx+1}/{len(l0_batches)}批 失败: {err}")
                     l0_failed_items.extend(batch)
                     self._safe_log_event(
-                        "qc_downgrade", "qc", "warning",
+                        "qc_downgrade",
+                        "qc",
+                        "warning",
                         payload={
                             "level": "L0_to_L1",
                             "reason": err,
                             "batch_idx": batch_idx,
                             "kp_count": len(batch),
-                            "filename": filename
-                        })
+                            "filename": filename,
+                        },
+                    )
         except CostLimitExceeded:
-            print(f"     费用已达上限,剩余知识点走规则兜底")
+            print("     费用已达上限,剩余知识点走规则兜底")
             # 费用超限 → 剩余未处理的全部走L3
-            self._fallback_remaining(all_qc_items, kps, kps_info,
-                                     processed_kp_ids, source_content,
-                                     reason="cost_limit_exceeded")
+            self._fallback_remaining(
+                all_qc_items,
+                kps,
+                kps_info,
+                processed_kp_ids,
+                source_content,
+                reason="cost_limit_exceeded",
+            )
             self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
             return len(processed_kp_ids)
 
         if l0_failed_items:
-            print(f"     [F058 L1] {len(l0_failed_items)}条进入小批降级(3/批,最多2轮)...")
+            print(
+                f"     [F058 L1] {len(l0_failed_items)}条进入小批降级(3/批,最多2轮)..."
+            )
             L1_BATCH_SIZE = 3
             L1_MAX_ROUNDS = 2
             remaining = list(l0_failed_items)
@@ -1709,8 +2067,10 @@ class Extractor:
                 for round_num in range(1, L1_MAX_ROUNDS + 1):
                     if not remaining:
                         break
-                    small_batches = [remaining[i:i + L1_BATCH_SIZE]
-                                     for i in range(0, len(remaining), L1_BATCH_SIZE)]
+                    small_batches = [
+                        remaining[i : i + L1_BATCH_SIZE]
+                        for i in range(0, len(remaining), L1_BATCH_SIZE)
+                    ]
                     next_failed = []
                     round_written = 0
                     for sb_idx, sb in enumerate(small_batches):
@@ -1718,27 +2078,42 @@ class Extractor:
                         total_cost += r.get("cost", 0)
                         if r["success"]:
                             round_written += self._apply_batch_results(
-                                r["results"], sb, kps_info, processed_kp_ids, "small_batch")
+                                r["results"],
+                                sb,
+                                kps_info,
+                                processed_kp_ids,
+                                "small_batch",
+                            )
                         else:
                             next_failed.extend(sb)
                     if round_written > 0 or len(next_failed) < len(remaining):
-                        print(f"     L1 第{round_num}轮: 通过{len(remaining)-len(next_failed)}条, 剩余{len(next_failed)}条")
+                        print(
+                            f"     L1 第{round_num}轮: 通过{len(remaining)-len(next_failed)}条, 剩余{len(next_failed)}条"
+                        )
                     remaining = next_failed
 
                 if remaining:
                     self._safe_log_event(
-                        "qc_downgrade", "qc", "warning",
+                        "qc_downgrade",
+                        "qc",
+                        "warning",
                         payload={
                             "level": "L1_to_L2",
                             "kp_count": len(remaining),
-                            "filename": filename
-                        })
+                            "filename": filename,
+                        },
+                    )
                 l1_failed_items = remaining
             except CostLimitExceeded:
-                print(f"     费用已达上限,剩余知识点走规则兜底")
-                self._fallback_remaining(all_qc_items, kps, kps_info,
-                                         processed_kp_ids, source_content,
-                                         reason="cost_limit_exceeded_in_L1")
+                print("     费用已达上限,剩余知识点走规则兜底")
+                self._fallback_remaining(
+                    all_qc_items,
+                    kps,
+                    kps_info,
+                    processed_kp_ids,
+                    source_content,
+                    reason="cost_limit_exceeded_in_L1",
+                )
                 self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
                 return len(processed_kp_ids)
         else:
@@ -1765,9 +2140,11 @@ class Extractor:
                             l2_success += 1
                     else:
                         l2_failed.append((item, kp_id, r.get("error", "unknown")))
-                print(f"     L2 逐条: 通过{l2_success}条, 剩余{len(l2_failed)}条进入规则兜底")
+                print(
+                    f"     L2 逐条: 通过{l2_success}条, 剩余{len(l2_failed)}条进入规则兜底"
+                )
             except CostLimitExceeded:
-                print(f"     费用已达上限,剩余知识点走规则兜底")
+                print("     费用已达上限,剩余知识点走规则兜底")
                 # 把 L2 未处理完的也丢给 L3
                 for item in l1_failed_items:
                     gi = item.get("index", -1)
@@ -1788,14 +2165,17 @@ class Extractor:
                 if self._write_qc_result(kp_id, fallback, "rule_fallback"):
                     processed_kp_ids.add(kp_id)
                 self._safe_log_event(
-                    "rule_fallback", "qc", "error",
+                    "rule_fallback",
+                    "qc",
+                    "error",
                     kp_id=kp_id,
                     payload={
                         "reason": "single_qc_failed",
                         "err_msg": err,
                         "rule_fallback_score": fallback.get("qa_score"),
-                        "filename": filename
-                    })
+                        "filename": filename,
+                    },
+                )
 
         for idx, info in enumerate(kps_info):
             kp_id = info.get("kp_id")
@@ -1806,16 +2186,21 @@ class Extractor:
             if self._write_qc_result(kp_id, fallback, "rule_fallback"):
                 processed_kp_ids.add(kp_id)
             self._safe_log_event(
-                "rule_fallback", "qc", "warning",
+                "rule_fallback",
+                "qc",
+                "warning",
                 kp_id=kp_id,
-                payload={"reason": "goalkeeper_sweep", "filename": filename})
+                payload={"reason": "goalkeeper_sweep", "filename": filename},
+            )
             print(f"     [F058 守门员] kp_id={kp_id} 未被三级处理,强制规则兜底")
 
         # 汇总输出
         self._print_qc_summary(kps_info, processed_kp_ids, total_cost)
         return len(processed_kp_ids)
 
-    def _apply_batch_results(self, v3_results, batch, kps_info, processed_kp_ids, qa_source):
+    def _apply_batch_results(
+        self, v3_results, batch, kps_info, processed_kp_ids, qa_source
+    ):
         """将 V3 批量返回的 qa_results 写入DB。
         v3_results 中的 kp_index 是批内局部序号（0-based），通过 batch[local_idx]['index'] 映射到全局。
         返回成功写入的条数。
@@ -1842,8 +2227,9 @@ class Extractor:
                 written += 1
         return written
 
-    def _fallback_remaining(self, all_qc_items, kps, kps_info,
-                            processed_kp_ids, source_content, reason):
+    def _fallback_remaining(
+        self, all_qc_items, kps, kps_info, processed_kp_ids, source_content, reason
+    ):
         """费用超限等场景：把未处理的全部走 L3 规则兜底。"""
         for item in all_qc_items:
             global_idx = item.get("index", -1)
@@ -1857,9 +2243,8 @@ class Extractor:
             if self._write_qc_result(kp_id, fallback, "rule_fallback"):
                 processed_kp_ids.add(kp_id)
             self._safe_log_event(
-                "rule_fallback", "qc", "error",
-                kp_id=kp_id,
-                payload={"reason": reason})
+                "rule_fallback", "qc", "error", kp_id=kp_id, payload={"reason": reason}
+            )
 
     def _print_qc_summary(self, kps_info, processed_kp_ids, total_cost):
         """打印质检汇总：分数分布 + 来源分布"""
@@ -1867,12 +2252,13 @@ class Extractor:
             print(f"     质检完成(总花费{total_cost:.4f}元),但无成功评分记录")
             return
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
+            conn = self.db.get_connection()
+            c = conn.cursor()
             kp_ids = list(processed_kp_ids)
             placeholder = ",".join("?" * len(kp_ids))
             c.execute(
                 f"SELECT qa_score, qa_source FROM knowledge_points WHERE id IN ({placeholder})",
-                kp_ids
+                kp_ids,
             )
             rows = c.fetchall()
             conn.close()
@@ -1903,7 +2289,9 @@ class Extractor:
             print(f"     质检来源: {' / '.join(src_parts)}")
             rf_count = sources.get("rule_fallback", 0)
             if rf_count > 0:
-                print(f"     [注意] {rf_count}条走规则兜底(L3),前端将黄色高亮,建议人工优先复核")
+                print(
+                    f"     [注意] {rf_count}条走规则兜底(L3),前端将黄色高亮,建议人工优先复核"
+                )
         low_count = sum(1 for s in scores if s <= 2)
         if low_count > 0:
             print(f"     [注意] {low_count}条知识点评分较低,建议审核时重点关注")
@@ -1922,7 +2310,9 @@ class Extractor:
             return
         elapsed = time.time() - stats.get("start_time", time.time())
         truncations = stats.get("truncations", 0)
-        l1_recovs = stats.get("r1_mirror_recoveries", 0)  # v2.3.5-part2:沿用字段名,语义改为 L1 镜像救回
+        l1_recovs = stats.get(
+            "r1_mirror_recoveries", 0
+        )  # v2.3.5-part2:沿用字段名,语义改为 L1 镜像救回
         f057_fallbacks = stats.get("f057_fallbacks", 0)
         total_fails = stats.get("total_failures", 0)
         lost = stats.get("lost_segments", 0)
@@ -1948,7 +2338,9 @@ class Extractor:
             parallel_part += " / "
 
         if truncations == 0:
-            print(f"     [文件统计] {parallel_part}一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}")
+            print(
+                f"     [文件统计] {parallel_part}一次成功 / 知识点{kp_count}条 / 耗时{int(elapsed)}s{supp_part} / Prompt {get_prompt_version()}"
+            )
         else:
             parts = []
             if flash_kps > 0 or pro_kps > 0:
@@ -1972,7 +2364,7 @@ class Extractor:
             if recovery_cost > 0:
                 parts.append(f"补救额外费用{recovery_cost:.4f}元")
             parts.append(f"Prompt {get_prompt_version()}")
-            print(f"     [文件统计] " + " / ".join(parts))
+            print("     [文件统计] " + " / ".join(parts))
 
     # v1.1.0 保留：AI分类建议（v2.0.0更新prompt以感知三层标签）
     def _check_category_suggestions(self, kps_info):
@@ -1984,7 +2376,9 @@ class Extractor:
         cats = self.db.get_all_categories()
         cat_tree_text = ""
         for cat in cats:
-            cat_tree_text += f"  {cat['level2_code']} {cat['level2_name']}: {cat['description']}\n"
+            cat_tree_text += (
+                f"  {cat['level2_code']} {cat['level2_name']}: {cat['description']}\n"
+            )
 
         unmatched_text = ""
         for k in unmatched[:10]:
@@ -2024,9 +2418,11 @@ class Extractor:
         try:
             print(f"\n     [AI分类建议] 分析{len(unmatched)}条未匹配知识点...")
             ai = self.client.chat_with_json(
-                system_prompt, user_prompt,
-                temperature=0.3, call_type="architecture_suggestion",
-                model_override="deepseek-v4-pro"
+                system_prompt,
+                user_prompt,
+                temperature=0.3,
+                call_type="architecture_suggestion",
+                model_override="deepseek-v4-pro",
             )
             parsed = ai.get("parsed_json")
             if parsed and isinstance(parsed, dict):
@@ -2047,22 +2443,24 @@ class Extractor:
                                 if cat["level1_name"] == sg_parent:
                                     parent_id = cat["id"]
                                     break
-                        related_ids = [k.get("kp_id") for k in unmatched if k.get("kp_id")]
+                        related_ids = [
+                            k.get("kp_id") for k in unmatched if k.get("kp_id")
+                        ]
                         self.db.add_architecture_suggestion(
                             suggested_name=sg_name,
                             suggested_level=sg_level,
                             reason=sg_reason,
                             suggestion_type=sg_type,
                             parent_category_id=parent_id,
-                            related_knowledge_ids=related_ids[:5]
+                            related_knowledge_ids=related_ids[:5],
                         )
-                    print(f"     [AI分类建议] 已保存,请在审核界面中查看并处理")
+                    print("     [AI分类建议] 已保存,请在审核界面中查看并处理")
                 else:
-                    print(f"     [AI分类建议] 现有分类体系够用,无需调整")
+                    print("     [AI分类建议] 现有分类体系够用,无需调整")
             else:
-                print(f"     [AI分类建议] 解析失败,跳过")
+                print("     [AI分类建议] 解析失败,跳过")
         except CostLimitExceeded:
-            print(f"     [AI分类建议] 费用已达上限,跳过分类建议")
+            print("     [AI分类建议] 费用已达上限,跳过分类建议")
         except Exception as e:
             print(f"     [AI分类建议] 出错: {e}")
 
@@ -2086,30 +2484,38 @@ class Extractor:
             "total_cost": 0.0,
             "start_time": time.time(),
             # v2.3.5-part2 跨段补漏闭环统计
-            "supplementary_rounds": 0,    # 总执行的补漏轮数(含首轮+所有重提轮)
-            "supplementary_kps_added": 0, # 补提取阶段新增的 kp 数(去重后)
+            "supplementary_rounds": 0,  # 总执行的补漏轮数(含首轮+所有重提轮)
+            "supplementary_kps_added": 0,  # 补提取阶段新增的 kp 数(去重后)
             # v2.3.7-part7: 并行双Pro统计(Flash→Pro统一)
-            "parallel_flash_kps": 0,      # V4-Pro 全覆盖链提取的 kp 数
-            "parallel_pro_kps": 0,        # V4-Pro 深度链提取的 kp 数
-            "merged_duplicates": 0,       # 合并时去重的数量
+            "parallel_flash_kps": 0,  # V4-Pro 全覆盖链提取的 kp 数
+            "parallel_pro_kps": 0,  # V4-Pro 深度链提取的 kp 数
+            "merged_duplicates": 0,  # 合并时去重的数量
         }
         try:
             print(f"\n     >> 开始提取: {fn}")
             for f in self.processing.iterdir():
                 if f.name == fn or f.name == rec["original_filename"]:
-                    fp = str(f); break
-            if not fp: fp = rec["file_path"]
+                    fp = str(f)
+                    break
+            if not fp:
+                fp = rec["file_path"]
             if not os.path.exists(fp):
                 result["error"] = f"文件不存在:{fp}"
-                print(f"     [FAIL] {result['error']}"); return result
+                print(f"     [FAIL] {result['error']}")
+                return result
 
             is_dup, file_hash = self.check_duplicate(fp, fn)
             if is_dup:
-                self.db.update_source_file(fid, process_status="completed",
-                                           process_message="重复文件,用户选择跳过", file_hash=file_hash)
+                self.db.update_source_file(
+                    fid,
+                    process_status="completed",
+                    process_message="重复文件,用户选择跳过",
+                    file_hash=file_hash,
+                )
                 self._move_to_completed(fp, fn)
                 self._clean_pending(original_fn)
-                result["error"] = "重复文件已跳过"; return result
+                result["error"] = "重复文件已跳过"
+                return result
             self.db.update_source_file(fid, file_hash=file_hash)
 
             # 优先读取预处理生成的.md文件(避免重复OCR/解析)
@@ -2123,32 +2529,41 @@ class Extractor:
                 if not rr["success"]:
                     result["error"] = rr["error"]
                     print(f"     [FAIL] 文件读取失败: {result['error']}")
-                    self._move_to_failed(fp, fn); self._clean_pending(original_fn)
-                    self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
+                    self._move_to_failed(fp, fn)
+                    self._clean_pending(original_fn)
+                    self.db.update_source_file(
+                        fid, process_status="failed", process_message=result["error"]
+                    )
                     return result
                 content = rr["content"]
                 if rr.get("metadata", {}).get("needs_ocr"):
-                    print(f"     需要OCR识别(无预处理缓存)...")
+                    print("     需要OCR识别(无预处理缓存)...")
                     content = self.client.ocr_image(fp)["content"]
 
             ctype = self._determine_type(rec, content)
 
             # === Step 1: V3预分析 ===
             pre_result = None
-            print(f"     [Step 1] V3预分析...")
+            print("     [Step 1] V3预分析...")
             self._report_progress(current_step="Step 1/8 V3预分析")
             pre_result = self._pre_analyze(content, fn)
             if pre_result == "SKIP_FILE":
-                self.db.update_source_file(fid, process_status="processing",
-                                           process_message="预分析失败,用户选择跳过")
-                result["error"] = "用户跳过(预分析失败)"; return result
+                self.db.update_source_file(
+                    fid,
+                    process_status="processing",
+                    process_message="预分析失败,用户选择跳过",
+                )
+                result["error"] = "用户跳过(预分析失败)"
+                return result
 
             if pre_result and isinstance(pre_result, dict):
                 # 更新分类建议
                 suggested_type = pre_result.get("content_type", "")
                 if suggested_type and suggested_type in self.TYPE_NAMES:
                     if suggested_type != ctype:
-                        print(f"     V3建议分类: {self.TYPE_NAMES[suggested_type]}(原判断:{self.TYPE_NAMES.get(ctype, ctype)})")
+                        print(
+                            f"     V3建议分类: {self.TYPE_NAMES[suggested_type]}(原判断:{self.TYPE_NAMES.get(ctype, ctype)})"
+                        )
                         ctype = suggested_type
                 # 质量评估
                 q_score = pre_result.get("quality_score", 5)
@@ -2163,22 +2578,39 @@ class Extractor:
                         for w in warnings:
                             print(f"     [提醒] {w}")
                     if self._headless:
-                        print(f"     [headless] 低价值文件(评分{q_score}/5)，自动继续提取")
+                        print(
+                            f"     [headless] 低价值文件(评分{q_score}/5)，自动继续提取"
+                        )
                     else:
                         while True:
-                            answer = input(f"     该文件价值较低(评分{q_score}/5), 继续提取? (Y=继续 / N=跳过): ").strip().upper()
+                            answer = (
+                                input(
+                                    f"     该文件价值较低(评分{q_score}/5), 继续提取? (Y=继续 / N=跳过): "
+                                )
+                                .strip()
+                                .upper()
+                            )
                             if answer == "Y":
-                                print(f"     好的,继续提取"); break
+                                print("     好的,继续提取")
+                                break
                             elif answer == "N":
-                                self.db.update_source_file(fid, process_status="completed",
-                                                           process_message=f"V3预分析评分{q_score}/5,用户选择跳过")
-                                self._move_to_completed(fp, fn); self._clean_pending(original_fn)
-                                result["error"] = "低价值文件已跳过"; return result
-                            else: print(f"     请输入 Y 或 N")
+                                self.db.update_source_file(
+                                    fid,
+                                    process_status="completed",
+                                    process_message=f"V3预分析评分{q_score}/5,用户选择跳过",
+                                )
+                                self._move_to_completed(fp, fn)
+                                self._clean_pending(original_fn)
+                                result["error"] = "低价值文件已跳过"
+                                return result
+                            else:
+                                print("     请输入 Y 或 N")
                 # 保存预分析结果
-                self.db.update_source_file(fid,
+                self.db.update_source_file(
+                    fid,
                     pre_analysis_result=json.dumps(pre_result, ensure_ascii=False),
-                    suggested_content_type=ctype)
+                    suggested_content_type=ctype,
+                )
 
             prompt = get_extraction_prompt(ctype)
             # v2.2.3: 提取来源属性
@@ -2189,74 +2621,102 @@ class Extractor:
             doc_origin = rec.get("doc_origin", "external")
             if doc_origin == "self":
                 source_nature = "personal_experience"
-                print(f"     文档来源: 我的经验文档(doc_origin=self, 强制authority=firsthand)")
+                print(
+                    "     文档来源: 我的经验文档(doc_origin=self, 强制authority=firsthand)"
+                )
             elif source_nature:
                 print(f"     来源属性: {source_nature}")
             print(f"     文件类型: {self.TYPE_NAMES.get(ctype, ctype)}")
             print(f"     内容长度: {len(content)}字")
-            print(f"     提取模型: {self.extraction_model} ({self.extraction_model_name})")
+            print(
+                f"     提取模型: {self.extraction_model} ({self.extraction_model_name})"
+            )
             print(f"     Prompt版本: {get_prompt_version()}")
 
             # === Step 2: 智能分段 ===
-            print(f"     [Step 2] 智能分段...")
+            print("     [Step 2] 智能分段...")
             self._report_progress(current_step="Step 2/8 智能分段")
             segs, file_structure = self._smart_segment(content, pre_result, fn)
             if len(segs) > 1:
                 seg_lens = [len(s) for s in segs]
-                print(f"     分{len(segs)}段提取(段长: {min(seg_lens)}-{max(seg_lens)}字)")
+                print(
+                    f"     分{len(segs)}段提取(段长: {min(seg_lens)}-{max(seg_lens)}字)"
+                )
             else:
                 print(f"     整段提取({len(segs[0])}字)")
 
             # === Step 3: 费用预估(大文件) ===
             if len(segs) >= 3:
                 est_cost = self._estimate_extraction_cost(segs)
-                print(f"     预估费用: V4-Pro 提取约{est_cost:.2f}元 + V4-Pro 辅助调用(预分析/质检/补漏/分类)")
+                print(
+                    f"     预估费用: V4-Pro 提取约{est_cost:.2f}元 + V4-Pro 辅助调用(预分析/质检/补漏/分类)"
+                )
                 if est_cost > 5.0:
                     if self._headless:
                         print(f"     [headless] 费用较高({est_cost:.1f}元)，自动继续")
                     else:
                         while True:
-                            answer = input(f"     预估费用较高({est_cost:.1f}元), 继续? (Y/N): ").strip().upper()
-                            if answer == "Y": break
+                            answer = (
+                                input(
+                                    f"     预估费用较高({est_cost:.1f}元), 继续? (Y/N): "
+                                )
+                                .strip()
+                                .upper()
+                            )
+                            if answer == "Y":
+                                break
                             elif answer == "N":
-                                self.db.update_source_file(fid, process_status="processing",
-                                                           process_message=f"费用预估{est_cost:.1f}元,用户暂缓")
-                                result["error"] = "用户暂缓(费用)"; return result
-                            else: print(f"     请输入 Y 或 N")
+                                self.db.update_source_file(
+                                    fid,
+                                    process_status="processing",
+                                    process_message=f"费用预估{est_cost:.1f}元,用户暂缓",
+                                )
+                                result["error"] = "用户暂缓(费用)"
+                                return result
+                            else:
+                                print("     请输入 Y 或 N")
 
             # === Step 4: 并行双Pro提取(v2.3.7-part7: 统一V4-Pro, Flash→Pro) ===
             # 架构: V4-Pro 全覆盖 + V4-Pro 深度核心段 → 合并去重
-            print(f"     [Step 4] 并行双Pro提取...")
+            print("     [Step 4] 并行双Pro提取...")
             self._report_progress(current_step="Step 4/8 并行双Pro提取")
 
             # 4.1 V4-Pro 全覆盖提取
-            print(f"\n     [4.1] V4-Pro 全覆盖提取...")
-            flash_kps = self._extract_with_flash(segs, fn, prompt, ctype, file_structure, source_nature, fid)
+            print("\n     [4.1] V4-Pro 全覆盖提取...")
+            flash_kps = self._extract_with_flash(
+                segs, fn, prompt, ctype, file_structure, source_nature, fid
+            )
             self._truncation_stats["parallel_flash_kps"] = len(flash_kps)
             print(f"     V4-Pro 全覆盖: {len(flash_kps)} 条知识点")
 
             # 4.2 V4-Pro 深度核心段提取
-            print(f"\n     [4.2] V4-Pro 深度核心段提取...")
+            print("\n     [4.2] V4-Pro 深度核心段提取...")
             pro_kps = []
             try:
                 core_segs = self._identify_core_segments(file_structure, segs)
-                pro_kps = self._extract_with_pro(core_segs, fn, prompt, ctype, file_structure, source_nature, fid)
+                pro_kps = self._extract_with_pro(
+                    core_segs, fn, prompt, ctype, file_structure, source_nature, fid
+                )
                 self._truncation_stats["parallel_pro_kps"] = len(pro_kps)
                 print(f"     V4-Pro 深度: {len(pro_kps)} 条知识点")
             except Exception as e:
                 print(f"     [V4-Pro 降级] {type(e).__name__}: {e} — 保留全覆盖结果")
 
             # 4.3 合并去重
-            print(f"\n     [4.3] 合并去重...")
+            print("\n     [4.3] 合并去重...")
             kps, dup_count = self._merge_and_deduplicate(flash_kps, pro_kps)
             self._truncation_stats["merged_duplicates"] = dup_count
             print(f"     合并后: {len(kps)} 条知识点 (去重 {dup_count} 条)")
 
             if not kps:
-                self.db.update_source_file(fid, process_status="completed", process_message="未提取到知识点")
-                self._move_to_completed(fp, fn); self._clean_pending(original_fn)
+                self.db.update_source_file(
+                    fid, process_status="completed", process_message="未提取到知识点"
+                )
+                self._move_to_completed(fp, fn)
+                self._clean_pending(original_fn)
                 result["error"] = "未提取到知识点"
-                print(f"     [注意] 未提取到知识点"); return result
+                print("     [注意] 未提取到知识点")
+                return result
 
             # === Step 5: 跨段补漏闭环(v2.3.5-part2 新增) ===
             # 闭环逻辑(老唐 0430 拍板:5 轮上限 + "基本完整"即合格):
@@ -2275,34 +2735,53 @@ class Extractor:
                 last_check = None
                 while round_idx < CHECK_MAX_ROUNDS:
                     round_idx += 1
-                    print(f"\n     --- 补漏检查 第 {round_idx}/{CHECK_MAX_ROUNDS} 轮 (当前 {len(kps)} 条 kp) ---")
+                    print(
+                        f"\n     --- 补漏检查 第 {round_idx}/{CHECK_MAX_ROUNDS} 轮 (当前 {len(kps)} 条 kp) ---"
+                    )
                     self._truncation_stats["supplementary_rounds"] = round_idx
                     last_check = self._cross_segment_check(fn, file_structure, kps)
                     if not last_check:
                         # AI 调用失败或费用超限,中止闭环
-                        print(f"     [跨段补漏] 检查异常,中止闭环")
+                        print("     [跨段补漏] 检查异常,中止闭环")
                         break
                     coverage = last_check.get("overall_coverage", "未知")
                     missed = last_check.get("missed_sections", [])
-                    important_missed = [m for m in missed if m.get("importance") in ("高", "中")]
+                    important_missed = [
+                        m for m in missed if m.get("importance") in ("高", "中")
+                    ]
                     # 合格判定 1:覆盖评估直接达标
                     if coverage in ACCEPTABLE_COVERAGE:
                         print(f"     [跨段补漏] 覆盖评估={coverage},合格,闭环结束")
                         break
                     # 合格判定 2:无高/中重要性遗漏(全是低重要性,不补)
                     if not important_missed:
-                        print(f"     [跨段补漏] 无高/中重要性遗漏(仅低重要性),合格,闭环结束")
+                        print(
+                            "     [跨段补漏] 无高/中重要性遗漏(仅低重要性),合格,闭环结束"
+                        )
                         break
                     # 不合格 + 有重要遗漏 → 重提
                     if round_idx >= CHECK_MAX_ROUNDS:
-                        print(f"     [跨段补漏] 已达 {CHECK_MAX_ROUNDS} 轮上限,仍有 {len(important_missed)} 个高/中重要遗漏,停止重提(可在审核时关注)")
+                        print(
+                            f"     [跨段补漏] 已达 {CHECK_MAX_ROUNDS} 轮上限,仍有 {len(important_missed)} 个高/中重要遗漏,停止重提(可在审核时关注)"
+                        )
                         break
-                    print(f"     [跨段补漏] 调 V4-Pro 补提取 {len(important_missed)} 个高/中重要章节...")
+                    print(
+                        f"     [跨段补漏] 调 V4-Pro 补提取 {len(important_missed)} 个高/中重要章节..."
+                    )
                     new_kps = self._supplementary_extract(
-                        content, fn, ctype, missed, kps, fid, source_nature=source_nature)
+                        content,
+                        fn,
+                        ctype,
+                        missed,
+                        kps,
+                        fid,
+                        source_nature=source_nature,
+                    )
                     if not new_kps:
                         # AI 没补出新东西,本轮无效,跳出避免死循环
-                        print(f"     [跨段补漏] 本轮 AI 未提取出新知识点,中止闭环(避免死循环)")
+                        print(
+                            "     [跨段补漏] 本轮 AI 未提取出新知识点,中止闭环(避免死循环)"
+                        )
                         break
                     kps.extend(new_kps)
                     self._truncation_stats["supplementary_kps_added"] += len(new_kps)
@@ -2333,11 +2812,18 @@ class Extractor:
                     clean_insights = []
                     for ins in raw_insights:
                         if isinstance(ins, dict) and ins.get("insight"):
-                            clean_insights.append({
-                                "insight": str(ins.get("insight", "")),
-                                "basis": str(ins.get("basis", "")),
-                                "confidence": ins.get("confidence", "medium") if ins.get("confidence") in ("high", "medium", "low") else "medium"
-                            })
+                            clean_insights.append(
+                                {
+                                    "insight": str(ins.get("insight", "")),
+                                    "basis": str(ins.get("basis", "")),
+                                    "confidence": (
+                                        ins.get("confidence", "medium")
+                                        if ins.get("confidence")
+                                        in ("high", "medium", "low")
+                                        else "medium"
+                                    ),
+                                }
+                            )
 
                     kid = self.db.add_knowledge_point(
                         source_file_id=fid,
@@ -2355,16 +2841,19 @@ class Extractor:
                         source_keyword=kp.get("source_keyword", ""),
                         prompt_version=current_prompt_version,
                         practical_insights=clean_insights,
-                        extracted_by_model=kp.get("_extracted_by_model", "r1"))
+                        extracted_by_model=kp.get("_extracted_by_model", "r1"),
+                    )
                     cnt += 1
-                    kps_info.append({
-                        "kp_id": kid,
-                        "title": kp.get("title", ""),
-                        "suggested_code": cat_code,
-                        "category_matched": cat is not None,
-                        "category_tags": tags["category_tags"],
-                        "practical_insights": clean_insights,
-                    })
+                    kps_info.append(
+                        {
+                            "kp_id": kid,
+                            "title": kp.get("title", ""),
+                            "suggested_code": cat_code,
+                            "category_matched": cat is not None,
+                            "category_tags": tags["category_tags"],
+                            "practical_insights": clean_insights,
+                        }
+                    )
                 except Exception as e:
                     print(f"     ! 第{cnt + 1}个知识点入库失败: {e}")
 
@@ -2380,8 +2869,9 @@ class Extractor:
                 if pre_result and isinstance(pre_result, dict):
                     content_summary = pre_result.get("content_overview", "")
                 # v2.2.3: 传入 source_content 供规则兜底做 excerpt 存在性检查
-                qc_count = self._quality_check(fn, content_summary, kps, kps_info,
-                                               source_content=content)
+                qc_count = self._quality_check(
+                    fn, content_summary, kps, kps_info, source_content=content
+                )
 
             # === Step 7: 政策依赖校验（V3扫描+KB匹配） ===
             pv_count = 0
@@ -2389,9 +2879,11 @@ class Extractor:
                 print(f"\n     [Step 7] 政策依赖校验({cnt}条知识点)...")
                 self._report_progress(current_step="Step 7/8 政策校验")
                 try:
-                    pv_count = self.policy_validator.validate_batch(kps, kps_info, ctype)
+                    pv_count = self.policy_validator.validate_batch(
+                        kps, kps_info, ctype
+                    )
                 except CostLimitExceeded:
-                    print(f"     费用已达上限,跳过政策校验")
+                    print("     费用已达上限,跳过政策校验")
                 except Exception as e:
                     print(f"     政策校验出错: {e}")
 
@@ -2405,7 +2897,7 @@ class Extractor:
                     if new_ids:
                         rel_count = self.relation_analyzer.scan_incremental(new_ids)
                 except CostLimitExceeded:
-                    print(f"     费用已达上限,跳过关系分析")
+                    print("     费用已达上限,跳过关系分析")
                 except Exception as e:
                     print(f"     关系分析出错: {e}")
 
@@ -2419,14 +2911,21 @@ class Extractor:
                 msg += f" [发现{rel_count}组疑似关系]"
             if extraction_notes:
                 msg += " [有补漏建议]"
-            self.db.update_source_file(fid, process_status="completed", process_message=msg)
-            result.update({"success": True, "knowledge_count": cnt, "kps_info": kps_info})
-            print(f"     [OK] {cnt}个知识点已存入待审核队列(Prompt:{get_prompt_version()})")
+            self.db.update_source_file(
+                fid, process_status="completed", process_message=msg
+            )
+            result.update(
+                {"success": True, "knowledge_count": cnt, "kps_info": kps_info}
+            )
+            print(
+                f"     [OK] {cnt}个知识点已存入待审核队列(Prompt:{get_prompt_version()})"
+            )
 
             # v2.3.7: 读者定位自动打标(非阻塞,失败不影响提取结果)
             if kps_info and cnt > 0:
                 try:
                     from agents.reader_tagger import ReaderAutoTagger
+
                     tagger = ReaderAutoTagger(client=self.client, db=self.db)
                     tagged = 0
                     for info in kps_info:
@@ -2461,42 +2960,62 @@ class Extractor:
             if fp and os.path.exists(fp):
                 self._move_to_failed(fp, fn)
             self._clean_pending(original_fn)
-            self.db.update_source_file(fid, process_status="failed", process_message=result["error"])
+            self.db.update_source_file(
+                fid, process_status="failed", process_message=result["error"]
+            )
         return result
 
     def run(self):
         print(f"\n{'=' * 60}")
-        print(f"  稻也 - 知识点提取引擎 v2.3.6-part1")
+        print("  稻也 - 知识点提取引擎 v2.3.6-part1")
         print(f"  产品导向提取 | Prompt:{get_prompt_version()}")
         print(f"  启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'=' * 60}")
 
         usage = self.client.get_today_usage()
-        print(f"\n  今日API费用: {usage['today_cost']:.2f}元 / {usage['daily_limit']:.0f}元上限"
-              f" (已用{usage['usage_percent']:.0f}%)")
+        print(
+            f"\n  今日API费用: {usage['today_cost']:.2f}元 / {usage['daily_limit']:.0f}元上限"
+            f" (已用{usage['usage_percent']:.0f}%)"
+        )
 
         self.select_model()
 
         files = self.get_processing_files()
         if not files:
-            print(f"\n  无待提取文件。请先将文件放入 data/pending/ 文件夹并运行预处理。")
+            print(
+                "\n  无待提取文件。请先将文件放入 data/pending/ 文件夹并运行预处理。"
+            )
             return
         print(f"\n  共{len(files)}个文件待提取")
         print(f"  使用模型: {self.extraction_model_name} ({self.extraction_model})")
-        print(f"  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
-        print(f"  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
-        print(f"  新增功能: V3预分析+上下文接力+跨段补漏+V3质检三级降级+政策校验+举一反三+重复检测+F057截断补救")
+        print("  分段策略: 三级智能分段(V3结构摘要 > 本地规则 > 段落边界)")
+        print("  标签体系: 三层标签(6组41个分类标签 + 8维度属性 + 自由关键词)")
+        print(
+            "  新增功能: V3预分析+上下文接力+跨段补漏+V3质检三级降级+政策校验+举一反三+重复检测+F057截断补救"
+        )
         print(f"{'-' * 60}")
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
         all_kps_info = []
-        self._report_progress(total_files=len(files), current_file=0, current_filename="",
-                              current_step="准备开始", total_extracted=0, message="开始提取")
+        self._report_progress(
+            total_files=len(files),
+            current_file=0,
+            current_filename="",
+            current_step="准备开始",
+            total_extracted=0,
+            message="开始提取",
+        )
         for i, rec in enumerate(files, 1):
             fn = rec.get("renamed_filename") or rec["original_filename"]
             print(f"\n[{i}/{len(files)}] {fn}")
-            self._report_progress(total_files=len(files), current_file=i, current_filename=fn,
-                                  current_step="开始处理", total_extracted=total_kps, message="")
+            self._report_progress(
+                total_files=len(files),
+                current_file=i,
+                current_filename=fn,
+                current_step="开始处理",
+                total_extracted=total_kps,
+                message="",
+            )
             r = self.extract_from_file(rec)
             if r["success"]:
                 ok += 1
@@ -2516,14 +3035,18 @@ class Extractor:
 
         usage = self.client.get_today_usage()
         print(f"\n{'=' * 60}")
-        print(f"  提取完成!")
+        print("  提取完成!")
         print(f"  使用模型: {self.extraction_model_name}")
         print(f"  Prompt版本: {get_prompt_version()}")
         print(f"  文件统计: {ok}个成功 / {skip}个跳过 / {fail}个失败")
-        print(f"  知识点数: 共提取{total_kps}个，已V3质检(含举一反三)+政策校验+重复检测，等待人工审核")
-        print(f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)")
+        print(
+            f"  知识点数: 共提取{total_kps}个，已V3质检(含举一反三)+政策校验+重复检测，等待人工审核"
+        )
+        print(
+            f"  今日费用: {usage['today_cost']:.2f}元 (剩余{usage['remaining']:.2f}元)"
+        )
         print(f"{'-' * 60}")
-        print(f"  下一步: 运行[启动审核界面.bat]审核知识点")
+        print("  下一步: 运行[启动审核界面.bat]审核知识点")
         print(f"{'=' * 60}")
 
     def run_headless(self, model_key="1"):
@@ -2532,18 +3055,41 @@ class Extractor:
 
         files = self.get_processing_files()
         if not files:
-            self._report_progress(message="无待提取文件", total_files=0, current_file=0,
-                                  current_step="完成", total_extracted=0)
-            return {"success": True, "ok": 0, "fail": 0, "skip": 0, "total_kps": 0, "message": "无待提取文件"}
+            self._report_progress(
+                message="无待提取文件",
+                total_files=0,
+                current_file=0,
+                current_step="完成",
+                total_extracted=0,
+            )
+            return {
+                "success": True,
+                "ok": 0,
+                "fail": 0,
+                "skip": 0,
+                "total_kps": 0,
+                "message": "无待提取文件",
+            }
 
         total_kps, ok, fail, skip = 0, 0, 0, 0
         all_kps_info = []
-        self._report_progress(total_files=len(files), current_file=0, current_filename="",
-                              current_step="准备开始", total_extracted=0, message="开始提取")
+        self._report_progress(
+            total_files=len(files),
+            current_file=0,
+            current_filename="",
+            current_step="准备开始",
+            total_extracted=0,
+            message="开始提取",
+        )
         for i, rec in enumerate(files, 1):
             fn = rec.get("renamed_filename") or rec["original_filename"]
-            self._report_progress(total_files=len(files), current_file=i, current_filename=fn,
-                                  current_step="开始处理", total_extracted=total_kps)
+            self._report_progress(
+                total_files=len(files),
+                current_file=i,
+                current_filename=fn,
+                current_step="开始处理",
+                total_extracted=total_kps,
+            )
             r = self.extract_from_file(rec)
             if r["success"]:
                 ok += 1
@@ -2559,21 +3105,36 @@ class Extractor:
         if all_kps_info:
             self._check_category_suggestions(all_kps_info)
 
-        self._report_progress(total_files=len(files), current_file=len(files),
-                              current_step="完成", total_extracted=total_kps,
-                              message="提取完成: %d成功/%d跳过/%d失败, 共%d条知识点" % (ok, skip, fail, total_kps))
-        return {"success": True, "ok": ok, "fail": fail, "skip": skip, "total_kps": total_kps,
-                "message": "提取完成"}
+        self._report_progress(
+            total_files=len(files),
+            current_file=len(files),
+            current_step="完成",
+            total_extracted=total_kps,
+            message="提取完成: %d成功/%d跳过/%d失败, 共%d条知识点"
+            % (ok, skip, fail, total_kps),
+        )
+        return {
+            "success": True,
+            "ok": ok,
+            "fail": fail,
+            "skip": skip,
+            "total_kps": total_kps,
+            "message": "提取完成",
+        }
 
     # v2.3.6-part1: 并行双Pro提取方法(v2.3.7-part7: Flash→Pro统一)
-    def _extract_with_flash(self, segs, filename, prompt, ctype, file_structure, source_nature, file_id):
+    def _extract_with_flash(
+        self, segs, filename, prompt, ctype, file_structure, source_nature, file_id
+    ):
         """V4-Pro 全覆盖提取(v2.3.7-part7: Flash→Pro,质量优先)"""
         flash_kps = []
         for i, seg in enumerate(segs, 1):
             if len(segs) > 1:
                 print(f"     Pro全覆盖 第{i}/{len(segs)}段 ({len(seg)}字)")
 
-            relay_prefix = self._build_context_relay(i, len(segs), file_structure, flash_kps, source_nature=source_nature)
+            relay_prefix = self._build_context_relay(
+                i, len(segs), file_structure, flash_kps, source_nature=source_nature
+            )
 
             # v2.3.7-part7: 统一使用 V4-Pro(老唐: Flash效果不好)
             original_model = self.extraction_model
@@ -2583,10 +3144,17 @@ class Extractor:
 
             try:
                 seg_kps = self._extract_with_auto_split(
-                    seg, f"{filename}(Flash-{i}/{len(segs)})" if len(segs) > 1 else f"{filename}(Flash)",
-                    prompt, ctype,
+                    seg,
+                    (
+                        f"{filename}(Flash-{i}/{len(segs)})"
+                        if len(segs) > 1
+                        else f"{filename}(Flash)"
+                    ),
+                    prompt,
+                    ctype,
                     relay_prefix=relay_prefix,
-                    file_id=file_id)
+                    file_id=file_id,
+                )
                 flash_kps.extend(seg_kps)
             finally:
                 self.extraction_model = original_model
@@ -2594,19 +3162,29 @@ class Extractor:
 
         return flash_kps
 
-    def _extract_with_pro(self, core_segs, filename, prompt, ctype, file_structure, source_nature, file_id):
+    def _extract_with_pro(
+        self, core_segs, filename, prompt, ctype, file_structure, source_nature, file_id
+    ):
         """V4-Pro 深度核心段提取(v2.3.6-part1)"""
         if not core_segs:
-            print(f"     Pro: 无核心段落,跳过")
+            print("     Pro: 无核心段落,跳过")
             return []
 
         pro_kps = []
         print(f"     Pro 提取 {len(core_segs)} 个核心段...")
 
         for idx, (seg_idx, seg) in enumerate(core_segs, 1):
-            print(f"     Pro 核心段{idx}/{len(core_segs)} (原第{seg_idx+1}段, {len(seg)}字)")
+            print(
+                f"     Pro 核心段{idx}/{len(core_segs)} (原第{seg_idx+1}段, {len(seg)}字)"
+            )
 
-            relay_prefix = self._build_context_relay(seg_idx+1, len(core_segs), file_structure, pro_kps, source_nature=source_nature)
+            relay_prefix = self._build_context_relay(
+                seg_idx + 1,
+                len(core_segs),
+                file_structure,
+                pro_kps,
+                source_nature=source_nature,
+            )
 
             # 临时切换到 V4-Pro
             original_model = self.extraction_model
@@ -2616,10 +3194,13 @@ class Extractor:
 
             try:
                 seg_kps = self._extract_with_auto_split(
-                    seg, f"{filename}(Pro-核心{idx}/{len(core_segs)})",
-                    prompt, ctype,
+                    seg,
+                    f"{filename}(Pro-核心{idx}/{len(core_segs)})",
+                    prompt,
+                    ctype,
                     relay_prefix=relay_prefix,
-                    file_id=file_id)
+                    file_id=file_id,
+                )
                 pro_kps.extend(seg_kps)
             finally:
                 self.extraction_model = original_model
@@ -2644,18 +3225,20 @@ def main():
         # v2.1.1 F039: 重复检测表迁移
         try:
             from scripts.migrate_v211_dup import migrate as migrate_dup
+
             migrate_dup()
         except ImportError:
             pass
         # v2.2.3 F057+F058: schema迁移
         try:
             from scripts.migrate_v223 import migrate as migrate_v223
+
             migrate_v223()
         except ImportError:
             pass
         Extractor().run()
     except KeyboardInterrupt:
-        print(f"\n\n  已取消操作。")
+        print("\n\n  已取消操作。")
     except Exception as e:
         print(f"\n  [ERROR] {e}")
     input("\n按回车键退出...")

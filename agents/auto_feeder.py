@@ -3,9 +3,13 @@ auto_feeder.py - 批量喂料器(全量文件+双模型+进度+断点续传+质�
 路径：agents/auto_feeder.py
 版本：v2.3.7-part2
 """
-import json, os, shutil, time, hashlib
-from pathlib import Path
+
+import hashlib
+import os
+import shutil
+import time
 from datetime import datetime
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -35,14 +39,18 @@ class AutoFeeder(object):
                 if f.stat().st_size < 500:
                     continue
                 rel = f.relative_to(test_root)
-                files.append({
-                    "path": str(f),
-                    "name": f.name,
-                    "subdir": str(rel.parent) if str(rel.parent) != "." else "root",
-                    "ext": f.suffix.lower(),
-                    "size": f.stat().st_size,
-                    "hash": hashlib.md5(str(f.stat().st_size).encode()).hexdigest()[:8],
-                })
+                files.append(
+                    {
+                        "path": str(f),
+                        "name": f.name,
+                        "subdir": str(rel.parent) if str(rel.parent) != "." else "root",
+                        "ext": f.suffix.lower(),
+                        "size": f.stat().st_size,
+                        "hash": hashlib.md5(str(f.stat().st_size).encode()).hexdigest()[
+                            :8
+                        ],
+                    }
+                )
         return sorted(files, key=lambda x: (x["subdir"], x["name"]))
 
     def get_already_processed(self):
@@ -52,9 +60,11 @@ class AutoFeeder(object):
         try:
             conn = self.db.get_connection()
             c = conn.cursor()
-            c.execute("""SELECT DISTINCT sf.renamed_filename, sf.original_filename
+            c.execute(
+                """SELECT DISTINCT sf.renamed_filename, sf.original_filename
                          FROM source_files sf
-                         INNER JOIN knowledge_points kp ON kp.source_file_id = sf.id""")
+                         INNER JOIN knowledge_points kp ON kp.source_file_id = sf.id"""
+            )
             rows = c.fetchall()
             conn.close()
             names = set()
@@ -98,11 +108,21 @@ class AutoFeeder(object):
             pending = pending[:max_files]
 
         if not pending:
-            return {"success": True, "files_total": len(inventory), "files_skipped": skipped,
-                    "files_copied": 0, "total_kps": 0, "message": "所有文件已处理完毕"}
+            return {
+                "success": True,
+                "files_total": len(inventory),
+                "files_skipped": skipped,
+                "files_copied": 0,
+                "total_kps": 0,
+                "message": "所有文件已处理完毕",
+            }
 
-        self._emit_progress("inventory", 0, len(pending),
-                           f"盘点: {len(inventory)}个文件, {skipped}个已处理跳过, {len(pending)}个待提取")
+        self._emit_progress(
+            "inventory",
+            0,
+            len(pending),
+            f"盘点: {len(inventory)}个文件, {skipped}个已处理跳过, {len(pending)}个待提取",
+        )
 
         # Step 1: 拷贝到pending/ (子目录前缀防重名)
         copied = 0
@@ -116,18 +136,21 @@ class AutoFeeder(object):
                 shutil.copy2(fi["path"], str(dest))
                 copied += 1
             except Exception as e:
-                self._emit_progress("copy_error", copied, len(pending),
-                                   f"拷贝失败: {fi['name']} - {e}")
+                self._emit_progress(
+                    "copy_error", copied, len(pending), f"拷贝失败: {fi['name']} - {e}"
+                )
 
-        self._emit_progress("copy", copied, len(pending),
-                           f"拷贝完成: {copied}/{len(pending)}")
+        self._emit_progress(
+            "copy", copied, len(pending), f"拷贝完成: {copied}/{len(pending)}"
+        )
 
         # Step 2: 预处理
         from scripts.preprocessor import Preprocessor
+
         pp = Preprocessor()
         all_files = pp.scan()
         preprocessed = 0
-        for fi in all_files[:len(pending)]:
+        for fi in all_files[: len(pending)]:
             if self._cancel:
                 break
             try:
@@ -137,11 +160,16 @@ class AutoFeeder(object):
             except Exception:
                 pass
 
-        self._emit_progress("preprocess", preprocessed, len(pending),
-                           f"预处理完成: {preprocessed}/{len(pending)}")
+        self._emit_progress(
+            "preprocess",
+            preprocessed,
+            len(pending),
+            f"预处理完成: {preprocessed}/{len(pending)}",
+        )
 
         # Step 3: 提取(支持并行双模型)
         from scripts.extractor import Extractor
+
         ext = Extractor(progress_callback=self._extract_progress)
         if model_key == "parallel":
             ext.set_model("1")  # 主模型V4-Pro,并行双模型在extract_from_file内部启用
@@ -150,7 +178,9 @@ class AutoFeeder(object):
             ext.set_model(model_key)
             ext._use_parallel_dual = False
 
-        result = ext.run_headless(model_key=model_key if model_key != "parallel" else "1")
+        result = ext.run_headless(
+            model_key=model_key if model_key != "parallel" else "1"
+        )
 
         # Step 4: 质检新入库的KPs
         qc_result = self._run_qc_on_new()
@@ -198,10 +228,14 @@ class AutoFeeder(object):
             r = self.feed_all(model_key=model_key, max_files=actual, skip_existing=True)
             results.append(r)
 
-            self._emit_progress("batch_done", batch, total_batches or 999,
-                               f"第{batch}批完成: +{r.get('total_kps',0)}KPs, "
-                               f"累计{sum(x.get('total_kps',0) for x in results)}KPs, "
-                               f"耗时{r.get('elapsed_sec',0)}秒, 估算¥{r.get('cost_estimate_cny',0)}")
+            self._emit_progress(
+                "batch_done",
+                batch,
+                total_batches or 999,
+                f"第{batch}批完成: +{r.get('total_kps',0)}KPs, "
+                f"累计{sum(x.get('total_kps',0) for x in results)}KPs, "
+                f"耗时{r.get('elapsed_sec',0)}秒, 估算¥{r.get('cost_estimate_cny',0)}",
+            )
 
             if r.get("total_kps", 0) == 0 and batch > 2:
                 break
@@ -242,8 +276,12 @@ class AutoFeeder(object):
                 pending_files.append(f)
 
         if not pending_files:
-            return {"files_found": 0, "files_processed": 0, "kps_extracted": 0,
-                    "message": "经验收件箱为空,等待老唐投放文件"}
+            return {
+                "files_found": 0,
+                "files_processed": 0,
+                "kps_extracted": 0,
+                "message": "经验收件箱为空,等待老唐投放文件",
+            }
 
         processed = 0
         total_kps = 0
@@ -257,10 +295,11 @@ class AutoFeeder(object):
 
                 # 预处理(标记为老唐经验)
                 from scripts.preprocessor import Preprocessor
+
                 pp = Preprocessor()
                 files = pp.scan()
                 for fi in files:
-                    fn = (fi.get("renamed_filename") or fi.get("original_filename") or "")
+                    fn = fi.get("renamed_filename") or fi.get("original_filename") or ""
                     if exp_file.name in fn or f"EXP_{exp_file.name}" in fn:
                         # 注入经验来源标记
                         fi["_laotang_experience"] = True
@@ -270,12 +309,16 @@ class AutoFeeder(object):
 
                 # 提取(使用经验提取Prompt)
                 from scripts.extractor import Extractor
+
                 ext = Extractor()
                 ext.set_model("1")  # V4-Pro深度模式(经验值得)
                 ext_files = ext.get_processing_files()
-                exp_ext_files = [f for f in ext_files
-                                if f.get("doc_origin") == "laotang_experience"
-                                or "EXP_" in (f.get("renamed_filename") or "")]
+                exp_ext_files = [
+                    f
+                    for f in ext_files
+                    if f.get("doc_origin") == "laotang_experience"
+                    or "EXP_" in (f.get("renamed_filename") or "")
+                ]
                 for rec in exp_ext_files[:3]:  # 每次最多处理3个
                     r = ext.extract_from_file(rec)
                     if r.get("success"):
@@ -290,8 +333,12 @@ class AutoFeeder(object):
                 shutil.move(str(exp_file), str(done_dir / exp_file.name))
 
             except Exception as e:
-                self._emit_progress("exp_error", 0, len(pending_files),
-                                   f"经验文件处理失败: {exp_file.name} - {e}")
+                self._emit_progress(
+                    "exp_error",
+                    0,
+                    len(pending_files),
+                    f"经验文件处理失败: {exp_file.name} - {e}",
+                )
 
         # 触发就绪度联动
         if total_kps > 0:
@@ -300,9 +347,12 @@ class AutoFeeder(object):
             except Exception:
                 pass
 
-        return {"files_found": len(pending_files), "files_processed": processed,
-                "kps_extracted": total_kps,
-                "message": f"经验收件箱处理完成: +{total_kps}条KP"}
+        return {
+            "files_found": len(pending_files),
+            "files_processed": processed,
+            "kps_extracted": total_kps,
+            "message": f"经验收件箱处理完成: +{total_kps}条KP",
+        }
 
     def _auto_confirm_experience(self, source_file_id):
         """经验文件提取的KP自动确认(跳过审核),并标记信源。"""
@@ -310,23 +360,28 @@ class AutoFeeder(object):
             return
         conn = None
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
-            c.execute("""UPDATE knowledge_points
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                """UPDATE knowledge_points
                          SET review_status='confirmed',
                              source_verified=1,
                              source_url='老唐本人提供(经验库)',
                              confirmed_at=datetime('now','localtime')
                          WHERE source_file_id=? AND review_status='pending'""",
-                      (source_file_id,))
+                (source_file_id,),
+            )
             conn.commit()
         except Exception:
             try:
-                if conn: conn.rollback()
+                if conn:
+                    conn.rollback()
             except Exception:
                 pass
         finally:
             try:
-                if conn: conn.close()
+                if conn:
+                    conn.close()
             except Exception:
                 pass
 
@@ -344,15 +399,18 @@ class AutoFeeder(object):
             return {"processed": 0}
         try:
             from scripts.extractor import Extractor
+
             ext = Extractor()
             conn = self.db.get_connection()
             c = conn.cursor()
-            c.execute("""SELECT kp.id, kp.title, kp.original_excerpt, kp.final_category_id,
+            c.execute(
+                """SELECT kp.id, kp.title, kp.original_excerpt, kp.final_category_id,
                                 sf.renamed_filename, sf.original_filename
                          FROM knowledge_points kp
                          LEFT JOIN source_files sf ON kp.source_file_id = sf.id
                          WHERE kp.qa_score IS NULL OR kp.qa_score = 0.0
-                         LIMIT 500""")
+                         LIMIT 500"""
+            )
             rows = c.fetchall()
             conn.close()
             if not rows:
@@ -382,10 +440,14 @@ class AutoFeeder(object):
     def _emit_progress(self, stage, current, total, message):
         if self.progress_callback:
             try:
-                self.progress_callback({
-                    "stage": stage, "current": current, "total": total,
-                    "message": str(message)[:300],
-                })
+                self.progress_callback(
+                    {
+                        "stage": stage,
+                        "current": current,
+                        "total": total,
+                        "message": str(message)[:300],
+                    }
+                )
             except Exception:
                 pass
 
@@ -432,7 +494,9 @@ class AutoFeeder(object):
 
         # Stage 4: 关系全量扫描(可选,耗时较长)
         if run_relations and self.db:
-            self._emit_progress("pipeline", 4, 5, "Stage 4/5: 知识关系全量扫描(六态判别)")
+            self._emit_progress(
+                "pipeline", 4, 5, "Stage 4/5: 知识关系全量扫描(六态判别)"
+            )
             rel_result = self._run_full_relations()
             report["stages"]["relations"] = rel_result
         else:
@@ -449,35 +513,45 @@ class AutoFeeder(object):
         }
         report["completed_at"] = datetime.now().isoformat()
 
-        self._emit_progress("pipeline_done", 5, 5,
-                           f"全管道完成: {total_kps}条KP, 详情见report")
+        self._emit_progress(
+            "pipeline_done", 5, 5, f"全管道完成: {total_kps}条KP, 详情见report"
+        )
         return report
 
     def _run_full_qc(self):
         if not self.db:
             return {"error": "db未连接"}
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL OR qa_score = 0.0")
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT COUNT(*) FROM knowledge_points WHERE qa_score IS NULL OR qa_score = 0.0"
+            )
             need_qc = c.fetchone()[0]
             conn.close()
             if need_qc == 0:
                 return {"processed": 0, "message": "所有KP已质检"}
             from scripts.extractor import Extractor
+
             ext = Extractor()
-            conn = self.db.get_connection(); c = conn.cursor()
-            c.execute("""SELECT kp.id, kp.title, kp.original_excerpt,
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                """SELECT kp.id, kp.title, kp.original_excerpt,
                                 sf.renamed_filename, sf.original_filename
                          FROM knowledge_points kp
                          LEFT JOIN source_files sf ON kp.source_file_id = sf.id
-                         WHERE kp.qa_score IS NULL OR kp.qa_score = 0.0""")
+                         WHERE kp.qa_score IS NULL OR kp.qa_score = 0.0"""
+            )
             rows = c.fetchall()
             conn.close()
             for i in range(0, len(rows), 300):
-                batch = rows[i:i+300]
+                batch = rows[i : i + 300]
                 kps_info = [{"kp_id": r[0], "title": r[1]} for r in batch]
                 try:
-                    ext._quality_check("batch_qc", "", batch, kps_info, source_content="")
+                    ext._quality_check(
+                        "batch_qc", "", batch, kps_info, source_content=""
+                    )
                 except Exception:
                     pass
             return {"processed": len(rows)}
@@ -498,40 +572,61 @@ class AutoFeeder(object):
             return {"error": "db未连接"}
         try:
             from scripts.relation_analyzer import RelationAnalyzer
+
             ra = RelationAnalyzer(db=self.db, client=self.client)
             result = ra.scan_full()
-            return {"relations_found": result.get("total_relations", 0) if isinstance(result, dict) else 0}
+            return {
+                "relations_found": (
+                    result.get("total_relations", 0) if isinstance(result, dict) else 0
+                )
+            }
         except Exception as e:
             return {"error": str(e)[:200]}
 
     def _get_kp_count(self):
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
+            conn = self.db.get_connection()
+            c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM knowledge_points")
-            v = c.fetchone()[0]; conn.close(); return v
+            v = c.fetchone()[0]
+            conn.close()
+            return v
         except Exception:
             return -1
 
     def _get_confirmed_count(self):
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed'")
-            v = c.fetchone()[0]; conn.close(); return v
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed'"
+            )
+            v = c.fetchone()[0]
+            conn.close()
+            return v
         except Exception:
             return -1
 
     def _get_premium_count(self):
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM knowledge_points WHERE content_readiness='premium'")
-            v = c.fetchone()[0]; conn.close(); return v
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT COUNT(*) FROM knowledge_points WHERE content_readiness='premium'"
+            )
+            v = c.fetchone()[0]
+            conn.close()
+            return v
         except Exception:
             return -1
 
     def _get_relation_count(self):
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
+            conn = self.db.get_connection()
+            c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM kp_relations")
-            v = c.fetchone()[0]; conn.close(); return v
+            v = c.fetchone()[0]
+            conn.close()
+            return v
         except Exception:
             return -1

@@ -36,7 +36,7 @@
 
 ---
 >
-> 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。立规则与架构契约统一沉淀在 `01_工程手册.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/repo/releases)。
+> 格式:近 3 版完整 Added / Fixed / Changed / Migration 四段式;早期版本折叠为单段摘要(每版 ≤ 5 行)。架构细节见 `docs/architecture.md`,本文件不重复。完整历史见 [GitHub Releases](https://github.com/Fat-designer920/repo/releases)。
 
 ---
 ## [v2.3.7] - 2026-05-05 (feature - 集团化重构: 6部门16Agent + CEO会议决策 + 客户画像驱动)
@@ -469,4 +469,4 @@ Flask 本地 Web 管理后台 + Tab 双视图 + 知识点 CRUD + 编辑历史追
 
 详细每版交付清单见 [GitHub Releases](https://github.com/Fat-designer920/rural-revitalization-kb/releases) 和 Git commit 记录。
 
-**重构说明**(2026-04-28,v2.3.5-part1 立规则 47 再次执行):本 CHANGELOG 自 v2.3.5-part1 起严格执行"近 3 版完整 + 早期折叠 ≤ 5 行/版"格式,瘦身 673 → ~200 行(-70%)。立规则与设计决策原文档已迁移至 `01_工程手册.md`,本文件不重复。
+**重构说明**(2026-04-28,v2.3.5-part1 立规则 47 再次执行):本 CHANGELOG 自 v2.3.5-part1 起严格执行"近 3 版完整 + 早期折叠 ≤ 5 行/版"格式,瘦身 673 → ~200 行(-70%)。设计决策原文档已迁移至 `docs/architecture.md`,本文件不重复。

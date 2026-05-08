@@ -4,9 +4,12 @@ feed_experience.py - 经验喂入: 读 inbox/*.md → 写入 knowledge_points
 版本：v2.3.8
 用法：python scripts/feed_experience.py [--dry-run]
 """
-import os, sys, re, shutil
+
+import os
+import re
+import shutil
+import sys
 from pathlib import Path
-from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -29,12 +32,12 @@ def parse_md(filepath):
     m = re.match(r"^#\s+(.+)$", text, re.MULTILINE)
     if m:
         title = m.group(1).strip()
-        body = text[m.end():].strip()
+        body = text[m.end() :].strip()
 
     # 去掉末尾的 --- 元数据块
     sep = body.rfind("\n---\n")
     if sep >= 0:
-        meta_block = body[sep + 4:].strip()
+        meta_block = body[sep + 4 :].strip()
         body = body[:sep].strip()
         for line in meta_block.split("\n"):
             line = line.strip()
@@ -72,7 +75,10 @@ def _ensure_source_file(db):
 def feed_one(db, sf_id, parsed):
     """写入一条经验到 knowledge_points。"""
     import json
-    cat_tags = json.dumps(parsed["tags"], ensure_ascii=False) if parsed["tags"] else "[]"
+
+    cat_tags = (
+        json.dumps(parsed["tags"], ensure_ascii=False) if parsed["tags"] else "[]"
+    )
     db.add_knowledge_point(
         source_file_id=sf_id,
         title=parsed["title"],
@@ -89,6 +95,7 @@ def feed_one(db, sf_id, parsed):
 def main():
     dry_run = "--dry-run" in sys.argv
     from scripts.db_manager import DatabaseManager
+
     db = DatabaseManager()
 
     os.makedirs(DONE, exist_ok=True)

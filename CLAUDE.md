@@ -30,7 +30,7 @@
 ## 启动序列(每次新对话)
 
 ```
-1. 读本文件 + docs/00_项目全景.md + README.md + CHANGELOG.md
+1. 读本文件 + README.md + CHANGELOG.md + docs/business.md
 2. 脑中列 todos(本对话要做什么)
 3. 开工前 3 问:
    (a) 有没有需要 grep 的真实签名/字段名?
@@ -52,11 +52,11 @@
 
 | 想找什么 | 去哪 |
 |---------|------|
-| 项目当前状态 + 迭代计划 | docs/00_项目全景.md |
-| 知识分类 + 标签体系 | docs/02_知识体系.md |
-| Prompt 模板 | docs/03_Prompt手册.md |
-| 商业定位 + 竞品 | docs/07_商业战略.md |
-| 工程架构 + 模块速查 | docs/01_工程手册.md |
+| 项目当前状态 | README.md |
+| 知识分类 + 标签体系 | docs/knowledge.md |
+| Prompt 模板 | docs/prompts.md |
+| 商业方向 | docs/business.md |
+| 工程架构 | docs/architecture.md |
 | 版本变更 | CHANGELOG.md |
 | 对外说明 | README.md |
 

@@ -6,16 +6,27 @@ base_agent.py - Agent基类: 每个Agent的AI大脑
 每个Agent都是独立调用API Key的思考实体,不是静态配置字典。
 拥有独立身份、深度思考能力和API调用权。
 """
-import json, time
+
+import json
 from datetime import datetime
 
 
 class BaseAgent(object):
     """Agent基类。每个Agent实例拥有独立AI大脑,可调用DeepSeek API进行深度思考。"""
 
-    def __init__(self, agent_code, agent_name, agent_type, identity_text,
-                 core_questions=None, quality_standards=None, scoring_dimensions=None,
-                 client=None, db=None, model="deepseek-v4-flash"):
+    def __init__(
+        self,
+        agent_code,
+        agent_name,
+        agent_type,
+        identity_text,
+        core_questions=None,
+        quality_standards=None,
+        scoring_dimensions=None,
+        client=None,
+        db=None,
+        model="deepseek-v4-flash",
+    ):
         self.agent_code = agent_code
         self.agent_name = agent_name
         self.agent_type = agent_type
@@ -43,7 +54,11 @@ class BaseAgent(object):
         if not self.client:
             return self._fallback_think(context)
 
-        ctx_text = json.dumps(context, ensure_ascii=False) if isinstance(context, dict) else str(context)
+        ctx_text = (
+            json.dumps(context, ensure_ascii=False)
+            if isinstance(context, dict)
+            else str(context)
+        )
         model = "deepseek-v4-pro" if deep else self.model
 
         system_prompt = self._build_system_prompt("think")
@@ -65,8 +80,10 @@ class BaseAgent(object):
 
         try:
             resp = self.client.chat_with_json(
-                system_prompt, user_prompt,
-                temperature=0.3, model_override=model,
+                system_prompt,
+                user_prompt,
+                temperature=0.3,
+                model_override=model,
                 call_type=f"agent_think_{self.agent_code}",
             )
             self._call_count += 1
@@ -75,10 +92,14 @@ class BaseAgent(object):
             parsed = resp.get("parsed_json") if isinstance(resp, dict) else {}
             if not isinstance(parsed, dict):
                 parsed = {}
-            self._think_log.append({
-                "time": datetime.now().isoformat(), "context_len": len(ctx_text),
-                "deep": deep, "confidence": parsed.get("confidence", "?"),
-            })
+            self._think_log.append(
+                {
+                    "time": datetime.now().isoformat(),
+                    "context_len": len(ctx_text),
+                    "deep": deep,
+                    "confidence": parsed.get("confidence", "?"),
+                }
+            )
             return {
                 "analysis": parsed.get("analysis", "分析暂不可用"),
                 "insights": parsed.get("insights", []),
@@ -88,9 +109,12 @@ class BaseAgent(object):
                 "agent_code": self.agent_code,
             }
         except Exception as e:
-            self._think_log.append({
-                "time": datetime.now().isoformat(), "error": str(e)[:200],
-            })
+            self._think_log.append(
+                {
+                    "time": datetime.now().isoformat(),
+                    "error": str(e)[:200],
+                }
+            )
             return self._fallback_think(context)
 
     def evaluate(self, kp):
@@ -123,8 +147,10 @@ class BaseAgent(object):
 
         try:
             resp = self.client.chat_with_json(
-                system_prompt, user_prompt,
-                temperature=0.1, model_override=self.model,
+                system_prompt,
+                user_prompt,
+                temperature=0.1,
+                model_override=self.model,
                 call_type=f"agent_eval_{self.agent_code}",
             )
             self._call_count += 1
@@ -159,8 +185,10 @@ class BaseAgent(object):
 
         try:
             resp = self.client.chat_with_json(
-                system_prompt, user_prompt,
-                temperature=0.2, model_override=self.model,
+                system_prompt,
+                user_prompt,
+                temperature=0.2,
+                model_override=self.model,
                 call_type=f"agent_ask_{self.agent_code}",
             )
             self._call_count += 1
@@ -173,7 +201,11 @@ class BaseAgent(object):
                 "agent_code": self.agent_code,
             }
         except Exception:
-            return {"answer": "思考中断", "confidence": "low", "agent_code": self.agent_code}
+            return {
+                "answer": "思考中断",
+                "confidence": "low",
+                "agent_code": self.agent_code,
+            }
 
     # ================================================================
     # 辅助方法
@@ -251,13 +283,28 @@ class BaseAgent(object):
 class RoleAgent(BaseAgent):
     """角色Agent — 代表一个真实乡村振兴从业者的视角。可模拟用户行为。"""
 
-    def __init__(self, agent_code, agent_name, identity_text,
-                 core_questions, quality_standards, scoring_dimensions,
-                 client=None, db=None):
+    def __init__(
+        self,
+        agent_code,
+        agent_name,
+        identity_text,
+        core_questions,
+        quality_standards,
+        scoring_dimensions,
+        client=None,
+        db=None,
+    ):
         super(RoleAgent, self).__init__(
-            agent_code, agent_name, "role", identity_text,
-            core_questions, quality_standards, scoring_dimensions,
-            client, db, model="deepseek-v4-flash",
+            agent_code,
+            agent_name,
+            "role",
+            identity_text,
+            core_questions,
+            quality_standards,
+            scoring_dimensions,
+            client,
+            db,
+            model="deepseek-v4-flash",
         )
 
     def simulate_question(self, topic=None):
@@ -277,8 +324,10 @@ class RoleAgent(BaseAgent):
 
         try:
             resp = self.client.chat_with_json(
-                system_prompt, user_prompt,
-                temperature=0.7, model_override="deepseek-v4-flash",
+                system_prompt,
+                user_prompt,
+                temperature=0.7,
+                model_override="deepseek-v4-flash",
                 call_type=f"agent_simulate_{self.agent_code}",
             )
             parsed = resp.get("parsed_json") if isinstance(resp, dict) else {}
@@ -290,13 +339,28 @@ class RoleAgent(BaseAgent):
 class QualityAgent(BaseAgent):
     """质量Agent — 专注于知识库质量的特定维度。"""
 
-    def __init__(self, agent_code, agent_name, identity_text,
-                 core_questions, quality_standards, scoring_dimensions,
-                 client=None, db=None):
+    def __init__(
+        self,
+        agent_code,
+        agent_name,
+        identity_text,
+        core_questions,
+        quality_standards,
+        scoring_dimensions,
+        client=None,
+        db=None,
+    ):
         super(QualityAgent, self).__init__(
-            agent_code, agent_name, "quality", identity_text,
-            core_questions, quality_standards, scoring_dimensions,
-            client, db, model="deepseek-v4-flash",
+            agent_code,
+            agent_name,
+            "quality",
+            identity_text,
+            core_questions,
+            quality_standards,
+            scoring_dimensions,
+            client,
+            db,
+            model="deepseek-v4-flash",
         )
 
     def audit_batch(self, kp_list):
@@ -315,13 +379,28 @@ class QualityAgent(BaseAgent):
 class StrategyAgent(BaseAgent):
     """战略Agent — 从全局视角做决策建议。使用V4-Pro做更深推理。"""
 
-    def __init__(self, agent_code, agent_name, identity_text,
-                 core_questions, quality_standards, scoring_dimensions,
-                 client=None, db=None):
+    def __init__(
+        self,
+        agent_code,
+        agent_name,
+        identity_text,
+        core_questions,
+        quality_standards,
+        scoring_dimensions,
+        client=None,
+        db=None,
+    ):
         super(StrategyAgent, self).__init__(
-            agent_code, agent_name, "strategy", identity_text,
-            core_questions, quality_standards, scoring_dimensions,
-            client, db, model="deepseek-v4-pro",
+            agent_code,
+            agent_name,
+            "strategy",
+            identity_text,
+            core_questions,
+            quality_standards,
+            scoring_dimensions,
+            client,
+            db,
+            model="deepseek-v4-pro",
         )
 
 
