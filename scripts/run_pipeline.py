@@ -269,21 +269,41 @@ def main():
             print(f"  [OK] {Path(a['to']).name}")
         for e in result["errors"]:
             print(f"  [ERR] {e['file']}: {e['error']}")
-        # 合格文件自动喂入提取管道
-        qualified_count = qr.get("qualified", 0)
-        if qualified_count > 0:
-            print(f"\n  自动将{qualified_count}个合格文件喂入提取管道...")
-            from agents.auto_feeder import AutoFeeder
-            feeder = AutoFeeder(db=db, client=get_client())
-            # 扫描crawled目录下的合格文件
-            crawled_dir = Path(__file__).parent.parent / "data" / "crawled"
-            if crawled_dir.exists():
-                for f in crawled_dir.glob("*.txt"):
-                    print(f"    喂入: {f.name}")
-                # feed操作由AutoFeeder处理pending目录下的文件
-                print(f"  提示: 请CEO审核data/crawled/后调用approve_to_pipeline()移入pending/")
-        else:
-            print(f"\n  无合格文件,跳过提取管道。")
+        print("\n  下一步: python scripts/run_pipeline.py --feed-only")
+    elif "--discover" in sys.argv:
+        from agents.source_discoverer import SourceDiscoverer
+        sd = SourceDiscoverer()
+        # 解析域名参数: --discover 或 --discover www.mianyang.gov.cn,www.luzhou.gov.cn
+        domains = None
+        idx = sys.argv.index("--discover")
+        if idx + 1 < len(sys.argv) and not sys.argv[idx+1].startswith("--"):
+            domains = [d.strip() for d in sys.argv[idx+1].split(",")]
+
+        # 默认: 四川21市州
+        if not domains:
+            domains = [
+                "www.chengdu.gov.cn", "www.mianyang.gov.cn", "www.yibin.gov.cn",
+                "www.deyang.gov.cn", "www.nanchong.gov.cn", "www.luzhou.gov.cn",
+                "www.dazhou.gov.cn", "www.leshan.gov.cn", "www.zigong.gov.cn",
+                "www.guangan.gov.cn", "www.ms.gov.cn", "www.suining.gov.cn",
+                "www.neijiang.gov.cn", "www.guangyuan.gov.cn", "www.bazhong.gov.cn",
+                "www.ziyang.gov.cn", "www.yaan.gov.cn", "www.panzhihua.gov.cn",
+                "www.abazhou.gov.cn", "www.ganzi.gov.cn", "www.liangshan.gov.cn",
+            ]
+        print(f"信源探测器 v2.3.8 — 扫描{len(domains)}个域名...")
+        batch = sd.discover_batch(domains, max_listings_per_domain=3)
+        summary = batch["summary"]
+        print(f"\n{'='*60}")
+        print(f"  探测完成: {summary['domains_scanned']}个域名")
+        print(f"  发现信源: {summary['total_discovered']}个列表页")
+        print(f"  有产出的域名: {summary['domains_with_sources']}个")
+        print(f"{'='*60}")
+        for r in batch["results"]:
+            if r["discovered"]:
+                print(f"\n  [{r['domain']}]")
+                for d in r["discovered"]:
+                    print(f"    [{d['article_count']}篇] {d['title'][:50]}")
+                    print(f"    {d['url']}")
     elif "--search" in sys.argv:
         db = get_db(); client = get_client()
         from agents.smart_search_agent import SmartSearchAgent
