@@ -406,7 +406,13 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 .ceo-response-box{margin-top:10px;padding:14px 18px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);display:none}
 .ceo-response-box.open{display:block}
 
-/* === Department Monitor (Tab 4) === */
+/* === Product Menu === */
+function toggleProductMenu(){
+  var menu=document.getElementById("productDropdown");
+  menu.style.display=menu.style.display==="none"?"block":"none";
+}
+
+/* === Department Monitor (removed) === */
 .dept-monitor-wrap{padding:24px 28px;height:calc(100vh - 94px);overflow-y:auto;background:var(--bg)}
 .dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .dept-card{background:var(--card);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:var(--shadow-sm);border:1px solid var(--border-light);transition:var(--transition)}
@@ -792,7 +798,6 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
   <button class="tab-btn active" data-tab="review" onclick="switchTab('review')">知识审核</button>
   <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">系统管理</button>
   <button class="tab-btn" data-tab="qa" onclick="switchTab('qa')">智能问答</button>
-  <button class="tab-btn" data-tab="dept" onclick="switchTab('dept')">部门监控</button>
   <!-- v2.3.3-mvp-part1c: 朋友模式 ?mode=friend 已废弃,改用独立产品页 /qa
        qaModeBadge 已删除 -->
 
@@ -1716,7 +1721,6 @@ function switchTab(tab){
   document.getElementById("tabReview").style.display=tab==="review"?"":"none";
   document.getElementById("tabAdmin").style.display=tab==="admin"?"":"none";
   document.getElementById("tabQa").style.display=tab==="qa"?"":"none";
-  document.getElementById("tabDept").style.display=tab==="dept"?"":"none";
   var btns=document.querySelectorAll(".tab-btn");
   for(var i=0;i<btns.length;i++){
     btns[i].classList.toggle("active",btns[i].getAttribute("data-tab")===tab);
@@ -2869,7 +2873,6 @@ function runTool(name){
   else if(name==="premiumExport"){
     done();
     openPremiumExport();
-  }
   }
   else{done()}
 }
