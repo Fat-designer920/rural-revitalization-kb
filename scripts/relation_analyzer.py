@@ -3,10 +3,13 @@ relation_analyzer.py - 知识点关系分析器(六态判别,替代旧重复检�
 路径：scripts/relation_analyzer.py
 版本：v2.3.7
 """
-import sys, json, re
-from pathlib import Path
-from difflib import SequenceMatcher
+
+import json
+import re
+import sys
 from datetime import datetime
+from difflib import SequenceMatcher
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -15,10 +18,10 @@ from scripts.db_manager import DatabaseManager
 from scripts.prompts.prompt_templates import RELATION_JUDGE_PROMPT
 
 # === 阈值配置 ===
-TITLE_SIM_THRESHOLD = 0.65       # 标题相似度阈值(沿用旧值,政策文件术语重叠大)
-KEYWORD_JACCARD_THRESHOLD = 0.50 # 关键词Jaccard系数阈值
-COMBINED_THRESHOLD = 0.65        # 综合得分阈值(title*0.7 + keyword*0.3)
-MAX_GROUP_SIZE_FOR_AI = 6        # 发送给 AI 判别的最大组大小
+TITLE_SIM_THRESHOLD = 0.65  # 标题相似度阈值(沿用旧值,政策文件术语重叠大)
+KEYWORD_JACCARD_THRESHOLD = 0.50  # 关键词Jaccard系数阈值
+COMBINED_THRESHOLD = 0.65  # 综合得分阈值(title*0.7 + keyword*0.3)
+MAX_GROUP_SIZE_FOR_AI = 6  # 发送给 AI 判别的最大组大小
 
 # v2.3.5-part1: V3 主链 + R1 兜底
 CONFIDENCE_UPGRADE_THRESHOLD = 70  # confidence < 此值时升级 R1 重判
@@ -34,10 +37,10 @@ class RelationAnalyzer:
     # 公开接口(三入口)
     def scan_full(self):
         """全库扫描:检测所有未忽略知识点之间的疑似关系"""
-        print(f"\n  [关系分析] 全库扫描开始...")
+        print("\n  [关系分析] 全库扫描开始...")
         kps = self._load_all_kps()
         if len(kps) < 2:
-            print(f"  知识点不足2条,无需检测")
+            print("  知识点不足2条,无需检测")
             return 0
         print(f"  加载{len(kps)}条知识点")
         return self._run_pipeline(kps)
@@ -46,11 +49,11 @@ class RelationAnalyzer:
         """全量管道: 粗筛→去重→分组→AI判别"""
         candidate_pairs = self._local_prefilter(kps)
         if not candidate_pairs:
-            print(f"  未发现疑似关系")
+            print("  未发现疑似关系")
             return 0
         candidate_pairs = self._filter_known_pairs(candidate_pairs)
         if not candidate_pairs:
-            print(f"  所有疑似关系已在处理列表中")
+            print("  所有疑似关系已在处理列表中")
             return 0
         groups = self._aggregate_groups(candidate_pairs, kps)
         print(f"  粗筛: {len(candidate_pairs)}对疑似 -> {len(groups)}组")
@@ -60,11 +63,16 @@ class RelationAnalyzer:
         """扫描最近N天created_at的知识点"""
         print(f"\n  [关系分析] 最近{days}天扫描开始...")
         from datetime import timedelta
+
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        conn = self.db.get_connection(); c = conn.cursor()
-        c.execute("""SELECT id FROM knowledge_points
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT id FROM knowledge_points
                      WHERE review_status != 'ignored'
-                       AND created_at >= ?""", (cutoff,))
+                       AND created_at >= ?""",
+            (cutoff,),
+        )
         recent_ids = [r[0] for r in c.fetchall()]
         conn.close()
         if not recent_ids:
@@ -86,11 +94,11 @@ class RelationAnalyzer:
         # 粗筛仅保留"新 vs 全部"的对(不做"全部 vs 全部"避免重扫历史)
         candidate_pairs = self._local_prefilter(all_kps, restrict_left_set=new_set)
         if not candidate_pairs:
-            print(f"  未发现疑似关系")
+            print("  未发现疑似关系")
             return 0
         candidate_pairs = self._filter_known_pairs(candidate_pairs)
         if not candidate_pairs:
-            print(f"  所有疑似关系已在处理列表中")
+            print("  所有疑似关系已在处理列表中")
             return 0
         groups = self._aggregate_groups(candidate_pairs, all_kps)
         print(f"  粗筛: {len(candidate_pairs)}对疑似 -> {len(groups)}组")
@@ -99,15 +107,18 @@ class RelationAnalyzer:
     # 第一阶段:加载 + 本地粗筛
     def _load_all_kps(self):
         """加载全库 review_status != 'ignored' 的 kp,带必要字段"""
-        conn = self.db.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT kp.id, kp.title, kp.content_type, kp.ai_extracted_content,
                    kp.original_excerpt, kp.created_at,
                    sf.original_filename, sf.renamed_filename
             FROM knowledge_points kp
             LEFT JOIN source_files sf ON kp.source_file_id = sf.id
             WHERE kp.review_status != 'ignored'
-        """)
+        """
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         # 解析 ai_extracted_content 提关键词 + 摘要
@@ -124,9 +135,15 @@ class RelationAnalyzer:
             if isinstance(kws, str):
                 kws = [k.strip() for k in re.split(r"[,，;；\s]+", kws) if k.strip()]
             kp["_keywords"] = set(str(k).lower() for k in kws if k)
-            kp["_summary"] = (ai.get("description") or ai.get("policy_content")
-                              or ai.get("core_conclusion") or "")[:300]
-            kp["_source_file"] = kp.get("renamed_filename") or kp.get("original_filename") or ""
+            kp["_summary"] = (
+                ai.get("description")
+                or ai.get("policy_content")
+                or ai.get("core_conclusion")
+                or ""
+            )[:300]
+            kp["_source_file"] = (
+                kp.get("renamed_filename") or kp.get("original_filename") or ""
+            )
         return rows
 
     def _local_prefilter(self, kps, restrict_left_set=None):
@@ -158,7 +175,11 @@ class RelationAnalyzer:
                     kw_jac = 0
                 # 综合得分
                 score = t_sim * 0.7 + kw_jac * 0.3
-                if t_sim >= TITLE_SIM_THRESHOLD or kw_jac >= KEYWORD_JACCARD_THRESHOLD or score >= COMBINED_THRESHOLD:
+                if (
+                    t_sim >= TITLE_SIM_THRESHOLD
+                    or kw_jac >= KEYWORD_JACCARD_THRESHOLD
+                    or score >= COMBINED_THRESHOLD
+                ):
                     pairs.append((id_i, id_j, round(score, 3)))
         return pairs
 
@@ -166,25 +187,31 @@ class RelationAnalyzer:
         """过滤已在 kp_relations 表中(任意 status)出现的对"""
         if not pairs:
             return []
-        conn = self.db.get_connection(); c = conn.cursor()
+        conn = self.db.get_connection()
+        c = conn.cursor()
         # 收集涉及的所有 kp id
         all_ids = set()
         for a, b, _ in pairs:
-            all_ids.add(a); all_ids.add(b)
+            all_ids.add(a)
+            all_ids.add(b)
         if not all_ids:
             return pairs
         qmarks = ",".join("?" * len(all_ids))
-        c.execute(f"""SELECT source_kp_id, target_kp_id FROM kp_relations
+        c.execute(
+            f"""SELECT source_kp_id, target_kp_id FROM kp_relations
                       WHERE source_kp_id IN ({qmarks})
                          OR target_kp_id IN ({qmarks})""",
-                  list(all_ids) + list(all_ids))
+            list(all_ids) + list(all_ids),
+        )
         existing = set()
         for row in c.fetchall():
             sid, tid = row[0], row[1]
             existing.add((min(sid, tid), max(sid, tid)))
         conn.close()
         # 过滤
-        return [(a, b, s) for a, b, s in pairs if (min(a, b), max(a, b)) not in existing]
+        return [
+            (a, b, s) for a, b, s in pairs if (min(a, b), max(a, b)) not in existing
+        ]
 
     def _aggregate_groups(self, pairs, kps):
         """用 union-find 把成对关系聚合为组"""
@@ -209,7 +236,8 @@ class RelationAnalyzer:
         group_map = {}
         all_ids = set()
         for id_a, id_b, _ in pairs:
-            all_ids.add(id_a); all_ids.add(id_b)
+            all_ids.add(id_a)
+            all_ids.add(id_b)
         for kid in all_ids:
             root = find(kid)
             if root not in group_map:
@@ -234,13 +262,15 @@ class RelationAnalyzer:
         kp_map = {kp["id"]: kp for kp in kps}
         created = 0
         if not self.client:
-            print(f"  [WARN] 无AI客户端,跳过AI判别(不创建关系)")
+            print("  [WARN] 无AI客户端,跳过AI判别(不创建关系)")
             return 0
 
         for idx, group in enumerate(groups, 1):
             members = group["members"][:MAX_GROUP_SIZE_FOR_AI]
             max_score = group["max_score"]
-            print(f"  [{idx}/{len(groups)}] 判别组 (members={members}, score={max_score:.2f})")
+            print(
+                f"  [{idx}/{len(groups)}] 判别组 (members={members}, score={max_score:.2f})"
+            )
             judgment = self._call_ai_judge(members, kp_map, model="deepseek-v4-pro")
             if not judgment:
                 continue
@@ -249,14 +279,16 @@ class RelationAnalyzer:
             # v2.3.5-part2-hotfix1 A7:V4-Pro 主链已是顶级思考型,confidence 低不再二次升级
             # (原 V3→R1 升级是因为 V3 非思考,V4-Pro 自带思考链;低 confidence 走 human_review)
             if confidence < CONFIDENCE_UPGRADE_THRESHOLD:
-                print(f"     V4-Pro confidence={confidence} < {CONFIDENCE_UPGRADE_THRESHOLD}, "
-                      f"标记待研判(fallback_action=human_review)")
+                print(
+                    f"     V4-Pro confidence={confidence} < {CONFIDENCE_UPGRADE_THRESHOLD}, "
+                    f"标记待研判(fallback_action=human_review)"
+                )
                 judgment["fallback_action"] = "human_review"
 
             relation_type = judgment.get("relation_type", "unrelated")
             # unrelated → 不建关系
             if relation_type == "unrelated":
-                print(f"     unrelated, 跳过建组")
+                print("     unrelated, 跳过建组")
                 continue
 
             # 写关系 + 可能建簇
@@ -293,9 +325,8 @@ class RelationAnalyzer:
             if len(kp_descriptions) < 2:
                 return None
 
-            user_content = (
-                f"以下{len(kp_descriptions)}条知识点疑似相关,请按六态体系判别它们的关系:\n\n"
-                + "\n\n".join(kp_descriptions)
+            user_content = f"以下{len(kp_descriptions)}条知识点疑似相关,请按六态体系判别它们的关系:\n\n" + "\n\n".join(
+                kp_descriptions
             )
 
             # R1/V4-Pro 思考型不传 temperature(立规则 15)
@@ -309,8 +340,12 @@ class RelationAnalyzer:
             }
             # 思考型(reasoner / r1 / thinking / v4-pro)不传 temperature
             m_lower = str(model).lower()
-            is_thinking = ("reasoner" in m_lower or "r1" in m_lower
-                           or "thinking" in m_lower or "v4-pro" in m_lower)
+            is_thinking = (
+                "reasoner" in m_lower
+                or "r1" in m_lower
+                or "thinking" in m_lower
+                or "v4-pro" in m_lower
+            )
             if not is_thinking:
                 kwargs["temperature"] = 0.1
 
@@ -334,9 +369,9 @@ class RelationAnalyzer:
 
     def _persist_judgment(self, member_ids, max_score, judgment, kp_map):
         """根据 AI 判定结果写库:
-            1. fallback_action='human_review' 或 confidence 仍 < 阈值 → 关系标 pending_human_review
-            2. 其他 → 关系标 pending(等老唐 UI 处理)
-            3. cluster_suggestion.should_cluster=True → 同步建 cluster + members
+        1. fallback_action='human_review' 或 confidence 仍 < 阈值 → 关系标 pending_human_review
+        2. 其他 → 关系标 pending(等老唐 UI 处理)
+        3. cluster_suggestion.should_cluster=True → 同步建 cluster + members
         """
         relation_type = judgment.get("relation_type")
         confidence = judgment.get("confidence", 0)
@@ -357,8 +392,13 @@ class RelationAnalyzer:
             if cluster_type:
                 topic = (judgment.get("topic") or "")[:60]
                 # 收集涉及文件名
-                docs = list({kp_map[kid].get("_source_file", "")
-                             for kid in member_ids if kid in kp_map})
+                docs = list(
+                    {
+                        kp_map[kid].get("_source_file", "")
+                        for kid in member_ids
+                        if kid in kp_map
+                    }
+                )
                 docs = [d for d in docs if d]
                 cluster_id = self.db.create_consensus_cluster(
                     cluster_type=cluster_type,
@@ -368,20 +408,23 @@ class RelationAnalyzer:
                     strength_score=self._calc_strength_score(docs, member_ids),
                 )
                 # 写 members
-                role_list = (cs.get("member_roles") or [])
+                role_list = cs.get("member_roles") or []
                 role_map = {r.get("kp_id"): r for r in role_list if isinstance(r, dict)}
                 for kid in member_ids:
                     rrec = role_map.get(kid) or {}
                     role = rrec.get("role", "branch")
                     seq = int(rrec.get("sequence_order") or 0)
-                    self.db.add_cluster_member(cluster_id, kid, role=role, sequence_order=seq)
+                    self.db.add_cluster_member(
+                        cluster_id, kid, role=role, sequence_order=seq
+                    )
 
         # 写关系边(成员两两全连接;关系类型一致)
         for i in range(len(member_ids)):
             for j in range(i + 1, len(member_ids)):
                 a, b = member_ids[i], member_ids[j]
                 self.db.add_kp_relation(
-                    source_kp_id=a, target_kp_id=b,
+                    source_kp_id=a,
+                    target_kp_id=b,
                     relation_type=relation_type,
                     similarity_score=max_score,
                     ai_judgment=ai_judgment_json,
@@ -416,6 +459,7 @@ def main():
     """CLI 独立运行: 全库扫描"""
     try:
         import json
+
         cfg_path = PROJECT_ROOT / "config" / "settings.json"
         cfg = {}
         if cfg_path.exists():
@@ -424,6 +468,7 @@ def main():
         client = None
         try:
             from scripts.deepseek_client import DeepSeekClient
+
             client = DeepSeekClient(cfg)
         except Exception as e:
             print(f"  [WARN] 无法初始化 DeepSeekClient: {e}, 仅做本地粗筛")
@@ -433,6 +478,7 @@ def main():
     except Exception as e:
         print(f"\n  [ERROR] {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
     input("\n按回车键退出...")
 

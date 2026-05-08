@@ -3,11 +3,15 @@ db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
 版本：v2.3.7
 """
-import sqlite3, os, json
+
+import json
+import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
 
 class DatabaseManager:
     def __init__(self, db_path=None):
@@ -34,18 +38,22 @@ class DatabaseManager:
         return conn
 
     def init_tables(self):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         # --- 分类体系 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS categories (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             level1_code TEXT NOT NULL, level1_name TEXT NOT NULL,
             level2_code TEXT NOT NULL, level2_name TEXT NOT NULL,
             level3_code TEXT DEFAULT NULL, level3_name TEXT DEFAULT NULL,
             description TEXT DEFAULT '', is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+            updated_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- 原始文件 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS source_files (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS source_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             original_filename TEXT NOT NULL, renamed_filename TEXT DEFAULT NULL,
             file_path TEXT NOT NULL, file_type TEXT NOT NULL,
@@ -66,9 +74,11 @@ class DatabaseManager:
             recovery_runs INTEGER DEFAULT 0,
             last_recovery_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+            updated_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- 知识点（核心表） ---
-        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_points (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS knowledge_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_file_id INTEGER NOT NULL,
             title TEXT NOT NULL,
@@ -158,16 +168,20 @@ class DatabaseManager:
             confirmed_at TEXT DEFAULT NULL,
             FOREIGN KEY (source_file_id) REFERENCES source_files(id),
             FOREIGN KEY (suggested_category_id) REFERENCES categories(id),
-            FOREIGN KEY (final_category_id) REFERENCES categories(id))""")
+            FOREIGN KEY (final_category_id) REFERENCES categories(id))"""
+        )
         # --- 知识版本快照（预留） ---
-        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_versions (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS knowledge_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL, version INTEGER NOT NULL,
             content_snapshot TEXT NOT NULL, change_reason TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))"""
+        )
         # --- AI分类建议 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS architecture_suggestions (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS architecture_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             suggested_name TEXT NOT NULL, suggested_level TEXT NOT NULL,
             parent_category_id INTEGER DEFAULT NULL,
@@ -176,17 +190,21 @@ class DatabaseManager:
             status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','deferred')),
             resolved_at TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (parent_category_id) REFERENCES categories(id))""")
+            FOREIGN KEY (parent_category_id) REFERENCES categories(id))"""
+        )
         # --- 编辑历史 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS edit_history (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS edit_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
             edited_fields TEXT NOT NULL DEFAULT '{}',
             edit_summary TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))"""
+        )
         # --- v2.0.0 标签定义表 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS tag_definitions (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS tag_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             layer TEXT NOT NULL CHECK(layer IN ('layer1','layer2')),
             group_code TEXT NOT NULL,
@@ -196,9 +214,11 @@ class DatabaseManager:
             tag_definition TEXT DEFAULT '',
             is_active INTEGER DEFAULT 1,
             sort_order INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now','localtime')))""")
+            created_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- v2.0.0 知识关联表 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_relations (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS knowledge_relations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_kp_id INTEGER NOT NULL,
             target_kp_id INTEGER NOT NULL,
@@ -207,47 +227,59 @@ class DatabaseManager:
             created_by TEXT DEFAULT 'manual' CHECK(created_by IN ('ai','manual')),
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
-            FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id))"""
+        )
         # --- v2.0.0 使用追踪表 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS knowledge_usage_log (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS knowledge_usage_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
             usage_type TEXT NOT NULL CHECK(usage_type IN ('article','course','qa','proposal','export','other')),
             usage_context TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))"""
+        )
         # --- v2.0.0 标签统计缓存 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS tag_statistics (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS tag_statistics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tag_name TEXT NOT NULL,
             layer TEXT NOT NULL,
             usage_count INTEGER DEFAULT 0,
-            last_updated TEXT DEFAULT (datetime('now','localtime')))""")
+            last_updated TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- 操作日志 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS operation_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             operation_type TEXT NOT NULL, target_table TEXT DEFAULT '',
             target_id INTEGER DEFAULT NULL, details TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now','localtime')))""")
+            created_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- API调用日志 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS api_call_logs (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS api_call_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             call_type TEXT NOT NULL, model TEXT DEFAULT '',
             input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
             estimated_cost REAL DEFAULT 0.0,
             call_date TEXT DEFAULT (date('now','localtime')),
-            created_at TEXT DEFAULT (datetime('now','localtime')))""")
+            created_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # --- Notion同步日志（预留） ---
-        c.execute("""CREATE TABLE IF NOT EXISTS notion_sync_log (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS notion_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
             notion_page_id TEXT DEFAULT NULL,
             sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending','synced','failed','conflict')),
             last_synced_at TEXT DEFAULT NULL, error_message TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))"""
+        )
         # --- v2.2.0 专家注解 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS annotations (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS annotations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             knowledge_point_id INTEGER NOT NULL,
             annotation_type TEXT NOT NULL
@@ -255,9 +287,11 @@ class DatabaseManager:
             content TEXT DEFAULT '',
             tags TEXT DEFAULT '[]',
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))""")
+            FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points(id))"""
+        )
         # --- v2.1.1 F039 重复检测结果 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS duplicate_groups (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS duplicate_groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_ids TEXT NOT NULL,
             relation_type TEXT DEFAULT NULL,
@@ -268,12 +302,14 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')),
             resolved_at TEXT DEFAULT NULL,
             resolved_action TEXT DEFAULT ''
-        )""")
+        )"""
+        )
         # --- v2.2.3 F057/F058/F060 结构化事件日志 ---
         # event_type: truncation_recovery / qc_downgrade / rule_fallback / backup_trigger / backup_failed
         # module: extractor / qc / backup
         # severity: info / warning / error
-        c.execute("""CREATE TABLE IF NOT EXISTS operation_events (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS operation_events (
             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             event_type TEXT NOT NULL,
@@ -285,9 +321,11 @@ class DatabaseManager:
             payload_json TEXT DEFAULT '{}',
             FOREIGN KEY (related_file_id) REFERENCES source_files(id),
             FOREIGN KEY (related_kp_id) REFERENCES knowledge_points(id)
-        )""")
+        )"""
+        )
         # --- v2.3.0-part2 F048 知识库体检报告 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS health_reports (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS health_reports (
             report_id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -304,9 +342,11 @@ class DatabaseManager:
             r1_call_count INTEGER,
             cost_estimate REAL,
             error_message TEXT
-        )""")
+        )"""
+        )
         # --- v2.3.0-part2 F048 低分打磨建议 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS polish_suggestions (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS polish_suggestions (
             suggestion_id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_id INTEGER NOT NULL,
             kp_id INTEGER NOT NULL,
@@ -319,18 +359,22 @@ class DatabaseManager:
             applied_at TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (report_id) REFERENCES health_reports(report_id)
-        )""")
+        )"""
+        )
         # --- v2.3.0-part3-alpha1 F062 接口登记表（路由自省用） ---
         # endpoint 作为 PRIMARY KEY,同一 endpoint 多 methods 合成逗号分隔("GET,POST")
-        c.execute("""CREATE TABLE IF NOT EXISTS api_endpoint_registry (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS api_endpoint_registry (
             endpoint TEXT PRIMARY KEY,
             methods TEXT NOT NULL,
             first_seen_at TEXT NOT NULL,
             last_tested_at TEXT,
             test_template_json TEXT
-        )""")
+        )"""
+        )
         # --- v2.3.0-part3-alpha1 F062 E2E 测试整体报告 ---
-        c.execute("""CREATE TABLE IF NOT EXISTS e2e_test_reports (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS e2e_test_reports (
             report_id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
             trigger_type TEXT NOT NULL,
@@ -343,13 +387,15 @@ class DatabaseManager:
             full_report_json TEXT,
             v3_call_count INTEGER DEFAULT 0,
             cost_estimate REAL DEFAULT 0.0
-        )""")
+        )"""
+        )
         # --- v2.3.0-part3-alpha1 F062 E2E issue 四态跟踪 ---
         # status 四态白名单: pending(待修) / fixed(已修复) / intermittent(偶发) / ignored(忽略)
         # severity 对齐 operation_events CHECK: info / warning / error (禁"warn"简写)
         # signature 作为去重键: "{dim_code}|{endpoint}|{rule_id}" 单字段,不加 UNIQUE 约束,
         #   允许跨 report 多次出现,upsert 时按 signature 查最新 pending/intermittent 记录更新
-        c.execute("""CREATE TABLE IF NOT EXISTS e2e_issues (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS e2e_issues (
             issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_id INTEGER NOT NULL,
             dim_code TEXT NOT NULL,
@@ -365,12 +411,14 @@ class DatabaseManager:
             resolved_at TEXT,
             payload_json TEXT DEFAULT '{}',
             FOREIGN KEY (report_id) REFERENCES e2e_test_reports(report_id)
-        )""")
+        )"""
+        )
         # --- v2.3.1 F2 精品候选 AI 判定缓存 ---
         # UNIQUE(kp_id, view): 同一条 kp 每视角只保留最新一次判定, INSERT OR REPLACE 覆盖旧值
         # 与 knowledge_points.premium_client/premium_rfp 是两个生命周期:
         #   AI cache 每次刷新覆盖, 用户封神状态永久保留
-        c.execute("""CREATE TABLE IF NOT EXISTS premium_ai_cache (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS premium_ai_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kp_id INTEGER NOT NULL,
             view TEXT NOT NULL CHECK(view IN ('client','rfp')),
@@ -383,14 +431,16 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (kp_id) REFERENCES knowledge_points(id),
             UNIQUE(kp_id, view)
-        )""")
+        )"""
+        )
         # --- v2.3.2 F055 本地问答助手 ---
         # qa_history: 全部问答留痕, 既是审计也是改进数据源
         # qa_feedback: 朋友试用反馈闭环(👍 有用 / 👎 没用 / 💬 评论)
         # mode='self|friend': URL 参数 ?mode=friend 区分老唐自用 vs 朋友试用
         # source: main 主链成功 / l1_retry V3 重试成功 / r1_fallback R1 兜底 / rule_fallback 规则兜底
         # is_test_query: 老唐自测标记(仅老唐自用模式时由前端勾选), 后续埋点排序时过滤
-        c.execute("""CREATE TABLE IF NOT EXISTS qa_history (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS qa_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             query TEXT NOT NULL,
             answer_json TEXT,
@@ -402,8 +452,10 @@ class DatabaseManager:
             latency_ms INTEGER DEFAULT 0,
             friend_tag TEXT DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime'))
-        )""")
-        c.execute("""CREATE TABLE IF NOT EXISTS qa_feedback (
+        )"""
+        )
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS qa_feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             qa_history_id INTEGER NOT NULL,
             feedback_type TEXT NOT NULL
@@ -411,21 +463,25 @@ class DatabaseManager:
             comment TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (qa_history_id) REFERENCES qa_history(id)
-        )""")
+        )"""
+        )
         # v2.3.3-mvp F063 朋友试用配额管理: 限速 20 次/天/IP
         # ip + date 复合主键: 同一 IP 同一天的配额累加
         # 仅 mode=friend 时校验/计数,自用模式不消耗
-        c.execute("""CREATE TABLE IF NOT EXISTS friend_quota_daily (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS friend_quota_daily (
             ip TEXT NOT NULL,
             date TEXT NOT NULL,
             count INTEGER DEFAULT 0,
             last_at TEXT DEFAULT (datetime('now','localtime')),
             PRIMARY KEY (ip, date)
-        )""")
+        )"""
+        )
         # --- v2.3.5-part1 知识关系网络底座(3 表) ---
         # kp_relations: 关系边(图的 edge),六态 CHECK + status 四态 + cluster_id 软关联
         # 与旧 knowledge_relations 表(v2.0.0 简陋 schema)并存,旧表保留向下兼容,新代码只写新表
-        c.execute("""CREATE TABLE IF NOT EXISTS kp_relations (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS kp_relations (
             relation_id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_kp_id INTEGER NOT NULL,
             target_kp_id INTEGER NOT NULL,
@@ -447,10 +503,12 @@ class DatabaseManager:
             FOREIGN KEY (source_kp_id) REFERENCES knowledge_points(id),
             FOREIGN KEY (target_kp_id) REFERENCES knowledge_points(id),
             FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id)
-        )""")
+        )"""
+        )
         # consensus_clusters: 聚类元数据(共识簇/演进链/细化树三类型)
         # source_documents 存 JSON 文件名列表,strength_score 0-100 综合强度
-        c.execute("""CREATE TABLE IF NOT EXISTS consensus_clusters (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS consensus_clusters (
             cluster_id INTEGER PRIMARY KEY AUTOINCREMENT,
             cluster_type TEXT NOT NULL CHECK(cluster_type IN (
                 'consensus','evolution_chain','refinement_tree'
@@ -464,9 +522,11 @@ class DatabaseManager:
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             notes TEXT DEFAULT ''
-        )""")
+        )"""
+        )
         # cluster_members: 多对多 + role + sequence_order(演进链有时序)
-        c.execute("""CREATE TABLE IF NOT EXISTS cluster_members (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS cluster_members (
             cluster_id INTEGER NOT NULL,
             kp_id INTEGER NOT NULL,
             role TEXT DEFAULT 'branch' CHECK(role IN ('core','branch','derivative')),
@@ -475,7 +535,8 @@ class DatabaseManager:
             PRIMARY KEY (cluster_id, kp_id),
             FOREIGN KEY (cluster_id) REFERENCES consensus_clusters(cluster_id),
             FOREIGN KEY (kp_id) REFERENCES knowledge_points(id)
-        )""")
+        )"""
+        )
         # --- 索引 ---
         for idx in [
             "CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_points(review_status)",
@@ -534,7 +595,8 @@ class DatabaseManager:
         ]:
             c.execute(idx)
         # v2.3.7: Agent 定义表
-        c.execute("""CREATE TABLE IF NOT EXISTS agent_definitions (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS agent_definitions (
             agent_id INTEGER PRIMARY KEY AUTOINCREMENT,
             agent_code TEXT UNIQUE NOT NULL,
             agent_name TEXT NOT NULL,
@@ -545,9 +607,11 @@ class DatabaseManager:
             scoring_dimensions TEXT DEFAULT '[]',
             is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')))""")
+            updated_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
         # v2.3.7: 审计周期表
-        c.execute("""CREATE TABLE IF NOT EXISTS audit_cycles (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS audit_cycles (
             cycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
             cycle_label TEXT NOT NULL,
             kp_sample_ids TEXT DEFAULT '[]',
@@ -558,12 +622,18 @@ class DatabaseManager:
             code_tasks TEXT DEFAULT '[]',
             started_at TEXT DEFAULT NULL,
             completed_at TEXT DEFAULT NULL,
-            created_at TEXT DEFAULT (datetime('now','localtime')))""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)")
+            created_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)"
+        )
         # v2.3.7-part2: 爬虫历史表
         # v2.3.8: +doc_number(发文字号去重) +source_domain(信源域名)
-        c.execute("""CREATE TABLE IF NOT EXISTS crawl_history (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS crawl_history (
             crawl_id INTEGER PRIMARY KEY AUTOINCREMENT,
             url TEXT NOT NULL,
             content_hash TEXT,
@@ -574,29 +644,42 @@ class DatabaseManager:
             status TEXT DEFAULT 'new' CHECK(status IN ('new','unchanged','error','extracted')),
             fetched_at TEXT DEFAULT (datetime('now','localtime')),
             extracted_kp_count INTEGER DEFAULT 0,
-            notes TEXT DEFAULT '')""")
+            notes TEXT DEFAULT '')"""
+        )
         # v2.3.8: 确保存量库有 doc_number + source_domain 列
         c.execute("PRAGMA table_info(crawl_history)")
         crawl_cols = {row[1] for row in c.fetchall()}
-        for col_name, col_def in [("doc_number", "TEXT DEFAULT ''"),
-                                   ("source_domain", "TEXT DEFAULT ''")]:
+        for col_name, col_def in [
+            ("doc_number", "TEXT DEFAULT ''"),
+            ("source_domain", "TEXT DEFAULT ''"),
+        ]:
             if col_name not in crawl_cols:
                 c.execute(f"ALTER TABLE crawl_history ADD COLUMN {col_name} {col_def}")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)"
+        )
         # idx_crawl_doc 只在列存在时才创建
         c.execute("PRAGMA table_info(crawl_history)")
         if "doc_number" in {row[1] for row in c.fetchall()}:
-            c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_doc ON crawl_history(doc_number)")
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_crawl_doc ON crawl_history(doc_number)"
+            )
         # v2.3.7-part2: 信源白名单表
-        c.execute("""CREATE TABLE IF NOT EXISTS source_whitelist (
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS source_whitelist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             domain TEXT UNIQUE NOT NULL,
             category TEXT DEFAULT 'government' CHECK(category IN ('government','official_media','industry_assoc','academic')),
             description TEXT DEFAULT '',
             is_active INTEGER DEFAULT 1,
-            added_at TEXT DEFAULT (datetime('now','localtime')))""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_source_domain ON source_whitelist(domain, is_active)")
+            added_at TEXT DEFAULT (datetime('now','localtime')))"""
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_source_domain ON source_whitelist(domain, is_active)"
+        )
         # v2.3.7-part2: knowledge_points 补字段(老库 ALTER, 新库 CREATE TABLE 已含)
         for col_name, col_def in [
             ("source_url", "TEXT DEFAULT ''"),
@@ -606,49 +689,174 @@ class DatabaseManager:
             c.execute("PRAGMA table_info(knowledge_points)")
             existing = {r[1] for r in c.fetchall()}
             if col_name not in existing:
-                c.execute(f"ALTER TABLE knowledge_points ADD COLUMN {col_name} {col_def}")
+                c.execute(
+                    f"ALTER TABLE knowledge_points ADD COLUMN {col_name} {col_def}"
+                )
         # v2.3.7-part2: 新字段索引(字段已确保存在)
-        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_source_verified ON knowledge_points(source_verified)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_kp_prefecture ON knowledge_points(sichuan_prefecture)")
-        conn.commit(); conn.close(); return True
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kp_source_verified ON knowledge_points(source_verified)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kp_prefecture ON knowledge_points(sichuan_prefecture)"
+        )
+        conn.commit()
+        conn.close()
+        return True
 
     def init_default_categories(self):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM categories")
-        if c.fetchone()["cnt"] > 0: conn.close(); return True
+        if c.fetchone()["cnt"] > 0:
+            conn.close()
+            return True
         cats = [
-            ("1","政策库","1.1","全域土地综合整治政策","国家/省/市层面综合整治专项政策"),
-            ("1","政策库","1.2","增减挂钩与占补平衡","城乡建设用地增减挂钩、耕地占补平衡相关政策"),
-            ("1","政策库","1.3","集体经营性建设用地入市","入市规则、定价机制、收益分配、试点政策"),
-            ("1","政策库","1.4","专项债与资金政策","地方政府专项债、涉农资金整合、EPC打捆招标等"),
-            ("1","政策库","1.5","川西林盘保护政策","林盘保护修复专项政策、生态保护相关法规"),
-            ("1","政策库","1.6","乡村振兴综合政策","跨领域综合政策、五年规划、考核标准等"),
-            ("1","政策库","1.7","自然资源与规划政策","国土空间规划、用途管制、耕地保护等底层法规"),
-            ("2","案例库","2.1","全域土地综合整治项目","完整项目案例"),
-            ("2","案例库","2.2","增减挂钩项目","指标交易类项目案例"),
-            ("2","案例库","2.3","川西林盘修复运营项目","林盘保护修复+运营类项目案例"),
-            ("2","案例库","2.4","资金整合与融资创新案例","专项债申报、EPC打捆、资金拼盘等"),
-            ("2","案例库","2.5","乡村产业与运营案例","民宿、农旅、集体经济运营等"),
-            ("2","案例库","2.6","失败与风险案例","踩坑项目、烂尾项目、政策风险暴露案例"),
-            ("3","经验库","3.1","策略判断类","选址逻辑、项目类型选择、合作模式判断等"),
-            ("3","经验库","3.2","操盘方法类","资金拼盘方法、报批流程优化、多部门协调等"),
-            ("3","经验库","3.3","反常识洞察","与行业常规认知相反但经实战验证的判断"),
-            ("3","经验库","3.4","踩坑记录","具体失误及教训"),
-            ("3","经验库","3.5","客户沟通与汇报经验","面向政府领导、平台公司的汇报话术经验"),
-            ("4","工具库","4.1","方案模板","可研报告、实施方案、策划方案等模板"),
-            ("4","工具库","4.2","合同模板","咨询合同、EPC合同、合作框架协议等"),
-            ("4","工具库","4.3","评审意见模板","方案评审、项目验收等评审意见范本"),
-            ("4","工具库","4.4","招标文件模板","招标公告、评标标准、技术要求等"),
-            ("4","工具库","4.5","汇报材料模板","PPT框架、汇报提纲、领导讲话稿等"),
-            ("4","工具库","4.6","申报材料模板","专项债申报、试点申报、资金申请等"),
-            ("5","数据库","5.1","资金测算数据","各类项目资金测算模型、单价参考、费用构成"),
-            ("5","数据库","5.2","指标数据","增减挂钩指标价格、占补平衡指标、各地交易数据"),
-            ("5","数据库","5.3","地方政策对比","不同省/市的政策差异对比"),
-            ("5","数据库","5.4","项目规模与成效数据","各地项目面积、投资额、产出数据等"),
-            ("5","数据库","5.5","行业基准数据","亩均投资、建设周期、收益率等行业参考值")]
+            (
+                "1",
+                "政策库",
+                "1.1",
+                "全域土地综合整治政策",
+                "国家/省/市层面综合整治专项政策",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.2",
+                "增减挂钩与占补平衡",
+                "城乡建设用地增减挂钩、耕地占补平衡相关政策",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.3",
+                "集体经营性建设用地入市",
+                "入市规则、定价机制、收益分配、试点政策",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.4",
+                "专项债与资金政策",
+                "地方政府专项债、涉农资金整合、EPC打捆招标等",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.5",
+                "川西林盘保护政策",
+                "林盘保护修复专项政策、生态保护相关法规",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.6",
+                "乡村振兴综合政策",
+                "跨领域综合政策、五年规划、考核标准等",
+            ),
+            (
+                "1",
+                "政策库",
+                "1.7",
+                "自然资源与规划政策",
+                "国土空间规划、用途管制、耕地保护等底层法规",
+            ),
+            ("2", "案例库", "2.1", "全域土地综合整治项目", "完整项目案例"),
+            ("2", "案例库", "2.2", "增减挂钩项目", "指标交易类项目案例"),
+            (
+                "2",
+                "案例库",
+                "2.3",
+                "川西林盘修复运营项目",
+                "林盘保护修复+运营类项目案例",
+            ),
+            (
+                "2",
+                "案例库",
+                "2.4",
+                "资金整合与融资创新案例",
+                "专项债申报、EPC打捆、资金拼盘等",
+            ),
+            ("2", "案例库", "2.5", "乡村产业与运营案例", "民宿、农旅、集体经济运营等"),
+            (
+                "2",
+                "案例库",
+                "2.6",
+                "失败与风险案例",
+                "踩坑项目、烂尾项目、政策风险暴露案例",
+            ),
+            (
+                "3",
+                "经验库",
+                "3.1",
+                "策略判断类",
+                "选址逻辑、项目类型选择、合作模式判断等",
+            ),
+            (
+                "3",
+                "经验库",
+                "3.2",
+                "操盘方法类",
+                "资金拼盘方法、报批流程优化、多部门协调等",
+            ),
+            (
+                "3",
+                "经验库",
+                "3.3",
+                "反常识洞察",
+                "与行业常规认知相反但经实战验证的判断",
+            ),
+            ("3", "经验库", "3.4", "踩坑记录", "具体失误及教训"),
+            (
+                "3",
+                "经验库",
+                "3.5",
+                "客户沟通与汇报经验",
+                "面向政府领导、平台公司的汇报话术经验",
+            ),
+            ("4", "工具库", "4.1", "方案模板", "可研报告、实施方案、策划方案等模板"),
+            ("4", "工具库", "4.2", "合同模板", "咨询合同、EPC合同、合作框架协议等"),
+            ("4", "工具库", "4.3", "评审意见模板", "方案评审、项目验收等评审意见范本"),
+            ("4", "工具库", "4.4", "招标文件模板", "招标公告、评标标准、技术要求等"),
+            ("4", "工具库", "4.5", "汇报材料模板", "PPT框架、汇报提纲、领导讲话稿等"),
+            ("4", "工具库", "4.6", "申报材料模板", "专项债申报、试点申报、资金申请等"),
+            (
+                "5",
+                "数据库",
+                "5.1",
+                "资金测算数据",
+                "各类项目资金测算模型、单价参考、费用构成",
+            ),
+            (
+                "5",
+                "数据库",
+                "5.2",
+                "指标数据",
+                "增减挂钩指标价格、占补平衡指标、各地交易数据",
+            ),
+            ("5", "数据库", "5.3", "地方政策对比", "不同省/市的政策差异对比"),
+            (
+                "5",
+                "数据库",
+                "5.4",
+                "项目规模与成效数据",
+                "各地项目面积、投资额、产出数据等",
+            ),
+            (
+                "5",
+                "数据库",
+                "5.5",
+                "行业基准数据",
+                "亩均投资、建设周期、收益率等行业参考值",
+            ),
+        ]
         for cat in cats:
-            c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)", cat)
-        conn.commit(); conn.close(); return True
+            c.execute(
+                "INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)",
+                cat,
+            )
+        conn.commit()
+        conn.close()
+        return True
 
     def init_tag_definitions(self):
         """将tag_config.py中的标签定义同步到tag_definitions表"""
@@ -656,148 +864,260 @@ class DatabaseManager:
             from scripts.tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
         except ImportError:
             from tag_config import LAYER1_TAGS, LAYER2_DIMENSIONS
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT COUNT(*) as cnt FROM tag_definitions")
         if c.fetchone()["cnt"] > 0:
-            conn.close(); return True  # 已初始化过
+            conn.close()
+            return True  # 已初始化过
         sort = 0
         for group_code, group in LAYER1_TAGS.items():
             for tag in group["tags"]:
                 sort += 1
-                c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
+                c.execute(
+                    """INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
                     VALUES (?,?,?,?,?,?,?)""",
-                    ("layer1", group_code, group["group_name"], tag["code"], tag["name"], tag["definition"], sort))
+                    (
+                        "layer1",
+                        group_code,
+                        group["group_name"],
+                        tag["code"],
+                        tag["name"],
+                        tag["definition"],
+                        sort,
+                    ),
+                )
         for dim_code, dim in LAYER2_DIMENSIONS.items():
             for val in dim.get("values", []):
                 sort += 1
-                c.execute("""INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
+                c.execute(
+                    """INSERT INTO tag_definitions (layer,group_code,group_name,tag_code,tag_name,tag_definition,sort_order)
                     VALUES (?,?,?,?,?,?,?)""",
-                    ("layer2", dim_code, dim["name"], dim_code, val, "", sort))
-        conn.commit(); conn.close(); return True
+                    ("layer2", dim_code, dim["name"], dim_code, val, "", sort),
+                )
+        conn.commit()
+        conn.close()
+        return True
 
-    def add_source_file(self, original_filename, file_path, file_type, file_size=0, file_hash=None, doc_origin="external"):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash,doc_origin) VALUES (?,?,?,?,?,?)",
-                  (original_filename, file_path, file_type, file_size, file_hash, doc_origin))
-        fid = c.lastrowid; conn.commit(); conn.close(); return fid
+    def add_source_file(
+        self,
+        original_filename,
+        file_path,
+        file_type,
+        file_size=0,
+        file_hash=None,
+        doc_origin="external",
+    ):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO source_files (original_filename,file_path,file_type,file_size,file_hash,doc_origin) VALUES (?,?,?,?,?,?)",
+            (original_filename, file_path, file_type, file_size, file_hash, doc_origin),
+        )
+        fid = c.lastrowid
+        conn.commit()
+        conn.close()
+        return fid
 
     def update_source_file(self, file_id, **kw):
-        conn = self.get_connection(); c = conn.cursor()
-        allowed = ["renamed_filename","domain_tags","region_tag","policy_level","process_status","process_message","file_hash",
-                    "pre_analysis_result","suggested_content_type","segment_plan","doc_origin"]
+        conn = self.get_connection()
+        c = conn.cursor()
+        allowed = [
+            "renamed_filename",
+            "domain_tags",
+            "region_tag",
+            "policy_level",
+            "process_status",
+            "process_message",
+            "file_hash",
+            "pre_analysis_result",
+            "suggested_content_type",
+            "segment_plan",
+            "doc_origin",
+        ]
         sets, vals = [], []
         for k, v in kw.items():
-            if k in allowed: sets.append(f"{k}=?"); vals.append(v)
+            if k in allowed:
+                sets.append(f"{k}=?")
+                vals.append(v)
         if sets:
-            sets.append("updated_at=datetime('now','localtime')"); vals.append(file_id)
-            c.execute(f"UPDATE source_files SET {','.join(sets)} WHERE id=?", vals); conn.commit()
+            sets.append("updated_at=datetime('now','localtime')")
+            vals.append(file_id)
+            c.execute(f"UPDATE source_files SET {','.join(sets)} WHERE id=?", vals)
+            conn.commit()
         conn.close()
 
     def get_source_file(self, file_id):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM source_files WHERE id=?", (file_id,))
-        r = c.fetchone(); conn.close(); return dict(r) if r else None
+        r = c.fetchone()
+        conn.close()
+        return dict(r) if r else None
 
     def check_file_hash_exists(self, file_hash):
-        if not file_hash: return None
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1", (file_hash,))
-        r = c.fetchone(); conn.close(); return dict(r) if r else None
+        if not file_hash:
+            return None
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, original_filename, renamed_filename, process_status, process_message FROM source_files WHERE file_hash=? ORDER BY created_at DESC LIMIT 1",
+            (file_hash,),
+        )
+        r = c.fetchone()
+        conn.close()
+        return dict(r) if r else None
 
-    def add_knowledge_point(self, source_file_id, title, content_type, original_excerpt="",
-                            ai_extracted_content=None, suggested_category_id=None,
-                            suggested_category_tags=None, suggested_attribute_tags=None,
-                            suggested_keywords=None,
-                            suggested_tags=None,  # 旧字段兼容
-                            source_page="", source_keyword="",
-                            content_readiness="draft", source_authority="firsthand",
-                            prompt_version="",
-                            practical_insights=None,
-                            source_type="extracted",
-                            extracted_by_model="r1"):
+    def add_knowledge_point(
+        self,
+        source_file_id,
+        title,
+        content_type,
+        original_excerpt="",
+        ai_extracted_content=None,
+        suggested_category_id=None,
+        suggested_category_tags=None,
+        suggested_attribute_tags=None,
+        suggested_keywords=None,
+        suggested_tags=None,  # 旧字段兼容
+        source_page="",
+        source_keyword="",
+        content_readiness="draft",
+        source_authority="firsthand",
+        prompt_version="",
+        practical_insights=None,
+        source_type="extracted",
+        extracted_by_model="r1",
+    ):
         """v2.3.4-hotfix1:增加 extracted_by_model 参数(默认 'r1' 兼容老调用方)。
         值约定:r1 / kimi / r1_mirror / f057_recovery,extractor 在 kp dict 用 _extracted_by_model 透传。
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO knowledge_points
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO knowledge_points
             (source_file_id, title, content_type, original_excerpt, ai_extracted_content,
              suggested_category_id, suggested_category_tags, suggested_attribute_tags,
              suggested_keywords, suggested_tags, source_page, source_keyword,
              content_readiness, source_authority, prompt_version, practical_insights,
              source_type, extracted_by_model)
             VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)""",
-            (source_file_id, title, content_type, original_excerpt,
-             json.dumps(ai_extracted_content or {}, ensure_ascii=False),
-             suggested_category_id,
-             json.dumps(suggested_category_tags or [], ensure_ascii=False),
-             json.dumps(suggested_attribute_tags or {}, ensure_ascii=False),
-             json.dumps(suggested_keywords or [], ensure_ascii=False),
-             json.dumps(suggested_tags or [], ensure_ascii=False),
-             source_page, source_keyword,
-             content_readiness, source_authority, prompt_version,
-             json.dumps(practical_insights or [], ensure_ascii=False),
-             source_type, extracted_by_model))
-        kid = c.lastrowid; conn.commit(); conn.close(); return kid
+            (
+                source_file_id,
+                title,
+                content_type,
+                original_excerpt,
+                json.dumps(ai_extracted_content or {}, ensure_ascii=False),
+                suggested_category_id,
+                json.dumps(suggested_category_tags or [], ensure_ascii=False),
+                json.dumps(suggested_attribute_tags or {}, ensure_ascii=False),
+                json.dumps(suggested_keywords or [], ensure_ascii=False),
+                json.dumps(suggested_tags or [], ensure_ascii=False),
+                source_page,
+                source_keyword,
+                content_readiness,
+                source_authority,
+                prompt_version,
+                json.dumps(practical_insights or [], ensure_ascii=False),
+                source_type,
+                extracted_by_model,
+            ),
+        )
+        kid = c.lastrowid
+        conn.commit()
+        conn.close()
+        return kid
 
-    def get_all_knowledge_points(self, review_status=None, content_type=None,
-                                 category_id=None, level1_code=None,
-                                 search_query=None, content_readiness=None,
-                                 freshness_filter=None, policy_filter=None,
-                                 source_type_filter=None, qa_score_filter=None,
-                                 qa_source_filter=None, layer1_tag=None,
-                                 page=1, per_page=20):
-        conn = self.get_connection(); c = conn.cursor()
+    def get_all_knowledge_points(
+        self,
+        review_status=None,
+        content_type=None,
+        category_id=None,
+        level1_code=None,
+        search_query=None,
+        content_readiness=None,
+        freshness_filter=None,
+        policy_filter=None,
+        source_type_filter=None,
+        qa_score_filter=None,
+        qa_source_filter=None,
+        layer1_tag=None,
+        page=1,
+        per_page=20,
+    ):
+        conn = self.get_connection()
+        c = conn.cursor()
         where, params = ["1=1"], []
-        if review_status: where.append("kp.review_status=?"); params.append(review_status)
-        if content_type: where.append("kp.content_type=?"); params.append(content_type)
-        if content_readiness: where.append("kp.content_readiness=?"); params.append(content_readiness)
+        if review_status:
+            where.append("kp.review_status=?")
+            params.append(review_status)
+        if content_type:
+            where.append("kp.content_type=?")
+            params.append(content_type)
+        if content_readiness:
+            where.append("kp.content_readiness=?")
+            params.append(content_readiness)
         if category_id:
             where.append("(kp.suggested_category_id=? OR kp.final_category_id=?)")
             params.extend([category_id, category_id])
         elif level1_code:
-            where.append("""(kp.suggested_category_id IN (SELECT id FROM categories WHERE level1_code=?)
-                            OR kp.final_category_id IN (SELECT id FROM categories WHERE level1_code=?))""")
+            where.append(
+                """(kp.suggested_category_id IN (SELECT id FROM categories WHERE level1_code=?)
+                            OR kp.final_category_id IN (SELECT id FROM categories WHERE level1_code=?))"""
+            )
             params.extend([level1_code, level1_code])
         if search_query:
             sq = f"%{search_query}%"
             # 支持按ID精确查找(如从重复检测跳转)
             try:
                 kid = int(search_query)
-                where.append("""(kp.id = ? OR kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
+                where.append(
+                    """(kp.id = ? OR kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
                             OR kp.suggested_keywords LIKE ? OR kp.final_keywords LIKE ?
                             OR kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?
-                            OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)""")
-                params.extend([kid] + [sq]*9)
+                            OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)"""
+                )
+                params.extend([kid] + [sq] * 9)
             except ValueError:
-                where.append("""(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
+                where.append(
+                    """(kp.title LIKE ? OR kp.original_excerpt LIKE ? OR kp.ai_extracted_content LIKE ?
                             OR kp.suggested_keywords LIKE ? OR kp.final_keywords LIKE ?
                             OR kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?
-                            OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)""")
-                params.extend([sq]*9)
+                            OR kp.suggested_tags LIKE ? OR kp.final_tags LIKE ?)"""
+                )
+                params.extend([sq] * 9)
         # v2.1.0-d: 保鲜状态筛选
         if freshness_filter:
             if freshness_filter == "expired":
                 # 已过期：已确认 + 非过时 + 超过保鲜周期
-                where.append("""kp.review_status='confirmed' AND kp.is_outdated=0
+                where.append(
+                    """kp.review_status='confirmed' AND kp.is_outdated=0
                     AND kp.freshness_checked_at IS NOT NULL
-                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days""")
+                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days"""
+                )
             elif freshness_filter == "expiring_soon":
                 # 即将到期：已确认 + 非过时 + 剩余不到30天
-                where.append("""kp.review_status='confirmed' AND kp.is_outdated=0
+                where.append(
+                    """kp.review_status='confirmed' AND kp.is_outdated=0
                     AND kp.freshness_checked_at IS NOT NULL
                     AND julianday('now','localtime') - julianday(kp.freshness_checked_at) > (kp.freshness_interval_days - 30)
-                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) <= kp.freshness_interval_days""")
+                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) <= kp.freshness_interval_days"""
+                )
             elif freshness_filter == "fresh":
                 # 新鲜：已确认 + 非过时 + 在保鲜周期内
-                where.append("""kp.review_status='confirmed' AND kp.is_outdated=0
+                where.append(
+                    """kp.review_status='confirmed' AND kp.is_outdated=0
                     AND kp.freshness_checked_at IS NOT NULL
-                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) <= (kp.freshness_interval_days - 30)""")
+                    AND julianday('now','localtime') - julianday(kp.freshness_checked_at) <= (kp.freshness_interval_days - 30)"""
+                )
             elif freshness_filter == "outdated":
                 # 已过时
                 where.append("kp.is_outdated=1")
             elif freshness_filter == "unchecked":
                 # 未设保鲜时间
-                where.append("kp.review_status='confirmed' AND kp.freshness_checked_at IS NULL AND kp.is_outdated=0")
+                where.append(
+                    "kp.review_status='confirmed' AND kp.freshness_checked_at IS NULL AND kp.is_outdated=0"
+                )
         # v2.1.0-d F028: 政策校验状态筛选
         if policy_filter:
             if policy_filter == "unvalidated":
@@ -831,79 +1151,134 @@ class DatabaseManager:
                     pass
         # v2.3.0-part1: 质检来源筛选（v2.2.3 遗留bug补齐，api_server.py 已在传此参数）
         if qa_source_filter:
-            where.append("kp.qa_source=?"); params.append(qa_source_filter)
+            where.append("kp.qa_source=?")
+            params.append(qa_source_filter)
         # v2.3.0-part1 F049: 一层标签穿透跳转（A组/C组/D组仪表盘卡片点击用）
         # 匹配 suggested_category_tags 或 final_category_tags 中的 tag_code
         # 用 '%"CODE"%' 格式避免子串误匹配（例如 "指标交易" 不会误匹配 "指标交易与定价"）
         if layer1_tag:
             pattern = f'%"{layer1_tag}"%'
-            where.append("(kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?)")
+            where.append(
+                "(kp.suggested_category_tags LIKE ? OR kp.final_category_tags LIKE ?)"
+            )
             params.extend([pattern, pattern])
         w = " AND ".join(where)
         offset = (page - 1) * per_page
         c.execute(f"SELECT COUNT(*) as cnt FROM knowledge_points kp WHERE {w}", params)
         total = c.fetchone()["cnt"]
-        c.execute(f"""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
+        c.execute(
+            f"""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
                       cat.level1_name, cat.level2_name, cat.level2_code
                       FROM knowledge_points kp
                       LEFT JOIN source_files sf ON kp.source_file_id=sf.id
                       LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
                       WHERE {w} ORDER BY sf.created_at DESC, kp.id ASC LIMIT ? OFFSET ?""",
-                  params + [per_page, offset])
-        rows = [dict(r) for r in c.fetchall()]; conn.close()
+            params + [per_page, offset],
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
         return {"items": rows, "total": total, "page": page, "per_page": per_page}
 
     def get_knowledge_point(self, kp_id):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT kp.*, sf.original_filename, sf.renamed_filename, sf.file_path,
                       cat.level1_name, cat.level2_name, cat.level2_code
                       FROM knowledge_points kp
                       LEFT JOIN source_files sf ON kp.source_file_id=sf.id
                       LEFT JOIN categories cat ON COALESCE(kp.final_category_id, kp.suggested_category_id)=cat.id
-                      WHERE kp.id=?""", (kp_id,))
-        r = c.fetchone(); conn.close(); return dict(r) if r else None
+                      WHERE kp.id=?""",
+            (kp_id,),
+        )
+        r = c.fetchone()
+        conn.close()
+        return dict(r) if r else None
 
     def update_knowledge_point(self, kp_id, **kw):
-        conn = self.get_connection(); c = conn.cursor()
-        allowed = ["title","original_excerpt","ai_extracted_content","final_category_id",
-                    "final_tags","final_category_tags","final_attribute_tags","final_keywords",
-                    "review_status","reviewer_notes","quality_score","is_outdated","superseded_by",
-                    "content_readiness","source_authority","access_level",
-                    "freshness_checked_at","freshness_interval_days","freshness_note",
-                    "prompt_version","qa_score","qa_flags","qa_source",
-                    "policy_dependencies","policy_validated",
-                    "practical_insights","insight_reliability",
-                    # v2.3.1 精品资产生产线 7 字段
-                    "premium_client","premium_rfp","premium_tier",
-                    "used_count","last_used_at","used_for",
-                    "premium_freshness_status"]
+        conn = self.get_connection()
+        c = conn.cursor()
+        allowed = [
+            "title",
+            "original_excerpt",
+            "ai_extracted_content",
+            "final_category_id",
+            "final_tags",
+            "final_category_tags",
+            "final_attribute_tags",
+            "final_keywords",
+            "review_status",
+            "reviewer_notes",
+            "quality_score",
+            "is_outdated",
+            "superseded_by",
+            "content_readiness",
+            "source_authority",
+            "access_level",
+            "freshness_checked_at",
+            "freshness_interval_days",
+            "freshness_note",
+            "prompt_version",
+            "qa_score",
+            "qa_flags",
+            "qa_source",
+            "policy_dependencies",
+            "policy_validated",
+            "practical_insights",
+            "insight_reliability",
+            # v2.3.1 精品资产生产线 7 字段
+            "premium_client",
+            "premium_rfp",
+            "premium_tier",
+            "used_count",
+            "last_used_at",
+            "used_for",
+            "premium_freshness_status",
+        ]
         sets, vals = [], []
         for k, v in kw.items():
             if k in allowed:
                 sets.append(f"{k}=?")
-                if k in ("ai_extracted_content","final_tags","final_category_tags",
-                          "final_attribute_tags","final_keywords","qa_flags",
-                          "policy_dependencies","practical_insights",
-                          "used_for") and isinstance(v, (dict, list)):
+                if k in (
+                    "ai_extracted_content",
+                    "final_tags",
+                    "final_category_tags",
+                    "final_attribute_tags",
+                    "final_keywords",
+                    "qa_flags",
+                    "policy_dependencies",
+                    "practical_insights",
+                    "used_for",
+                ) and isinstance(v, (dict, list)):
                     vals.append(json.dumps(v, ensure_ascii=False))
-                else: vals.append(v)
+                else:
+                    vals.append(v)
         if sets:
             sets.append("updated_at=datetime('now','localtime')")
-            if kw.get("review_status") == "confirmed": sets.append("confirmed_at=datetime('now','localtime')")
+            if kw.get("review_status") == "confirmed":
+                sets.append("confirmed_at=datetime('now','localtime')")
             vals.append(kp_id)
-            c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", vals); conn.commit()
+            c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", vals)
+            conn.commit()
         conn.close()
 
-    def confirm_knowledge_point(self, kp_id, final_category_id=None, final_tags=None, reviewer_notes=""):
+    def confirm_knowledge_point(
+        self, kp_id, final_category_id=None, final_tags=None, reviewer_notes=""
+    ):
         kw = {"review_status": "confirmed"}
-        if final_category_id is not None: kw["final_category_id"] = final_category_id
-        if final_tags is not None: kw["final_tags"] = final_tags
-        if reviewer_notes: kw["reviewer_notes"] = reviewer_notes
+        if final_category_id is not None:
+            kw["final_category_id"] = final_category_id
+        if final_tags is not None:
+            kw["final_tags"] = final_tags
+        if reviewer_notes:
+            kw["reviewer_notes"] = reviewer_notes
         self.update_knowledge_point(kp_id, **kw)
         self.log_operation("confirm", "knowledge_points", kp_id)
 
     def ignore_knowledge_point(self, kp_id, reason=""):
-        self.update_knowledge_point(kp_id, review_status="ignored", reviewer_notes=reason)
+        self.update_knowledge_point(
+            kp_id, review_status="ignored", reviewer_notes=reason
+        )
         self.log_operation("ignore", "knowledge_points", kp_id)
 
     def restore_to_pending(self, kp_id):
@@ -915,22 +1290,34 @@ class DatabaseManager:
 
         v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
         c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
-        c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
-        c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+        c.execute(
+            "DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?",
+            (kp_id, kp_id),
+        )
+        c.execute(
+            "DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,)
+        )
         # v2.3.5-part1: 新表 kp_relations / cluster_members 级联清理
-        c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+        c.execute(
+            "DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?",
+            (kp_id, kp_id),
+        )
         c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
         c.execute("DELETE FROM knowledge_points WHERE id=?", (kp_id,))
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         self.log_operation("physical_delete", "knowledge_points", kp_id)
 
     def get_reextract_scan(self, current_prompt_version):
         """扫描需要重提取的知识点，按源文件分组"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT sf.id as file_id, sf.original_filename, sf.renamed_filename,
                    kp.prompt_version, COUNT(kp.id) as kp_count
             FROM knowledge_points kp
@@ -939,7 +1326,9 @@ class DatabaseManager:
               AND kp.review_status != 'ignored'
             GROUP BY sf.id, kp.prompt_version
             ORDER BY sf.original_filename
-        """, (current_prompt_version,))
+        """,
+            (current_prompt_version,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -949,22 +1338,40 @@ class DatabaseManager:
 
         v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT id FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id FROM knowledge_points WHERE source_file_id=?", (source_file_id,)
+        )
         kp_ids = [r[0] for r in c.fetchall()]
         for kp_id in kp_ids:
             c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
-            c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
-            c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+            c.execute(
+                "DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?",
+                (kp_id, kp_id),
+            )
+            c.execute(
+                "DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,)
+            )
             # v2.3.5-part1: 新表级联清理
-            c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute(
+                "DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?",
+                (kp_id, kp_id),
+            )
             c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
-        c.execute("DELETE FROM knowledge_points WHERE source_file_id=?", (source_file_id,))
-        conn.commit(); conn.close()
+        c.execute(
+            "DELETE FROM knowledge_points WHERE source_file_id=?", (source_file_id,)
+        )
+        conn.commit()
+        conn.close()
         if kp_ids:
-            self.log_operation("reextract_delete", "knowledge_points", source_file_id,
-                               {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
+            self.log_operation(
+                "reextract_delete",
+                "knowledge_points",
+                source_file_id,
+                {"deleted_count": len(kp_ids), "kp_ids": kp_ids},
+            )
         return len(kp_ids)
 
     # ================================================================
@@ -983,10 +1390,14 @@ class DatabaseManager:
 
         返回 (sf_deleted, events_purged) 元组,均为 int。
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
             c.execute("BEGIN IMMEDIATE")
-            c.execute("DELETE FROM operation_events WHERE related_file_id=?", (source_file_id,))
+            c.execute(
+                "DELETE FROM operation_events WHERE related_file_id=?",
+                (source_file_id,),
+            )
             events_purged = c.rowcount
             c.execute("DELETE FROM source_files WHERE id=?", (source_file_id,))
             sf_deleted = c.rowcount
@@ -1014,25 +1425,42 @@ class DatabaseManager:
 
         v2.3.5-part1 立规则#3 推广: 加挂 kp_relations + cluster_members 级联清理
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT id FROM knowledge_points
-                     WHERE source_file_id=? AND review_status='pending'""", (source_file_id,))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT id FROM knowledge_points
+                     WHERE source_file_id=? AND review_status='pending'""",
+            (source_file_id,),
+        )
         kp_ids = [r[0] for r in c.fetchall()]
         for kp_id in kp_ids:
             c.execute("DELETE FROM annotations WHERE knowledge_point_id=?", (kp_id,))
             c.execute("DELETE FROM edit_history WHERE knowledge_point_id=?", (kp_id,))
-            c.execute("DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
-            c.execute("DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,))
+            c.execute(
+                "DELETE FROM knowledge_relations WHERE source_kp_id=? OR target_kp_id=?",
+                (kp_id, kp_id),
+            )
+            c.execute(
+                "DELETE FROM knowledge_usage_log WHERE knowledge_point_id=?", (kp_id,)
+            )
             # v2.3.5-part1: 新表级联清理
-            c.execute("DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?", (kp_id, kp_id))
+            c.execute(
+                "DELETE FROM kp_relations WHERE source_kp_id=? OR target_kp_id=?",
+                (kp_id, kp_id),
+            )
             c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
         if kp_ids:
             qmarks = ",".join("?" * len(kp_ids))
             c.execute(f"DELETE FROM knowledge_points WHERE id IN ({qmarks})", kp_ids)
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         if kp_ids:
-            self.log_operation("batch_rerun_delete_pending", "knowledge_points", source_file_id,
-                               {"deleted_count": len(kp_ids), "kp_ids": kp_ids})
+            self.log_operation(
+                "batch_rerun_delete_pending",
+                "knowledge_points",
+                source_file_id,
+                {"deleted_count": len(kp_ids), "kp_ids": kp_ids},
+            )
         return len(kp_ids)
 
     # ================================================================
@@ -1053,17 +1481,22 @@ class DatabaseManager:
           - 旧版用 tag_code 做 LIKE 永远查不到，导致所有 count=0 → 仪表盘"N 个在用"全是谎言
           - 现在改用 tag_name 匹配
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         # 1. 从 tag_definitions 取该组的所有一层标签
-        c.execute("""SELECT tag_code, tag_name FROM tag_definitions
+        c.execute(
+            """SELECT tag_code, tag_name FROM tag_definitions
                      WHERE layer='layer1' AND group_code=? AND is_active=1
-                     ORDER BY sort_order""", (group_code,))
+                     ORDER BY sort_order""",
+            (group_code,),
+        )
         tags = [(r["tag_code"], r["tag_name"]) for r in c.fetchall()]
         result = []
         for tag_code, tag_name in tags:
             # v2.3.0-hotfix2: 用 tag_name 做 LIKE 匹配，和存储口径对齐
             pattern = f'%"{tag_name}"%'
-            c.execute("""SELECT COUNT(*) AS cnt FROM knowledge_points
+            c.execute(
+                """SELECT COUNT(*) AS cnt FROM knowledge_points
                          WHERE review_status='confirmed'
                            AND (
                              (final_category_tags LIKE ? AND final_category_tags IS NOT NULL
@@ -1073,7 +1506,9 @@ class DatabaseManager:
                                 OR final_category_tags='[]')
                                AND suggested_category_tags LIKE ?
                              )
-                           )""", (pattern, pattern))
+                           )""",
+                (pattern, pattern),
+            )
             cnt = c.fetchone()["cnt"]
             # v2.3.0-hotfix: 只返回确实有知识点在使用的标签
             # 旧版会把所有 active 标签都返回（含 count=0），导致仪表盘卡片:
@@ -1081,7 +1516,9 @@ class DatabaseManager:
             #   2) Top5 区块出现空占位行，展开后也都是 0 的死行
             # 现在口径：有使用才进结果。
             if cnt > 0:
-                result.append({"tag_code": tag_code, "tag_name": tag_name, "count": cnt})
+                result.append(
+                    {"tag_code": tag_code, "tag_name": tag_name, "count": cnt}
+                )
         conn.close()
         # 按 count 降序返回（便于前端直接渲染排序后的卡片）
         result.sort(key=lambda x: x["count"], reverse=True)
@@ -1098,8 +1535,10 @@ class DatabaseManager:
         只返回 process_status='completed' 的文件（已完成提取的才有重跑意义）。
         返回列表按 created_at 倒序。
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT sf.id, sf.original_filename, sf.renamed_filename, sf.file_path,
                    sf.process_status, sf.process_message, sf.created_at,
                    sf.truncation_count, sf.recovery_runs, sf.last_recovery_at,
@@ -1112,13 +1551,17 @@ class DatabaseManager:
              WHERE sf.process_status='completed'
              GROUP BY sf.id
              ORDER BY sf.created_at DESC
-        """)
+        """
+        )
         rows = [dict(r) for r in c.fetchall()]
         # 再查每个文件下是否有 annotations（警示用）
         for row in rows:
-            c.execute("""SELECT COUNT(*) AS cnt FROM annotations a
+            c.execute(
+                """SELECT COUNT(*) AS cnt FROM annotations a
                          JOIN knowledge_points kp ON a.knowledge_point_id=kp.id
-                         WHERE kp.source_file_id=?""", (row["id"],))
+                         WHERE kp.source_file_id=?""",
+                (row["id"],),
+            )
             row["has_annotations"] = (c.fetchone()["cnt"] or 0) > 0
             # 规范化数值字段（SUM 结果可能是 None）
             for k in ("kp_total", "kp_pending", "kp_confirmed", "kp_ignored"):
@@ -1130,170 +1573,311 @@ class DatabaseManager:
     # 编辑历史
     # ================================================================
     def add_edit_history(self, kp_id, edited_fields, edit_summary=""):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO edit_history (knowledge_point_id, edited_fields, edit_summary) VALUES (?,?,?)",
-                  (kp_id, json.dumps(edited_fields, ensure_ascii=False), edit_summary))
-        conn.commit(); conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO edit_history (knowledge_point_id, edited_fields, edit_summary) VALUES (?,?,?)",
+            (kp_id, json.dumps(edited_fields, ensure_ascii=False), edit_summary),
+        )
+        conn.commit()
+        conn.close()
 
     def get_edit_history(self, kp_id):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT * FROM edit_history WHERE knowledge_point_id=? ORDER BY created_at DESC", (kp_id,))
-        rows = [dict(r) for r in c.fetchall()]; conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM edit_history WHERE knowledge_point_id=? ORDER BY created_at DESC",
+            (kp_id,),
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
         for row in rows:
-            try: row["edited_fields"] = json.loads(row["edited_fields"]) if isinstance(row["edited_fields"], str) else row["edited_fields"]
-            except (json.JSONDecodeError, ValueError): pass
+            try:
+                row["edited_fields"] = (
+                    json.loads(row["edited_fields"])
+                    if isinstance(row["edited_fields"], str)
+                    else row["edited_fields"]
+                )
+            except (json.JSONDecodeError, ValueError):
+                pass
         return rows
 
     def restore_from_history(self, kp_id, history_id):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT * FROM edit_history WHERE id=? AND knowledge_point_id=?", (history_id, kp_id))
-        h = c.fetchone(); conn.close()
-        if not h: return False, "历史记录不存在"
-        try: fields = json.loads(h["edited_fields"]) if isinstance(h["edited_fields"], str) else h["edited_fields"]
-        except (json.JSONDecodeError, ValueError): return False, "历史记录格式错误"
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM edit_history WHERE id=? AND knowledge_point_id=?",
+            (history_id, kp_id),
+        )
+        h = c.fetchone()
+        conn.close()
+        if not h:
+            return False, "历史记录不存在"
+        try:
+            fields = (
+                json.loads(h["edited_fields"])
+                if isinstance(h["edited_fields"], str)
+                else h["edited_fields"]
+            )
+        except (json.JSONDecodeError, ValueError):
+            return False, "历史记录格式错误"
         current_kp = self.get_knowledge_point(kp_id)
-        if not current_kp: return False, "知识点不存在"
+        if not current_kp:
+            return False, "知识点不存在"
         restore_changes, update_kw = {}, {}
         for field_name, change in fields.items():
             old_val = change.get("old")
-            restore_changes[field_name] = {"old": current_kp.get(field_name), "new": old_val}
+            restore_changes[field_name] = {
+                "old": current_kp.get(field_name),
+                "new": old_val,
+            }
             update_kw[field_name] = old_val
         if update_kw:
             self.update_knowledge_point(kp_id, **update_kw)
-            self.add_edit_history(kp_id, restore_changes, f"回滚到历史版本#{history_id}")
-            self.log_operation("restore_version", "knowledge_points", kp_id, {"history_id": history_id})
+            self.add_edit_history(
+                kp_id, restore_changes, f"回滚到历史版本#{history_id}"
+            )
+            self.log_operation(
+                "restore_version", "knowledge_points", kp_id, {"history_id": history_id}
+            )
         return True, "回滚成功"
 
     # ================================================================
     # 分类管理
     # ================================================================
     def get_next_level1_code(self):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT DISTINCT level1_code FROM categories ORDER BY level1_code DESC LIMIT 1")
-        r = c.fetchone(); conn.close()
-        if r: return str(int(r["level1_code"]) + 1)
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT DISTINCT level1_code FROM categories ORDER BY level1_code DESC LIMIT 1"
+        )
+        r = c.fetchone()
+        conn.close()
+        if r:
+            return str(int(r["level1_code"]) + 1)
         return "1"
 
     def get_next_level2_code(self, level1_code):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT level2_code FROM categories WHERE level1_code=? ORDER BY level2_code DESC LIMIT 1", (level1_code,))
-        r = c.fetchone(); conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT level2_code FROM categories WHERE level1_code=? ORDER BY level2_code DESC LIMIT 1",
+            (level1_code,),
+        )
+        r = c.fetchone()
+        conn.close()
         if r:
             parts = r["level2_code"].split(".")
-            if len(parts) == 2: return f"{parts[0]}.{int(parts[1]) + 1}"
+            if len(parts) == 2:
+                return f"{parts[0]}.{int(parts[1]) + 1}"
         return f"{level1_code}.1"
 
-    def add_category(self, level1_code, level1_name, level2_name, description="", is_new_level1=False):
+    def add_category(
+        self, level1_code, level1_name, level2_name, description="", is_new_level1=False
+    ):
         if is_new_level1:
             level1_code = self.get_next_level1_code()
         level2_code = self.get_next_level2_code(level1_code)
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)",
-                  (level1_code, level1_name, level2_code, level2_name, description))
-        cat_id = c.lastrowid; conn.commit(); conn.close()
-        self.log_operation("add_category", "categories", cat_id, {
-            "level1_code": level1_code, "level2_code": level2_code,
-            "level2_name": level2_name, "is_new_level1": is_new_level1})
-        return {"id": cat_id, "level1_code": level1_code, "level1_name": level1_name,
-                "level2_code": level2_code, "level2_name": level2_name, "description": description}
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO categories (level1_code,level1_name,level2_code,level2_name,description) VALUES (?,?,?,?,?)",
+            (level1_code, level1_name, level2_code, level2_name, description),
+        )
+        cat_id = c.lastrowid
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "add_category",
+            "categories",
+            cat_id,
+            {
+                "level1_code": level1_code,
+                "level2_code": level2_code,
+                "level2_name": level2_name,
+                "is_new_level1": is_new_level1,
+            },
+        )
+        return {
+            "id": cat_id,
+            "level1_code": level1_code,
+            "level1_name": level1_name,
+            "level2_code": level2_code,
+            "level2_name": level2_name,
+            "description": description,
+        }
 
     def get_category_stats(self):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT cat.id, cat.level1_code, cat.level1_name, cat.level2_code, cat.level2_name,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT cat.id, cat.level1_code, cat.level1_name, cat.level2_code, cat.level2_name,
                       COUNT(kp.id) as kp_count
                       FROM categories cat
                       LEFT JOIN knowledge_points kp ON (kp.final_category_id=cat.id OR (kp.final_category_id IS NULL AND kp.suggested_category_id=cat.id))
                           AND kp.review_status='confirmed'
-                      WHERE cat.is_active=1 GROUP BY cat.id ORDER BY cat.level1_code, cat.level2_code""")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+                      WHERE cat.is_active=1 GROUP BY cat.id ORDER BY cat.level1_code, cat.level2_code"""
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     def get_all_categories(self, active_only=True):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         w = "WHERE is_active=1" if active_only else ""
         c.execute(f"SELECT * FROM categories {w} ORDER BY level1_code, level2_code")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     def get_categories_tree(self):
-        cats = self.get_all_categories(); tree = {}
+        cats = self.get_all_categories()
+        tree = {}
         for cat in cats:
             l1 = cat["level1_name"]
-            if l1 not in tree: tree[l1] = {"code": cat["level1_code"], "children": []}
-            tree[l1]["children"].append({"id": cat["id"], "code": cat["level2_code"],
-                                         "name": cat["level2_name"], "description": cat["description"]})
+            if l1 not in tree:
+                tree[l1] = {"code": cat["level1_code"], "children": []}
+            tree[l1]["children"].append(
+                {
+                    "id": cat["id"],
+                    "code": cat["level2_code"],
+                    "name": cat["level2_name"],
+                    "description": cat["description"],
+                }
+            )
         return tree
 
     def find_category_by_code(self, level2_code):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT * FROM categories WHERE level2_code=? AND is_active=1", (level2_code,))
-        r = c.fetchone(); conn.close(); return dict(r) if r else None
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM categories WHERE level2_code=? AND is_active=1",
+            (level2_code,),
+        )
+        r = c.fetchone()
+        conn.close()
+        return dict(r) if r else None
 
     # ================================================================
     # AI建议分类
     # ================================================================
-    def add_architecture_suggestion(self, suggested_name, suggested_level, reason,
-                                    suggestion_type="add_level2", parent_category_id=None,
-                                    related_knowledge_ids=None):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO architecture_suggestions
+    def add_architecture_suggestion(
+        self,
+        suggested_name,
+        suggested_level,
+        reason,
+        suggestion_type="add_level2",
+        parent_category_id=None,
+        related_knowledge_ids=None,
+    ):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO architecture_suggestions
             (suggested_name, suggested_level, parent_category_id, suggestion_type, reason, related_knowledge_ids)
             VALUES (?,?,?,?,?,?)""",
-            (suggested_name, suggested_level, parent_category_id, suggestion_type, reason,
-             json.dumps(related_knowledge_ids or [], ensure_ascii=False)))
-        sid = c.lastrowid; conn.commit(); conn.close(); return sid
+            (
+                suggested_name,
+                suggested_level,
+                parent_category_id,
+                suggestion_type,
+                reason,
+                json.dumps(related_knowledge_ids or [], ensure_ascii=False),
+            ),
+        )
+        sid = c.lastrowid
+        conn.commit()
+        conn.close()
+        return sid
 
     def get_pending_suggestions(self):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT s.*, cat.level1_name as parent_level1_name, cat.level2_name as parent_level2_name
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT s.*, cat.level1_name as parent_level1_name, cat.level2_name as parent_level2_name
                       FROM architecture_suggestions s
                       LEFT JOIN categories cat ON s.parent_category_id=cat.id
-                      WHERE s.status='pending' ORDER BY s.created_at DESC""")
-        rows = [dict(r) for r in c.fetchall()]; conn.close()
+                      WHERE s.status='pending' ORDER BY s.created_at DESC"""
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
         for r in rows:
-            try: r["related_knowledge_ids"] = json.loads(r["related_knowledge_ids"]) if isinstance(r["related_knowledge_ids"], str) else r["related_knowledge_ids"]
-            except (json.JSONDecodeError, ValueError): r["related_knowledge_ids"] = []
+            try:
+                r["related_knowledge_ids"] = (
+                    json.loads(r["related_knowledge_ids"])
+                    if isinstance(r["related_knowledge_ids"], str)
+                    else r["related_knowledge_ids"]
+                )
+            except (json.JSONDecodeError, ValueError):
+                r["related_knowledge_ids"] = []
         return rows
 
     def update_suggestion_status(self, suggestion_id, status):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("UPDATE architecture_suggestions SET status=?, resolved_at=datetime('now','localtime') WHERE id=?",
-                  (status, suggestion_id))
-        conn.commit(); conn.close()
-        self.log_operation(f"suggestion_{status}", "architecture_suggestions", suggestion_id)
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE architecture_suggestions SET status=?, resolved_at=datetime('now','localtime') WHERE id=?",
+            (status, suggestion_id),
+        )
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            f"suggestion_{status}", "architecture_suggestions", suggestion_id
+        )
 
     # ================================================================
     # 知识关联
     # ================================================================
-    def add_knowledge_relation(self, source_kp_id, target_kp_id, relation_type, created_by="manual"):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO knowledge_relations (source_kp_id,target_kp_id,relation_type,created_by) VALUES (?,?,?,?)",
-                  (source_kp_id, target_kp_id, relation_type, created_by))
-        conn.commit(); conn.close()
+    def add_knowledge_relation(
+        self, source_kp_id, target_kp_id, relation_type, created_by="manual"
+    ):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO knowledge_relations (source_kp_id,target_kp_id,relation_type,created_by) VALUES (?,?,?,?)",
+            (source_kp_id, target_kp_id, relation_type, created_by),
+        )
+        conn.commit()
+        conn.close()
 
     def get_knowledge_relations(self, kp_id):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT kr.*, kp.title as related_title
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT kr.*, kp.title as related_title
                       FROM knowledge_relations kr
                       JOIN knowledge_points kp ON (CASE WHEN kr.source_kp_id=? THEN kr.target_kp_id ELSE kr.source_kp_id END)=kp.id
                       WHERE kr.source_kp_id=? OR kr.target_kp_id=?
-                      ORDER BY kr.created_at DESC""", (kp_id, kp_id, kp_id))
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+                      ORDER BY kr.created_at DESC""",
+            (kp_id, kp_id, kp_id),
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     # ================================================================
     # 使用追踪
     # ================================================================
     def log_knowledge_usage(self, kp_id, usage_type, usage_context=""):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO knowledge_usage_log (knowledge_point_id,usage_type,usage_context) VALUES (?,?,?)",
-                  (kp_id, usage_type, usage_context))
-        conn.commit(); conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO knowledge_usage_log (knowledge_point_id,usage_type,usage_context) VALUES (?,?,?)",
+            (kp_id, usage_type, usage_context),
+        )
+        conn.commit()
+        conn.close()
 
     # ================================================================
     # 架构升级检查
     # ================================================================
     def get_all_knowledge_for_upgrade(self):
         """获取所有知识点用于升级检查（不分页，含源文件信息）"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.source_file_id,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT kp.id, kp.title, kp.content_type, kp.source_file_id,
                       kp.original_excerpt, kp.ai_extracted_content,
                       kp.suggested_category_tags, kp.final_category_tags,
                       kp.suggested_attribute_tags, kp.final_attribute_tags,
@@ -1304,97 +1888,151 @@ class DatabaseManager:
                       FROM knowledge_points kp
                       LEFT JOIN source_files sf ON kp.source_file_id=sf.id
                       WHERE kp.review_status IN ('pending','confirmed')
-                      ORDER BY kp.id""")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+                      ORDER BY kp.id"""
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     # ================================================================
     # 内容保鲜（v2.1.0-d 新增/增强）
     # ================================================================
     def get_stale_knowledge_points(self):
         """获取需要检查时效性的知识点"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT kp.id, kp.title, kp.content_type, kp.freshness_checked_at, kp.freshness_interval_days
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT kp.id, kp.title, kp.content_type, kp.freshness_checked_at, kp.freshness_interval_days
                       FROM knowledge_points kp
                       WHERE kp.review_status='confirmed'
                       AND (kp.freshness_checked_at IS NULL
                            OR julianday('now','localtime') - julianday(kp.freshness_checked_at) > kp.freshness_interval_days)
                       ORDER BY kp.freshness_checked_at ASC NULLS FIRST
-                      LIMIT 50""")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+                      LIMIT 50"""
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     def mark_freshness_checked(self, kp_id):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("UPDATE knowledge_points SET freshness_checked_at=datetime('now','localtime') WHERE id=?", (kp_id,))
-        conn.commit(); conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE knowledge_points SET freshness_checked_at=datetime('now','localtime') WHERE id=?",
+            (kp_id,),
+        )
+        conn.commit()
+        conn.close()
 
     def get_freshness_summary(self):
         """v2.1.0-d: 获取保鲜状态摘要（过期/即将到期/新鲜/已过时/未设时间）"""
-        conn = self.get_connection(); c = conn.cursor()
-        summary = {"expired": 0, "expiring_soon": 0, "fresh": 0, "outdated": 0, "unchecked": 0}
+        conn = self.get_connection()
+        c = conn.cursor()
+        summary = {
+            "expired": 0,
+            "expiring_soon": 0,
+            "fresh": 0,
+            "outdated": 0,
+            "unchecked": 0,
+        }
         # 已过时
-        c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' AND is_outdated=1")
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' AND is_outdated=1"
+        )
         summary["outdated"] = c.fetchone()["cnt"]
         # 未设保鲜时间
-        c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' AND is_outdated=0 AND freshness_checked_at IS NULL")
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' AND is_outdated=0 AND freshness_checked_at IS NULL"
+        )
         summary["unchecked"] = c.fetchone()["cnt"]
         # 已过期
-        c.execute("""SELECT COUNT(*) as cnt FROM knowledge_points
+        c.execute(
+            """SELECT COUNT(*) as cnt FROM knowledge_points
                      WHERE review_status='confirmed' AND is_outdated=0
                      AND freshness_checked_at IS NOT NULL
-                     AND julianday('now','localtime') - julianday(freshness_checked_at) > freshness_interval_days""")
+                     AND julianday('now','localtime') - julianday(freshness_checked_at) > freshness_interval_days"""
+        )
         summary["expired"] = c.fetchone()["cnt"]
         # 即将到期（30天内）
-        c.execute("""SELECT COUNT(*) as cnt FROM knowledge_points
+        c.execute(
+            """SELECT COUNT(*) as cnt FROM knowledge_points
                      WHERE review_status='confirmed' AND is_outdated=0
                      AND freshness_checked_at IS NOT NULL
                      AND julianday('now','localtime') - julianday(freshness_checked_at) > (freshness_interval_days - 30)
-                     AND julianday('now','localtime') - julianday(freshness_checked_at) <= freshness_interval_days""")
+                     AND julianday('now','localtime') - julianday(freshness_checked_at) <= freshness_interval_days"""
+        )
         summary["expiring_soon"] = c.fetchone()["cnt"]
         # 新鲜
-        c.execute("""SELECT COUNT(*) as cnt FROM knowledge_points
+        c.execute(
+            """SELECT COUNT(*) as cnt FROM knowledge_points
                      WHERE review_status='confirmed' AND is_outdated=0
                      AND freshness_checked_at IS NOT NULL
-                     AND julianday('now','localtime') - julianday(freshness_checked_at) <= (freshness_interval_days - 30)""")
+                     AND julianday('now','localtime') - julianday(freshness_checked_at) <= (freshness_interval_days - 30)"""
+        )
         summary["fresh"] = c.fetchone()["cnt"]
         conn.close()
         return summary
 
     def renew_freshness(self, kp_id, note=""):
         """v2.1.0-d: 续期保鲜（刷新检查时间，可选备注）"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if note:
-            c.execute("""UPDATE knowledge_points
+            c.execute(
+                """UPDATE knowledge_points
                          SET freshness_checked_at=datetime('now','localtime'),
                              freshness_note=?, updated_at=datetime('now','localtime')
-                         WHERE id=?""", (note, kp_id))
+                         WHERE id=?""",
+                (note, kp_id),
+            )
         else:
-            c.execute("""UPDATE knowledge_points
+            c.execute(
+                """UPDATE knowledge_points
                          SET freshness_checked_at=datetime('now','localtime'),
                              updated_at=datetime('now','localtime')
-                         WHERE id=?""", (kp_id,))
-        conn.commit(); conn.close()
+                         WHERE id=?""",
+                (kp_id,),
+            )
+        conn.commit()
+        conn.close()
         self.log_operation("renew_freshness", "knowledge_points", kp_id, {"note": note})
 
     def mark_knowledge_outdated(self, kp_id, reason=""):
         """v2.1.0-d: 标记知识点为已过时"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE knowledge_points
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE knowledge_points
                      SET is_outdated=1, freshness_note=?,
                          updated_at=datetime('now','localtime')
-                     WHERE id=?""", (reason, kp_id))
-        conn.commit(); conn.close()
-        self.log_operation("mark_outdated", "knowledge_points", kp_id, {"reason": reason})
+                     WHERE id=?""",
+            (reason, kp_id),
+        )
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "mark_outdated", "knowledge_points", kp_id, {"reason": reason}
+        )
 
     # ================================================================
     # 政策依赖校验（v2.1.0-d F028 新增）
     # ================================================================
     def get_policy_validation_summary(self):
         """获取政策校验状态摘要"""
-        conn = self.get_connection(); c = conn.cursor()
-        summary = {"unvalidated": 0, "validated": 0, "pending": 0, "exempt": 0, "no_policy": 0}
-        c.execute("""SELECT policy_validated, COUNT(*) as cnt FROM knowledge_points
+        conn = self.get_connection()
+        c = conn.cursor()
+        summary = {
+            "unvalidated": 0,
+            "validated": 0,
+            "pending": 0,
+            "exempt": 0,
+            "no_policy": 0,
+        }
+        c.execute(
+            """SELECT policy_validated, COUNT(*) as cnt FROM knowledge_points
                      WHERE review_status IN ('pending','confirmed')
-                     GROUP BY policy_validated""")
+                     GROUP BY policy_validated"""
+        )
         for row in c.fetchall():
             val = row["policy_validated"]
             cnt = row["cnt"]
@@ -1415,113 +2053,197 @@ class DatabaseManager:
     # 标签定义查询
     # ================================================================
     def get_tag_definitions(self, layer=None):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if layer:
-            c.execute("SELECT * FROM tag_definitions WHERE layer=? AND is_active=1 ORDER BY sort_order", (layer,))
+            c.execute(
+                "SELECT * FROM tag_definitions WHERE layer=? AND is_active=1 ORDER BY sort_order",
+                (layer,),
+            )
         else:
-            c.execute("SELECT * FROM tag_definitions WHERE is_active=1 ORDER BY layer, sort_order")
-        rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+            c.execute(
+                "SELECT * FROM tag_definitions WHERE is_active=1 ORDER BY layer, sort_order"
+            )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows
 
     # ================================================================
     # 日志与统计
     # ================================================================
-    def log_api_call(self, call_type, model, input_tokens, output_tokens, estimated_cost):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
-                  (call_type, model, input_tokens, output_tokens, estimated_cost))
-        conn.commit(); conn.close()
+    def log_api_call(
+        self, call_type, model, input_tokens, output_tokens, estimated_cost
+    ):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO api_call_logs (call_type,model,input_tokens,output_tokens,estimated_cost) VALUES (?,?,?,?,?)",
+            (call_type, model, input_tokens, output_tokens, estimated_cost),
+        )
+        conn.commit()
+        conn.close()
 
     def get_today_api_cost(self):
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         today = datetime.now().strftime("%Y-%m-%d")
-        c.execute("SELECT COALESCE(SUM(estimated_cost),0) as tc FROM api_call_logs WHERE call_date=?", (today,))
-        r = c.fetchone(); conn.close(); return r["tc"]
+        c.execute(
+            "SELECT COALESCE(SUM(estimated_cost),0) as tc FROM api_call_logs WHERE call_date=?",
+            (today,),
+        )
+        r = c.fetchone()
+        conn.close()
+        return r["tc"]
 
     def log_operation(self, op_type, target_table="", target_id=None, details=None):
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("INSERT INTO operation_logs (operation_type,target_table,target_id,details) VALUES (?,?,?,?)",
-                  (op_type, target_table, target_id, json.dumps(details or {}, ensure_ascii=False)))
-        conn.commit(); conn.close()
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO operation_logs (operation_type,target_table,target_id,details) VALUES (?,?,?,?)",
+            (
+                op_type,
+                target_table,
+                target_id,
+                json.dumps(details or {}, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        conn.close()
 
     def get_statistics(self):
-        conn = self.get_connection(); c = conn.cursor(); stats = {}
-        c.execute("SELECT process_status, COUNT(*) as cnt FROM source_files GROUP BY process_status")
+        conn = self.get_connection()
+        c = conn.cursor()
+        stats = {}
+        c.execute(
+            "SELECT process_status, COUNT(*) as cnt FROM source_files GROUP BY process_status"
+        )
         stats["files"] = {r["process_status"]: r["cnt"] for r in c.fetchall()}
-        c.execute("SELECT review_status, COUNT(*) as cnt FROM knowledge_points GROUP BY review_status")
+        c.execute(
+            "SELECT review_status, COUNT(*) as cnt FROM knowledge_points GROUP BY review_status"
+        )
         stats["knowledge_points"] = {r["review_status"]: r["cnt"] for r in c.fetchall()}
-        c.execute("SELECT content_type, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY content_type")
+        c.execute(
+            "SELECT content_type, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY content_type"
+        )
         stats["by_type"] = {r["content_type"]: r["cnt"] for r in c.fetchall()}
         stats["today_api_cost"] = self.get_today_api_cost()
-        c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed'")
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed'"
+        )
         stats["total_confirmed"] = c.fetchone()["cnt"]
-        c.execute("SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='pending'")
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM knowledge_points WHERE review_status='pending'"
+        )
         stats["total_pending"] = c.fetchone()["cnt"]
-        c.execute("SELECT COUNT(*) as cnt FROM architecture_suggestions WHERE status='pending'")
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM architecture_suggestions WHERE status='pending'"
+        )
         stats["pending_suggestions"] = c.fetchone()["cnt"]
         # v2.0.0 新增统计
-        c.execute("SELECT content_readiness, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY content_readiness")
+        c.execute(
+            "SELECT content_readiness, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY content_readiness"
+        )
         stats["by_readiness"] = {r["content_readiness"]: r["cnt"] for r in c.fetchall()}
-        c.execute("SELECT access_level, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY access_level")
+        c.execute(
+            "SELECT access_level, COUNT(*) as cnt FROM knowledge_points WHERE review_status='confirmed' GROUP BY access_level"
+        )
         stats["by_access"] = {r["access_level"]: r["cnt"] for r in c.fetchall()}
         # v2.1.1 F039: 重复检测统计
         try:
-            c.execute("SELECT COUNT(*) as cnt FROM duplicate_groups WHERE status='pending'")
+            c.execute(
+                "SELECT COUNT(*) as cnt FROM duplicate_groups WHERE status='pending'"
+            )
             stats["pending_duplicates"] = c.fetchone()["cnt"]
         except Exception:
             stats["pending_duplicates"] = 0
-        conn.close(); return stats
+        conn.close()
+        return stats
 
     # ================================================================
     # 重复检测（v2.1.1 F039 新增）
     # ================================================================
-    def add_duplicate_group(self, member_ids, relation_type=None, ai_judgment=None, similarity_score=0):
+    def add_duplicate_group(
+        self, member_ids, relation_type=None, ai_judgment=None, similarity_score=0
+    ):
         """新增一条重复检测结果"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO duplicate_groups
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO duplicate_groups
             (member_ids, relation_type, ai_judgment, similarity_score)
             VALUES (?,?,?,?)""",
-            (json.dumps(member_ids, ensure_ascii=False),
-             relation_type,
-             json.dumps(ai_judgment or {}, ensure_ascii=False),
-             similarity_score))
-        gid = c.lastrowid; conn.commit(); conn.close()
-        self.log_operation("add_duplicate_group", "duplicate_groups", gid,
-                           {"member_ids": member_ids, "relation_type": relation_type})
+            (
+                json.dumps(member_ids, ensure_ascii=False),
+                relation_type,
+                json.dumps(ai_judgment or {}, ensure_ascii=False),
+                similarity_score,
+            ),
+        )
+        gid = c.lastrowid
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "add_duplicate_group",
+            "duplicate_groups",
+            gid,
+            {"member_ids": member_ids, "relation_type": relation_type},
+        )
         return gid
 
     def get_duplicate_groups(self, status="pending"):
         """获取重复检测结果列表"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if status:
-            c.execute("SELECT * FROM duplicate_groups WHERE status=? ORDER BY similarity_score DESC, created_at DESC", (status,))
+            c.execute(
+                "SELECT * FROM duplicate_groups WHERE status=? ORDER BY similarity_score DESC, created_at DESC",
+                (status,),
+            )
         else:
-            c.execute("SELECT * FROM duplicate_groups ORDER BY status ASC, similarity_score DESC, created_at DESC")
-        rows = [dict(r) for r in c.fetchall()]; conn.close()
+            c.execute(
+                "SELECT * FROM duplicate_groups ORDER BY status ASC, similarity_score DESC, created_at DESC"
+            )
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
         return rows
 
     def get_duplicate_group(self, group_id):
         """获取单条重复组详情"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM duplicate_groups WHERE id=?", (group_id,))
-        r = c.fetchone(); conn.close()
+        r = c.fetchone()
+        conn.close()
         return dict(r) if r else None
 
     def update_duplicate_group(self, group_id, status, resolved_action=""):
         """更新重复组状态"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE duplicate_groups
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE duplicate_groups
                      SET status=?, resolved_at=datetime('now','localtime'), resolved_action=?
-                     WHERE id=?""", (status, resolved_action, group_id))
-        conn.commit(); conn.close()
-        self.log_operation("resolve_duplicate", "duplicate_groups", group_id,
-                           {"status": status, "action": resolved_action})
+                     WHERE id=?""",
+            (status, resolved_action, group_id),
+        )
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "resolve_duplicate",
+            "duplicate_groups",
+            group_id,
+            {"status": status, "action": resolved_action},
+        )
 
     def get_duplicate_summary(self):
         """获取重复检测状态摘要"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         summary = {"pending": 0, "resolved": 0, "dismissed": 0}
         try:
-            c.execute("SELECT status, COUNT(*) as cnt FROM duplicate_groups GROUP BY status")
+            c.execute(
+                "SELECT status, COUNT(*) as cnt FROM duplicate_groups GROUP BY status"
+            )
             for row in c.fetchall():
                 if row["status"] in summary:
                     summary[row["status"]] = row["cnt"]
@@ -1532,21 +2254,27 @@ class DatabaseManager:
 
     def dismiss_all_pending_duplicates(self):
         """清理所有pending重复组(标记为dismissed)"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
-            c.execute("""UPDATE duplicate_groups
+            c.execute(
+                """UPDATE duplicate_groups
                          SET status='dismissed',
                              resolved_at=datetime('now','localtime'),
                              resolved_action='v2.2.2批量清理假阳性'
-                         WHERE status='pending'""")
+                         WHERE status='pending'"""
+            )
             count = c.rowcount
             conn.commit()
         except Exception:
             count = 0
         conn.close()
         if count > 0:
-            self.log_operation("dismiss_all_pending_duplicates", "duplicate_groups",
-                               details={"dismissed_count": count})
+            self.log_operation(
+                "dismiss_all_pending_duplicates",
+                "duplicate_groups",
+                details={"dismissed_count": count},
+            )
         return count
 
     # ================================================================
@@ -1554,22 +2282,38 @@ class DatabaseManager:
     # ================================================================
     def add_annotation(self, kp_id, annotation_type, content="", tags=None):
         """添加一条专家注解"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO annotations (knowledge_point_id, annotation_type, content, tags)
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO annotations (knowledge_point_id, annotation_type, content, tags)
                      VALUES (?, ?, ?, ?)""",
-                  (kp_id, annotation_type, content,
-                   json.dumps(tags or [], ensure_ascii=False)))
+            (
+                kp_id,
+                annotation_type,
+                content,
+                json.dumps(tags or [], ensure_ascii=False),
+            ),
+        )
         aid = c.lastrowid
-        conn.commit(); conn.close()
-        self.log_operation("add_annotation", "annotations", aid,
-                           {"kp_id": kp_id, "type": annotation_type})
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "add_annotation",
+            "annotations",
+            aid,
+            {"kp_id": kp_id, "type": annotation_type},
+        )
         return aid
 
     def get_annotations_by_kp(self, kp_id):
         """获取某知识点的全部注解"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT * FROM annotations WHERE knowledge_point_id=?
-                     ORDER BY created_at ASC""", (kp_id,))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT * FROM annotations WHERE knowledge_point_id=?
+                     ORDER BY created_at ASC""",
+            (kp_id,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
@@ -1582,27 +2326,37 @@ class DatabaseManager:
 
     def delete_annotation(self, annotation_id):
         """删除一条注解"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("DELETE FROM annotations WHERE id=?", (annotation_id,))
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         self.log_operation("delete_annotation", "annotations", annotation_id)
 
     def get_annotation_count_by_kp(self, kp_id):
         """获取某知识点的注解数量"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM annotations WHERE knowledge_point_id=?", (kp_id,))
-        n = c.fetchone()[0]; conn.close(); return n
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) FROM annotations WHERE knowledge_point_id=?", (kp_id,)
+        )
+        n = c.fetchone()[0]
+        conn.close()
+        return n
 
     def get_annotation_summary(self):
         """注解统计摘要"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         summary = {"annotated_kps": 0, "total_annotations": 0, "by_type": {}}
         try:
             c.execute("SELECT COUNT(DISTINCT knowledge_point_id) FROM annotations")
             summary["annotated_kps"] = c.fetchone()[0]
             c.execute("SELECT COUNT(*) FROM annotations")
             summary["total_annotations"] = c.fetchone()[0]
-            c.execute("SELECT annotation_type, COUNT(*) FROM annotations GROUP BY annotation_type")
+            c.execute(
+                "SELECT annotation_type, COUNT(*) FROM annotations GROUP BY annotation_type"
+            )
             for row in c.fetchall():
                 summary["by_type"][row[0]] = row[1]
         except Exception:
@@ -1613,8 +2367,15 @@ class DatabaseManager:
     # ================================================================
     # v2.2.3 F057/F058/F060: 结构化事件日志 + 质检补跑候选
     # ================================================================
-    def log_operation_event(self, event_type, module, severity="info",
-                            file_id=None, kp_id=None, payload=None):
+    def log_operation_event(
+        self,
+        event_type,
+        module,
+        severity="info",
+        file_id=None,
+        kp_id=None,
+        payload=None,
+    ):
         """
         写入结构化事件日志（供F062端到端测试Agent审计）
 
@@ -1639,34 +2400,47 @@ class DatabaseManager:
             payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
 
         try:
-            conn = self.get_connection(); c = conn.cursor()
-            c.execute("""INSERT INTO operation_events
+            conn = self.get_connection()
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO operation_events
                 (event_time, event_type, module, severity,
                  related_file_id, related_kp_id, payload_json)
                 VALUES (datetime('now','localtime'), ?, ?, ?, ?, ?, ?)""",
-                (event_type, module, severity, file_id, kp_id, payload_str))
+                (event_type, module, severity, file_id, kp_id, payload_str),
+            )
             event_id = c.lastrowid
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
             return event_id
         except Exception as e:
             # 事件日志写入失败不应打断主流程，降级为stdout
-            print("[log_operation_event 失败] event_type={} module={} err={}".format(
-                event_type, module, e))
+            print(
+                "[log_operation_event 失败] event_type={} module={} err={}".format(
+                    event_type, module, e
+                )
+            )
             return None
 
-    def get_operation_events(self, event_type=None, severity=None,
-                             module=None, file_id=None, limit=500):
+    def get_operation_events(
+        self, event_type=None, severity=None, module=None, file_id=None, limit=500
+    ):
         """读取事件日志（供前端报告页 / F062审计员用）"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         where, vals = [], []
         if event_type:
-            where.append("event_type=?"); vals.append(event_type)
+            where.append("event_type=?")
+            vals.append(event_type)
         if severity:
-            where.append("severity=?"); vals.append(severity)
+            where.append("severity=?")
+            vals.append(severity)
         if module:
-            where.append("module=?"); vals.append(module)
+            where.append("module=?")
+            vals.append(module)
         if file_id is not None:
-            where.append("related_file_id=?"); vals.append(file_id)
+            where.append("related_file_id=?")
+            vals.append(file_id)
         sql = "SELECT * FROM operation_events"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -1685,8 +2459,10 @@ class DatabaseManager:
           2. qa_flags 包含 "格式异常"（V3返回格式错误导致质检失败）
         返回知识点dict列表（含source_file_id/title/qa_source等）
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT kp.id, kp.source_file_id, kp.title, kp.content_type,
                    kp.qa_score, kp.qa_flags, kp.qa_source, kp.review_status,
                    kp.original_excerpt, kp.ai_extracted_content,
@@ -1697,29 +2473,29 @@ class DatabaseManager:
             WHERE (kp.qa_score IS NULL OR kp.qa_score = 0.0)
                OR kp.qa_flags LIKE '%格式异常%'
             ORDER BY kp.source_file_id, kp.id
-        """)
+        """
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
 
     def get_qc_rerun_summary(self):
         """F061 质检补跑候选摘要（前端按钮边显示数量用）"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT COUNT(*) as total,
                    SUM(CASE WHEN qa_score IS NULL OR qa_score=0.0 THEN 1 ELSE 0 END) as unscored,
                    SUM(CASE WHEN qa_flags LIKE '%格式异常%' THEN 1 ELSE 0 END) as format_err
             FROM knowledge_points
             WHERE (qa_score IS NULL OR qa_score = 0.0)
                OR qa_flags LIKE '%格式异常%'
-        """)
+        """
+        )
         r = c.fetchone()
         conn.close()
-        return {
-            "total": r[0] or 0,
-            "unscored": r[1] or 0,
-            "format_err": r[2] or 0
-        }
+        return {"total": r[0] or 0, "unscored": r[1] or 0, "format_err": r[2] or 0}
 
     # ================================================================
     # v2.3.0-hotfix: 就绪度与质检分数联动（原 v2.3.1 单开批量按钮需求）
@@ -1738,24 +2514,29 @@ class DatabaseManager:
         """按质检分数批量提升就绪度。只跑 review_status='confirmed' 的已入库条目。
         返回 dict: {promoted_to_quotable: N, skipped_reason_counts: {...}, dry_run: False}
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         # 先算一下"在规则命中范围内、但会被跳过"的分类计数，用于透明化
-        c.execute("""
+        c.execute(
+            """
             SELECT COUNT(*) FROM knowledge_points
             WHERE review_status='confirmed'
               AND qa_score >= 4
               AND content_readiness='draft'
-        """)
+        """
+        )
         will_promote = c.fetchone()[0] or 0
 
         # 实际升级
-        c.execute("""
+        c.execute(
+            """
             UPDATE knowledge_points
                SET content_readiness='quotable'
              WHERE review_status='confirmed'
                AND qa_score >= 4
                AND content_readiness='draft'
-        """)
+        """
+        )
         promoted = c.rowcount if c.rowcount is not None else will_promote
         conn.commit()
         conn.close()
@@ -1764,24 +2545,31 @@ class DatabaseManager:
             "rule": "qa_score>=4 AND readiness='draft' → 'quotable'",
             "notes": [
                 "premium 条目不受影响（editorial 轴与 qa 轴正交）",
-                "不降级（用户手动设的 premium 一律保留）"
-            ]
+                "不降级（用户手动设的 premium 一律保留）",
+            ],
         }
 
     def get_readiness_promote_preview(self):
         """就绪度联动的 dry-run 预览，给前端按钮在点之前弹个确认框用。"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT COUNT(*) FROM knowledge_points
             WHERE review_status='confirmed'
               AND qa_score >= 4
               AND content_readiness='draft'
-        """)
+        """
+        )
         will_promote = c.fetchone()[0] or 0
         # 顺带给点上下文数字
-        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND content_readiness='draft'")
+        c.execute(
+            "SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND content_readiness='draft'"
+        )
         total_draft = c.fetchone()[0] or 0
-        c.execute("SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND qa_score IS NULL")
+        c.execute(
+            "SELECT COUNT(*) FROM knowledge_points WHERE review_status='confirmed' AND qa_score IS NULL"
+        )
         draft_unscored = c.fetchone()[0] or 0
         conn.close()
         return {
@@ -1799,23 +2587,49 @@ class DatabaseManager:
 
     # ---- 常量：字段白名单（防止任意字段 UPDATE/INSERT） ----
     _HEALTH_REPORT_INSERT_FIELDS = (
-        "created_at", "status", "total_score",
-        "dim1_health_score", "dim2_structure_score", "dim3_processing_score",
-        "dim4_relation_score", "dim5_polish_score", "dim6_monetize_score",
-        "full_report_json", "scanned_kp_count",
-        "v3_call_count", "r1_call_count", "cost_estimate", "error_message",
+        "created_at",
+        "status",
+        "total_score",
+        "dim1_health_score",
+        "dim2_structure_score",
+        "dim3_processing_score",
+        "dim4_relation_score",
+        "dim5_polish_score",
+        "dim6_monetize_score",
+        "full_report_json",
+        "scanned_kp_count",
+        "v3_call_count",
+        "r1_call_count",
+        "cost_estimate",
+        "error_message",
     )
     _HEALTH_REPORT_UPDATE_FIELDS = (
-        "status", "total_score",
-        "dim1_health_score", "dim2_structure_score", "dim3_processing_score",
-        "dim4_relation_score", "dim5_polish_score", "dim6_monetize_score",
-        "full_report_json", "scanned_kp_count",
-        "v3_call_count", "r1_call_count", "cost_estimate", "error_message",
+        "status",
+        "total_score",
+        "dim1_health_score",
+        "dim2_structure_score",
+        "dim3_processing_score",
+        "dim4_relation_score",
+        "dim5_polish_score",
+        "dim6_monetize_score",
+        "full_report_json",
+        "scanned_kp_count",
+        "v3_call_count",
+        "r1_call_count",
+        "cost_estimate",
+        "error_message",
     )
     _POLISH_SUGGESTION_INSERT_FIELDS = (
-        "report_id", "kp_id", "diagnosis", "suggestion_type", "tier",
-        "original_content", "suggested_content", "status",
-        "applied_at", "created_at",
+        "report_id",
+        "kp_id",
+        "diagnosis",
+        "suggestion_type",
+        "tier",
+        "original_content",
+        "suggested_content",
+        "status",
+        "applied_at",
+        "created_at",
     )
 
     # ==================================================
@@ -1836,8 +2650,12 @@ class DatabaseManager:
             data["status"] = "running"
 
         # JSON 字段如果是 dict/list 自动序列化
-        if "full_report_json" in data and not isinstance(data["full_report_json"], (str, type(None))):
-            data["full_report_json"] = json.dumps(data["full_report_json"], ensure_ascii=False)
+        if "full_report_json" in data and not isinstance(
+            data["full_report_json"], (str, type(None))
+        ):
+            data["full_report_json"] = json.dumps(
+                data["full_report_json"], ensure_ascii=False
+            )
 
         fields = [f for f in self._HEALTH_REPORT_INSERT_FIELDS if f in data]
         if not fields:
@@ -1848,10 +2666,12 @@ class DatabaseManager:
         )
         values = [data[f] for f in fields]
 
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute(sql, values)
         report_id = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return report_id
 
     def update_health_report(self, report_id, patch):
@@ -1863,8 +2683,12 @@ class DatabaseManager:
             return False
         data = dict(patch)
         # JSON 字段自动序列化
-        if "full_report_json" in data and not isinstance(data["full_report_json"], (str, type(None))):
-            data["full_report_json"] = json.dumps(data["full_report_json"], ensure_ascii=False)
+        if "full_report_json" in data and not isinstance(
+            data["full_report_json"], (str, type(None))
+        ):
+            data["full_report_json"] = json.dumps(
+                data["full_report_json"], ensure_ascii=False
+            )
 
         fields = [f for f in self._HEALTH_REPORT_UPDATE_FIELDS if f in data]
         if not fields:
@@ -1873,10 +2697,12 @@ class DatabaseManager:
         sql = "UPDATE health_reports SET {} WHERE report_id=?".format(set_clause)
         values = [data[f] for f in fields] + [report_id]
 
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute(sql, values)
         changed = c.rowcount > 0
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return changed
 
     def get_latest_health_report(self):
@@ -1885,19 +2711,24 @@ class DatabaseManager:
         full_report_json 自动解析为 dict/list
         返回 dict 或 None
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT * FROM health_reports
             WHERE status='completed'
             ORDER BY created_at DESC, report_id DESC
             LIMIT 1
-        """)
+        """
+        )
         row = c.fetchone()
         conn.close()
         if not row:
             return None
         r = dict(row)
-        r["full_report_json"] = self._safe_json_parse(r.get("full_report_json"), default=None)
+        r["full_report_json"] = self._safe_json_parse(
+            r.get("full_report_json"), default=None
+        )
         return r
 
     def get_health_report_list(self, limit=20):
@@ -1909,8 +2740,10 @@ class DatabaseManager:
             limit = max(1, min(int(limit), 200))
         except (TypeError, ValueError):
             limit = 20
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT report_id, created_at, status, total_score,
                    dim1_health_score, dim2_structure_score, dim3_processing_score,
                    dim4_relation_score, dim5_polish_score, dim6_monetize_score,
@@ -1919,7 +2752,9 @@ class DatabaseManager:
               FROM health_reports
              ORDER BY created_at DESC, report_id DESC
              LIMIT ?
-        """, (limit,))
+        """,
+            (limit,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -1928,14 +2763,17 @@ class DatabaseManager:
         """
         F048: 单份报告完整数据（含 full_report_json 解析）
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM health_reports WHERE report_id=?", (report_id,))
         row = c.fetchone()
         conn.close()
         if not row:
             return None
         r = dict(row)
-        r["full_report_json"] = self._safe_json_parse(r.get("full_report_json"), default=None)
+        r["full_report_json"] = self._safe_json_parse(
+            r.get("full_report_json"), default=None
+        )
         return r
 
     # ==================================================
@@ -1968,10 +2806,12 @@ class DatabaseManager:
         )
         values = [data[f] for f in fields]
 
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute(sql, values)
         sid = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return sid
 
     def get_polish_suggestions_by_report(self, report_id, status=None):
@@ -1980,24 +2820,35 @@ class DatabaseManager:
         original_content / suggested_content 自动解析为 dict/list
         返回列表按 created_at ASC（先生成的先处理）
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if status:
-            c.execute("""
+            c.execute(
+                """
                 SELECT * FROM polish_suggestions
                 WHERE report_id=? AND status=?
                 ORDER BY created_at ASC, suggestion_id ASC
-            """, (report_id, status))
+            """,
+                (report_id, status),
+            )
         else:
-            c.execute("""
+            c.execute(
+                """
                 SELECT * FROM polish_suggestions
                 WHERE report_id=?
                 ORDER BY created_at ASC, suggestion_id ASC
-            """, (report_id,))
+            """,
+                (report_id,),
+            )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
-            r["original_content"] = self._safe_json_parse(r.get("original_content"), default=None)
-            r["suggested_content"] = self._safe_json_parse(r.get("suggested_content"), default=None)
+            r["original_content"] = self._safe_json_parse(
+                r.get("original_content"), default=None
+            )
+            r["suggested_content"] = self._safe_json_parse(
+                r.get("suggested_content"), default=None
+            )
         return rows
 
     def apply_polish_suggestion(self, suggestion_id):
@@ -2007,15 +2858,20 @@ class DatabaseManager:
         保持"备份 → 更新 kp → 标记 suggestion applied"三步清晰
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             UPDATE polish_suggestions
                SET status='applied', applied_at=?
              WHERE suggestion_id=?
                AND status IN ('pending','manual_review_needed')
-        """, (now, suggestion_id))
+        """,
+            (now, suggestion_id),
+        )
         changed = c.rowcount > 0
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return changed
 
     def reject_polish_suggestion(self, suggestion_id, reason=""):
@@ -2025,19 +2881,27 @@ class DatabaseManager:
         """
         if reason:
             try:
-                print("[reject_polish_suggestion] id={} reason={}".format(
-                    suggestion_id, reason))
+                print(
+                    "[reject_polish_suggestion] id={} reason={}".format(
+                        suggestion_id, reason
+                    )
+                )
             except Exception:
                 pass
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             UPDATE polish_suggestions
                SET status='rejected'
              WHERE suggestion_id=?
                AND status IN ('pending','manual_review_needed')
-        """, (suggestion_id,))
+        """,
+            (suggestion_id,),
+        )
         changed = c.rowcount > 0
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return changed
 
     # ==================================================
@@ -2059,7 +2923,8 @@ class DatabaseManager:
             c.level2_name → subcategory（27 子类名，NULL=未分类）
         annotations_count 通过 LEFT JOIN 聚合
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if include_annotations:
             sql = """
                 SELECT kp.id AS kp_id,
@@ -2135,15 +3000,31 @@ class DatabaseManager:
         conn.close()
         # 标签字段自动解析为 list/dict
         for r in rows:
-            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
-            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
-            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
-            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
-            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
-            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
+            r["final_category_tags"] = self._safe_json_parse(
+                r.get("final_category_tags"), default=[]
+            )
+            r["final_attribute_tags"] = self._safe_json_parse(
+                r.get("final_attribute_tags"), default={}
+            )
+            r["final_keywords"] = self._safe_json_parse(
+                r.get("final_keywords"), default=[]
+            )
+            r["suggested_category_tags"] = self._safe_json_parse(
+                r.get("suggested_category_tags"), default=[]
+            )
+            r["suggested_attribute_tags"] = self._safe_json_parse(
+                r.get("suggested_attribute_tags"), default={}
+            )
+            r["suggested_keywords"] = self._safe_json_parse(
+                r.get("suggested_keywords"), default=[]
+            )
             r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
         return rows
 
     def get_polish_candidates(self):
@@ -2167,8 +3048,10 @@ class DatabaseManager:
           LEFT JOIN categories → c.level1_name AS category / c.level2_name AS subcategory
           health_checker._kp_to_full_payload 读这两个字段做 V3 诊断上下文
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT kp.id AS kp_id,
                    kp.source_file_id,
                    kp.title,
@@ -2210,19 +3093,36 @@ class DatabaseManager:
                         AND ps.status IN ('pending','manual_review_needed')
                    )
              ORDER BY kp.qa_score ASC, kp.id ASC
-        """)
+        """
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
-            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
-            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
-            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
-            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
-            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
-            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
+            r["final_category_tags"] = self._safe_json_parse(
+                r.get("final_category_tags"), default=[]
+            )
+            r["final_attribute_tags"] = self._safe_json_parse(
+                r.get("final_attribute_tags"), default={}
+            )
+            r["final_keywords"] = self._safe_json_parse(
+                r.get("final_keywords"), default=[]
+            )
+            r["suggested_category_tags"] = self._safe_json_parse(
+                r.get("suggested_category_tags"), default=[]
+            )
+            r["suggested_attribute_tags"] = self._safe_json_parse(
+                r.get("suggested_attribute_tags"), default={}
+            )
+            r["suggested_keywords"] = self._safe_json_parse(
+                r.get("suggested_keywords"), default=[]
+            )
             r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
         return rows
 
     def get_island_candidates(self):
@@ -2240,8 +3140,10 @@ class DatabaseManager:
           LEFT JOIN categories → cat.level1_name AS category / cat.level2_name AS subcategory
           health_checker._kp_to_judge_payload 读这两个字段做 V3 孤岛精判上下文
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT kp.id AS kp_id,
                    kp.source_file_id,
                    kp.title,
@@ -2272,7 +3174,8 @@ class DatabaseManager:
                       WHERE dg.member_ids LIKE '%' || kp.id || '%'
                    )
              ORDER BY kp.id ASC
-        """)
+        """
+        )
         raw_rows = [dict(r) for r in c.fetchall()]
         conn.close()
 
@@ -2282,16 +3185,28 @@ class DatabaseManager:
             if (r.get("annotations_count") or 0) > 0:
                 continue
             # 合并三层标签计数：优先 final，空则 suggested
-            final_tags_list = self._safe_json_parse(r.get("final_category_tags"), default=[]) or []
-            final_attr = self._safe_json_parse(r.get("final_attribute_tags"), default={}) or {}
+            final_tags_list = (
+                self._safe_json_parse(r.get("final_category_tags"), default=[]) or []
+            )
+            final_attr = (
+                self._safe_json_parse(r.get("final_attribute_tags"), default={}) or {}
+            )
             final_kw = self._safe_json_parse(r.get("final_keywords"), default=[]) or []
             use_final = bool(final_tags_list) or bool(final_attr) or bool(final_kw)
             if use_final:
                 tags_total = len(final_tags_list) + len(final_attr) + len(final_kw)
             else:
-                sug_tags = self._safe_json_parse(r.get("suggested_category_tags"), default=[]) or []
-                sug_attr = self._safe_json_parse(r.get("suggested_attribute_tags"), default={}) or {}
-                sug_kw = self._safe_json_parse(r.get("suggested_keywords"), default=[]) or []
+                sug_tags = (
+                    self._safe_json_parse(r.get("suggested_category_tags"), default=[])
+                    or []
+                )
+                sug_attr = (
+                    self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
+                    or {}
+                )
+                sug_kw = (
+                    self._safe_json_parse(r.get("suggested_keywords"), default=[]) or []
+                )
                 tags_total = len(sug_tags) + len(sug_attr) + len(sug_kw)
             if tags_total >= 3:
                 continue
@@ -2299,11 +3214,21 @@ class DatabaseManager:
             r["final_category_tags"] = final_tags_list
             r["final_attribute_tags"] = final_attr
             r["final_keywords"] = final_kw
-            r["suggested_category_tags"] = self._safe_json_parse(r.get("suggested_category_tags"), default=[])
-            r["suggested_attribute_tags"] = self._safe_json_parse(r.get("suggested_attribute_tags"), default={})
-            r["suggested_keywords"] = self._safe_json_parse(r.get("suggested_keywords"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["suggested_category_tags"] = self._safe_json_parse(
+                r.get("suggested_category_tags"), default=[]
+            )
+            r["suggested_attribute_tags"] = self._safe_json_parse(
+                r.get("suggested_attribute_tags"), default={}
+            )
+            r["suggested_keywords"] = self._safe_json_parse(
+                r.get("suggested_keywords"), default=[]
+            )
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
             r["tags_total_count"] = tags_total
             result.append(r)
         return result
@@ -2326,23 +3251,33 @@ class DatabaseManager:
 
     def increment_truncation_count(self, file_id):
         """F057: 触发截断补救时+1"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE source_files
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE source_files
             SET truncation_count = COALESCE(truncation_count, 0) + 1,
                 recovery_runs = COALESCE(recovery_runs, 0) + 1,
                 last_recovery_at = datetime('now','localtime')
-            WHERE id=?""", (file_id,))
-        conn.commit(); conn.close()
+            WHERE id=?""",
+            (file_id,),
+        )
+        conn.commit()
+        conn.close()
 
     def get_truncation_summary(self):
         """F057: 截断统计摘要（供仪表盘/报告用）"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT COUNT(*) FROM source_files
-            WHERE COALESCE(truncation_count, 0) > 0""")
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT COUNT(*) FROM source_files
+            WHERE COALESCE(truncation_count, 0) > 0"""
+        )
         affected_files = c.fetchone()[0] or 0
-        c.execute("""SELECT COALESCE(SUM(truncation_count), 0),
+        c.execute(
+            """SELECT COALESCE(SUM(truncation_count), 0),
                             COALESCE(SUM(recovery_runs), 0)
-                     FROM source_files""")
+                     FROM source_files"""
+        )
         r = c.fetchone()
         total_truncations = r[0] or 0
         total_recovery_runs = r[1] or 0
@@ -2350,7 +3285,7 @@ class DatabaseManager:
         return {
             "affected_files": affected_files,
             "total_truncations": total_truncations,
-            "total_recovery_runs": total_recovery_runs
+            "total_recovery_runs": total_recovery_runs,
         }
 
     # ==================================================
@@ -2386,53 +3321,72 @@ class DatabaseManager:
         if test_template is not None:
             if isinstance(test_template, (dict, list)):
                 try:
-                    tmpl_str = json.dumps(test_template, ensure_ascii=False, default=str)
+                    tmpl_str = json.dumps(
+                        test_template, ensure_ascii=False, default=str
+                    )
                 except Exception:
-                    tmpl_str = json.dumps({"_raw": str(test_template)}, ensure_ascii=False)
+                    tmpl_str = json.dumps(
+                        {"_raw": str(test_template)}, ensure_ascii=False
+                    )
             elif isinstance(test_template, str):
                 tmpl_str = test_template
             else:
                 tmpl_str = json.dumps({"_raw": str(test_template)}, ensure_ascii=False)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM api_endpoint_registry WHERE endpoint=?", (endpoint,))
         row = c.fetchone()
         if row is None:
-            c.execute("""INSERT INTO api_endpoint_registry
+            c.execute(
+                """INSERT INTO api_endpoint_registry
                 (endpoint, methods, first_seen_at, last_tested_at, test_template_json)
                 VALUES (?, ?, ?, NULL, ?)""",
-                (endpoint, methods_str, now, tmpl_str))
+                (endpoint, methods_str, now, tmpl_str),
+            )
         else:
             # 只更新 methods 和 test_template_json；first_seen_at 保留
             if tmpl_str is not None:
-                c.execute("""UPDATE api_endpoint_registry
+                c.execute(
+                    """UPDATE api_endpoint_registry
                     SET methods=?, test_template_json=?
-                    WHERE endpoint=?""", (methods_str, tmpl_str, endpoint))
+                    WHERE endpoint=?""",
+                    (methods_str, tmpl_str, endpoint),
+                )
             else:
-                c.execute("""UPDATE api_endpoint_registry
+                c.execute(
+                    """UPDATE api_endpoint_registry
                     SET methods=?
-                    WHERE endpoint=?""", (methods_str, endpoint))
+                    WHERE endpoint=?""",
+                    (methods_str, endpoint),
+                )
         conn.commit()
         c.execute("SELECT * FROM api_endpoint_registry WHERE endpoint=?", (endpoint,))
         r = dict(c.fetchone())
         conn.close()
         # 自动 parse test_template_json
-        r["test_template_json"] = self._safe_json_parse(r.get("test_template_json"), default=None)
+        r["test_template_json"] = self._safe_json_parse(
+            r.get("test_template_json"), default=None
+        )
         return r
 
     def get_endpoint_registry(self):
         """读全量路由登记表。返回 list[dict]，test_template_json 已 parse。"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT endpoint, methods, first_seen_at, last_tested_at,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT endpoint, methods, first_seen_at, last_tested_at,
                             test_template_json
                      FROM api_endpoint_registry
-                     ORDER BY first_seen_at ASC, endpoint ASC""")
+                     ORDER BY first_seen_at ASC, endpoint ASC"""
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
             r["test_template_json"] = self._safe_json_parse(
-                r.get("test_template_json"), default=None)
+                r.get("test_template_json"), default=None
+            )
         return rows
 
     def update_endpoint_last_tested(self, endpoint, tested_at=None):
@@ -2443,12 +3397,17 @@ class DatabaseManager:
         """
         if tested_at is None:
             tested_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE api_endpoint_registry
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE api_endpoint_registry
                      SET last_tested_at=?
-                     WHERE endpoint=?""", (tested_at, endpoint))
+                     WHERE endpoint=?""",
+            (tested_at, endpoint),
+        )
         affected = c.rowcount
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return affected > 0
 
     # -------- E2E 测试报告（3 个） --------
@@ -2472,15 +3431,21 @@ class DatabaseManager:
         返回: 新插入的 report_id
         """
         whitelist = {
-            "trigger_type", "scan_depth", "total_endpoints",
-            "passed_count", "failed_count", "warning_count",
-            "new_endpoints_json", "full_report_json",
-            "v3_call_count", "cost_estimate", "created_at"
+            "trigger_type",
+            "scan_depth",
+            "total_endpoints",
+            "passed_count",
+            "failed_count",
+            "warning_count",
+            "new_endpoints_json",
+            "full_report_json",
+            "v3_call_count",
+            "cost_estimate",
+            "created_at",
         }
         data = {k: v for k, v in (report_data or {}).items() if k in whitelist}
         # created_at 默认当前
-        data.setdefault("created_at",
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        data.setdefault("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         data.setdefault("trigger_type", "manual")
         data.setdefault("scan_depth", "quick")
         data.setdefault("v3_call_count", 0)
@@ -2500,12 +3465,19 @@ class DatabaseManager:
 
         cols = list(data.keys())
         placeholders = ",".join("?" for _ in cols)
-        sql = ("INSERT INTO e2e_test_reports (" + ",".join(cols) +
-               ") VALUES (" + placeholders + ")")
-        conn = self.get_connection(); c = conn.cursor()
+        sql = (
+            "INSERT INTO e2e_test_reports ("
+            + ",".join(cols)
+            + ") VALUES ("
+            + placeholders
+            + ")"
+        )
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute(sql, [data[k] for k in cols])
         report_id = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return report_id
 
     def get_latest_e2e_test_report(self):
@@ -2513,36 +3485,42 @@ class DatabaseManager:
         无数据返回 None。
         new_endpoints_json 自动 parse；full_report_json 不返回。
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT report_id, created_at, trigger_type, scan_depth,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT report_id, created_at, trigger_type, scan_depth,
                             total_endpoints, passed_count, failed_count,
                             warning_count, new_endpoints_json,
                             v3_call_count, cost_estimate
                      FROM e2e_test_reports
-                     ORDER BY report_id DESC LIMIT 1""")
+                     ORDER BY report_id DESC LIMIT 1"""
+        )
         row = c.fetchone()
         conn.close()
         if row is None:
             return None
         r = dict(row)
         r["new_endpoints_json"] = self._safe_json_parse(
-            r.get("new_endpoints_json"), default=[])
+            r.get("new_endpoints_json"), default=[]
+        )
         return r
 
     def get_e2e_test_report_detail(self, report_id):
         """取某份 E2E 报告完整内容（含 full_report_json 自动 parse）。"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT * FROM e2e_test_reports WHERE report_id=?",
-                  (int(report_id),))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM e2e_test_reports WHERE report_id=?", (int(report_id),))
         row = c.fetchone()
         conn.close()
         if row is None:
             return None
         r = dict(row)
         r["new_endpoints_json"] = self._safe_json_parse(
-            r.get("new_endpoints_json"), default=[])
+            r.get("new_endpoints_json"), default=[]
+        )
         r["full_report_json"] = self._safe_json_parse(
-            r.get("full_report_json"), default={})
+            r.get("full_report_json"), default={}
+        )
         return r
 
     def get_e2e_test_report_list(self, limit=20):
@@ -2556,8 +3534,10 @@ class DatabaseManager:
             limit = max(1, min(int(limit), 200))
         except (TypeError, ValueError):
             limit = 20
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT report_id, created_at, trigger_type, scan_depth,
                    total_endpoints, passed_count, failed_count,
                    warning_count, new_endpoints_json,
@@ -2565,12 +3545,15 @@ class DatabaseManager:
               FROM e2e_test_reports
              ORDER BY created_at DESC, report_id DESC
              LIMIT ?
-        """, (limit,))
+        """,
+            (limit,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
             r["new_endpoints_json"] = self._safe_json_parse(
-                r.get("new_endpoints_json"), default=[])
+                r.get("new_endpoints_json"), default=[]
+            )
         return rows
 
     # -------- E2E issue 四态跟踪（2 个） --------
@@ -2579,8 +3562,9 @@ class DatabaseManager:
     E2E_INTERMITTENT_WINDOW_DAYS = 7
     E2E_INTERMITTENT_UPGRADE_THRESHOLD = 5
 
-    def upsert_e2e_issue(self, report_id, dim_code, endpoint, severity,
-                        signature, payload=None):
+    def upsert_e2e_issue(
+        self, report_id, dim_code, endpoint, severity, signature, payload=None
+    ):
         """四态 issue 去重写入 + 偶发升级判定。
 
         语义：
@@ -2617,24 +3601,39 @@ class DatabaseManager:
             payload_str = json.dumps({"_raw": str(payload)}, ensure_ascii=False)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         # 找最新一条同 signature 的 pending/intermittent（这两个状态需要合并）
-        c.execute("""SELECT issue_id, status, occurrence_count, first_seen_at
+        c.execute(
+            """SELECT issue_id, status, occurrence_count, first_seen_at
                      FROM e2e_issues
                      WHERE signature=? AND status IN ('pending','intermittent')
-                     ORDER BY issue_id DESC LIMIT 1""", (signature,))
+                     ORDER BY issue_id DESC LIMIT 1""",
+            (signature,),
+        )
         existing = c.fetchone()
         if existing is None:
             # 全新：INSERT
-            c.execute("""INSERT INTO e2e_issues
+            c.execute(
+                """INSERT INTO e2e_issues
                 (report_id, dim_code, endpoint, severity, signature,
                  status, first_seen_at, last_seen_at, occurrence_count,
                  resolved_at, payload_json)
                 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 1, NULL, ?)""",
-                (int(report_id), dim_code, endpoint, severity, signature,
-                 now, now, payload_str))
+                (
+                    int(report_id),
+                    dim_code,
+                    endpoint,
+                    severity,
+                    signature,
+                    now,
+                    now,
+                    payload_str,
+                ),
+            )
             issue_id = c.lastrowid
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
             return issue_id
 
         # 已存在 pending/intermittent：UPDATE 合并
@@ -2649,21 +3648,37 @@ class DatabaseManager:
         if old_status == "intermittent":
             try:
                 from datetime import datetime as _dt
+
                 first_dt = _dt.strptime(first_seen, "%Y-%m-%d %H:%M:%S")
                 now_dt = _dt.strptime(now, "%Y-%m-%d %H:%M:%S")
-                within_window = (now_dt - first_dt).days <= self.E2E_INTERMITTENT_WINDOW_DAYS
-                if within_window and new_count > self.E2E_INTERMITTENT_UPGRADE_THRESHOLD:
+                within_window = (
+                    now_dt - first_dt
+                ).days <= self.E2E_INTERMITTENT_WINDOW_DAYS
+                if (
+                    within_window
+                    and new_count > self.E2E_INTERMITTENT_UPGRADE_THRESHOLD
+                ):
                     new_status = "pending"
             except Exception:
                 pass  # 时间解析失败不阻断主流程
 
-        c.execute("""UPDATE e2e_issues
+        c.execute(
+            """UPDATE e2e_issues
                      SET report_id=?, severity=?, last_seen_at=?,
                          occurrence_count=?, status=?, payload_json=?
                      WHERE issue_id=?""",
-                  (int(report_id), severity, now, new_count,
-                   new_status, payload_str, issue_id))
-        conn.commit(); conn.close()
+            (
+                int(report_id),
+                severity,
+                now,
+                new_count,
+                new_status,
+                payload_str,
+                issue_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
         return issue_id
 
     def set_e2e_issue_status(self, issue_id, status, resolved_at=None):
@@ -2681,15 +3696,18 @@ class DatabaseManager:
                 resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             resolved_at = None
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE e2e_issues
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE e2e_issues
                      SET status=?, resolved_at=?
                      WHERE issue_id=?""",
-                  (status, resolved_at, int(issue_id)))
+            (status, resolved_at, int(issue_id)),
+        )
         affected = c.rowcount
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return affected > 0
-
 
     # ================================================================
     # v2.3.1 F2 精品候选 — 6 个新方法
@@ -2711,8 +3729,10 @@ class DatabaseManager:
         不过滤已封神的(premium_client/rfp=1 的也要重判,除非用户特意排除)
         因为 AI 判定是"推荐参考",不是"授权封神",老用户状态不冲突
         """
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
             SELECT kp.id AS kp_id,
                    kp.title,
                    kp.content_type,
@@ -2747,40 +3767,71 @@ class DatabaseManager:
                         AND (',' || dg.member_ids || ',') LIKE ('%,' || kp.id || ',%')
                    )
              ORDER BY kp.id ASC
-        """)
+        """
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
-            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
-            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
-            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
+            r["final_category_tags"] = self._safe_json_parse(
+                r.get("final_category_tags"), default=[]
+            )
+            r["final_attribute_tags"] = self._safe_json_parse(
+                r.get("final_attribute_tags"), default={}
+            )
+            r["final_keywords"] = self._safe_json_parse(
+                r.get("final_keywords"), default=[]
+            )
             r["qa_flags"] = self._safe_json_parse(r.get("qa_flags"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
             r["has_annotation"] = (r.get("annotation_count") or 0) > 0
         return rows
 
-    def upsert_premium_ai_cache(self, kp_id, view, recommendation, reason="", score=0.0, source="ai"):
+    def upsert_premium_ai_cache(
+        self, kp_id, view, recommendation, reason="", score=0.0, source="ai"
+    ):
         """写入/覆盖 AI 判定结果. INSERT OR REPLACE 保证 UNIQUE(kp_id,view)."""
         if view not in ("client", "rfp"):
             raise ValueError("view must be 'client' or 'rfp', got: " + str(view))
         if recommendation not in ("strong", "optional", "not"):
-            raise ValueError("recommendation must be strong/optional/not, got: " + str(recommendation))
+            raise ValueError(
+                "recommendation must be strong/optional/not, got: "
+                + str(recommendation)
+            )
         if source not in ("ai", "rule_fallback"):
             source = "ai"
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT OR REPLACE INTO premium_ai_cache
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR REPLACE INTO premium_ai_cache
                      (kp_id, view, recommendation, reason, score, source, created_at)
                      VALUES (?,?,?,?,?,?, datetime('now','localtime'))""",
-                  (int(kp_id), view, recommendation, reason or "", float(score or 0.0), source))
-        conn.commit(); conn.close()
+            (
+                int(kp_id),
+                view,
+                recommendation,
+                reason or "",
+                float(score or 0.0),
+                source,
+            ),
+        )
+        conn.commit()
+        conn.close()
         return True
 
     def get_premium_ai_cache_by_kp(self, kp_id):
         """读一条 kp 的两视角缓存. 返回 dict {'client': {...} | None, 'rfp': {...} | None}"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT view, recommendation, reason, score, source, created_at
-                       FROM premium_ai_cache WHERE kp_id=?""", (int(kp_id),))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT view, recommendation, reason, score, source, created_at
+                       FROM premium_ai_cache WHERE kp_id=?""",
+            (int(kp_id),),
+        )
         out = {"client": None, "rfp": None}
         for r in c.fetchall():
             rd = dict(r)
@@ -2789,7 +3840,9 @@ class DatabaseManager:
         conn.close()
         return out
 
-    def get_premium_pool_list(self, view, status_filter=None, exclude_blessed_in_view=True):
+    def get_premium_pool_list(
+        self, view, status_filter=None, exclude_blessed_in_view=True
+    ):
         """精品候选队列查询.
 
         view: 'client' 或 'rfp'
@@ -2805,7 +3858,8 @@ class DatabaseManager:
         if status_filter and status_filter not in ("strong", "optional"):
             status_filter = None
 
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         blessed_col = "premium_client" if view == "client" else "premium_rfp"
         other_blessed_col = "premium_rfp" if view == "client" else "premium_client"
 
@@ -2822,7 +3876,8 @@ class DatabaseManager:
             params.append(status_filter)
 
         where_sql = " AND ".join(where_parts)
-        c.execute(f"""
+        c.execute(
+            f"""
             SELECT kp.id AS kp_id,
                    kp.title,
                    kp.content_type,
@@ -2848,12 +3903,19 @@ class DatabaseManager:
               LEFT JOIN categories cat ON cat.id = kp.final_category_id
              WHERE {where_sql}
              ORDER BY pac.score DESC, kp.id ASC
-        """, params)
+        """,
+            params,
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
 
         # 计算 composite_score(§5.9 公式)
-        authority_map = {"official": 100, "authoritative": 75, "firsthand": 50, "informal": 25}
+        authority_map = {
+            "official": 100,
+            "authoritative": 75,
+            "firsthand": 50,
+            "informal": 25,
+        }
         freshness_map = {"fresh": 100, "warning": 50, "expired": 25}
         for r in rows:
             auth_score = authority_map.get(r.get("source_authority"), 50)
@@ -2862,7 +3924,11 @@ class DatabaseManager:
             fresh_status = r.get("premium_freshness_status")
             fresh_score = freshness_map.get(fresh_status, 75)  # NULL → 75
             r["composite_score"] = round(
-                auth_score * 0.25 + annot_score * 0.25 + qa_score * 0.25 + fresh_score * 0.25, 2
+                auth_score * 0.25
+                + annot_score * 0.25
+                + qa_score * 0.25
+                + fresh_score * 0.25,
+                2,
             )
             r["has_annotation"] = (r.get("annotation_count") or 0) > 0
         # composite_score 降序
@@ -2883,16 +3949,20 @@ class DatabaseManager:
             raise ValueError("view must be 'client' or 'rfp'")
         col = "premium_client" if view == "client" else "premium_rfp"
 
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("SELECT id, content_readiness, premium_client, premium_rfp, premium_tier "
-                  "FROM knowledge_points WHERE id=?", (int(kp_id),))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, content_readiness, premium_client, premium_rfp, premium_tier "
+            "FROM knowledge_points WHERE id=?",
+            (int(kp_id),),
+        )
         row = c.fetchone()
         if not row:
             conn.close()
             return {"ok": False, "error": "kp not found"}
         row = dict(row)
         old_readiness = row.get("content_readiness")
-        first_blessing = (old_readiness != "premium")
+        first_blessing = old_readiness != "premium"
 
         sets = [f"{col}=1", "updated_at=datetime('now','localtime')"]
         if first_blessing:
@@ -2900,8 +3970,11 @@ class DatabaseManager:
             if not row.get("premium_tier"):
                 sets.append("premium_tier='trusted'")
 
-        c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),))
-        conn.commit(); conn.close()
+        c.execute(
+            f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),)
+        )
+        conn.commit()
+        conn.close()
 
         # 日志: edit_history + operation_events
         try:
@@ -2910,14 +3983,24 @@ class DatabaseManager:
             pass
         try:
             self.log_operation_event(
-                event_type="premium_blessed", module="db_manager",
-                severity="info", related_kp_id=int(kp_id),
-                payload={"view": view, "first_blessing": first_blessing,
-                         "old_readiness": old_readiness}
+                event_type="premium_blessed",
+                module="db_manager",
+                severity="info",
+                related_kp_id=int(kp_id),
+                payload={
+                    "view": view,
+                    "first_blessing": first_blessing,
+                    "old_readiness": old_readiness,
+                },
             )
         except Exception:
             pass
-        return {"ok": True, "first_blessing": first_blessing, "kp_id": int(kp_id), "view": view}
+        return {
+            "ok": True,
+            "first_blessing": first_blessing,
+            "kp_id": int(kp_id),
+            "view": view,
+        }
 
     def unbless_premium(self, kp_id, view):
         """撤销一条 kp 的某视角精品标.
@@ -2934,10 +4017,14 @@ class DatabaseManager:
         col = "premium_client" if view == "client" else "premium_rfp"
         other_col = "premium_rfp" if view == "client" else "premium_client"
 
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute(f"SELECT id, content_readiness, {col} AS this_blessed, "
-                  f"{other_col} AS other_blessed, premium_tier "
-                  f"FROM knowledge_points WHERE id=?", (int(kp_id),))
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            f"SELECT id, content_readiness, {col} AS this_blessed, "
+            f"{other_col} AS other_blessed, premium_tier "
+            f"FROM knowledge_points WHERE id=?",
+            (int(kp_id),),
+        )
         row = c.fetchone()
         if not row:
             conn.close()
@@ -2954,25 +4041,38 @@ class DatabaseManager:
             sets.append("premium_tier=NULL")
             downgraded = True
 
-        c.execute(f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),))
-        conn.commit(); conn.close()
+        c.execute(
+            f"UPDATE knowledge_points SET {','.join(sets)} WHERE id=?", (int(kp_id),)
+        )
+        conn.commit()
+        conn.close()
 
         try:
-            self.log_operation("premium_unbless_" + view, "knowledge_points", int(kp_id))
+            self.log_operation(
+                "premium_unbless_" + view, "knowledge_points", int(kp_id)
+            )
         except Exception:
             pass
         try:
             self.log_operation_event(
-                event_type="premium_unblessed", module="db_manager",
-                severity="info", related_kp_id=int(kp_id),
-                payload={"view": view, "downgraded_to_quotable": downgraded}
+                event_type="premium_unblessed",
+                module="db_manager",
+                severity="info",
+                related_kp_id=int(kp_id),
+                payload={"view": view, "downgraded_to_quotable": downgraded},
             )
         except Exception:
             pass
-        return {"ok": True, "downgraded_to_quotable": downgraded,
-                "kp_id": int(kp_id), "view": view}
+        return {
+            "ok": True,
+            "downgraded_to_quotable": downgraded,
+            "kp_id": int(kp_id),
+            "view": view,
+        }
 
-    def get_premium_export_data(self, scope="all_premium", tier_filter=None, category_id=None):
+    def get_premium_export_data(
+        self, scope="all_premium", tier_filter=None, category_id=None
+    ):
         """F6 精品导出查询.
 
         scope: 'all_premium' | 'client_only' | 'rfp_only' | 'by_category'(需 category_id)
@@ -2997,12 +4097,16 @@ class DatabaseManager:
 
         if tier_filter:
             placeholders = ",".join("?" for _ in tier_filter)
-            where_parts.append(f"(kp.premium_tier IN ({placeholders}) OR kp.premium_tier IS NULL)")
+            where_parts.append(
+                f"(kp.premium_tier IN ({placeholders}) OR kp.premium_tier IS NULL)"
+            )
             params.extend(tier_filter)
 
         where_sql = " AND ".join(where_parts)
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute(f"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            f"""
             SELECT kp.id AS kp_id,
                    kp.title,
                    kp.content_type,
@@ -3031,7 +4135,9 @@ class DatabaseManager:
               LEFT JOIN source_files sf ON kp.source_file_id=sf.id
              WHERE {where_sql}
              ORDER BY cat.level1_code, cat.level2_code, kp.id
-        """, params)
+        """,
+            params,
+        )
         rows = [dict(r) for r in c.fetchall()]
 
         # 聚合 annotations
@@ -3041,11 +4147,14 @@ class DatabaseManager:
             placeholders = ",".join("?" for _ in kp_ids)
             # v2.3.1-hotfix1: 删除 title 字段 — annotations 表 init_tables 真无此字段
             # 立规则 9 第 8 次应验。修法对齐 premium_exporter._format_one_kp_md
-            c.execute(f"""SELECT knowledge_point_id AS kp_id, annotation_type,
+            c.execute(
+                f"""SELECT knowledge_point_id AS kp_id, annotation_type,
                                  content, tags, created_at
                             FROM annotations
                            WHERE knowledge_point_id IN ({placeholders})
-                           ORDER BY created_at ASC""", kp_ids)
+                           ORDER BY created_at ASC""",
+                kp_ids,
+            )
             for a in c.fetchall():
                 ad = dict(a)
                 kpid = ad.pop("kp_id")
@@ -3054,11 +4163,21 @@ class DatabaseManager:
         conn.close()
 
         for r in rows:
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
-            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
-            r["final_attribute_tags"] = self._safe_json_parse(r.get("final_attribute_tags"), default={})
-            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
+            r["final_category_tags"] = self._safe_json_parse(
+                r.get("final_category_tags"), default=[]
+            )
+            r["final_attribute_tags"] = self._safe_json_parse(
+                r.get("final_attribute_tags"), default={}
+            )
+            r["final_keywords"] = self._safe_json_parse(
+                r.get("final_keywords"), default=[]
+            )
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
             r["annotations"] = annotations_map.get(r["kp_id"], [])
         return rows
 
@@ -3099,7 +4218,8 @@ class DatabaseManager:
           premium_freshness_status / used_count / category / subcategory /
           original_filename / renamed_filename / annotation_count
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
 
         # 关键词清洗:去空、去重、长度 ≥1
         kws = [k.strip() for k in (keywords or []) if k and str(k).strip()]
@@ -3123,7 +4243,8 @@ class DatabaseManager:
             )
             like_params.extend([like_pattern, like_pattern, like_pattern])
 
-        sql = """
+        sql = (
+            """
             SELECT kp.id AS kp_id,
                    kp.title,
                    kp.original_excerpt,
@@ -3155,28 +4276,46 @@ class DatabaseManager:
                AND (kp.premium_client=1
                     OR kp.premium_rfp=1
                     OR kp.content_readiness IN ('quotable','premium'))
-               AND (""" + " OR ".join(like_clauses) + """)
+               AND ("""
+            + " OR ".join(like_clauses)
+            + """)
              ORDER BY (kp.premium_client + kp.premium_rfp) DESC,
                       kp.qa_score DESC,
                       kp.id DESC
              LIMIT ?
         """
+        )
         c.execute(sql, like_params + [int(limit)])
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
 
         for r in rows:
-            r["final_category_tags"] = self._safe_json_parse(r.get("final_category_tags"), default=[])
-            r["final_keywords"] = self._safe_json_parse(r.get("final_keywords"), default=[])
-            r["practical_insights"] = self._safe_json_parse(r.get("practical_insights"), default=[])
-            r["ai_extracted_content"] = self._safe_json_parse(r.get("ai_extracted_content"), default={})
+            r["final_category_tags"] = self._safe_json_parse(
+                r.get("final_category_tags"), default=[]
+            )
+            r["final_keywords"] = self._safe_json_parse(
+                r.get("final_keywords"), default=[]
+            )
+            r["practical_insights"] = self._safe_json_parse(
+                r.get("practical_insights"), default=[]
+            )
+            r["ai_extracted_content"] = self._safe_json_parse(
+                r.get("ai_extracted_content"), default={}
+            )
             r["has_annotation"] = (r.get("annotation_count") or 0) > 0
         return rows
 
-    def save_qa_history(self, query, answer_json, retrieved_kp_ids,
-                         mode="self", source="main",
-                         latency_ms=0, is_test_query=0,
-                         friend_tag=None):
+    def save_qa_history(
+        self,
+        query,
+        answer_json,
+        retrieved_kp_ids,
+        mode="self",
+        source="main",
+        latency_ms=0,
+        is_test_query=0,
+        friend_tag=None,
+    ):
         """问答留痕. 返回 history_id (int).
 
         query: str            用户原始问题
@@ -3201,8 +4340,7 @@ class DatabaseManager:
 
         if isinstance(retrieved_kp_ids, (list, tuple)):
             kp_ids_str = json.dumps(
-                [int(x) for x in retrieved_kp_ids if x is not None],
-                ensure_ascii=False
+                [int(x) for x in retrieved_kp_ids if x is not None], ensure_ascii=False
             )
         elif isinstance(retrieved_kp_ids, str):
             kp_ids_str = retrieved_kp_ids
@@ -3214,17 +4352,28 @@ class DatabaseManager:
         if friend_tag is not None:
             ft_clean = str(friend_tag).strip()[:50] or None
 
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO qa_history
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO qa_history
                      (query, answer_json, retrieved_kp_ids,
                       mode, source, latency_ms, is_test_query,
                       friend_tag, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
-                  (str(query or ""), answer_json_str, kp_ids_str,
-                   mode, source, int(latency_ms or 0),
-                   1 if is_test_query else 0, ft_clean))
+            (
+                str(query or ""),
+                answer_json_str,
+                kp_ids_str,
+                mode,
+                source,
+                int(latency_ms or 0),
+                1 if is_test_query else 0,
+                ft_clean,
+            ),
+        )
         history_id = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return int(history_id)
 
     # ================================================================
@@ -3247,11 +4396,14 @@ class DatabaseManager:
         """
         if not ip:
             return (True, 0, daily_limit)  # IP 缺失保守放行(避免误伤)
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
-            c.execute("""SELECT count FROM friend_quota_daily
+            c.execute(
+                """SELECT count FROM friend_quota_daily
                          WHERE ip=? AND date=date('now','localtime')""",
-                      (str(ip),))
+                (str(ip),),
+            )
             row = c.fetchone()
             used = int(row[0]) if row else 0
             return (used < daily_limit, used, daily_limit)
@@ -3268,15 +4420,18 @@ class DatabaseManager:
         """
         if not ip:
             return
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
-            c.execute("""INSERT INTO friend_quota_daily (ip, date, count, last_at)
+            c.execute(
+                """INSERT INTO friend_quota_daily (ip, date, count, last_at)
                          VALUES (?, date('now','localtime'), 1,
                                  datetime('now','localtime'))
                          ON CONFLICT(ip, date) DO UPDATE SET
                              count = count + 1,
                              last_at = datetime('now','localtime')""",
-                      (str(ip),))
+                (str(ip),),
+            )
             conn.commit()
         except Exception:
             # 限速失败不能阻塞主流程,降级为日志(无日志方法时静默)
@@ -3291,15 +4446,21 @@ class DatabaseManager:
         comment: str | None  自由文字反馈(comment 类型时建议非空)
         """
         if feedback_type not in ("helpful", "not_helpful", "comment"):
-            raise ValueError("feedback_type must be helpful/not_helpful/comment, got: "
-                             + str(feedback_type))
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO qa_feedback
+            raise ValueError(
+                "feedback_type must be helpful/not_helpful/comment, got: "
+                + str(feedback_type)
+            )
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO qa_feedback
                      (qa_history_id, feedback_type, comment, created_at)
                      VALUES (?, ?, ?, datetime('now','localtime'))""",
-                  (int(qa_history_id), feedback_type, str(comment or "")))
+            (int(qa_history_id), feedback_type, str(comment or "")),
+        )
         feedback_id = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return int(feedback_id)
 
     def record_kp_used(self, kp_ids, qa_history_id):
@@ -3318,16 +4479,21 @@ class DatabaseManager:
             return {"updated": 0, "errors": []}
 
         result = {"updated": 0, "errors": []}
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
             for kp_id in kp_ids:
                 try:
                     kp_id_int = int(kp_id)
                 except Exception as e:
-                    result["errors"].append({"kp_id": kp_id, "msg": "invalid id: " + str(e)})
+                    result["errors"].append(
+                        {"kp_id": kp_id, "msg": "invalid id: " + str(e)}
+                    )
                     continue
                 # 读旧 used_for, append 新 qa_history_id
-                c.execute("SELECT used_for FROM knowledge_points WHERE id=?", (kp_id_int,))
+                c.execute(
+                    "SELECT used_for FROM knowledge_points WHERE id=?", (kp_id_int,)
+                )
                 row = c.fetchone()
                 if not row:
                     result["errors"].append({"kp_id": kp_id_int, "msg": "kp not found"})
@@ -3340,18 +4506,22 @@ class DatabaseManager:
                 if len(new_used_for) > 100:
                     new_used_for = new_used_for[-100:]
 
-                c.execute("""UPDATE knowledge_points
+                c.execute(
+                    """UPDATE knowledge_points
                              SET used_count = COALESCE(used_count, 0) + 1,
                                  last_used_at = datetime('now','localtime'),
                                  used_for = ?
                              WHERE id=?""",
-                          (json.dumps(new_used_for, ensure_ascii=False), kp_id_int))
+                    (json.dumps(new_used_for, ensure_ascii=False), kp_id_int),
+                )
                 if c.rowcount > 0:
                     result["updated"] += 1
             conn.commit()
         except Exception as e:
             conn.rollback()
-            result["errors"].append({"kp_id": None, "msg": "transaction failed: " + str(e)})
+            result["errors"].append(
+                {"kp_id": None, "msg": "transaction failed: " + str(e)}
+            )
         finally:
             conn.close()
         return result
@@ -3363,7 +4533,8 @@ class DatabaseManager:
         mode: None / 'self' / 'friend'
         exclude_test: True 时过滤掉 is_test_query=1 的记录
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         wheres = []
         params = []
         if mode in ("self", "friend"):
@@ -3373,18 +4544,24 @@ class DatabaseManager:
             wheres.append("is_test_query=0")
         where_sql = ("WHERE " + " AND ".join(wheres)) if wheres else ""
 
-        c.execute("""SELECT id, query, answer_json, retrieved_kp_ids,
+        c.execute(
+            """SELECT id, query, answer_json, retrieved_kp_ids,
                             mode, source, is_test_query, latency_ms, created_at
                        FROM qa_history
-                       """ + where_sql + """
+                       """
+            + where_sql
+            + """
                       ORDER BY created_at DESC
                       LIMIT ? OFFSET ?""",
-                  params + [int(limit), int(offset)])
+            params + [int(limit), int(offset)],
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
             r["answer_json"] = self._safe_json_parse(r.get("answer_json"), default={})
-            r["retrieved_kp_ids"] = self._safe_json_parse(r.get("retrieved_kp_ids"), default=[])
+            r["retrieved_kp_ids"] = self._safe_json_parse(
+                r.get("retrieved_kp_ids"), default=[]
+            )
         return rows
 
     def get_qa_stats(self):
@@ -3398,12 +4575,18 @@ class DatabaseManager:
           recent_comments: 最近 10 条 comment 类型反馈(qa_history_id + comment + created_at)
           avg_latency_ms: 主链(source=main) 平均耗时
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         out = {
             "total_questions": 0,
             "total_questions_excl_test": 0,
             "by_mode": {"self": 0, "friend": 0},
-            "by_source": {"main": 0, "l1_retry": 0, "r1_fallback": 0, "rule_fallback": 0},
+            "by_source": {
+                "main": 0,
+                "l1_retry": 0,
+                "r1_fallback": 0,
+                "rule_fallback": 0,
+            },
             "feedback_counts": {"helpful": 0, "not_helpful": 0, "comment": 0},
             "recent_comments": [],
             "avg_latency_ms": 0,
@@ -3428,21 +4611,27 @@ class DatabaseManager:
                 out["by_source"][s] = n or 0
 
         # feedback_counts
-        c.execute("SELECT feedback_type, COUNT(*) FROM qa_feedback GROUP BY feedback_type")
+        c.execute(
+            "SELECT feedback_type, COUNT(*) FROM qa_feedback GROUP BY feedback_type"
+        )
         for ft, n in c.fetchall():
             if ft in out["feedback_counts"]:
                 out["feedback_counts"][ft] = n or 0
 
         # recent_comments
-        c.execute("""SELECT id, qa_history_id, comment, created_at
+        c.execute(
+            """SELECT id, qa_history_id, comment, created_at
                        FROM qa_feedback
                       WHERE feedback_type='comment' AND comment != ''
-                      ORDER BY created_at DESC LIMIT 10""")
+                      ORDER BY created_at DESC LIMIT 10"""
+        )
         out["recent_comments"] = [dict(r) for r in c.fetchall()]
 
         # avg_latency_ms (只算主链, 排除 0)
-        c.execute("""SELECT AVG(latency_ms) FROM qa_history
-                      WHERE source='main' AND latency_ms > 0""")
+        c.execute(
+            """SELECT AVG(latency_ms) FROM qa_history
+                      WHERE source='main' AND latency_ms > 0"""
+        )
         avg = c.fetchone()[0]
         out["avg_latency_ms"] = int(avg) if avg else 0
 
@@ -3460,9 +4649,17 @@ class DatabaseManager:
     # ================================================================
 
     # ---- 关系边 CRUD ----
-    def add_kp_relation(self, source_kp_id, target_kp_id, relation_type,
-                         similarity_score=0, ai_judgment="{}",
-                         cluster_id=None, status="pending", created_by="ai"):
+    def add_kp_relation(
+        self,
+        source_kp_id,
+        target_kp_id,
+        relation_type,
+        similarity_score=0,
+        ai_judgment="{}",
+        cluster_id=None,
+        status="pending",
+        created_by="ai",
+    ):
         """新增/更新一条关系边
         UNIQUE(source_kp_id, target_kp_id, relation_type) 冲突时 INSERT OR IGNORE,
         相同三元组不重复建.
@@ -3471,14 +4668,25 @@ class DatabaseManager:
         a, b = sorted([int(source_kp_id), int(target_kp_id)])
         if a == b:
             return None
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
-            c.execute("""INSERT OR IGNORE INTO kp_relations
+            c.execute(
+                """INSERT OR IGNORE INTO kp_relations
                          (source_kp_id, target_kp_id, relation_type,
                           similarity_score, ai_judgment, cluster_id, status, created_by)
                          VALUES (?,?,?,?,?,?,?,?)""",
-                      (a, b, relation_type, similarity_score, ai_judgment,
-                       cluster_id, status, created_by))
+                (
+                    a,
+                    b,
+                    relation_type,
+                    similarity_score,
+                    ai_judgment,
+                    cluster_id,
+                    status,
+                    created_by,
+                ),
+            )
             conn.commit()
             rid = c.lastrowid if c.rowcount > 0 else None
             return rid
@@ -3487,7 +4695,8 @@ class DatabaseManager:
 
     def get_kp_relation(self, relation_id):
         """读单条关系边"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM kp_relations WHERE relation_id=?", (relation_id,))
         row = c.fetchone()
         conn.close()
@@ -3496,16 +4705,21 @@ class DatabaseManager:
     def get_pending_relations(self, status_filter=None):
         """读所有 pending / pending_human_review 关系(供 UI 列表)
         status_filter 可选:'pending'|'pending_human_review'|None(两个都返回)"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if status_filter:
-            c.execute("""SELECT * FROM kp_relations
+            c.execute(
+                """SELECT * FROM kp_relations
                          WHERE status=?
                          ORDER BY relation_type, similarity_score DESC, created_at DESC""",
-                      (status_filter,))
+                (status_filter,),
+            )
         else:
-            c.execute("""SELECT * FROM kp_relations
+            c.execute(
+                """SELECT * FROM kp_relations
                          WHERE status IN ('pending','pending_human_review')
-                         ORDER BY status DESC, similarity_score DESC, created_at DESC""")
+                         ORDER BY status DESC, similarity_score DESC, created_at DESC"""
+            )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -3514,52 +4728,85 @@ class DatabaseManager:
         """更新关系状态(confirmed / rejected)"""
         if status not in ("pending", "pending_human_review", "confirmed", "rejected"):
             raise ValueError("invalid status: " + str(status))
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if status == "confirmed":
-            c.execute("""UPDATE kp_relations
+            c.execute(
+                """UPDATE kp_relations
                           SET status=?, confirmed_at=datetime('now','localtime'),
                               confirmed_by_user=?
                         WHERE relation_id=?""",
-                      (status, confirmed_by_user, relation_id))
+                (status, confirmed_by_user, relation_id),
+            )
         else:
-            c.execute("""UPDATE kp_relations SET status=? WHERE relation_id=?""",
-                      (status, relation_id))
-        conn.commit(); conn.close()
-        self.log_operation("relation_status_update", "kp_relations", relation_id,
-                           {"status": status})
+            c.execute(
+                """UPDATE kp_relations SET status=? WHERE relation_id=?""",
+                (status, relation_id),
+            )
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "relation_status_update", "kp_relations", relation_id, {"status": status}
+        )
 
     def bump_kp_relation_count(self, kp_id, delta):
         """更新 kp.relation_count(增量加 delta)"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE knowledge_points
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE knowledge_points
                       SET relation_count = COALESCE(relation_count, 0) + ?
-                    WHERE id=?""", (int(delta), int(kp_id)))
-        conn.commit(); conn.close()
+                    WHERE id=?""",
+            (int(delta), int(kp_id)),
+        )
+        conn.commit()
+        conn.close()
 
     # ---- 共识簇 CRUD ----
-    def create_consensus_cluster(self, cluster_type, topic, member_count=0,
-                                  source_documents=None, strength_score=0):
+    def create_consensus_cluster(
+        self,
+        cluster_type,
+        topic,
+        member_count=0,
+        source_documents=None,
+        strength_score=0,
+    ):
         """创建一个共识簇/演进链/细化树,返回 cluster_id"""
         if cluster_type not in ("consensus", "evolution_chain", "refinement_tree"):
             raise ValueError("invalid cluster_type: " + str(cluster_type))
         docs = source_documents or []
         docs_json = json.dumps(docs, ensure_ascii=False)
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO consensus_clusters
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO consensus_clusters
                      (cluster_type, topic, member_count, source_documents,
                       source_doc_count, strength_score)
                      VALUES (?,?,?,?,?,?)""",
-                  (cluster_type, topic[:60], member_count, docs_json,
-                   len(set(docs)), float(strength_score)))
+            (
+                cluster_type,
+                topic[:60],
+                member_count,
+                docs_json,
+                len(set(docs)),
+                float(strength_score),
+            ),
+        )
         cid = c.lastrowid
-        conn.commit(); conn.close()
-        self.log_operation("create_cluster", "consensus_clusters", cid,
-                           {"cluster_type": cluster_type, "topic": topic[:60]})
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "create_cluster",
+            "consensus_clusters",
+            cid,
+            {"cluster_type": cluster_type, "topic": topic[:60]},
+        )
         return cid
 
     def get_consensus_cluster(self, cluster_id):
         """读单个簇及其成员列表"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("SELECT * FROM consensus_clusters WHERE cluster_id=?", (cluster_id,))
         row = c.fetchone()
         if not row:
@@ -3567,87 +4814,122 @@ class DatabaseManager:
             return None
         cluster = dict(row)
         # 读成员
-        c.execute("""SELECT cm.*, kp.title, kp.content_type, sf.renamed_filename
+        c.execute(
+            """SELECT cm.*, kp.title, kp.content_type, sf.renamed_filename
                        FROM cluster_members cm
                        LEFT JOIN knowledge_points kp ON cm.kp_id = kp.id
                        LEFT JOIN source_files sf ON kp.source_file_id = sf.id
                       WHERE cm.cluster_id=?
-                      ORDER BY cm.sequence_order, cm.added_at""", (cluster_id,))
+                      ORDER BY cm.sequence_order, cm.added_at""",
+            (cluster_id,),
+        )
         cluster["members"] = [dict(r) for r in c.fetchall()]
         conn.close()
         return cluster
 
     def get_clusters_by_kp(self, kp_id):
         """反查 kp 所属的所有 active 簇"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT cc.* FROM consensus_clusters cc
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT cc.* FROM consensus_clusters cc
                        JOIN cluster_members cm ON cm.cluster_id = cc.cluster_id
-                      WHERE cm.kp_id=? AND cc.status='active'""", (kp_id,))
+                      WHERE cm.kp_id=? AND cc.status='active'""",
+            (kp_id,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
 
     def update_cluster(self, cluster_id, **kwargs):
         """更新簇字段(topic / strength_score / notes / status)"""
-        allowed = {"topic", "strength_score", "notes", "status",
-                   "member_count", "source_documents", "source_doc_count"}
+        allowed = {
+            "topic",
+            "strength_score",
+            "notes",
+            "status",
+            "member_count",
+            "source_documents",
+            "source_doc_count",
+        }
         sets, params = [], []
         for k, v in kwargs.items():
             if k not in allowed:
                 continue
             if k == "source_documents" and isinstance(v, list):
                 v = json.dumps(v, ensure_ascii=False)
-            sets.append(k + "=?"); params.append(v)
+            sets.append(k + "=?")
+            params.append(v)
         if not sets:
             return
         sets.append("updated_at=datetime('now','localtime')")
         params.append(cluster_id)
         sql = "UPDATE consensus_clusters SET " + ",".join(sets) + " WHERE cluster_id=?"
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute(sql, params)
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
 
     def dismiss_cluster(self, cluster_id, reason=""):
         """老唐手动 dismiss 一个簇(status='dismissed' + 关联关系边状态置 rejected)"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE consensus_clusters
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE consensus_clusters
                       SET status='dismissed',
                           updated_at=datetime('now','localtime'),
                           notes=COALESCE(notes,'') || ?
-                    WHERE cluster_id=?""", ("\n[dismiss] " + reason, cluster_id))
-        c.execute("""UPDATE kp_relations SET status='rejected' WHERE cluster_id=?""",
-                  (cluster_id,))
-        conn.commit(); conn.close()
-        self.log_operation("dismiss_cluster", "consensus_clusters", cluster_id,
-                           {"reason": reason})
+                    WHERE cluster_id=?""",
+            ("\n[dismiss] " + reason, cluster_id),
+        )
+        c.execute(
+            """UPDATE kp_relations SET status='rejected' WHERE cluster_id=?""",
+            (cluster_id,),
+        )
+        conn.commit()
+        conn.close()
+        self.log_operation(
+            "dismiss_cluster", "consensus_clusters", cluster_id, {"reason": reason}
+        )
 
     # ---- 簇成员 ----
     def add_cluster_member(self, cluster_id, kp_id, role="branch", sequence_order=0):
         """添加成员到簇(role: core/branch/derivative)"""
         if role not in ("core", "branch", "derivative"):
             role = "branch"
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
-            c.execute("""INSERT OR IGNORE INTO cluster_members
+            c.execute(
+                """INSERT OR IGNORE INTO cluster_members
                          (cluster_id, kp_id, role, sequence_order)
                          VALUES (?,?,?,?)""",
-                      (cluster_id, kp_id, role, int(sequence_order)))
+                (cluster_id, kp_id, role, int(sequence_order)),
+            )
             # 同步 member_count
-            c.execute("""UPDATE consensus_clusters SET
+            c.execute(
+                """UPDATE consensus_clusters SET
                           member_count = (SELECT COUNT(*) FROM cluster_members WHERE cluster_id=?)
-                          WHERE cluster_id=?""", (cluster_id, cluster_id))
+                          WHERE cluster_id=?""",
+                (cluster_id, cluster_id),
+            )
             conn.commit()
         finally:
             conn.close()
 
     def get_cluster_members(self, cluster_id):
         """读簇成员列表"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT cm.*, kp.title, kp.content_type
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT cm.*, kp.title, kp.content_type
                        FROM cluster_members cm
                        LEFT JOIN knowledge_points kp ON cm.kp_id = kp.id
                       WHERE cm.cluster_id=?
-                      ORDER BY cm.sequence_order, cm.added_at""", (cluster_id,))
+                      ORDER BY cm.sequence_order, cm.added_at""",
+            (cluster_id,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -3659,9 +4941,11 @@ class DatabaseManager:
         返回结构:[{group_id, group_type=cluster|loose, relation_type, status, members:[{kp_id,title,...}],
                    ai_judgment, similarity_score, ...}]
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         # 分两步:先取所有 pending/pending_human_review 关系,再按 cluster_id 分组
-        c.execute("""SELECT r.*, kp_a.title AS source_title, kp_b.title AS target_title,
+        c.execute(
+            """SELECT r.*, kp_a.title AS source_title, kp_b.title AS target_title,
                             sf_a.renamed_filename AS source_file_a,
                             sf_b.renamed_filename AS source_file_b
                        FROM kp_relations r
@@ -3670,7 +4954,8 @@ class DatabaseManager:
                        LEFT JOIN source_files sf_a ON sf_a.id = kp_a.source_file_id
                        LEFT JOIN source_files sf_b ON sf_b.id = kp_b.source_file_id
                       WHERE r.status IN ('pending','pending_human_review')
-                      ORDER BY r.created_at DESC""")
+                      ORDER BY r.created_at DESC"""
+        )
         rels = [dict(r) for r in c.fetchall()]
         conn.close()
 
@@ -3697,18 +4982,20 @@ class DatabaseManager:
                 groups[cid]["kp_ids"].add(r["source_kp_id"])
                 groups[cid]["kp_ids"].add(r["target_kp_id"])
             else:
-                loose.append({
-                    "group_id": "rel-" + str(r["relation_id"]),
-                    "group_type": "loose",
-                    "cluster_id": None,
-                    "relation_type": r.get("relation_type"),
-                    "status": r.get("status"),
-                    "similarity_score": r.get("similarity_score") or 0,
-                    "ai_judgment": r.get("ai_judgment") or "{}",
-                    "relation_ids": [r["relation_id"]],
-                    "kp_ids": [r["source_kp_id"], r["target_kp_id"]],
-                    "created_at": r.get("created_at"),
-                })
+                loose.append(
+                    {
+                        "group_id": "rel-" + str(r["relation_id"]),
+                        "group_type": "loose",
+                        "cluster_id": None,
+                        "relation_type": r.get("relation_type"),
+                        "status": r.get("status"),
+                        "similarity_score": r.get("similarity_score") or 0,
+                        "ai_judgment": r.get("ai_judgment") or "{}",
+                        "relation_ids": [r["relation_id"]],
+                        "kp_ids": [r["source_kp_id"], r["target_kp_id"]],
+                        "created_at": r.get("created_at"),
+                    }
+                )
 
         result = []
         for cid, g in groups.items():
@@ -3730,35 +5017,49 @@ class DatabaseManager:
             for g in loose:
                 kp_ids = g["kp_ids"]
                 qmarks = ",".join("?" * len(kp_ids))
-                conn2 = self.get_connection(); c2 = conn2.cursor()
-                c2.execute(f"""SELECT kp.id, kp.title, kp.content_type,
+                conn2 = self.get_connection()
+                c2 = conn2.cursor()
+                c2.execute(
+                    f"""SELECT kp.id, kp.title, kp.content_type,
                                       sf.renamed_filename, sf.original_filename
                                  FROM knowledge_points kp
                                  LEFT JOIN source_files sf ON sf.id = kp.source_file_id
-                                WHERE kp.id IN ({qmarks})""", kp_ids)
+                                WHERE kp.id IN ({qmarks})""",
+                    kp_ids,
+                )
                 g["members_detail"] = [dict(r) for r in c2.fetchall()]
                 conn2.close()
             result.extend(loose)
         # 排序: pending_human_review 优先, 其次按 created_at desc
-        result.sort(key=lambda x: (
-            0 if x["status"] == "pending_human_review" else 1,
-            x.get("created_at") or "",
-        ), reverse=False)
+        result.sort(
+            key=lambda x: (
+                0 if x["status"] == "pending_human_review" else 1,
+                x.get("created_at") or "",
+            ),
+            reverse=False,
+        )
         return result
 
     def get_relation_summary(self):
         """关系/簇的概要统计(头部 dup-bar 用)"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT status, COUNT(*) AS cnt FROM kp_relations
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT status, COUNT(*) AS cnt FROM kp_relations
                       WHERE status IN ('pending','pending_human_review')
-                      GROUP BY status""")
+                      GROUP BY status"""
+        )
         status_counts = {r[0]: r[1] for r in c.fetchall()}
-        c.execute("""SELECT relation_type, COUNT(*) AS cnt FROM kp_relations
+        c.execute(
+            """SELECT relation_type, COUNT(*) AS cnt FROM kp_relations
                       WHERE status IN ('pending','pending_human_review')
-                      GROUP BY relation_type""")
+                      GROUP BY relation_type"""
+        )
         type_counts = {r[0]: r[1] for r in c.fetchall()}
-        c.execute("""SELECT COUNT(*) AS cnt FROM consensus_clusters
-                      WHERE status='active'""")
+        c.execute(
+            """SELECT COUNT(*) AS cnt FROM consensus_clusters
+                      WHERE status='active'"""
+        )
         active_clusters = c.fetchone()[0]
         conn.close()
         return {
@@ -3778,15 +5079,20 @@ class DatabaseManager:
         事务安全,失败 ROLLBACK.
         返回 (cluster_deleted, members_purged, relations_unbound) 三元组.
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
             c.execute("BEGIN IMMEDIATE")
             c.execute("DELETE FROM cluster_members WHERE cluster_id=?", (cluster_id,))
             members_purged = c.rowcount
-            c.execute("UPDATE kp_relations SET cluster_id=NULL WHERE cluster_id=?",
-                      (cluster_id,))
+            c.execute(
+                "UPDATE kp_relations SET cluster_id=NULL WHERE cluster_id=?",
+                (cluster_id,),
+            )
             relations_unbound = c.rowcount
-            c.execute("DELETE FROM consensus_clusters WHERE cluster_id=?", (cluster_id,))
+            c.execute(
+                "DELETE FROM consensus_clusters WHERE cluster_id=?", (cluster_id,)
+            )
             cluster_deleted = c.rowcount
             conn.commit()
             return (cluster_deleted, members_purged, relations_unbound)
@@ -3804,16 +5110,22 @@ class DatabaseManager:
         注意:delete_knowledge_point 已挂钩 cascade 清理,本方法仅供"删关系不删 kp"场景
         返回 (relations_deleted, members_deleted) 元组.
         """
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         try:
             c.execute("BEGIN IMMEDIATE")
-            c.execute("""DELETE FROM kp_relations
-                          WHERE source_kp_id=? OR target_kp_id=?""", (kp_id, kp_id))
+            c.execute(
+                """DELETE FROM kp_relations
+                          WHERE source_kp_id=? OR target_kp_id=?""",
+                (kp_id, kp_id),
+            )
             relations_deleted = c.rowcount
             c.execute("DELETE FROM cluster_members WHERE kp_id=?", (kp_id,))
             members_deleted = c.rowcount
             # 同步 kp.relation_count 归零
-            c.execute("UPDATE knowledge_points SET relation_count=0 WHERE id=?", (kp_id,))
+            c.execute(
+                "UPDATE knowledge_points SET relation_count=0 WHERE id=?", (kp_id,)
+            )
             conn.commit()
             return (relations_deleted, members_deleted)
         except Exception:
@@ -3830,36 +5142,53 @@ class DatabaseManager:
     # ================================================================
     def seed_agent_definitions(self, agents):
         """插入 Agent 定义(幂等,agent_code 已存在则跳过)。agents 为 [{agent_code,agent_name,agent_type,identity_text,core_questions,quality_standards,scoring_dimensions},...]"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         inserted = 0
         for ag in agents:
             try:
-                c.execute("""INSERT OR IGNORE INTO agent_definitions
+                c.execute(
+                    """INSERT OR IGNORE INTO agent_definitions
                     (agent_code, agent_name, agent_type, identity_text,
                      core_questions, quality_standards, scoring_dimensions)
                     VALUES (?,?,?,?,?,?,?)""",
-                    (ag["agent_code"], ag["agent_name"], ag["agent_type"],
-                     ag["identity_text"], json.dumps(ag.get("core_questions",[]), ensure_ascii=False),
-                     json.dumps(ag.get("quality_standards",[]), ensure_ascii=False),
-                     json.dumps(ag.get("scoring_dimensions",[]), ensure_ascii=False)))
+                    (
+                        ag["agent_code"],
+                        ag["agent_name"],
+                        ag["agent_type"],
+                        ag["identity_text"],
+                        json.dumps(ag.get("core_questions", []), ensure_ascii=False),
+                        json.dumps(ag.get("quality_standards", []), ensure_ascii=False),
+                        json.dumps(
+                            ag.get("scoring_dimensions", []), ensure_ascii=False
+                        ),
+                    ),
+                )
                 if c.rowcount > 0:
                     inserted += 1
             except Exception:
                 pass
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return inserted
 
     def get_active_agents(self, agent_type=None):
         """获取活跃的 Agent 定义列表。agent_type 可选: role/bug/ui"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         if agent_type:
-            c.execute("SELECT * FROM agent_definitions WHERE is_active=1 AND agent_type=? ORDER BY agent_id", (agent_type,))
+            c.execute(
+                "SELECT * FROM agent_definitions WHERE is_active=1 AND agent_type=? ORDER BY agent_id",
+                (agent_type,),
+            )
         else:
-            c.execute("SELECT * FROM agent_definitions WHERE is_active=1 ORDER BY agent_id")
+            c.execute(
+                "SELECT * FROM agent_definitions WHERE is_active=1 ORDER BY agent_id"
+            )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
-            for f in ("core_questions","quality_standards","scoring_dimensions"):
+            for f in ("core_questions", "quality_standards", "scoring_dimensions"):
                 val = r.get(f)
                 if isinstance(val, str):
                     try:
@@ -3870,13 +5199,17 @@ class DatabaseManager:
 
     def get_kp_sample_for_audit(self, n=20):
         """随机抽取 n 条 confirmed 知识点供审计"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT id, title, content_type, original_excerpt,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, title, content_type, original_excerpt,
                      ai_extracted_content, qa_score, source_authority,
                      content_readiness, target_reader, reader_scenario,
                      knowledge_depth, quality_score_json, suggested_category_tags
                      FROM knowledge_points WHERE review_status IN ('confirmed','pending')
-                     ORDER BY RANDOM() LIMIT ?""", (n,))
+                     ORDER BY RANDOM() LIMIT ?""",
+            (n,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         for r in rows:
@@ -3890,31 +5223,44 @@ class DatabaseManager:
 
     def save_audit_report(self, report):
         """保存审计报告。report 含 cycle_label/kp_sample_ids/report_json/feed_tasks/structure_gaps/code_tasks。返回 cycle_id"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""INSERT INTO audit_cycles (cycle_label, kp_sample_ids, status, report_json,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO audit_cycles (cycle_label, kp_sample_ids, status, report_json,
                      feed_tasks, structure_gaps, code_tasks, started_at, completed_at)
                      VALUES (?,?,?,?,?,?,?,datetime('now','localtime'),datetime('now','localtime'))""",
-                  (report["cycle_label"],
-                   json.dumps(report.get("kp_sample_ids",[]), ensure_ascii=False),
-                   report.get("status","completed"),
-                   json.dumps(report.get("report_json",{}), ensure_ascii=False),
-                   json.dumps(report.get("feed_tasks",[]), ensure_ascii=False),
-                   json.dumps(report.get("structure_gaps",[]), ensure_ascii=False),
-                   json.dumps(report.get("code_tasks",[]), ensure_ascii=False)))
+            (
+                report["cycle_label"],
+                json.dumps(report.get("kp_sample_ids", []), ensure_ascii=False),
+                report.get("status", "completed"),
+                json.dumps(report.get("report_json", {}), ensure_ascii=False),
+                json.dumps(report.get("feed_tasks", []), ensure_ascii=False),
+                json.dumps(report.get("structure_gaps", []), ensure_ascii=False),
+                json.dumps(report.get("code_tasks", []), ensure_ascii=False),
+            ),
+        )
         cycle_id = c.lastrowid
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return cycle_id
 
     def get_latest_audit_report(self):
         """获取最近一次审计报告"""
-        conn = self.get_connection(); c = conn.cursor()
+        conn = self.get_connection()
+        c = conn.cursor()
         c.execute("""SELECT * FROM audit_cycles ORDER BY created_at DESC LIMIT 1""")
         row = c.fetchone()
         conn.close()
         if not row:
             return None
         r = dict(row)
-        for f in ("report_json","feed_tasks","structure_gaps","code_tasks","kp_sample_ids"):
+        for f in (
+            "report_json",
+            "feed_tasks",
+            "structure_gaps",
+            "code_tasks",
+            "kp_sample_ids",
+        ):
             val = r.get(f)
             if isinstance(val, str):
                 try:
@@ -3925,37 +5271,49 @@ class DatabaseManager:
 
     def get_kps_missing_reader_fields(self, limit=100):
         """获取缺少读者定位字段的知识点"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""SELECT id, title, content_type, original_excerpt,
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """SELECT id, title, content_type, original_excerpt,
                      ai_extracted_content, suggested_category_tags
                      FROM knowledge_points
                      WHERE review_status IN ('confirmed','pending')
                        AND (target_reader='[]' OR target_reader IS NULL
                             OR reader_scenario='' OR reader_scenario IS NULL)
-                     ORDER BY qa_score DESC LIMIT ?""", (limit,))
+                     ORDER BY qa_score DESC LIMIT ?""",
+            (limit,),
+        )
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
 
     def batch_update_reader_fields(self, kp_id, reader_tags):
         """更新一条知识点的读者定位字段。reader_tags 含 10 个字段"""
-        conn = self.get_connection(); c = conn.cursor()
-        c.execute("""UPDATE knowledge_points SET
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """UPDATE knowledge_points SET
             target_reader=?, reader_scenario=?, reader_need=?,
             knowledge_depth=?, depth_reason=?, knowledge_chain=?,
             search_keywords=?, question_examples=?, answer_template=?,
             quality_score_json=?, updated_at=datetime('now','localtime')
-            WHERE id=?""", (
-            json.dumps(reader_tags.get("target_reader",[]), ensure_ascii=False),
-            reader_tags.get("reader_scenario",""),
-            reader_tags.get("reader_need",""),
-            reader_tags.get("knowledge_depth",""),
-            reader_tags.get("depth_reason",""),
-            reader_tags.get("knowledge_chain",""),
-            json.dumps(reader_tags.get("search_keywords",[]), ensure_ascii=False),
-            json.dumps(reader_tags.get("question_examples",[]), ensure_ascii=False),
-            reader_tags.get("answer_template",""),
-            json.dumps(reader_tags.get("quality_score",{}), ensure_ascii=False),
-            kp_id))
-        conn.commit(); conn.close()
+            WHERE id=?""",
+            (
+                json.dumps(reader_tags.get("target_reader", []), ensure_ascii=False),
+                reader_tags.get("reader_scenario", ""),
+                reader_tags.get("reader_need", ""),
+                reader_tags.get("knowledge_depth", ""),
+                reader_tags.get("depth_reason", ""),
+                reader_tags.get("knowledge_chain", ""),
+                json.dumps(reader_tags.get("search_keywords", []), ensure_ascii=False),
+                json.dumps(
+                    reader_tags.get("question_examples", []), ensure_ascii=False
+                ),
+                reader_tags.get("answer_template", ""),
+                json.dumps(reader_tags.get("quality_score", {}), ensure_ascii=False),
+                kp_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
         return True

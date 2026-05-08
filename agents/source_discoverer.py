@@ -6,9 +6,11 @@ source_discoverer.py - 信源探测器: URL模式暴力探测政府网站政策�
 中国政府网站结构高度标准化(国务院办公厅强制规范),与其解析首页HTML,
 不如用URL模式直接探测。对每个候选URL发HEAD→200就GET→数文章链接→达标就收录。
 """
-import re, time
-from urllib.parse import urljoin, urlparse
+
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urljoin, urlparse
 
 try:
     import requests
@@ -67,11 +69,14 @@ class SourceDiscoverer(object):
 
     # 文章页URL特征(用于计数)
     ARTICLE_PATTERNS = [
-        r'/content/', r'/article/', r'/info/', r'/detail/',
-        r'/20\d{2}[/-]\d{1,2}[/-]\d{1,2}',  # 含日期的路径
-        r'[a-f0-9]{16,}',                       # 长ID
-        r'\.s?html$',                            # .html/.shtml结尾
-        r'/t\d{8}_\d+',                          # 常见文章ID格式
+        r"/content/",
+        r"/article/",
+        r"/info/",
+        r"/detail/",
+        r"/20\d{2}[/-]\d{1,2}[/-]\d{1,2}",  # 含日期的路径
+        r"[a-f0-9]{16,}",  # 长ID
+        r"\.s?html$",  # .html/.shtml结尾
+        r"/t\d{8}_\d+",  # 常见文章ID格式
     ]
 
     def __init__(self):
@@ -104,8 +109,10 @@ class SourceDiscoverer(object):
 
         # 并发验证候选URL
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(self._verify_listing, url, name): (url, name)
-                      for url, name in unique_candidates}
+            futures = {
+                executor.submit(self._verify_listing, url, name): (url, name)
+                for url, name in unique_candidates
+            }
             for future in as_completed(futures):
                 if len(discovered) >= max_listings:
                     break
@@ -117,8 +124,9 @@ class SourceDiscoverer(object):
                         stats["verified"] += 1
                         discovered.append(result)
                         # 发现一个后,尝试同级目录的其他常见子路径
-                        self._probe_siblings(result["url"], domain, discovered,
-                                            max_listings, stats)
+                        self._probe_siblings(
+                            result["url"], domain, discovered, max_listings, stats
+                        )
 
         # 按文章数降序排列(文章越多=列表页越靠谱)
         discovered.sort(key=lambda x: x.get("article_count", 0), reverse=True)
@@ -127,7 +135,13 @@ class SourceDiscoverer(object):
         seen_urls = set()
         deduped = []
         for d in discovered:
-            key = d["url"].rstrip("/").replace("/index.html", "").replace("/index.shtml", "").replace("/index.htm", "")
+            key = (
+                d["url"]
+                .rstrip("/")
+                .replace("/index.html", "")
+                .replace("/index.shtml", "")
+                .replace("/index.htm", "")
+            )
             if key not in seen_urls:
                 seen_urls.add(key)
                 deduped.append(d)
@@ -178,7 +192,7 @@ class SourceDiscoverer(object):
         """发现一个列表页后,探测同级目录下的其他常见子路径。"""
         path = urlparse(found_url).path.rstrip("/")
         # 去掉尾部index.*
-        path = re.sub(r'/index\.(s?html|htm)$', '', path)
+        path = re.sub(r"/index\.(s?html|htm)$", "", path)
         # 取父目录
         parts = [p for p in path.split("/") if p]
         if len(parts) < 1:
@@ -214,13 +228,17 @@ class SourceDiscoverer(object):
         """验证一个URL是否是真的政策列表页(GET→检查HTTP 200→数文章链接)。
         大多数中国政府网站不支持HEAD请求,直接GET。"""
         try:
-            resp = self._session.get(url, timeout=FETCH_TIMEOUT, allow_redirects=True,
-                                     stream=True)  # stream=True先读headers
+            resp = self._session.get(
+                url, timeout=FETCH_TIMEOUT, allow_redirects=True, stream=True
+            )  # stream=True先读headers
             if resp.status_code >= 400:
                 resp.close()
                 return None
             content_type = resp.headers.get("Content-Type", "")
-            if "text/html" not in content_type and "application/xhtml" not in content_type:
+            if (
+                "text/html" not in content_type
+                and "application/xhtml" not in content_type
+            ):
                 resp.close()
                 return None
 
@@ -240,7 +258,7 @@ class SourceDiscoverer(object):
                 return None
 
             # 提取标题
-            title_m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE)
+            title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE)
             page_title = title_m.group(1).strip() if title_m else name
 
             # 跳过明显的错误页/跳转页
@@ -266,8 +284,7 @@ class SourceDiscoverer(object):
     def _count_article_links(self, html, base_url, domain):
         """计算页面中文章链接的数量。"""
         link_pattern = re.compile(
-            r'<a[^>]*href\s*=\s*["\']([^"\']+)["\']',
-            re.IGNORECASE
+            r'<a[^>]*href\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE
         )
         count = 0
         seen = set()
@@ -275,12 +292,12 @@ class SourceDiscoverer(object):
 
         for match in link_pattern.finditer(html):
             href = match.group(1).strip()
-            if not href or href.startswith('#') or href.startswith('javascript:'):
+            if not href or href.startswith("#") or href.startswith("javascript:"):
                 continue
 
             full_url = urljoin(base_url, href)
-            if '#' in full_url:
-                full_url = full_url.split('#')[0]
+            if "#" in full_url:
+                full_url = full_url.split("#")[0]
 
             # 同域
             try:
@@ -298,7 +315,7 @@ class SourceDiscoverer(object):
             if any(re.search(p, path) for p in self.ARTICLE_PATTERNS):
                 count += 1
             # 深度路径也很可能是文章
-            elif len([p for p in path.split('/') if p]) >= 4:
+            elif len([p for p in path.split("/") if p]) >= 4:
                 count += 1
 
         return count
@@ -308,11 +325,13 @@ class SourceDiscoverer(object):
     # ================================================================
     def _init_session(self):
         self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": "RuralRevitalizationKB/2.3.8 (source-discovery)",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Accept": "text/html,application/xhtml+xml",
-        })
+        self._session.headers.update(
+            {
+                "User-Agent": "RuralRevitalizationKB/2.3.8 (source-discovery)",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Accept": "text/html,application/xhtml+xml",
+            }
+        )
 
     def _decode(self, raw_bytes):
         """智能解码(meta→UTF-8→GBK)"""
@@ -321,14 +340,14 @@ class SourceDiscoverer(object):
         m = re.search(rb'charset[="\s]+([a-zA-Z0-9_-]+)', head, re.IGNORECASE)
         if m:
             try:
-                meta_enc = m.group(1).decode('ascii').lower()
+                meta_enc = m.group(1).decode("ascii").lower()
             except Exception:
                 pass
-        for enc in ([meta_enc] if meta_enc else []) + ['utf-8', 'gbk', 'gb18030']:
+        for enc in ([meta_enc] if meta_enc else []) + ["utf-8", "gbk", "gb18030"]:
             try:
-                text = raw_bytes.decode(enc, errors='strict')
-                if sum(1 for c in text[:2000] if '一' <= c <= '鿿') > 10:
+                text = raw_bytes.decode(enc, errors="strict")
+                if sum(1 for c in text[:2000] if "一" <= c <= "鿿") > 10:
                     return text
             except (UnicodeDecodeError, LookupError):
                 continue
-        return raw_bytes.decode('utf-8', errors='replace')
+        return raw_bytes.decode("utf-8", errors="replace")

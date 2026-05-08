@@ -5,10 +5,13 @@ auto_tester.py - F063 六层自动化测试引擎(git diff→模块→测试文�
 使用说明见 CLAUDE.md §12
 """
 
-import sys, json, sqlite3, time
-from pathlib import Path
-from datetime import datetime
+import json
+import sqlite3
+import sys
+import time
 from collections import OrderedDict
+from datetime import datetime
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,12 +38,18 @@ MODULE_TESTFILE_MAP = {
         "min_files": 2,
     },
     "extractor_parallel": {
-        "categories": ["顶层综合类指导文件/中央1号文件", "全域土地综合整治文件汇编（2019～2025）"],
+        "categories": [
+            "顶层综合类指导文件/中央1号文件",
+            "全域土地综合整治文件汇编（2019～2025）",
+        ],
         "reason": "大文件多段落→验证核心段识别+并行合并去重",
         "min_files": 2,
     },
     "relation_analyzer": {
-        "categories": ["全域土地综合整治文件汇编（2019～2025）", "中央层面有关公报及政策解读"],
+        "categories": [
+            "全域土地综合整治文件汇编（2019～2025）",
+            "中央层面有关公报及政策解读",
+        ],
         "reason": "同主题多文件,验证跨文件共识/政策演进/冗余检测",
         "min_files": 4,
     },
@@ -60,12 +69,19 @@ MODULE_TESTFILE_MAP = {
         "min_files": 1,
     },
     "prompt_templates": {
-        "categories": ["顶层综合类指导文件/中央1号文件", "有关政策", "农业农村领域有关信息"],
+        "categories": [
+            "顶层综合类指导文件/中央1号文件",
+            "有关政策",
+            "农业农村领域有关信息",
+        ],
         "reason": "不同内容类型触发不同 Prompt,验证版本一致性",
         "min_files": 3,
     },
     "tag_config": {
-        "categories": ["全域土地综合整治文件汇编（2019～2025）", "农业农村领域有关信息"],
+        "categories": [
+            "全域土地综合整治文件汇编（2019～2025）",
+            "农业农村领域有关信息",
+        ],
         "reason": "标签密集文档,验证三层标签体系覆盖度",
         "min_files": 2,
     },
@@ -150,7 +166,14 @@ class TestReport(object):
         self.errors = []
 
     def add_layer(self, name):
-        layer = {"name": name, "checks": [], "pass": 0, "fail": 0, "skip": 0, "duration_ms": 0}
+        layer = {
+            "name": name,
+            "checks": [],
+            "pass": 0,
+            "fail": 0,
+            "skip": 0,
+            "duration_ms": 0,
+        }
         self.layers[name] = layer
         return layer
 
@@ -158,12 +181,14 @@ class TestReport(object):
         if layer_name not in self.layers:
             self.add_layer(layer_name)
         layer = self.layers[layer_name]
-        layer["checks"].append({
-            "name": check_name,
-            "status": status,  # pass / fail / skip
-            "detail": str(detail)[:500],
-            "duration_ms": duration_ms,
-        })
+        layer["checks"].append(
+            {
+                "name": check_name,
+                "status": status,  # pass / fail / skip
+                "detail": str(detail)[:500],
+                "duration_ms": duration_ms,
+            }
+        )
         if status == "pass":
             layer["pass"] += 1
             self.total_pass += 1
@@ -187,13 +212,16 @@ class TestReport(object):
             "total_skip": self.total_skip,
             "passed": self.total_fail == 0,
             "layers": OrderedDict(
-                (k, {
-                    "name": v["name"],
-                    "checks": v["checks"],
-                    "pass": v["pass"],
-                    "fail": v["fail"],
-                    "skip": v["skip"],
-                })
+                (
+                    k,
+                    {
+                        "name": v["name"],
+                        "checks": v["checks"],
+                        "pass": v["pass"],
+                        "fail": v["fail"],
+                        "skip": v["skip"],
+                    },
+                )
                 for k, v in self.layers.items()
             ),
             "errors": self.errors,
@@ -202,24 +230,28 @@ class TestReport(object):
     def print_summary(self):
         d = self.to_dict()
         print(f"\n{'=' * 70}")
-        print(f"  F063 自动化功能测试报告")
+        print("  F063 自动化功能测试报告")
         print(f"  时间: {d['test_run_at']}")
         print(f"  耗时: {d['duration_ms'] / 1000:.1f}s")
-        print(f"  结果: {d['total_pass']} pass / {d['total_fail']} fail / {d['total_skip']} skip")
-        if d['passed']:
-            print(f"  结论: [PASS] 全部通过")
+        print(
+            f"  结果: {d['total_pass']} pass / {d['total_fail']} fail / {d['total_skip']} skip"
+        )
+        if d["passed"]:
+            print("  结论: [PASS] 全部通过")
         else:
             print(f"  结论: [FAIL] 有 {d['total_fail']} 项失败")
         print(f"{'=' * 70}")
         for lk, lv in d["layers"].items():
             status_icon = "[PASS]" if lv["fail"] == 0 else "[FAIL]"
             skipped = f" ({lv['skip']} skip)" if lv["skip"] else ""
-            print(f"  {status_icon} {lv['name']}: {lv['pass']} pass / {lv['fail']} fail{skipped}")
+            print(
+                f"  {status_icon} {lv['name']}: {lv['pass']} pass / {lv['fail']} fail{skipped}"
+            )
             for c in lv["checks"]:
                 if c["status"] == "fail":
                     print(f"     [FAIL] {c['name']}: {c['detail'][:120]}")
         if self.errors:
-            print(f"\n  错误摘要:")
+            print("\n  错误摘要:")
             for e in self.errors[:5]:
                 print(f"     ! {e[:150]}")
         print(f"{'=' * 70}\n")
@@ -249,14 +281,16 @@ class TestFileSelector(object):
                 category = parts[0] if len(parts) > 0 else "未知"
                 subcategory = "/".join(parts[:-1]) if len(parts) > 1 else category
                 ext = entry.suffix.lower()
-                files.append({
-                    "path": str(entry),
-                    "name": entry.name,
-                    "category": category,
-                    "subcategory": subcategory,
-                    "ext": ext,
-                    "size_kb": entry.stat().st_size / 1024 if entry.exists() else 0,
-                })
+                files.append(
+                    {
+                        "path": str(entry),
+                        "name": entry.name,
+                        "category": category,
+                        "subcategory": subcategory,
+                        "ext": ext,
+                        "size_kb": entry.stat().st_size / 1024 if entry.exists() else 0,
+                    }
+                )
         self._file_cache = files
         return files
 
@@ -354,7 +388,10 @@ def _load_config():
 def _get_db_path():
     cfg = _load_config()
     if cfg:
-        return cfg.get("database_path", str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db"))
+        return cfg.get(
+            "database_path",
+            str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db"),
+        )
     return str(PROJECT_ROOT / "data" / "database" / "knowledge_base.db")
 
 
@@ -369,12 +406,23 @@ def _run_l0_import_check(report):
         t1 = time.time()
         try:
             import importlib
+
             importlib.import_module(mod_path)
-            report.add_check("L0", f"import {label}", "pass",
-                             f"{mod_path} 导入成功", int((time.time() - t1) * 1000))
+            report.add_check(
+                "L0",
+                f"import {label}",
+                "pass",
+                f"{mod_path} 导入成功",
+                int((time.time() - t1) * 1000),
+            )
         except Exception as e:
-            report.add_check("L0", f"import {label}", "fail",
-                             f"{mod_path} 导入失败: {e}", int((time.time() - t1) * 1000))
+            report.add_check(
+                "L0",
+                f"import {label}",
+                "fail",
+                f"{mod_path} 导入失败: {e}",
+                int((time.time() - t1) * 1000),
+            )
 
     layer["duration_ms"] = int((time.time() - t0) * 1000)
 
@@ -415,7 +463,9 @@ def _l1_test_file_reader(report, selector):
     test_files = selector.pick_by_format_coverage()
 
     if not test_files:
-        report.add_check("L1", "FileReader 多格式读取", "skip", "source_library目录不存在或无文件")
+        report.add_check(
+            "L1", "FileReader 多格式读取", "skip", "source_library目录不存在或无文件"
+        )
         return
 
     supported = {".docx", ".pdf", ".xlsx"}
@@ -430,15 +480,25 @@ def _l1_test_file_reader(report, selector):
             tested_exts.add(tf["ext"])
             if rr["success"]:
                 content_len = len(rr.get("content", ""))
-                report.add_check("L1", f"读取 {tf['ext']} ({tf['name'][:40]})", "pass",
-                                 f"内容 {content_len} 字")
+                report.add_check(
+                    "L1",
+                    f"读取 {tf['ext']} ({tf['name'][:40]})",
+                    "pass",
+                    f"内容 {content_len} 字",
+                )
             else:
                 all_pass = False
-                report.add_check("L1", f"读取 {tf['ext']} ({tf['name'][:40]})", "fail",
-                                 rr.get("error", "未知错误"))
+                report.add_check(
+                    "L1",
+                    f"读取 {tf['ext']} ({tf['name'][:40]})",
+                    "fail",
+                    rr.get("error", "未知错误"),
+                )
         except Exception as e:
             all_pass = False
-            report.add_check("L1", f"读取 {tf['ext']} ({tf['name'][:40]})", "fail", str(e))
+            report.add_check(
+                "L1", f"读取 {tf['ext']} ({tf['name'][:40]})", "fail", str(e)
+            )
 
     for ext in supported:
         if ext not in tested_exts:
@@ -447,7 +507,8 @@ def _l1_test_file_reader(report, selector):
 
 def _l1_test_tag_config(report):
     try:
-        from scripts.tag_config import LAYER1_TAGS, CONTENT_READINESS, SOURCE_AUTHORITY
+        from scripts.tag_config import CONTENT_READINESS, LAYER1_TAGS, SOURCE_AUTHORITY
+
         # 验证 A 组有标签
         a_tags = LAYER1_TAGS.get("A", {}).get("tags", [])
         if not a_tags:
@@ -460,17 +521,25 @@ def _l1_test_tag_config(report):
                 codes.append(tag.get("code", ""))
         dupes = [c for c in codes if codes.count(c) > 1]
         if dupes:
-            report.add_check("L1", "TagConfig code唯一性", "fail", f"重复code: {set(dupes)}")
+            report.add_check(
+                "L1", "TagConfig code唯一性", "fail", f"重复code: {set(dupes)}"
+            )
         else:
-            report.add_check("L1", "TagConfig code唯一性", "pass", f"{len(codes)} 个标签,无重复")
+            report.add_check(
+                "L1", "TagConfig code唯一性", "pass", f"{len(codes)} 个标签,无重复"
+            )
         # 验证 CONTENT_READINESS 有合法值
         if CONTENT_READINESS:
-            report.add_check("L1", "CONTENT_READINESS", "pass", f"{len(CONTENT_READINESS)} 个级别")
+            report.add_check(
+                "L1", "CONTENT_READINESS", "pass", f"{len(CONTENT_READINESS)} 个级别"
+            )
         else:
             report.add_check("L1", "CONTENT_READINESS", "fail", "为空")
         # 验证 SOURCE_AUTHORITY 有合法值
         if SOURCE_AUTHORITY:
-            report.add_check("L1", "SOURCE_AUTHORITY", "pass", f"{len(SOURCE_AUTHORITY)} 个级别")
+            report.add_check(
+                "L1", "SOURCE_AUTHORITY", "pass", f"{len(SOURCE_AUTHORITY)} 个级别"
+            )
         else:
             report.add_check("L1", "SOURCE_AUTHORITY", "fail", "为空")
     except Exception as e:
@@ -483,13 +552,22 @@ def _l1_test_config_integrity(report):
         report.add_check("L1", "配置文件", "fail", "config/settings.json 不存在")
         return
 
-    required = ["deepseek_api_key_encrypted", "knowledge_base_path", "database_path",
-                "pending_path", "processing_path", "completed_path", "daily_cost_limit"]
+    required = [
+        "deepseek_api_key_encrypted",
+        "knowledge_base_path",
+        "database_path",
+        "pending_path",
+        "processing_path",
+        "completed_path",
+        "daily_cost_limit",
+    ]
     missing = [k for k in required if k not in cfg]
     if missing:
         report.add_check("L1", "配置文件必需字段", "fail", f"缺少: {missing}")
     else:
-        report.add_check("L1", "配置文件必需字段", "pass", f"{len(required)} 个字段齐全")
+        report.add_check(
+            "L1", "配置文件必需字段", "pass", f"{len(required)} 个字段齐全"
+        )
 
     # 检查关键路径存在性
     for key in ["pending_path", "processing_path", "completed_path"]:
@@ -524,6 +602,7 @@ def _run_l2_preprocessor_test(report, selector, no_ai=False):
         return
 
     from scripts.file_reader import FileReader
+
     test_root = str(selector.root)
     cfg = _load_config() or {}
     allowed = list(cfg.get("allowed_paths", []))
@@ -538,12 +617,17 @@ def _run_l2_preprocessor_test(report, selector, no_ai=False):
             if rr["success"]:
                 content_len = len(rr.get("content", ""))
                 has_content = content_len > 100
-                report.add_check("L2", f"文件读取 ({tf['name'][:50]})",
-                                 "pass" if has_content else "fail",
-                                 f"类型:{tf['ext']} 内容:{content_len}字 格式:{rr.get('file_type','?')}"
-                                 + ("" if has_content else " [内容过短]"))
+                report.add_check(
+                    "L2",
+                    f"文件读取 ({tf['name'][:50]})",
+                    "pass" if has_content else "fail",
+                    f"类型:{tf['ext']} 内容:{content_len}字 格式:{rr.get('file_type','?')}"
+                    + ("" if has_content else " [内容过短]"),
+                )
             else:
-                report.add_check("L2", f"文件读取 ({tf['name'][:50]})", "fail", rr.get("error", ""))
+                report.add_check(
+                    "L2", f"文件读取 ({tf['name'][:50]})", "fail", rr.get("error", "")
+                )
         except Exception as e:
             report.add_check("L2", f"文件读取 ({tf['name'][:50]})", "fail", str(e))
 
@@ -570,42 +654,86 @@ def _run_l3_db_integrity(report):
         # 3.1 PRAGMA integrity_check
         cur.execute("PRAGMA integrity_check")
         ic_result = cur.fetchone()[0]
-        report.add_check("L3", "PRAGMA integrity_check",
-                         "pass" if ic_result == "ok" else "fail", ic_result)
+        report.add_check(
+            "L3",
+            "PRAGMA integrity_check",
+            "pass" if ic_result == "ok" else "fail",
+            ic_result,
+        )
 
         # 3.2 必需表清单(28 张表)
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [r[0] for r in cur.fetchall()]
         expected_tables = [
-            "knowledge_points", "source_files", "categories", "tag_definitions",
-            "operation_events", "edit_history", "duplicate_groups", "annotations",
-            "polish_suggestions", "health_reports", "api_endpoint_registry",
-            "e2e_test_reports", "e2e_issues", "kp_relations",
-            "consensus_clusters", "cluster_members",
-            "architecture_suggestions", "knowledge_relations",
-            "knowledge_versions", "qa_history", "qa_feedback",
-            "api_call_logs", "tag_statistics", "premium_ai_cache",
-            "knowledge_usage_log", "operation_logs",
+            "knowledge_points",
+            "source_files",
+            "categories",
+            "tag_definitions",
+            "operation_events",
+            "edit_history",
+            "duplicate_groups",
+            "annotations",
+            "polish_suggestions",
+            "health_reports",
+            "api_endpoint_registry",
+            "e2e_test_reports",
+            "e2e_issues",
+            "kp_relations",
+            "consensus_clusters",
+            "cluster_members",
+            "architecture_suggestions",
+            "knowledge_relations",
+            "knowledge_versions",
+            "qa_history",
+            "qa_feedback",
+            "api_call_logs",
+            "tag_statistics",
+            "premium_ai_cache",
+            "knowledge_usage_log",
+            "operation_logs",
         ]
         missing_tables = [t for t in expected_tables if t not in tables]
         if missing_tables:
-            report.add_check("L3", f"必需表清单 ({len(expected_tables)}张)",
-                             "fail", f"缺少: {missing_tables}")
+            report.add_check(
+                "L3",
+                f"必需表清单 ({len(expected_tables)}张)",
+                "fail",
+                f"缺少: {missing_tables}",
+            )
         else:
-            report.add_check("L3", f"必需表清单",
-                             "pass", f"{len(tables)} 张表(含{len(expected_tables)}张核心表)")
+            report.add_check(
+                "L3",
+                "必需表清单",
+                "pass",
+                f"{len(tables)} 张表(含{len(expected_tables)}张核心表)",
+            )
 
         # 3.3 knowledge_points 关键字段
         cur.execute("PRAGMA table_info(knowledge_points)")
         kp_cols = [r[1] for r in cur.fetchall()]
-        kp_required = ["id", "title", "source_file_id", "content_type", "review_status",
-                       "content_readiness", "source_authority", "qa_score", "prompt_version"]
+        kp_required = [
+            "id",
+            "title",
+            "source_file_id",
+            "content_type",
+            "review_status",
+            "content_readiness",
+            "source_authority",
+            "qa_score",
+            "prompt_version",
+        ]
         kp_missing = [c for c in kp_required if c not in kp_cols]
         if kp_missing:
-            report.add_check("L3", "knowledge_points 关键字段", "fail", f"缺少: {kp_missing}")
+            report.add_check(
+                "L3", "knowledge_points 关键字段", "fail", f"缺少: {kp_missing}"
+            )
         else:
-            report.add_check("L3", "knowledge_points 关键字段", "pass",
-                             f"{len(kp_cols)} 列,关键字段齐全")
+            report.add_check(
+                "L3",
+                "knowledge_points 关键字段",
+                "pass",
+                f"{len(kp_cols)} 列,关键字段齐全",
+            )
 
         # 3.4 外键启用
         cur.execute("PRAGMA foreign_keys")
@@ -616,8 +744,12 @@ def _run_l3_db_integrity(report):
         # 3.5 索引覆盖
         cur.execute("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
         indexes = [r[0] for r in cur.fetchall()]
-        report.add_check("L3", "索引总数", "pass" if len(indexes) >= 30 else "fail",
-                         f"{len(indexes)} 条索引(预期 >= 37)")
+        report.add_check(
+            "L3",
+            "索引总数",
+            "pass" if len(indexes) >= 30 else "fail",
+            f"{len(indexes)} 条索引(预期 >= 37)",
+        )
 
         conn.close()
     except Exception as e:
@@ -638,7 +770,9 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
         layer["duration_ms"] = int((time.time() - t0) * 1000)
         return
 
-    test_files = selector.pick_for_modules(["extractor", "relation_analyzer"], min_total=1)
+    test_files = selector.pick_for_modules(
+        ["extractor", "relation_analyzer"], min_total=1
+    )
     if not test_files:
         report.add_check("L4", "测试文件", "skip", "无匹配的测试文件")
         layer["duration_ms"] = int((time.time() - t0) * 1000)
@@ -647,9 +781,11 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     # 4.1 检查 Extractor 是否可以实例化
     try:
         from scripts.extractor import Extractor
+
         extractor = Extractor()
-        report.add_check("L4", "Extractor 实例化", "pass",
-                         f"模型: {extractor.extraction_model_name}")
+        report.add_check(
+            "L4", "Extractor 实例化", "pass", f"模型: {extractor.extraction_model_name}"
+        )
     except Exception as e:
         report.add_check("L4", "Extractor 实例化", "fail", str(e))
         layer["duration_ms"] = int((time.time() - t0) * 1000)
@@ -658,6 +794,7 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     # 4.2 检查 RelationAnalyzer 是否可以实例化
     try:
         from scripts.relation_analyzer import RelationAnalyzer
+
         ra = RelationAnalyzer()
         report.add_check("L4", "RelationAnalyzer 实例化", "pass", "成功")
     except Exception as e:
@@ -666,6 +803,7 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     # 4.3 检查 PolicyValidator 是否可以实例化
     try:
         from scripts.policy_validator import PolicyValidator
+
         pv = PolicyValidator()
         report.add_check("L4", "PolicyValidator 实例化", "pass", "成功")
     except Exception as e:
@@ -674,10 +812,13 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     # 4.4 验证核心 Prompt 可加载
     try:
         from scripts.prompts.prompt_templates import (
+            E2E_RESPONSE_JUDGE_PROMPT,
+            POLICY_SCAN_PROMPT,
+            QC_CHECK_PROMPT,
+            RELATION_JUDGE_PROMPT,
             get_prompt_version,
-            RELATION_JUDGE_PROMPT, E2E_RESPONSE_JUDGE_PROMPT,
-            QC_CHECK_PROMPT, POLICY_SCAN_PROMPT,
         )
+
         pv = get_prompt_version()
         report.add_check("L4", "Prompt 加载", "pass", f"版本: {pv}")
 
@@ -695,26 +836,38 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
                 report.add_check("L4", f"Prompt {key}", "pass", "system+user 齐全")
             else:
                 missing = []
-                if not has_sys: missing.append("system_prompt")
-                if not has_user: missing.append("user_prompt_template")
+                if not has_sys:
+                    missing.append("system_prompt")
+                if not has_user:
+                    missing.append("user_prompt_template")
                 report.add_check("L4", f"Prompt {key}", "fail", f"缺少: {missing}")
     except Exception as e:
         report.add_check("L4", "Prompt 加载", "fail", str(e))
 
     # 4.5 验证 extractor_parallel 辅助模块
     try:
-        report.add_check("L4", "extractor_parallel", "pass", "identify_core_segments + merge_and_deduplicate")
+        report.add_check(
+            "L4",
+            "extractor_parallel",
+            "pass",
+            "identify_core_segments + merge_and_deduplicate",
+        )
     except Exception as e:
         report.add_check("L4", "extractor_parallel", "fail", str(e))
 
     # 4.6 检查 DeepSeekClient API 连通性(轻量:查今日费用)
     try:
         from scripts.deepseek_client import DeepSeekClient
+
         client = DeepSeekClient()
         usage = client.get_today_usage()
         if usage:
-            report.add_check("L4", "API 连通性", "pass",
-                             f"今日费用: {usage.get('today_cost', 0):.2f}元")
+            report.add_check(
+                "L4",
+                "API 连通性",
+                "pass",
+                f"今日费用: {usage.get('today_cost', 0):.2f}元",
+            )
         else:
             report.add_check("L4", "API 连通性", "fail", "get_today_usage 返回空")
     except Exception as e:
@@ -733,11 +886,14 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
     # 5.1 数据库管理器核心方法可用性
     try:
         from scripts.db_manager import DatabaseManager
+
         db = DatabaseManager()
         # 验证 5 个核心读方法存在
         core_methods = [
-            "get_all_knowledge_points", "get_all_categories",
-            "get_statistics", "get_source_file",
+            "get_all_knowledge_points",
+            "get_all_categories",
+            "get_statistics",
+            "get_source_file",
             "get_latest_health_report",
         ]
         missing_methods = []
@@ -745,15 +901,21 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
             if not hasattr(db, m):
                 missing_methods.append(m)
         if missing_methods:
-            report.add_check("L5", "DB Manager 核心方法", "fail", f"缺少: {missing_methods}")
+            report.add_check(
+                "L5", "DB Manager 核心方法", "fail", f"缺少: {missing_methods}"
+            )
         else:
-            report.add_check("L5", "DB Manager 核心方法", "pass", f"{len(core_methods)} 个方法齐全")
+            report.add_check(
+                "L5", "DB Manager 核心方法", "pass", f"{len(core_methods)} 个方法齐全"
+            )
 
         # 验证统计查询可执行
         stats = db.get_statistics()
         if stats:
             kp_count = stats.get("knowledge_points", {}).get("cnt", 0)
-            report.add_check("L5", "DB 统计查询", "pass", f"知识库共 {kp_count} 条知识点")
+            report.add_check(
+                "L5", "DB 统计查询", "pass", f"知识库共 {kp_count} 条知识点"
+            )
         else:
             report.add_check("L5", "DB 统计查询", "fail", "get_statistics 返回空")
     except Exception as e:
@@ -762,6 +924,7 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
     # 5.4 备份管理器可用性
     try:
         from scripts.backup_manager import BackupManager
+
         bm = BackupManager()
         report.add_check("L5", "BackupManager 就绪", "pass", "实例化成功")
     except Exception as e:
@@ -770,10 +933,15 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
     # 5.5 系统状态检查自测
     try:
         from scripts.check_system import run_checks_json
+
         result = run_checks_json()
         if result and result.get("ok_count", 0) > 0:
-            report.add_check("L5", "check_system 自测",
-                             "pass", f"{result['ok_count']}/{result.get('total_count', '?')} 项通过")
+            report.add_check(
+                "L5",
+                "check_system 自测",
+                "pass",
+                f"{result['ok_count']}/{result.get('total_count', '?')} 项通过",
+            )
         else:
             report.add_check("L5", "check_system 自测", "fail", "返回结果异常")
     except Exception as e:
@@ -783,29 +951,39 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
     # 验证: DB 读 → 内存处理 → DB 写的完整链路
     try:
         from scripts.db_manager import DatabaseManager
+
         db2 = DatabaseManager()
 
         # 验证 get_statistics 跨模块数据流
         stats = db2.get_statistics()
         if stats and isinstance(stats, dict):
             kp_cnt = stats.get("knowledge_points", {}).get("cnt", 0)
-            report.add_check("L5", "跨模块数据流(DB→统计)", "pass",
-                             f"知识库共 {kp_cnt} 条知识点")
+            report.add_check(
+                "L5", "跨模块数据流(DB→统计)", "pass", f"知识库共 {kp_cnt} 条知识点"
+            )
         else:
-            report.add_check("L5", "跨模块数据流(DB→统计)", "fail", "get_statistics 返回异常")
+            report.add_check(
+                "L5", "跨模块数据流(DB→统计)", "fail", "get_statistics 返回异常"
+            )
     except Exception as e:
         report.add_check("L5", "跨模块数据流", "fail", str(e))
 
     # 5.7 版本一致性检查
     try:
         ver_file = PROJECT_ROOT / "VERSION"
-        ver_in_file = ver_file.read_text(encoding="utf-8").strip() if ver_file.exists() else "unknown"
+        ver_in_file = (
+            ver_file.read_text(encoding="utf-8").strip()
+            if ver_file.exists()
+            else "unknown"
+        )
 
         from scripts.prompts.prompt_templates import PROMPT_VERSION
+
         mismatches = []
         # 系统版本 vs Prompt 版本不要求完全一致(各模块独立版本)
-        report.add_check("L5", "版本一致性", "pass",
-                         f"系统:{ver_in_file} Prompt:{PROMPT_VERSION}")
+        report.add_check(
+            "L5", "版本一致性", "pass", f"系统:{ver_in_file} Prompt:{PROMPT_VERSION}"
+        )
     except Exception as e:
         report.add_check("L5", "版本一致性", "fail", str(e))
 
@@ -818,20 +996,27 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
 def _detect_changed_modules():
     """通过 git diff 检测变更的 Python 模块。"""
     import subprocess
+
     modules = set()
 
     try:
         # 先检查工作区变更
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=10
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=10,
         )
         changed = result.stdout.strip().split("\n") if result.stdout.strip() else []
 
         # 也检查未跟踪文件
         result2 = subprocess.run(
             ["git", "diff", "--name-only", "--cached"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=10
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=10,
         )
         changed += result2.stdout.strip().split("\n") if result2.stdout.strip() else []
 
@@ -867,8 +1052,10 @@ def run_tests(module_names=None, no_ai=False, dry_run=False):
         # 没有任何变更,默认跑 L0+L1+L3(纯代码级检查,不需要测试文件)
         module_names = set()
 
-    print(f"F063 自动化功能测试引擎 v2.3.6-part1")
-    print(f"变更模块: {', '.join(sorted(module_names)) if module_names else '(无变更,默认检查)'}")
+    print("F063 自动化功能测试引擎 v2.3.6-part1")
+    print(
+        f"变更模块: {', '.join(sorted(module_names)) if module_names else '(无变更,默认检查)'}"
+    )
     print(f"测试文件根目录: {TEST_FILES_ROOT}")
 
     selector = TestFileSelector()
@@ -877,8 +1064,12 @@ def run_tests(module_names=None, no_ai=False, dry_run=False):
         picked = selector.pick_for_modules(list(module_names), min_total=3)
         print(f"\n将测试以下文件({len(picked)} 个):")
         for pf in picked:
-            print(f"  [{pf['ext']}] {pf['subcategory']}/{pf['name']} ({pf['size_kb']:.0f}KB)")
-        print(f"\n测试层次: L0 → L1 → L2 → L3 → L4{' (跳过, --no-ai)' if no_ai else ''} → L5")
+            print(
+                f"  [{pf['ext']}] {pf['subcategory']}/{pf['name']} ({pf['size_kb']:.0f}KB)"
+            )
+        print(
+            f"\n测试层次: L0 → L1 → L2 → L3 → L4{' (跳过, --no-ai)' if no_ai else ''} → L5"
+        )
         return True, {"dry_run": True, "files": [pf["path"] for pf in picked]}
 
     # 逐层执行
@@ -948,19 +1139,29 @@ def post_change_test(module_names):
 # ============================================================
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="F063 自动化功能测试引擎")
-    parser.add_argument("--auto", action="store_true",
-                        help="自动检测 git diff 变更模块并测试")
-    parser.add_argument("--modules", type=str, default="",
-                        help="逗号分隔的模块名,如 extractor,relation_analyzer")
-    parser.add_argument("--full", action="store_true",
-                        help="全量测试(所有模块,所有层次)")
-    parser.add_argument("--no-ai", action="store_true",
-                        help="跳过 AI 调用,仅执行 L0-L3 代码级检查")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="仅列出会测试哪些文件,不执行")
-    parser.add_argument("--smoke", action="store_true",
-                        help="快速冒烟测试(L0+L3,秒级,不调AI)")
+    parser.add_argument(
+        "--auto", action="store_true", help="自动检测 git diff 变更模块并测试"
+    )
+    parser.add_argument(
+        "--modules",
+        type=str,
+        default="",
+        help="逗号分隔的模块名,如 extractor,relation_analyzer",
+    )
+    parser.add_argument(
+        "--full", action="store_true", help="全量测试(所有模块,所有层次)"
+    )
+    parser.add_argument(
+        "--no-ai", action="store_true", help="跳过 AI 调用,仅执行 L0-L3 代码级检查"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="仅列出会测试哪些文件,不执行"
+    )
+    parser.add_argument(
+        "--smoke", action="store_true", help="快速冒烟测试(L0+L3,秒级,不调AI)"
+    )
     args = parser.parse_args()
 
     if args.smoke:
@@ -980,7 +1181,9 @@ if __name__ == "__main__":
     else:
         print("请指定 --auto / --modules / --full / --smoke")
         print("示例: python scripts/auto_tester.py --auto")
-        print("      python scripts/auto_tester.py --modules extractor,relation_analyzer")
+        print(
+            "      python scripts/auto_tester.py --modules extractor,relation_analyzer"
+        )
         print("      python scripts/auto_tester.py --full --dry-run")
         print("      python scripts/auto_tester.py --smoke")
         sys.exit(1)

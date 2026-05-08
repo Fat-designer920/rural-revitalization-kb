@@ -5,8 +5,8 @@ backup_manager.py - 备份管理器
 """
 
 import os
-import sys
 import sqlite3
+import sys
 from datetime import datetime, timedelta
 
 
@@ -16,6 +16,7 @@ class BackupFailedError(Exception):
     当 operation_hook() 无法创建备份时抛出，调用方可精确catch
     以便终止破坏性操作（批量重跑/重复合并/全库重扫等）
     """
+
     pass
 
 
@@ -26,11 +27,11 @@ class BackupManager:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         if db_path is None:
-            db_path = os.path.join(base_dir, 'data', 'database', 'knowledge_base.db')
+            db_path = os.path.join(base_dir, "data", "database", "knowledge_base.db")
         self.db_path = db_path
 
         if backup_dir is None:
-            backup_dir = os.path.join(base_dir, 'data', 'backups')
+            backup_dir = os.path.join(base_dir, "data", "backups")
         self.backup_dir = backup_dir
 
         os.makedirs(self.backup_dir, exist_ok=True)
@@ -49,7 +50,7 @@ class BackupManager:
             print("[错误] 数据库文件不存在: {}".format(self.db_path))
             return None
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if label:
             filename = "backup_{}_{}.db".format(timestamp, label)
         else:
@@ -89,7 +90,7 @@ class BackupManager:
 
         # 恢复前自动备份当前状态
         print("[提示] 恢复前自动备份当前数据库...")
-        auto_backup = self.create_backup(label='restore_before')
+        auto_backup = self.create_backup(label="restore_before")
         if auto_backup is None:
             print("[警告] 自动备份失败, 但将继续恢复操作")
 
@@ -130,8 +131,11 @@ class BackupManager:
         """
         backups = self.list_backups()
         if len(backups) <= keep_min:
-            print("[提示] 当前只有{}个备份, 不需要清理 (至少保留{}个)".format(
-                len(backups), keep_min))
+            print(
+                "[提示] 当前只有{}个备份, 不需要清理 (至少保留{}个)".format(
+                    len(backups), keep_min
+                )
+            )
             return 0
 
         cutoff = datetime.now() - timedelta(days=keep_days)
@@ -141,8 +145,8 @@ class BackupManager:
             # 最新的 keep_min 个始终保留
             if i < keep_min:
                 continue
-            if backup['datetime'] < cutoff:
-                if self.delete_backup(backup['filename']):
+            if backup["datetime"] < cutoff:
+                if self.delete_backup(backup["filename"]):
                     deleted += 1
 
         if deleted > 0:
@@ -165,7 +169,7 @@ class BackupManager:
             return backups
 
         for f in os.listdir(self.backup_dir):
-            if f.startswith('backup_') and f.endswith('.db'):
+            if f.startswith("backup_") and f.endswith(".db"):
                 filepath = os.path.join(self.backup_dir, f)
                 size_mb = os.path.getsize(filepath) / (1024 * 1024)
 
@@ -173,21 +177,23 @@ class BackupManager:
                 try:
                     name_body = f[7:-3]  # 去掉 'backup_' 和 '.db'
                     time_str = name_body[:15]  # YYYYMMDD_HHMMSS
-                    dt = datetime.strptime(time_str, '%Y%m%d_%H%M%S')
-                    label = name_body[16:] if len(name_body) > 15 else ''
+                    dt = datetime.strptime(time_str, "%Y%m%d_%H%M%S")
+                    label = name_body[16:] if len(name_body) > 15 else ""
                 except (ValueError, IndexError):
                     dt = datetime.fromtimestamp(os.path.getmtime(filepath))
-                    label = ''
+                    label = ""
 
-                backups.append({
-                    'filename': f,
-                    'filepath': filepath,
-                    'size_mb': size_mb,
-                    'datetime': dt,
-                    'label': label
-                })
+                backups.append(
+                    {
+                        "filename": f,
+                        "filepath": filepath,
+                        "size_mb": size_mb,
+                        "datetime": dt,
+                        "label": label,
+                    }
+                )
 
-        return sorted(backups, key=lambda x: x['datetime'], reverse=True)
+        return sorted(backups, key=lambda x: x["datetime"], reverse=True)
 
     def get_backup_status(self):
         """
@@ -196,19 +202,14 @@ class BackupManager:
         """
         backups = self.list_backups()
         if not backups:
-            return {
-                'has_backup': False,
-                'count': 0,
-                'latest': None,
-                'total_size_mb': 0
-            }
+            return {"has_backup": False, "count": 0, "latest": None, "total_size_mb": 0}
 
         return {
-            'has_backup': True,
-            'count': len(backups),
-            'latest': backups[0]['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
-            'latest_filename': backups[0]['filename'],
-            'total_size_mb': round(sum(b['size_mb'] for b in backups), 2)
+            "has_backup": True,
+            "count": len(backups),
+            "latest": backups[0]["datetime"].strftime("%Y-%m-%d %H:%M:%S"),
+            "latest_filename": backups[0]["filename"],
+            "total_size_mb": round(sum(b["size_mb"] for b in backups), 2),
         }
 
     # --------------------------------------------------
@@ -255,21 +256,23 @@ class BackupManager:
         if backup_path is None:
             # 备份失败：先写结构化事件日志，再抛异常终止操作
             self._log_backup_event(
-                event_type='backup_failed',
-                severity='error',
+                event_type="backup_failed",
+                severity="error",
                 op_name=op_name,
-                payload={'reason': 'create_backup returned None'}
+                payload={"reason": "create_backup returned None"},
             )
             raise BackupFailedError(
-                "操作前备份失败（op={}），已终止破坏性操作。请检查磁盘空间和数据库文件权限。".format(op_name)
+                "操作前备份失败（op={}），已终止破坏性操作。请检查磁盘空间和数据库文件权限。".format(
+                    op_name
+                )
             )
 
         # 备份成功：写事件日志
         self._log_backup_event(
-            event_type='backup_trigger',
-            severity='info',
+            event_type="backup_trigger",
+            severity="info",
             op_name=op_name,
-            payload={'backup_path': os.path.basename(backup_path)}
+            payload={"backup_path": os.path.basename(backup_path)},
         )
 
         # 执行保留策略
@@ -291,7 +294,7 @@ class BackupManager:
         """
         backups = self.list_backups()
         # 筛选同 op_name 的备份（label精确匹配）
-        same_op = [b for b in backups if b.get('label') == op_name]
+        same_op = [b for b in backups if b.get("label") == op_name]
         if len(same_op) <= keep:
             return 0
 
@@ -299,15 +302,18 @@ class BackupManager:
         # list_backups 已按时间倒序，保留前keep个，删掉后面的
         for b in same_op[keep:]:
             try:
-                os.remove(b['filepath'])
+                os.remove(b["filepath"])
                 deleted += 1
-                print("[cleanup_by_op_name] 删除旧备份: {}".format(b['filename']))
+                print("[cleanup_by_op_name] 删除旧备份: {}".format(b["filename"]))
             except Exception as e:
-                print("[cleanup_by_op_name] 删除失败 {}: {}".format(b['filename'], e))
+                print("[cleanup_by_op_name] 删除失败 {}: {}".format(b["filename"], e))
 
         if deleted > 0:
-            print("[cleanup_by_op_name] op={} 已清理 {} 个老备份（保留最新 {} 个）".format(
-                op_name, deleted, keep))
+            print(
+                "[cleanup_by_op_name] op={} 已清理 {} 个老备份（保留最新 {} 个）".format(
+                    op_name, deleted, keep
+                )
+            )
         return deleted
 
     def enforce_size_limit(self, limit_mb=2048):
@@ -318,7 +324,7 @@ class BackupManager:
         默认上限 2GB。
         """
         backups = self.list_backups()
-        total_mb = sum(b['size_mb'] for b in backups)
+        total_mb = sum(b["size_mb"] for b in backups)
         if total_mb <= limit_mb:
             return 0
 
@@ -326,30 +332,36 @@ class BackupManager:
         protected = set()
         seen_labels = set()
         for b in backups:  # 倒序（最新在前）
-            label = b.get('label', '') or '__unlabeled__'
+            label = b.get("label", "") or "__unlabeled__"
             if label not in seen_labels:
-                protected.add(b['filepath'])
+                protected.add(b["filepath"])
                 seen_labels.add(label)
 
         # 按时间正序（老的优先删）
         deleted = 0
-        for b in sorted(backups, key=lambda x: x['datetime']):
+        for b in sorted(backups, key=lambda x: x["datetime"]):
             if total_mb <= limit_mb:
                 break
-            if b['filepath'] in protected:
+            if b["filepath"] in protected:
                 continue
             try:
-                os.remove(b['filepath'])
-                total_mb -= b['size_mb']
+                os.remove(b["filepath"])
+                total_mb -= b["size_mb"]
                 deleted += 1
-                print("[enforce_size_limit] 删除旧备份: {} ({:.1f}MB)".format(
-                    b['filename'], b['size_mb']))
+                print(
+                    "[enforce_size_limit] 删除旧备份: {} ({:.1f}MB)".format(
+                        b["filename"], b["size_mb"]
+                    )
+                )
             except Exception as e:
-                print("[enforce_size_limit] 删除失败 {}: {}".format(b['filename'], e))
+                print("[enforce_size_limit] 删除失败 {}: {}".format(b["filename"], e))
 
         if deleted > 0:
-            print("[enforce_size_limit] 总量超限({} MB)，已清理 {} 个老备份，当前总量约 {:.1f} MB".format(
-                limit_mb, deleted, total_mb))
+            print(
+                "[enforce_size_limit] 总量超限({} MB)，已清理 {} 个老备份，当前总量约 {:.1f} MB".format(
+                    limit_mb, deleted, total_mb
+                )
+            )
         return deleted
 
     def _log_backup_event(self, event_type, severity, op_name, payload=None):
@@ -366,12 +378,9 @@ class BackupManager:
             # 使用和当前db_path相同的数据库
             db = DatabaseManager(db_path=self.db_path)
             p = dict(payload) if payload else {}
-            p['op_name'] = op_name
+            p["op_name"] = op_name
             db.log_operation_event(
-                event_type=event_type,
-                module='backup',
-                severity=severity,
-                payload=p
+                event_type=event_type, module="backup", severity=severity, payload=p
             )
         except Exception as e:
             # 日志失败不影响主流程，仅stdout提示
@@ -385,6 +394,7 @@ class BackupManager:
 #       operation_hook("batch_rerun")
 #   except BackupFailedError as e:
 #       return jsonify({"status":"error","message":"备份失败，操作已终止"}), 500
+
 
 def operation_hook(op_name):
     """
@@ -404,6 +414,7 @@ def operation_hook(op_name):
 
 # 命令行入口
 
+
 def _print_backup_list(manager):
     """打印备份列表"""
     backups = manager.list_backups()
@@ -412,15 +423,14 @@ def _print_backup_list(manager):
         return backups
 
     for i, b in enumerate(backups, 1):
-        label_str = " [{}]".format(b['label']) if b['label'] else ""
-        print("  {}. {} | {:.2f} MB{}".format(
-            i,
-            b['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
-            b['size_mb'],
-            label_str
-        ))
+        label_str = " [{}]".format(b["label"]) if b["label"] else ""
+        print(
+            "  {}. {} | {:.2f} MB{}".format(
+                i, b["datetime"].strftime("%Y-%m-%d %H:%M:%S"), b["size_mb"], label_str
+            )
+        )
 
-    total_mb = sum(b['size_mb'] for b in backups)
+    total_mb = sum(b["size_mb"] for b in backups)
     print("\n  共{}个备份, 总大小 {:.2f} MB".format(len(backups), total_mb))
     return backups
 
@@ -473,7 +483,7 @@ def run_restore():
     print("")
     while True:
         choice = input("请输入要恢复的备份编号 (输入 0 取消): ").strip()
-        if choice == '0' or choice == '':
+        if choice == "0" or choice == "":
             print("已取消恢复操作")
             break
 
@@ -482,16 +492,21 @@ def run_restore():
             if 0 <= idx < len(backups):
                 selected = backups[idx]
                 print("")
-                print("[警告] 即将恢复到: {}".format(
-                    selected['datetime'].strftime('%Y-%m-%d %H:%M:%S')))
-                label_info = " [{}]".format(selected['label']) if selected['label'] else ""
-                print("        文件: {}{}".format(selected['filename'], label_info))
+                print(
+                    "[警告] 即将恢复到: {}".format(
+                        selected["datetime"].strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                )
+                label_info = (
+                    " [{}]".format(selected["label"]) if selected["label"] else ""
+                )
+                print("        文件: {}{}".format(selected["filename"], label_info))
                 print("        当前数据库将被覆盖 (恢复前会自动备份当前状态)")
                 print("")
                 confirm = input("确认恢复? (输入 y 确认, 其他取消): ").strip().lower()
-                if confirm == 'y':
+                if confirm == "y":
                     print("")
-                    manager.restore_backup(selected['filename'])
+                    manager.restore_backup(selected["filename"])
                 else:
                     print("已取消恢复操作")
                 break
@@ -526,7 +541,7 @@ def run_cleanup():
     print("")
     print("将清理超过30天的旧备份 (至少保留最新3个)")
     confirm = input("确认清理? (输入 y 确认, 其他取消): ").strip().lower()
-    if confirm == 'y':
+    if confirm == "y":
         print("")
         manager.cleanup_old_backups(keep_days=30, keep_min=3)
     else:
@@ -536,14 +551,14 @@ def run_cleanup():
     input("按回车键退出...")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) > 1:
         action = sys.argv[1]
-        if action == 'backup':
+        if action == "backup":
             run_backup()
-        elif action == 'restore':
+        elif action == "restore":
             run_restore()
-        elif action == 'cleanup':
+        elif action == "cleanup":
             run_cleanup()
         else:
             print("未知操作: {}".format(action))

@@ -6,7 +6,9 @@ knowledge_gap_analyzer.py - 知识缺口分析器(课程体系→倒推需求→
 CEO的核心工具: 课程体系→知识需求→知识库现状对比→缺口清单→爬取任务→喂料计划。
 实现从"被动等老唐喂料"到"CEO主动构建知识管道"的转变。
 """
+
 from datetime import datetime
+
 from agents.course_system import get_course_system, get_knowledge_needs
 
 
@@ -37,15 +39,35 @@ class KnowledgeGapAnalyzer(object):
             coverage = self._check_coverage(knowledge)
 
             if coverage["kp_count"] >= 5:
-                covered.append({"knowledge": knowledge, "kps": coverage["kp_count"],
-                                "lesson_count": lesson_count})
+                covered.append(
+                    {
+                        "knowledge": knowledge,
+                        "kps": coverage["kp_count"],
+                        "lesson_count": lesson_count,
+                    }
+                )
             elif coverage["kp_count"] >= 1:
-                partial.append({"knowledge": knowledge, "kps": coverage["kp_count"],
-                                "lesson_count": lesson_count, "missing_aspects": coverage.get("missing", [])})
+                partial.append(
+                    {
+                        "knowledge": knowledge,
+                        "kps": coverage["kp_count"],
+                        "lesson_count": lesson_count,
+                        "missing_aspects": coverage.get("missing", []),
+                    }
+                )
             else:
-                gaps.append({"knowledge": knowledge, "lesson_count": lesson_count,
-                             "priority": "P0" if lesson_count >= 3 else "P1" if lesson_count >= 2 else "P2",
-                             "suggested_sources": self._suggest_sources(knowledge)})
+                gaps.append(
+                    {
+                        "knowledge": knowledge,
+                        "lesson_count": lesson_count,
+                        "priority": (
+                            "P0"
+                            if lesson_count >= 3
+                            else "P1" if lesson_count >= 2 else "P2"
+                        ),
+                        "suggested_sources": self._suggest_sources(knowledge),
+                    }
+                )
 
         return {
             "analyzed_at": datetime.now().isoformat(),
@@ -64,16 +86,24 @@ class KnowledgeGapAnalyzer(object):
         if not self.db:
             return {"kp_count": 0, "missing": []}
         try:
-            conn = self.db.get_connection(); c = conn.cursor()
+            conn = self.db.get_connection()
+            c = conn.cursor()
             # 用知识需求中的关键词搜索
-            keywords = knowledge.replace("（"," ").replace("）"," ").replace("、"," ").split()
+            keywords = (
+                knowledge.replace("（", " ")
+                .replace("）", " ")
+                .replace("、", " ")
+                .split()
+            )
             keywords = [k for k in keywords if len(k) >= 3][:3]
             total = 0
             for kw in keywords:
-                c.execute("""SELECT COUNT(*) FROM knowledge_points
+                c.execute(
+                    """SELECT COUNT(*) FROM knowledge_points
                              WHERE (title LIKE ? OR original_excerpt LIKE ?)
                              AND review_status='confirmed'""",
-                          (f"%{kw}%", f"%{kw}%"))
+                    (f"%{kw}%", f"%{kw}%"),
+                )
                 total += c.fetchone()[0]
             conn.close()
             return {"kp_count": min(total, 99), "missing": []}
@@ -120,22 +150,28 @@ class KnowledgeGapAnalyzer(object):
         }
 
         if p0_gaps:
-            instructions["immediate_actions"].append({
-                "action": "P0紧急喂料",
-                "targets": [{"knowledge": g["knowledge"], "sources": g["suggested_sources"]}
-                           for g in p0_gaps[:5]],
-                "deadline": "48小时内完成首批爬取和提取",
-                "responsible_agent": "feed_strategist",
-            })
+            instructions["immediate_actions"].append(
+                {
+                    "action": "P0紧急喂料",
+                    "targets": [
+                        {"knowledge": g["knowledge"], "sources": g["suggested_sources"]}
+                        for g in p0_gaps[:5]
+                    ],
+                    "deadline": "48小时内完成首批爬取和提取",
+                    "responsible_agent": "feed_strategist",
+                }
+            )
 
         # P1: 被2个课程引用且知识库不足
         p1_gaps = [g for g in gaps if g["priority"] == "P1"]
         if p1_gaps:
-            instructions["weekly_plan"].append({
-                "week": 1,
-                "targets": [{"knowledge": g["knowledge"]} for g in p1_gaps[:8]],
-                "responsible_agent": "feed_strategist",
-            })
+            instructions["weekly_plan"].append(
+                {
+                    "week": 1,
+                    "targets": [{"knowledge": g["knowledge"]} for g in p1_gaps[:8]],
+                    "responsible_agent": "feed_strategist",
+                }
+            )
 
         return instructions
 

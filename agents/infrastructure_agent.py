@@ -6,7 +6,15 @@ infrastructure_agent.py - 后勤保障Agent(系统监测+内存清理+硬件调�
 集团公司的基础设施管家。保证30个Agent运行在最佳硬件环境。
 职责: 系统检测→内存管理→硬件路由→缓存清理→磁盘监控→CEO汇报
 """
-import os, sys, gc, shutil, time, threading, platform, ctypes
+
+import ctypes
+import gc
+import os
+import platform
+import shutil
+import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -14,20 +22,27 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "agents"))
 
 from base_agent import BaseAgent
+
 from agents.hardware_profile import HardwareProfile
 
 
 def _get_windows_memory():
     """用Windows kernel32 API获取精确内存信息。零依赖。"""
     try:
+
         class MEMORYSTATUSEX(ctypes.Structure):
             _fields_ = [
-                ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
                 ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
             ]
+
         mem = MEMORYSTATUSEX()
         mem.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
         ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem))
@@ -45,16 +60,21 @@ def _get_disk_usage(path=None):
     """获取磁盘使用情况"""
     try:
         p = path or str(PROJECT_ROOT)
-        if os.name == 'nt':
+        if os.name == "nt":
             import ctypes.wintypes
+
             free = ctypes.c_ulonglong(0)
             total = ctypes.c_ulonglong(0)
             ctypes.windll.kernel32.GetDiskFreeSpaceExW(
-                ctypes.c_wchar_p(p), None, ctypes.byref(total), ctypes.byref(free))
+                ctypes.c_wchar_p(p), None, ctypes.byref(total), ctypes.byref(free)
+            )
             total_gb = round(total.value / (1024**3), 1)
             free_gb = round(free.value / (1024**3), 1)
-            return {"total_gb": total_gb, "free_gb": free_gb,
-                    "used_pct": round(100 * (total_gb - free_gb) / max(1, total_gb), 0)}
+            return {
+                "total_gb": total_gb,
+                "free_gb": free_gb,
+                "used_pct": round(100 * (total_gb - free_gb) / max(1, total_gb), 0),
+            }
     except Exception:
         pass
     return {"total_gb": 0, "free_gb": 0, "used_pct": 0}
@@ -73,7 +93,9 @@ class InfrastructureAgent(BaseAgent):
                 "内存、磁盘、CPU、网络、API连接——始终处于最佳状态。"
                 "我主动监控、预警、自动修复,不让基础设施问题影响Agent团队的运作。"
             ),
-            client=client, db=db, model="deepseek-v4-flash",
+            client=client,
+            db=db,
+            model="deepseek-v4-flash",
         )
 
         # 硬件检测(使用通用HardwareProfile)
@@ -90,10 +112,10 @@ class InfrastructureAgent(BaseAgent):
         self._start_time = datetime.now()
 
         # 阈值
-        self.MEMORY_CRITICAL = 90   # 强制清理
-        self.MEMORY_WARNING = 80    # 预警+轻度清理
-        self.MEMORY_SAFE = 60       # 正常范围
-        self.DISK_CRITICAL_GB = 5   # 磁盘低于此值告警
+        self.MEMORY_CRITICAL = 90  # 强制清理
+        self.MEMORY_WARNING = 80  # 预警+轻度清理
+        self.MEMORY_SAFE = 60  # 正常范围
+        self.DISK_CRITICAL_GB = 5  # 磁盘低于此值告警
         self.MONITOR_INTERVAL = 30  # 监控间隔(秒)
 
     # ================================================================
@@ -132,22 +154,42 @@ class InfrastructureAgent(BaseAgent):
                 "used_gb": mem.get("used_gb", "?"),
                 "available_gb": mem.get("available_gb", "?"),
                 "used_pct": mem.get("used_pct", "?"),
-                "status": ("CRITICAL" if mem.get("used_pct", 0) >= self.MEMORY_CRITICAL
-                           else "WARNING" if mem.get("used_pct", 0) >= self.MEMORY_WARNING
-                           else "OK"),
+                "status": (
+                    "CRITICAL"
+                    if mem.get("used_pct", 0) >= self.MEMORY_CRITICAL
+                    else (
+                        "WARNING"
+                        if mem.get("used_pct", 0) >= self.MEMORY_WARNING
+                        else "OK"
+                    )
+                ),
             },
-            "disk": {"free_gb": disk.get("free_gb", "?"), "used_pct": disk.get("used_pct", "?"),
-                     "status": "CRITICAL" if disk.get("free_gb", 0) < self.DISK_CRITICAL_GB else "OK"},
+            "disk": {
+                "free_gb": disk.get("free_gb", "?"),
+                "used_pct": disk.get("used_pct", "?"),
+                "status": (
+                    "CRITICAL"
+                    if disk.get("free_gb", 0) < self.DISK_CRITICAL_GB
+                    else "OK"
+                ),
+            },
             "hardware": {
                 "cpu_cores": self.capabilities.get("cpu_cores", "?"),
                 "npu": f"{'ON' if self.capabilities.get('npu_available') else 'OFF'} ({self.capabilities.get('npu_provider', 'N/A')})",
                 "gpu": f"{'ON' if self.capabilities.get('gpu_available') else 'OFF'} ({self.capabilities.get('gpu_name', 'N/A')})",
                 "capacity_score": self.hardware.assess_capacity(),
             },
-            "tasks": {"total": total_tasks, "npu": self._task_stats.get("npu", 0),
-                      "gpu": self._task_stats.get("gpu", 0), "cpu": self._task_stats.get("cpu", 0)},
-            "maintenance": {"cleanups": self._cleanup_count, "gc_runs": self._gc_count,
-                            "uptime_minutes": round(elapsed / 60, 1)},
+            "tasks": {
+                "total": total_tasks,
+                "npu": self._task_stats.get("npu", 0),
+                "gpu": self._task_stats.get("gpu", 0),
+                "cpu": self._task_stats.get("cpu", 0),
+            },
+            "maintenance": {
+                "cleanups": self._cleanup_count,
+                "gc_runs": self._gc_count,
+                "uptime_minutes": round(elapsed / 60, 1),
+            },
             "alerts": self._alerts[-5:],
         }
 
@@ -191,9 +233,15 @@ class InfrastructureAgent(BaseAgent):
                 actions += self._emergency_cleanup()
                 self._alert("WARNING", f"内存{pct}%且持续恶化,已升级为紧急清理")
 
-        return ("CRITICAL" if pct >= self.MEMORY_CRITICAL
-                else "WARNING" if pct >= self.MEMORY_WARNING
-                else "OK", pct, actions)
+        return (
+            (
+                "CRITICAL"
+                if pct >= self.MEMORY_CRITICAL
+                else "WARNING" if pct >= self.MEMORY_WARNING else "OK"
+            ),
+            pct,
+            actions,
+        )
 
     def _light_cleanup(self):
         """轻度清理: Python GC + 小文件缓存"""
@@ -217,7 +265,9 @@ class InfrastructureAgent(BaseAgent):
         if memory_dir.exists():
             for mf in memory_dir.glob("*.md"):
                 try:
-                    memory_backup.append((mf.name, mf.read_text(encoding='utf-8')[:500]))
+                    memory_backup.append(
+                        (mf.name, mf.read_text(encoding="utf-8")[:500])
+                    )
                 except Exception:
                     pass
         # 1. 强制GC(包括不可达对象)
@@ -263,7 +313,9 @@ class InfrastructureAgent(BaseAgent):
             for pycache in PROJECT_ROOT.rglob("__pycache__"):
                 try:
                     shutil.rmtree(pycache)
-                    count += len(list(pycache.glob("*.pyc"))) if pycache.exists() else 20
+                    count += (
+                        len(list(pycache.glob("*.pyc"))) if pycache.exists() else 20
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -308,12 +360,18 @@ class InfrastructureAgent(BaseAgent):
     def assign_hardware(self, task_type):
         """根据任务类型分配合适的硬件。返回 'npu'/'gpu'/'cpu'。"""
         task_map = {
-            "semantic_search": "npu", "quality_classify": "npu",
-            "content_detect": "npu", "reader_tag": "npu",
-            "batch_embedding": "gpu", "batch_ocr": "gpu",
-            "batch_audit": "gpu", "model_finetune": "gpu",
-            "db_query": "cpu", "file_io": "cpu",
-            "api_call": "cpu", "orchestration": "cpu",
+            "semantic_search": "npu",
+            "quality_classify": "npu",
+            "content_detect": "npu",
+            "reader_tag": "npu",
+            "batch_embedding": "gpu",
+            "batch_ocr": "gpu",
+            "batch_audit": "gpu",
+            "model_finetune": "gpu",
+            "db_query": "cpu",
+            "file_io": "cpu",
+            "api_call": "cpu",
+            "orchestration": "cpu",
         }
         hw = task_map.get(task_type, "cpu")
         if hw == "npu" and not self.capabilities.get("npu_available"):
@@ -327,8 +385,12 @@ class InfrastructureAgent(BaseAgent):
         """根据当前内存状况动态调整批处理大小"""
         mem = _get_windows_memory()
         pct = mem.get("used_pct", 50) if mem else 50
-        base_sizes = {"batch_embedding": 64, "batch_ocr": 16,
-                      "batch_audit": 32, "quality_classify": 50}
+        base_sizes = {
+            "batch_embedding": 64,
+            "batch_ocr": 16,
+            "batch_audit": 32,
+            "quality_classify": 50,
+        }
 
         base = base_sizes.get(task_type, 32)
         if pct >= self.MEMORY_CRITICAL:
@@ -386,12 +448,19 @@ class InfrastructureAgent(BaseAgent):
             issues.append(f"磁盘仅剩{disk['free_gb']}GB")
             recommendations.append("清理processing缓存+临时文件+旧备份")
 
-        if not self.capabilities.get("npu_available") and not self.capabilities.get("gpu_available"):
+        if not self.capabilities.get("npu_available") and not self.capabilities.get(
+            "gpu_available"
+        ):
             issues.append("NPU和GPU均不可用")
             recommendations.append("安装onnxruntime-directml启用NPU加速")
 
-        if self.capabilities.get("npu_available") and self._task_stats.get("npu", 0) == 0:
-            recommendations.append("NPU可用但未被使用→调用semantic_search/quality_classify任务")
+        if (
+            self.capabilities.get("npu_available")
+            and self._task_stats.get("npu", 0) == 0
+        ):
+            recommendations.append(
+                "NPU可用但未被使用→调用semantic_search/quality_classify任务"
+            )
 
         return (len(issues) == 0, issues, recommendations)
 
@@ -428,8 +497,14 @@ class InfrastructureAgent(BaseAgent):
         return {
             "analysis": analysis,
             "insights": recs,
-            "recommendations": [{"action": r, "priority": "P0" if not healthy else "P2", "reason": "基础设施优化"}
-                               for r in recs],
+            "recommendations": [
+                {
+                    "action": r,
+                    "priority": "P0" if not healthy else "P2",
+                    "reason": "基础设施优化",
+                }
+                for r in recs
+            ],
             "confidence": "high",
             "needs_ceo_attention": not healthy,
             "agent_code": self.agent_code,
@@ -439,12 +514,29 @@ class InfrastructureAgent(BaseAgent):
     def to_dict(self):
         """向后兼容"""
         return {
-            "agent_code": self.agent_code, "agent_name": self.agent_name,
+            "agent_code": self.agent_code,
+            "agent_name": self.agent_name,
             "agent_type": self.agent_type,
             "identity_text": "我是后勤保障部长。我负责集团公司的所有硬件基础设施:CPU/GPU/NPU调度、内存管理、磁盘监控、缓存清理。我的使命是确保30个Agent始终运行在最佳系统环境。",
-            "core_questions": ["内存使用率是否超过警戒线","NPU/GPU是否被充分利用","磁盘空间是否充足","缓存是否需要清理","批处理大小是否与环境匹配"],
-            "quality_standards": ["内存<80%","NPU/GPU利用率>30%","磁盘剩余>10GB","缓存24小时内至少清理1次"],
-            "scoring_dimensions": ["内存管理效率","硬件利用率","系统稳定性","清理及时度"],
+            "core_questions": [
+                "内存使用率是否超过警戒线",
+                "NPU/GPU是否被充分利用",
+                "磁盘空间是否充足",
+                "缓存是否需要清理",
+                "批处理大小是否与环境匹配",
+            ],
+            "quality_standards": [
+                "内存<80%",
+                "NPU/GPU利用率>30%",
+                "磁盘剩余>10GB",
+                "缓存24小时内至少清理1次",
+            ],
+            "scoring_dimensions": [
+                "内存管理效率",
+                "硬件利用率",
+                "系统稳定性",
+                "清理及时度",
+            ],
         }
 
     # ================================================================
@@ -457,8 +549,11 @@ class InfrastructureAgent(BaseAgent):
         try:
             if self.db:
                 self.db.log_operation_event(
-                    event_type="infra_alert", severity=level.lower(),
-                    module="infrastructure_agent", payload=entry)
+                    event_type="infra_alert",
+                    severity=level.lower(),
+                    module="infrastructure_agent",
+                    payload=entry,
+                )
         except Exception:
             pass
 
