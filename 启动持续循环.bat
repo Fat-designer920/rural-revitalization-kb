@@ -12,5 +12,5 @@ echo   按 Ctrl+C 停止
 echo.
 
 set PYTHONIOENCODING=utf-8
-python scripts/start_agent_loop.py
+python -c "from agents.agent_loop import AgentLoop; AgentLoop().run()"
 pause

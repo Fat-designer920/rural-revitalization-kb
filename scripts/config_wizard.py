@@ -1,7 +1,7 @@
 """
 config_wizard.py - 首次配置向导（图形界面）
 路径：scripts/config_wizard.py
-版本：v2.3.6-part1 - Kimi UI 残留清理
+版本：v2.3.7 - Kimi UI 残留清理
 
 变更说明(v2.3.6-part1):
   删除第 5 项 Kimi 官方 API Key 输入框 + 测试按钮 + 保存逻辑。
@@ -205,7 +205,7 @@ class ConfigWizard:
         config.setdefault("deepseek_base_url","https://api.deepseek.com")
         config.setdefault("flask_port", 5000)
         config.setdefault("max_file_size_mb", 50)
-        config["version"] = "2.3.7-part2"
+        config["version"] = "v2.3.7"
         config["last_configured_at"] = datetime.now().isoformat()
         config["allowed_paths"] = [str(Path(kb)/"data"), str(Path(kb)/"config"), str(Path(kb)/"logs")]
 

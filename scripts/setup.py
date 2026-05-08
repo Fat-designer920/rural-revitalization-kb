@@ -1,7 +1,7 @@
 """
 setup.py - 首次安装与数据库迁移
 路径：scripts/setup.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import os, sys, json, sqlite3
 from pathlib import Path
@@ -528,6 +528,23 @@ def _upgrade_schema_to_current(db_path):
                 c.execute(idx_sql)
                 summary["indexes_created"].append(idx_name)
 
+        # Step 23: v2.3.8 crawl_history 新字段 (doc_number + source_domain)
+        for col_name, col_def in [
+            ("doc_number", "TEXT DEFAULT ''"),
+            ("source_domain", "TEXT DEFAULT ''"),
+        ]:
+            c.execute("PRAGMA table_info(crawl_history)")
+            existing = {row[1] for row in c.fetchall()}
+            if col_name not in existing:
+                c.execute(f"ALTER TABLE crawl_history ADD COLUMN {col_name} {col_def}")
+                summary["columns_added"].append(f"crawl_history.{col_name}")
+            else:
+                summary["columns_skipped"].append(f"crawl_history.{col_name}")
+
+        # Step 24: v2.3.8 crawl_history doc_number 索引
+        c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_doc ON crawl_history(doc_number)")
+        summary.setdefault("indexes_created", []).append("idx_crawl_doc")
+
         conn.commit()
     finally:
         conn.close()
@@ -571,7 +588,7 @@ def main():
                          str(base / "data" / "database" / "knowledge_base.db"))
     db = DatabaseManager(db_path)
     db.init_tables()
-    print("    OK 25张表已创建（全部字段，无需迁移）")
+    print("    OK 32张表已创建（全部字段，无需迁移）")
 
     # ── [3/6] 写入默认分类 ──────────────────────────
     print("\n[3/6] 写入默认分类...")

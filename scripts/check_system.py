@@ -1,7 +1,7 @@
 """
 check_system.py - 系统状态检查
 路径：scripts/check_system.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import os, sys, json, sqlite3, shutil
 from pathlib import Path
@@ -888,7 +888,7 @@ def run_checks_json():
         for name in ["数据库迁移", "知识库健康度", "Prompt版本", "V3质检覆盖",
                       "备份状态", "文件管线", "保鲜状态", "政策校验", "重复检测", "注解与速记"]:
             results.append({"name": name, "ok": True, "detail": "跳过(数据库不存在)"})
-        return {"version": "v2.4", "system_version": get_version(),
+        return {"version": "v2.3.7", "system_version": get_version(),
                 "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "results": results,
                 "ok_count": sum(1 for r in results if r["ok"]),
@@ -1186,7 +1186,7 @@ def run_checks_json():
                     "detail": " | ".join(f062_detail_parts)})
 
     return {
-        "version": "v2.5.2",
+        "version": "v2.3.7",
         "system_version": get_version(),
         "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "results": results,
@@ -1285,7 +1285,7 @@ def check_f062_readiness():
 
 def main():
     print("=" * 60)
-    print(f"  系统状态检查 v2.5.2")
+    print(f"  系统状态检查 v2.3.7")
     print(f"  系统版本: v{get_version()}")
     print(f"  检查时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)

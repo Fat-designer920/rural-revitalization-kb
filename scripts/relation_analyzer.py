@@ -1,7 +1,7 @@
 """
 relation_analyzer.py - 知识点关系分析器(六态判别,替代旧重复检测)
 路径：scripts/relation_analyzer.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import os, sys, json, re
 from pathlib import Path

@@ -1,7 +1,7 @@
 """
 db_manager.py - SQLite数据库管理模块
 路径：scripts/db_manager.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import sqlite3, os, json
 from datetime import datetime
@@ -562,18 +562,32 @@ class DatabaseManager:
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_cycle_status ON audit_cycles(status, created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_agent_code ON agent_definitions(agent_code, is_active)")
         # v2.3.7-part2: 爬虫历史表
+        # v2.3.8: +doc_number(发文字号去重) +source_domain(信源域名)
         c.execute("""CREATE TABLE IF NOT EXISTS crawl_history (
             crawl_id INTEGER PRIMARY KEY AUTOINCREMENT,
             url TEXT NOT NULL,
             content_hash TEXT,
             saved_path TEXT,
+            doc_number TEXT DEFAULT '',
             category TEXT DEFAULT 'policy',
+            source_domain TEXT DEFAULT '',
             status TEXT DEFAULT 'new' CHECK(status IN ('new','unchanged','error','extracted')),
             fetched_at TEXT DEFAULT (datetime('now','localtime')),
             extracted_kp_count INTEGER DEFAULT 0,
             notes TEXT DEFAULT '')""")
+        # v2.3.8: 确保存量库有 doc_number + source_domain 列
+        c.execute("PRAGMA table_info(crawl_history)")
+        crawl_cols = {row[1] for row in c.fetchall()}
+        for col_name, col_def in [("doc_number", "TEXT DEFAULT ''"),
+                                   ("source_domain", "TEXT DEFAULT ''")]:
+            if col_name not in crawl_cols:
+                c.execute(f"ALTER TABLE crawl_history ADD COLUMN {col_name} {col_def}")
         c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_url ON crawl_history(url, fetched_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_history(status, fetched_at DESC)")
+        # idx_crawl_doc 只在列存在时才创建
+        c.execute("PRAGMA table_info(crawl_history)")
+        if "doc_number" in {row[1] for row in c.fetchall()}:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_crawl_doc ON crawl_history(doc_number)")
         # v2.3.7-part2: 信源白名单表
         c.execute("""CREATE TABLE IF NOT EXISTS source_whitelist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

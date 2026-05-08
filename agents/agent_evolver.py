@@ -116,6 +116,7 @@ class AgentEvolver(object):
 
     def _apply_upgrade(self, agent_code, upgrade):
         """将升级应用到DB"""
+        conn = None
         try:
             conn = self.db.get_connection(); c = conn.cursor()
             if upgrade.get("new_questions"):
@@ -124,9 +125,17 @@ class AgentEvolver(object):
             if upgrade.get("new_dimensions"):
                 c.execute("UPDATE agent_definitions SET scoring_dimensions=?, updated_at=datetime('now','localtime') WHERE agent_code=?",
                           (json.dumps(upgrade["new_dimensions"], ensure_ascii=False), agent_code))
-            conn.commit(); conn.close()
+            conn.commit()
         except Exception:
-            pass
+            try:
+                if conn: conn.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                if conn: conn.close()
+            except Exception:
+                pass
 
     def _get_agent(self, agent_code):
         try:
@@ -139,7 +148,7 @@ class AgentEvolver(object):
                 for f in ("core_questions","scoring_dimensions","quality_standards"):
                     if isinstance(r.get(f), str):
                         try: r[f] = json.loads(r[f])
-                        except: pass
+                        except (json.JSONDecodeError, TypeError): pass
                 return r
         except Exception:
             pass

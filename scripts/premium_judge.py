@@ -2,7 +2,7 @@
 """
 premium_judge.py - 精品知识评判模块
 路径：scripts/premium_judge.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json

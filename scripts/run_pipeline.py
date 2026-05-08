@@ -210,47 +210,65 @@ def main():
         db = get_db()
         from agents.crawler_scheduler import CrawlerScheduler
         cs = CrawlerScheduler(db=db)
-        print("深度爬取中 (提取文章链接→跟进文章页→提取正文→质量门禁)...")
-        result = cs.crawl_and_feed(schedule='weekly')
-        # 打印质量报告
-        qr = result.get("quality_report", {})
-        stats = result.get("crawl_stats", {})
+        src = None
+        if "--crawl" in sys.argv:
+            idx = sys.argv.index("--crawl")
+            if idx + 1 < len(sys.argv) and not sys.argv[idx+1].startswith("--"):
+                src = [s.strip() for s in sys.argv[idx+1].split(",")]
+        print(f"爬取 v2.3.8 (信源: {src or '全部'})...")
+        result = cs.run(sources=src)
+        stats = result.get("stats", {})
         print(f"\n{'='*60}")
-        print(f"  爬取质量报告")
+        print(f"  爬取报告 v2.3.8")
         print(f"{'='*60}")
-        print(f"  处理源站:         {stats.get('targets_processed', 0):>6}")
-        print(f"  抓取页面:         {stats.get('pages_fetched', 0):>6}")
+        print(f"  抓取列表页:       {stats.get('pages_fetched', 0):>6}")
         print(f"  发现链接:         {stats.get('links_found', 0):>6}")
-        print(f"  提取文章:         {stats.get('articles_extracted', 0):>6}")
-        print(f"  合格:             {qr.get('qualified', 0):>6}  <- 进入CEO审核")
-        print(f"  丢弃:             {stats.get('quality_fail', 0):>6}")
-        print(f"    - 低质量(<500字): {qr.get('low_quality', 0):>4}")
-        print(f"    - 乱码:          {qr.get('garbled', 0):>4}")
-        print(f"    - 非政策内容:    {qr.get('no_policy_content', 0):>4}")
+        print(f"  提取文章:         {stats.get('articles_fetched', 0):>6}")
+        print(f"  合格:             {stats.get('qualified', 0):>6}  <- CEO审核批准后入库")
+        print(f"  拒绝:             {stats.get('rejected', 0):>6}")
+        print(f"  去重跳过:         {stats.get('duplicates', 0):>6}")
         print(f"  错误:             {stats.get('errors', 0):>6}")
         print(f"{'='*60}")
         print(f"\n  {result.get('message', '')}")
-        print(f"  {result.get('ceo_action', '')}")
-        if qr.get("details"):
-            print(f"\n  丢弃详情:")
-            for d in qr["details"]:
-                print(f"    - [{d['quality']}] {d['title'][:50]} — {d['reason']}")
-    elif "--crawl-and-feed" in sys.argv:
+        if result.get("articles"):
+            print(f"\n  合格文章:")
+            for a in result["articles"]:
+                print(f"    [{a.get('source_name','')}] {a['title'][:60]}")
+                print(f"      字数:{a.get('char_count',0)} | {a.get('filename','')}")
+        if result.get("reject_log"):
+            print(f"\n  拒绝详情(前5条):")
+            for r in result["reject_log"][:5]:
+                print(f"    [{r['quality']}] {r['reason'][:80]}")
+        if result.get("report_path"):
+            print(f"\n  完整报告: {result['report_path']}")
+    elif "--crawl-status" in sys.argv:
         db = get_db()
         from agents.crawler_scheduler import CrawlerScheduler
+        from scripts.crawler_extractor import CrawlerExtractor
         cs = CrawlerScheduler(db=db)
-        print("深度爬取+自动喂料中...")
-        result = cs.crawl_and_feed(schedule='weekly')
-        # 打印质量报告
-        qr = result.get("quality_report", {})
-        stats = result.get("crawl_stats", {})
-        print(f"\n{'='*60}")
-        print(f"  爬取质量报告")
-        print(f"{'='*60}")
-        print(f"  合格: {qr.get('qualified', 0)} | 丢弃: {stats.get('quality_fail', 0)} (低质量{ qr.get('low_quality',0)} / 乱码{qr.get('garbled',0)} / 非政策{qr.get('no_policy_content',0)})")
-        print(f"  {result.get('message', '')}")
-        print(f"  {result.get('ceo_action', '')}")
-        print(f"{'='*60}")
+        ce = CrawlerExtractor(db=db)
+        s = cs.get_status()
+        print(f"爬虫状态 v2.3.8 (手动触发模式)")
+        print(f"  搜索端点: {s.get('search_endpoints', '?')}个")
+        print(f"  关键词组: {s.get('keyword_groups', '?')}组")
+        print(f"  历史爬取总数: {s.get('total_crawls', '?')}")
+        print(f"  最近运行: {s.get('last_run', '从未')}")
+        cstats = ce.get_crawled_stats()
+        print(f"  待审核文件: {cstats['total']}个 ({cstats.get('total_size_kb',0)}KB)")
+        if cstats.get("files"):
+            for f in cstats["files"][:10]:
+                print(f"    {f['filename']}")
+    elif "--crawl-approve" in sys.argv:
+        db = get_db()
+        from scripts.crawler_extractor import CrawlerExtractor
+        ce = CrawlerExtractor(db=db)
+        print("批准爬取文件→移至pending/触发提取管道...")
+        result = ce.batch_approve_and_process()
+        print(f"\n  {result['message']}")
+        for a in result["approved"]:
+            print(f"  [OK] {Path(a['to']).name}")
+        for e in result["errors"]:
+            print(f"  [ERR] {e['file']}: {e['error']}")
         # 合格文件自动喂入提取管道
         qualified_count = qr.get("qualified", 0)
         if qualified_count > 0:

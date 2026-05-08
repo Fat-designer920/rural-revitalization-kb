@@ -1,7 +1,7 @@
 """
 backup_manager.py - 备份管理器
 路径：scripts/backup_manager.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import os

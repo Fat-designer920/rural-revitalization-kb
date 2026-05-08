@@ -1,7 +1,7 @@
 """
 auto_tester.py - F063 六层自动化测试引擎(git diff→模块→测试文件→L0-L5)
 路径：scripts/auto_tester.py
-版本：v2.3.6-part1
+版本：v2.3.7
 使用说明见 CLAUDE.md §12
 """
 

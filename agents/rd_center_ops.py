@@ -103,12 +103,10 @@ class RDCenterOps:
 
     # ---- 设计评审 ----
     def design_review(self, page_spec):
-        """UI设计师+前端架构师+交互+无障碍+移动端 5人设计评审。"""
+        """UI设计师+前端架构师+移动端 3人设计评审。"""
         reviewers = [
             ("ui_visual_designer", f"视觉:检查颜色/字体/间距/设计token:{page_spec}"),
             ("frontend_architect", f"前端:检查320px/首屏加载/ES5兼容:{page_spec}"),
-            ("interaction_designer", f"交互:检查反馈/加载/错误提示/操作安全:{page_spec}"),
-            ("accessibility_specialist", f"无障碍:检查WCAG AA/键盘/屏幕阅读器/触控:{page_spec}"),
             ("mobile_specialist", f"移动端:检查分辨率适配/触控/PWA:{page_spec}"),
         ]
         opinions = []

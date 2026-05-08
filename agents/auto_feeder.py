@@ -308,6 +308,7 @@ class AutoFeeder(object):
         """经验文件提取的KP自动确认(跳过审核),并标记信源。"""
         if not self.db:
             return
+        conn = None
         try:
             conn = self.db.get_connection(); c = conn.cursor()
             c.execute("""UPDATE knowledge_points
@@ -317,9 +318,17 @@ class AutoFeeder(object):
                              confirmed_at=datetime('now','localtime')
                          WHERE source_file_id=? AND review_status='pending'""",
                       (source_file_id,))
-            conn.commit(); conn.close()
+            conn.commit()
         except Exception:
-            pass
+            try:
+                if conn: conn.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                if conn: conn.close()
+            except Exception:
+                pass
 
     # ================================================================
     # 内部方法

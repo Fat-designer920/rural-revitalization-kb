@@ -245,7 +245,7 @@ class CitationVerifier:
                 })
 
         all_issues = issues + warnings
-        status = "fail" if issues else ("warn" if warnings else "pass")
+        status = "fail" if issues else ("warning" if warnings else "pass")
 
         return {
             "kp_id": kp_id,
@@ -287,7 +287,7 @@ class CitationVerifier:
             all_reports.append(r)
             if r.get("status") == "pass":
                 pass_count += 1
-            elif r.get("status") == "warn":
+            elif r.get("status") == "warning":
                 warn_count += 1
             else:
                 fail_count += 1
@@ -300,7 +300,7 @@ class CitationVerifier:
         return {
             "total_checked": len(ids),
             "pass": pass_count,
-            "warn": warn_count,
+            "warning": warn_count,
             "fail": fail_count,
             "ok_rate": round(pass_count / len(ids) * 100, 1) if ids else 0,
             "verified_at": datetime.now().isoformat(),
@@ -328,8 +328,8 @@ class CitationVerifier:
         total = result.get("total_checked", 0) or 1
         lines.append("| Pass | %d | %.1f%% |" % (result["pass"],
                       result["pass"] / total * 100))
-        lines.append("| Warn | %d | %.1f%% |" % (result["warn"],
-                      result["warn"] / total * 100))
+        lines.append("| Warn | %d | %.1f%% |" % (result["warning"],
+                      result["warning"] / total * 100))
         lines.append("| Fail | %d | %.1f%% |" % (result["fail"],
                       result["fail"] / total * 100))
 
@@ -382,7 +382,7 @@ def main():
             print(json.dumps({
                 "total": result["total_checked"],
                 "pass": result["pass"],
-                "warn": result["warn"],
+                "warning": result["warning"],
                 "fail": result["fail"],
                 "ok_rate": result["ok_rate"],
                 "unverifiable_count": len(result.get("unverifiable", [])),

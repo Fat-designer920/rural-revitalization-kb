@@ -1,7 +1,7 @@
 """
 freshness_checker.py - 知识点保鲜检查器
 路径：scripts/freshness_checker.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import sqlite3

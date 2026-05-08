@@ -1,7 +1,7 @@
 """
 upgrade_manager.py - 版本升级管理器
 路径：scripts/upgrade_manager.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import os

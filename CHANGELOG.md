@@ -3,6 +3,28 @@
 > 稻也·乡村振兴AI助手 — 版本变更记录
 
 ---
+## [v2.3.8] - 2026-05-08 (feature - 爬虫系统重构: 定向搜索+三层去重+智能正文提取)
+
+**定位**: 爬虫从"首页扫链接"翻转为"定向搜索",根治垃圾内容问题。手动触发(不自动化)。
+
+**Added**:
+- `scripts/content_extractor.py`(230行): GovContentExtractor — gov.cn正文智能提取+元数据识别(发文字号/日期/发文机关)+四级质量门禁
+- `agents/crawler_scheduler.py` 重写(410行): 从1372行精简,定向搜索(6端点×5关键词组)→三层去重(URL指纹/内容哈希/发文字号)→robots.txt合规→智能提取→CEO审核
+- `scripts/crawler_extractor.py` 重写: 从空壳(return {kp_count:0})重写为真实管道(batch_approve_and_process)
+- `run_pipeline.py --crawl` / `--crawl-status` / `--crawl-approve` CLI入口
+- crawl_history + doc_number / source_domain 字段 + idx_crawl_doc 索引
+
+**Changed**:
+- 爬虫架构: 首页扫描→定向搜索(不依赖首页链接,直接搜政策库)
+- 去重: 单层MD5→三层(URL指纹+内容哈希+发文字号)
+- 正文提取: 正则去HTML标签→GovContentExtractor(定位正文容器+文本密度回退)
+- 排除词: +12个排除关键词(采矿/人事/党建/招标/信访类)
+- 合规: 强制robots.txt检查+Crawl-Delay遵守(网安条例2025.1.1)
+
+**Migration**:
+- 存量库: 首次安装.bat 自动追齐 crawl_history 新字段(幂等)
+- 无依赖变更
+
 ## [v2.3.7-part6-fix1] - 2026-05-07 (bugfix)
 
 **Fixed**:

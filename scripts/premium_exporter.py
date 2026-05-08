@@ -2,7 +2,7 @@
 """
 premium_exporter.py - 精品知识导出模块
 路径：scripts/premium_exporter.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json

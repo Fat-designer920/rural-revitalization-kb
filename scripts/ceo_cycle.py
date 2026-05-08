@@ -8,9 +8,10 @@ CEO每轮: 感知全局→深度思考→决策→调度部门→执行→验证
 """
 import time, gc, psutil, sqlite3, os, sys
 from datetime import datetime
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
-STATUS_FILE = 'logs/ceo_cycle_status.txt'
+STATUS_FILE = os.path.join(PROJECT_ROOT, 'logs', 'ceo_cycle_status.txt')
 
 
 def log(msg):
@@ -317,7 +318,7 @@ def run_crawled_quality_audit():
                 hits=sum(1 for kw in rural_kw if kw in content)
                 if hits<3 or len(content)<500:
                     os.remove(path);cleaned+=1
-            except:pass
+            except (OSError, IOError): pass
         remaining=len([f for f in os.listdir(crawled) if os.path.isfile(os.path.join(crawled,f))])
         if cleaned>0: log(f'[Audit] Cleaned {cleaned} bad files, {remaining} remain')
     except Exception: pass

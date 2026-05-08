@@ -2,7 +2,7 @@
 """
 e2e_diagnosis_exporter.py - E2E 诊断包导出器
 路径：scripts/e2e_diagnosis_exporter.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json
@@ -869,7 +869,6 @@ def _render_section_version_context(lines):
     lines.append("| review.html | v2.3.0-part3.8(6 批量按钮 + batchResultModal) |")
     lines.append("| e2e_diagnosis_exporter.py | v2.3.0-part3.8(按文件维度覆盖范围视图) |")
     lines.append("| extractor.py | v2.3.0-part3.8(冗余迁移 import 清理 -21 行) |")
-    lines.append("| duplicate_checker.py | v2.3.0-part3.8(冗余迁移 import 清理 -3 行) |")
     lines.append("")
     lines.append("**近期关键 hotfix**:")
     lines.append("- v2.3.0-part3.8:F062 白名单大扩展(7 文件 DIM6 79 条) + 6 批量路由走 errors 收集 E2 改造 + 冗余代码清理(立规则 52)")

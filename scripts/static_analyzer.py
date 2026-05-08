@@ -1,7 +1,7 @@
 """
 static_analyzer.py - Python 代码静态分析器
 路径：scripts/static_analyzer.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import ast
@@ -51,7 +51,6 @@ _DEFAULT_SCRIPT_FILES = [
     "api_server.py",
     "health_checker.py",
     "extractor.py",
-    "duplicate_checker.py",
     "preprocessor.py",
     "experience_notes.py",
     "db_manager.py",

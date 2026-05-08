@@ -1,7 +1,7 @@
 """
 deepseek_client.py - DeepSeek API 封装 + 硅基流动镜像兜底
 路径：scripts/deepseek_client.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import os, sys, json, time, base64, re, requests, tempfile
 from pathlib import Path
@@ -28,10 +28,6 @@ class DeepSeekClient:
         "deepseek-reasoner": {"input": 4.0, "output": 16.0},
         # 硅基流动文本模型(L1 镜像兜底,本版 L1.1 Kimi 删除,只保留 L2 R1 镜像作为新 L1)
         "Pro/deepseek-ai/DeepSeek-R1": {"input": 4.0, "output": 16.0},
-        # 历史保留,本版不主动用(代码层已无引用)
-        "Pro/moonshotai/Kimi-K2.6": {"input": 4.0, "output": 16.0},
-        "Pro/moonshotai/Kimi-K2.5": {"input": 4.0, "output": 21.0},
-        "Pro/zai-org/GLM-4.7": {"input": 4.0, "output": 16.0},
     }
 
     # v2.3.4-hotfix3 改造:R1_MODELS 集合保留作为遗留字段,但实际判定逻辑已切换为
@@ -48,7 +44,6 @@ class DeepSeekClient:
     # 修法:默认值改 V4-Pro 镜像(384K max_output);settings.json 可覆盖供老唐查到真实 ID 后切换
     # 兜底回退路径:_get_siliconflow_mirror_model() 实例方法读 config 优先,类常量保底
     SILICONFLOW_TEXT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
-    SILICONFLOW_TEXT_MODEL_L1 = os.getenv("SILICONFLOW_TEXT_MODEL_L1", "Pro/moonshotai/Kimi-K2.6")  # 历史保留,代码不调
     SILICONFLOW_TEXT_MODEL_L2 = os.getenv("SILICONFLOW_TEXT_MODEL_L2", "Pro/deepseek-ai/DeepSeek-V4-Pro")
     # v2.3.5-part2-hotfix1: V4-Pro 镜像不可用时的回退选择(老硅基存量保证)
     SILICONFLOW_TEXT_MODEL_FALLBACK = "Pro/deepseek-ai/DeepSeek-R1"
@@ -187,15 +182,14 @@ class DeepSeekClient:
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         # v2.3.5-part1.3 K4:timeout 四档分支 — endpoint 维度扩到 siliconflow / moonshot 双覆盖
         # 硅基流动思考型 → 1200s
-        # Kimi 官方思考型(api.moonshot.cn) → 1200s(共用同一变量,Kimi 官方思考型同样可能慢)
-        # DeepSeek 官方思考型(deepseek-reasoner) → 300s(老逻辑保留)
+        # DeepSeek 官方思考型(deepseek-reasoner) → 450s
+        # 硅基流动思考型 → siliconflow_thinking_timeout (默认1200s)
         # 其他(V3 / 普通模型) → 120s(老逻辑保留)
         m = use_model or self.model
         is_thinking = self._is_r1(m)
         ep_lower = (endpoint or "").lower()
         is_siliconflow = "siliconflow" in ep_lower
-        is_kimi_official = "moonshot.cn" in ep_lower
-        if (is_siliconflow or is_kimi_official) and is_thinking:
+        if is_siliconflow and is_thinking:
             timeout = self.siliconflow_thinking_timeout
         elif is_thinking:
             timeout = self.r1_timeout
@@ -731,77 +725,6 @@ class DeepSeekClient:
         result["meta_object"] = meta_object
         result["last_broken_line"] = last_broken_line
         result["prefix_for_continuation"] = prefix_for_continuation
-        return result
-
-    def chat_continue_with_prefix(self, system_prompt, user_prompt, prefix_content,
-                                  max_tokens=8192, call_type="prefix_continue",
-                                  model_override=None, stop=None):
-        """v2.3.4 新增(D7):Chat Prefix Completion(走 beta 端点)。
-
-        ⚠️ DEPRECATED in v2.3.4-hotfix1
-        ---------------------------
-        废弃理由:本方法的设计前提是"R1 截断时已生成至少 1 条完整 kp,prefix 有内容可续"。
-        实测发现 R1 思考过程吃光 max_tokens 时 partial_kps==0,prefix 为空,本方法无法启动。
-        替代方案:多思考型模型整段重提(extractor._extract_with_auto_split L1/L2 分支
-        通过 chat_via_siliconflow 调用 Kimi-K2.6 + R1 跨厂商镜像)。
-        本方法代码完整保留,extractor 不再调用,留作未来若有"prefix 续写适用"场景重启。
-        ---------------------------
-
-        DeepSeek 官方契约:
-        - 必须 base_url=https://api.deepseek.com/beta
-        - messages 最后一条必须 role=assistant + prefix=True
-        - 模型从 prefix_content 末尾续写
-
-        默认走 V3(deepseek-chat),续写是格式接力不是创造,V3 够用且成本降 8 倍(D8)。
-        调用方可通过 model_override 强制走 R1。
-
-        返回 dict 同 chat()(content 是续写部分,不含 prefix)。
-        """
-        self._check_cost()
-        # D8:续写默认走 V3
-        use_model = model_override or "deepseek-chat"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-            {"role": "assistant", "content": prefix_content, "prefix": True}
-        ]
-
-        payload = {
-            "model": use_model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-        }
-        if not self._is_r1(use_model):
-            payload["temperature"] = 0.2
-        if stop is not None:
-            payload["stop"] = stop
-
-        # 走 beta 端点(必需)
-        resp = self._request("chat/completions", payload, use_model=use_model,
-                             base_url_override=self.beta_base_url)
-
-        msg = resp["choices"][0]["message"]
-        content = msg.get("content", "")
-        reasoning = msg.get("reasoning_content", "")
-        u = resp.get("usage", {})
-        inp = u.get("prompt_tokens", 0)
-        out = u.get("completion_tokens", 0)
-        finish_reason = resp["choices"][0].get("finish_reason", "stop")
-        was_truncated = (finish_reason == "length")
-        cost = self._estimate_cost(use_model, inp, out)
-        self.db.log_api_call(call_type, use_model, inp, out, cost)
-
-        result = {
-            "content": content,
-            "input_tokens": inp,
-            "output_tokens": out,
-            "estimated_cost": cost,
-            "model": use_model,
-            "was_truncated": was_truncated
-        }
-        if reasoning:
-            result["reasoning_content"] = reasoning
         return result
 
     # 硅基流动OCR（扫描件PDF + 图片识别）

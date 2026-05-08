@@ -2,7 +2,7 @@
 """
 health_checker.py - 知识库健康体检引擎(F048 六维度)
 路径：scripts/health_checker.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json
@@ -143,7 +143,7 @@ class HealthChecker:
         # --- 参数校验与兜底 ---
         if polish_max not in self.POLISH_MAX_OPTIONS:
             self._safe_log_event(
-                'health_check_param_invalid', 'warn',
+                'health_check_param_invalid', 'warning',
                 {'param': 'polish_max', 'got': polish_max, 'fallback': self.POLISH_MAX_DEFAULT},
             )
             polish_max = self.POLISH_MAX_DEFAULT
@@ -593,7 +593,7 @@ class HealthChecker:
             resp = self._call_v3(sys_p, user_p, timeout=self.V3_TIMEOUT)
             return self._safe_parse_json(resp)
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'island_judge', 'kp_id': kp.get('kp_id'), 'error': str(e)[:300],
             })
             return None
@@ -669,7 +669,7 @@ class HealthChecker:
                     stats['error'] += 1
             except Exception as e:
                 stats['error'] += 1
-                self._safe_log_event('health_polish_fallback', 'warn', {
+                self._safe_log_event('health_polish_fallback', 'warning', {
                     'kp_id': kp.get('kp_id'), 'tier': 'exception', 'error': str(e)[:300],
                 })
 
@@ -758,7 +758,7 @@ class HealthChecker:
             resp = self._call_v3(sys_p, user_p, timeout=self.V3_TIMEOUT)
             return self._safe_parse_json(resp)
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'diagnose', 'kp_id': kp.get('kp_id'), 'error': str(e)[:300],
             })
             return None
@@ -812,7 +812,7 @@ class HealthChecker:
                     return None
             return parsed
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'polish_r1', 'kp_id': kp.get('kp_id'), 'error': str(e)[:300],
             })
             return None
@@ -836,7 +836,7 @@ class HealthChecker:
             resp = self._call_v3(sys_p, user_p, timeout=self.V3_TIMEOUT)
             return self._safe_parse_json(resp)
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'verify', 'kp_id': original_kp.get('kp_id'), 'error': str(e)[:300],
             })
             return None
@@ -884,7 +884,7 @@ class HealthChecker:
                 return None
             return parsed
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'polish_conservative', 'kp_id': kp.get('kp_id'), 'error': str(e)[:300],
             })
             return None
@@ -974,7 +974,7 @@ class HealthChecker:
                 },
             }
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'stage': 'monetize', 'error': str(e)[:300],
             })
             return {'score': 0, 'detail': {'error': str(e)[:200]}}
@@ -1048,7 +1048,7 @@ class HealthChecker:
                 self._accumulate_cost('v3', usage)
             return content
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'model': 'v3', 'error': str(e)[:300],
             })
             return None
@@ -1068,7 +1068,7 @@ class HealthChecker:
                 self._accumulate_cost('r1', usage)
             return content
         except Exception as e:
-            self._safe_log_event('health_ai_call_failed', 'warn', {
+            self._safe_log_event('health_ai_call_failed', 'warning', {
                 'model': 'r1', 'error': str(e)[:300],
             })
             return None
@@ -1252,7 +1252,7 @@ class HealthChecker:
         try:
             return fn()
         except Exception as e:
-            self._safe_log_event('health_internal_call_failed', 'warn', {
+            self._safe_log_event('health_internal_call_failed', 'warning', {
                 'error': str(e)[:300],
             })
             return default
@@ -1266,7 +1266,7 @@ class HealthChecker:
             return result
         except Exception as e:
             tb = traceback.format_exc()
-            self._safe_log_event('health_dim_failed', 'warn', {
+            self._safe_log_event('health_dim_failed', 'warning', {
                 'dim': dim_name, 'error': str(e)[:300], 'traceback': tb[:800],
             })
             return {'score': 0, 'detail': {'error': str(e)[:200]}}

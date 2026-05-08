@@ -17,7 +17,7 @@ from agents.base_agent import BaseAgent, StrategyAgent
 
 
 def build_rd_agents(client=None, db=None):
-    """构建9个研发中心Agent。每个都是独立AI思考实体,参照大厂标准。返回列表。"""
+    """构建11个研发中心Agent。每个都是独立AI思考实体,参照大厂标准。返回列表。"""
     agents = []
 
     # ================================================================

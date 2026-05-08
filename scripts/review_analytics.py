@@ -1,7 +1,7 @@
 """
 review_analytics.py - 审核反馈统计
 路径：scripts/review_analytics.py
-版本：v2.3.6-part1 - 版本统一
+版本：v2.3.7 - 版本统一
 
 功能：
   - 统计各字段被修改的频率（哪些字段AI提取不准，人工改得最多）

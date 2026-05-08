@@ -1,7 +1,7 @@
 """
 e2e_tester.py - F062 端到端健康测试 Agent 引擎
 路径：scripts/e2e_tester.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json
@@ -969,11 +969,11 @@ class E2ETester(object):
             self._emit_progress("dim5_event", 5, 8,
                                 "V3 事件判断 {}/{}".format(idx + 1, len(sampled)))
             judgment = self._judge_single_event(ev)
-            verdict = judgment.get("judgment", "warn")
+            verdict = judgment.get("judgment", "warning")
             if verdict == "fail":
                 fail_count += 1
                 sev = "error"
-            elif verdict == "warn":
+            elif verdict == "warning":
                 warn_count += 1
                 sev = "warning"
             else:
@@ -1103,15 +1103,15 @@ class E2ETester(object):
             parsed = self._safe_parse_json(resp_text)
             if not parsed or not isinstance(parsed, dict):
                 return {
-                    "judgment": "warn",
+                    "judgment": "warning",
                     "reasons": ["V3 返回解析失败,默认标 warn"],
                     "keywords_hit": [],
                     "confidence": "low",
                 }
             # 兜底字段
-            verdict = parsed.get("judgment") or "warn"
-            if verdict not in ("pass", "warn", "fail"):
-                verdict = "warn"
+            verdict = parsed.get("judgment") or "warning"
+            if verdict not in ("pass", "warning", "fail"):
+                verdict = "warning"
             return {
                 "judgment": verdict,
                 "reasons": parsed.get("reasons") or [],
@@ -1123,7 +1123,7 @@ class E2ETester(object):
                                  {"event_id": ev.get("event_id"),
                                   "err": str(e)[:300]})
             return {
-                "judgment": "warn",
+                "judgment": "warning",
                 "reasons": ["V3 调用异常: " + str(e)[:200]],
                 "keywords_hit": [],
                 "confidence": "low",
@@ -1470,7 +1470,7 @@ class E2ETester(object):
 
     def _safe_log_event(self, event_type, severity, payload):
         """事件日志,失败静默(不干扰主流程)。severity 严格对齐 info/warning/error。"""
-        if severity == "warn":
+        if severity == "warning":
             severity = "warning"
         if severity not in ("info", "warning", "error"):
             severity = "info"

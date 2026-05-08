@@ -385,18 +385,24 @@ class AgentLoop(object):
                 for a in idle[:5]:
                     try:
                         a.think({'task': '分析稻也从你的专业视角最需要的1个改进', 'from_ceo': True})
-                    except: pass
+                    except Exception: pass
         except Exception: pass
 
     def _auto_freshness_scan(self):
         """自动保鲜扫描"""
         try:
             import sqlite3
-            d2 = sqlite3.connect('data/database/knowledge_base.db')
+            from pathlib import Path
+            db_path = Path(__file__).parent.parent / 'data' / 'database' / 'knowledge_base.db'
+            d2 = sqlite3.connect(str(db_path))
             d2.execute("UPDATE knowledge_points SET freshness_checked_at=datetime('now') WHERE freshness_checked_at IS NULL")
             d2.commit()
             d2.close()
-        except Exception: pass
+        except Exception:
+            try: d2.rollback()
+            except Exception: pass
+            try: d2.close()
+            except Exception: pass
 
     def _auto_fact_check(self):
         """自动事实核查"""
@@ -453,7 +459,7 @@ class AgentLoop(object):
                         try:
                             shutil.rmtree(os.path.join(root, d))
                             pycache_count += 1
-                        except: pass
+                        except (OSError, IOError): pass
             if pycache_count > 0:
                 self._log(f'[CodeAudit] Cleaned {pycache_count} __pycache__ dirs')
             # 4. Git GC

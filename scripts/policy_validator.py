@@ -1,7 +1,7 @@
 """
 policy_validator.py - 政策依赖校验模块
 路径：scripts/policy_validator.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import json, sys

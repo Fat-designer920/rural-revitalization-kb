@@ -2403,8 +2403,7 @@ function renderDashboard(d){
   h+='<div style="font-size:11px;color:var(--text-muted);margin-top:-2px;margin-bottom:10px">'
    +'占比 '+mdPct.toFixed(2)+'% (总 '+mdTotal+' 条)</div>';
   h+=dRow("","","V4-Pro 主链",mdMap.r1||0);
-  h+=dRow("","","L1 硅基流动救回",mdMap.kimi||0);
-  h+=dRow("","","L2 V4-Pro镜像救回",mdMap.r1_mirror||0);
+  h+=dRow("","","L1 硅基V4-Pro镜像救回",mdMap.mirror_v4_pro||0);
   h+=dRow("","","F057 兜底",mdMap.f057_recovery||0);
   h+='<hr class="dash-divider">';
   h+='<div style="font-size:10px;color:var(--text-muted);line-height:1.5">'
@@ -2933,8 +2932,8 @@ function runTool(name){
     apiGet("/api/agents/status").then(function(r){
       var h="";
       if(r.success){
-        h+="<div style=\"font-weight:600;margin-bottom:8px\">16 Agent智慧体系</div>";
-        h+="<div>乐团Agent: <b>"+r.orchestra_agents+"</b> | 公司Agent: <b>"+r.company_agents+"</b></div>";
+        h+="<div style=\"font-weight:600;margin-bottom:8px\">"+r.total_agents+" Agent智慧体系</div>";
+        h+="<div>集团Agent: <b>"+r.orchestra_agents+"</b></div>";
         var types=r.orchestra_by_type||{};
         h+="<p style=\"margin-top:8px\"><button onclick=\"agentsLoadGroup()\">查看集团架构</button> <button onclick=\"agentsAudit()\">触发Agent审计</button></p>";
       }else{h="<p style=\"color:var(--danger)\">"+esc(r.error)+"</p>"}

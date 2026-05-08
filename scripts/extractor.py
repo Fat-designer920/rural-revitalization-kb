@@ -514,111 +514,6 @@ class Extractor:
                      "cost": cost, "filename": filename})
         return kp_objects
 
-    # v2.3.4 D10 L0/L1: Prefix 续写补救核心 [DEPRECATED in v2.3.4-hotfix1]
-    # ----------------------------------------------------------------
-    # ⚠️ 本方法在 v2.3.4-hotfix1 起不再被 _extract_with_auto_split 调用。
-    # 废弃理由:本方法的设计前提是"R1 截断时已生成 ≥1 条 partial kp,prefix 有内容可续";
-    # 老唐 2026-04-28 实测发现 R1 思考爆 token 时 partial==0,prefix 空,本方法 386 行直接降级。
-    # 替代方案:_retry_via_siliconflow 多思考型模型整段重提(L1 Kimi-K2.6 / L2 R1 镜像)。
-    # 代码完整保留作未来"prefix 续写适用"场景重启可能。
-    def _recover_via_prefix(self, init_result, file_id, filename, max_attempts=2):
-        """L0/L1 prefix 续写。
-
-        参数 init_result:_extract_single 返回的 dict(包含 prefix_for_continuation/system_prompt/user_prompt)
-        返回:
-          List[dict] 续写新增的 kp(成功);
-          None(续写失败,需走 L2 F057 兜底)
-        """
-        prefix_content = init_result.get("prefix_for_continuation", "") or ""
-        sp = init_result.get("system_prompt", "") or ""
-        up = init_result.get("user_prompt", "") or ""
-
-        if not prefix_content or not sp or not up:
-            print(f"     [Prefix续写跳过] prefix/system/user_prompt 缺失,直接降级")
-            return None
-
-        all_recovered = []
-        current_prefix = prefix_content
-
-        for attempt in range(1, max_attempts + 1):
-            print(f"     [L{attempt-1} Prefix续写] 第{attempt}次,prefix 末尾长度 {len(current_prefix)} 字符...")
-
-            try:
-                rc = self.client.chat_continue_with_prefix(
-                    system_prompt=sp,
-                    user_prompt=up,
-                    prefix_content=current_prefix,
-                    max_tokens=8192,
-                    call_type=f"extract_continue_{filename[:30]}",
-                    # D8 续写默认走 V3,内部已处理
-                )
-            except Exception as e:
-                print(f"     [Prefix续写异常] {type(e).__name__}: {e}")
-                self._safe_log_event(
-                    "prefix_recovery", "extractor", "warning",
-                    file_id=file_id,
-                    payload={"attempt": attempt, "reason": "exception",
-                             "error": f"{type(e).__name__}: {str(e)[:200]}",
-                             "filename": filename})
-                return None
-
-            new_content = rc.get("content", "") or ""
-            new_truncated = rc.get("was_truncated", False)
-            new_cost = rc.get("estimated_cost", 0)
-            self._truncation_stats["total_cost"] += new_cost
-
-            # 把"prefix + 续写内容"合并后整体走 jsonl 解析,
-            # 把已生成 + 新生成统一逐行 try parse
-            full_text = current_prefix + new_content
-            new_kps, new_meta, new_prefix_for_next, broken_line = self._parse_jsonl_text(full_text)
-
-            # 计算"新增"的 kp = 整体解析的 kp 减去之前已有的 kp
-            # 通过 (title, excerpt前100) 比对
-            already_seen_keys = set()
-            for k in init_result.get("kps", []) + all_recovered:
-                if not isinstance(k, dict):
-                    continue
-                t = (k.get("title", "") or "").strip()
-                e = (k.get("original_excerpt", "") or "").strip()[:100]
-                already_seen_keys.add((t, e))
-
-            this_round_new = []
-            for k in new_kps:
-                t = (k.get("title", "") or "").strip()
-                e = (k.get("original_excerpt", "") or "").strip()[:100]
-                key = (t, e)
-                if key in already_seen_keys:
-                    continue
-                already_seen_keys.add(key)
-                this_round_new.append(k)
-
-            all_recovered.extend(this_round_new)
-            print(f"     [Prefix续写成功 第{attempt}次] 新增{len(this_round_new)}条 ({new_cost:.4f}元)")
-            self._safe_log_event(
-                "prefix_recovery", "extractor", "info",
-                file_id=file_id,
-                payload={"attempt": attempt, "new_count": len(this_round_new),
-                         "still_truncated": new_truncated, "cost": new_cost,
-                         "filename": filename})
-
-            # 续写未截断 → 完成
-            if not new_truncated:
-                self._truncation_stats["prefix_recoveries"] += 1
-                return all_recovered
-
-            # 仍截断且还有重试次数 → 用合并后文本作为下次 prefix
-            if attempt < max_attempts:
-                current_prefix = full_text
-                continue
-
-        # 用完 max_attempts 仍截断
-        # 已有续写成果就回传,让上层合并;若 0 条则视为续写失败
-        if all_recovered:
-            self._truncation_stats["prefix_recoveries"] += 1
-            print(f"     [Prefix续写部分成功] 已尝试{max_attempts}次,仍截断,保留{len(all_recovered)}条")
-            return all_recovered
-        return None
-
     def _parse_jsonl_text(self, text):
         """对一段 JSON Lines 文本逐行 try parse。
         返回 (kp_list, meta_dict, prefix_for_continuation_str, last_broken_line)
@@ -2184,7 +2079,6 @@ class Extractor:
         # 新降级链: L0 V4-Pro → L1 V3.2 镜像(原 R1 mirror,沿用字段)→ L2 F057
         self._truncation_stats = {
             "truncations": 0,
-            "prefix_recoveries": 0,  # DEPRECATED v2.3.4-hotfix1, 保留兼容
             "r1_mirror_recoveries": 0,  # v2.3.4-hotfix1 新增,v2.3.5-part2 改名义为 L1 V3.2/R1 镜像救回
             "f057_fallbacks": 0,
             "lost_segments": 0,

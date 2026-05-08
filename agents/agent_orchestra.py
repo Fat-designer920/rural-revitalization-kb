@@ -95,7 +95,7 @@ DEPARTMENTS = {
 
 
 def build_all_agents(client=None, db=None):
-    """构建全部Agent(7部门)。每个都是能独立调用AI的思考实体。
+    """构建全部Agent(10部门)。每个都是能独立调用AI的思考实体。
     返回: {agents: [BaseAgent...], departments: {...}}
     """
     agents = []

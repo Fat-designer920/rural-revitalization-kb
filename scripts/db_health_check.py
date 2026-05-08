@@ -3,7 +3,7 @@
 """
 db_health_check.py - 数据库只读健康扫描(纯 PRAGMA + SELECT,零 AI 调用)
 路径：scripts/db_health_check.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 
 import sys
@@ -647,7 +647,7 @@ def check_8_operation_events(conn):
         cur = conn.execute('''
             SELECT event_type, severity, COUNT(*) as n FROM operation_events
             WHERE julianday('now') - julianday(created_at) <= 30
-              AND severity IN ('error', 'warn')
+              AND severity IN ('error', 'warning')
             GROUP BY event_type, severity
             ORDER BY n DESC LIMIT 10
         ''')

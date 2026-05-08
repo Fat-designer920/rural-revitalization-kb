@@ -79,7 +79,7 @@ def build_design_agents():
 
 
 class DesignCenter(object):
-    """设计中心。协调6个专业Agent,定期开设计评审会,输出设计规范。"""
+    """设计中心。协调活跃设计Agent,定期开设计评审会,输出设计规范。"""
 
     def __init__(self, db=None, client=None):
         self.db = db
@@ -87,9 +87,9 @@ class DesignCenter(object):
         self.design_agents = build_design_agents()
 
     def review_page(self, page_name, html_content=None):
-        """让6个Agent评审一个页面。返回评审报告。"""
+        """让Agent评审一个页面。返回评审报告。"""
         results = {}
-        for agent in self.design_agents[:3]:  # 先3个核心Agent评审
+        for agent in self.design_agents:  # 全部活跃Agent评审
             review = self._single_review(agent, page_name)
             results[agent["agent_code"]] = review
         return {

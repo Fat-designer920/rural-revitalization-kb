@@ -1,7 +1,7 @@
 """
 log_viewer.py - 日志查看器
 路径：scripts/log_viewer.py
-版本：v2.3.6-part1
+版本：v2.3.7
 """
 import os, json
 from pathlib import Path
