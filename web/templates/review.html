@@ -774,7 +774,6 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
     <div class="stat-pill">已入库<span class="num" id="statConfirmed">-</span></div>
     <div class="stat-pill clickable" onclick="openStatsModal()">分类概览</div>
     <div class="stat-pill">API<span class="num" id="statCost">-</span>元</div>
-    <div class="stat-pill" id="npuBadge"><span class="npu-badge-wrap"><span class="npu-dot off" id="npuDot"></span>NPU<span class="num" id="npuStatus">-</span></span></div>
     <div class="stat-pill clickable" onclick="toggleProductMenu()" title="预览所有产品页面">产品预览 ▾</div>
     <div class="stat-pill clickable" onclick="window.open('/qa','_blank')" title="新标签页打开朋友试用产品页">朋友试用 ↗</div>
     <!-- 产品预览下拉菜单 -->
@@ -784,11 +783,6 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
       <a href="/qa" target="_blank">🤖 AI问答助手(旧)</a>
       <a href="/premium" target="_blank">📦 精品查看器</a>
       <div style="border-top:1px solid #E5E5EA;margin:6px 0"></div>
-      <span style="display:block;padding:4px 14px;font-size:10px;color:#86868B;text-transform:uppercase">即将上线</span>
-      <a href="/course" target="_blank" class="planned">📚 线上录播课</a>
-      <a href="/compliance" target="_blank" class="planned">✅ 合规自检工具</a>
-      <a href="/daily" target="_blank" class="planned">📰 政策变化日报</a>
-      <a href="/templates" target="_blank" class="planned">📋 模板工具包</a>
     </div>
   </div>
 </div>
@@ -914,16 +908,6 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
 <!-- ==================== Tab 2: System Admin ==================== -->
 <div id="tabAdmin" style="display:none">
 <div class="admin-wrap">
-  <!-- CEO Command -->
-  <div class="admin-section ceo-cmd-section">
-    <div class="admin-title">CEO指令 <small>-- 直接向CEO Agent下达指令,V4-Pro深度分析</small></div>
-    <div class="ceo-cmd-wrap">
-      <input type="text" id="ceoInput" placeholder="输入指令,例如:分析当前知识库薄弱环节并给出爬取建议" onkeydown="if(event.key==='Enter')sendCeoInstruction()">
-      <button class="btn btn-primary" id="ceoSendBtn" onclick="sendCeoInstruction()">发送</button>
-      <button class="btn btn-ghost" id="ceoCancelBtn" style="display:none" onclick="cancelCeoInstr()">取消</button>
-    </div>
-    <div class="ceo-response-box" id="ceoResponseBox"></div>
-  </div>
   <!-- Dashboard -->
   <div class="admin-section">
     <div class="admin-title">仪表盘 <small>-- 知识库运行状态总览</small>
@@ -1010,17 +994,7 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <div class="tool-icon" style="background:var(--brand-green-light);color:var(--brand-green)">&#8615;</div>
         <div class="tool-name">精品导出</div>
         <div class="tool-desc">Markdown / JSON 打包下载</div>
-      <div class="tool-card" id="tc-ceo" onclick="runTool('ceo')" style="position:relative">
-        <div class="tool-icon" style="background:#F3EAFA;color:#7A38A6">C</div>
-        <div class="tool-name">CEO Agent</div>
-        <div class="tool-desc">v2.3.7 自动决策+会议辩论</div>
-      </div>
-      <div class="tool-card" id="tc-agents" onclick="runTool('agents')">
-        <div class="tool-icon" style="background:var(--green-light);color:#16A34A">G</div>
-        <div class="tool-name">Agent智慧体系</div>
-        <div class="tool-desc">6部门16Agent全貌</div>
-      </div>
-      <div class="tool-card" id="tc-audit" onclick="runTool('audit')">
+      <div class="tool-card" id="tc-audit" onclick="runTool('audit')" style="display:none">
         <div class="tool-icon" style="background:var(--amber-light);color:#C97A2C">U</div>
         <div class="tool-name">Agent审计</div>
         <div class="tool-desc">评分+辩论+缺口</div>
@@ -1292,19 +1266,6 @@ body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helve
         <span id="qaHistoryToggleIcon" style="font-size:12px;color:var(--text-muted)">展开 ▼</span>
       </div>
       <div id="qaHistoryList" class="qa-history-list"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ==================== Tab 4: Department Monitor ==================== -->
-<div id="tabDept" style="display:none">
-  <div class="dept-monitor-wrap">
-    <div class="dept-header-row">
-      <h2>集团部门状态监控 <small style="font-size:12px;font-weight:400;color:var(--text-muted)">-- 10部门实时概览</small></h2>
-      <span class="dept-summary" id="deptSummary"></span>
-    </div>
-    <div class="dept-grid" id="deptGrid">
-      <div class="loading">正在加载部门数据...</div>
     </div>
   </div>
 </div>
@@ -1762,7 +1723,6 @@ function switchTab(tab){
   }
   if(tab==="admin"){loadDashboard();checkRunningTask();qcCheckRunningTask();premiumCheckRunningTask();_renderE2eBadge()}
   if(tab==="qa"){qaInitOnEnter();qaCheckRunningTask()}
-  if(tab==="dept"){loadDeptMonitor()}
 }
 function checkRunningTask(){
   apiGet("/api/tasks/progress").then(function(r){
@@ -2910,51 +2870,6 @@ function runTool(name){
     done();
     openPremiumExport();
   }
-  else if(name==="ceo"){
-    var card=document.getElementById("tc-ceo");
-    apiGet("/api/tools/ceo/progress").then(function(r){
-      if(r.running){
-        showToolResult("CEO Agent","<p>CEO正在运行中... 动作:"+esc((r.progress||{}).current_action||"?")+", 周期:"+(r.progress.cycle||0)+"</p><p style=\"color:var(--text-muted);font-size:12px\"><button onclick=\"ceoStop()\">停止</button></p>");
-      }else if(r.has_result){
-        var res=r.progress.metrics||{};
-        var h="<div>上次运行完成: "+(esc(r.progress.current_action||"?"))+"</div>";
-        h+="<div style=\"margin-top:8px\">KPs喂入: "+(res.kps_fed||0)+" | 提取: "+(res.kps_extracted||0)+" | 审计: "+(res.audits_run||0)+"</div>";
-        h+="<p style=\"margin-top:8px\"><button onclick=\"ceoStart()\">启动CEO单次</button></p>";
-        showToolResult("CEO Agent",h);
-      }else{
-        showToolResult("CEO Agent","<p>CEO Agent就绪,可启动单次模式</p><p style=\"margin-top:8px\"><button onclick=\"ceoStart()\">启动单次</button></p>");
-      }
-      if(card)card.classList.remove("running");
-    });
-  }
-  else if(name==="agents"){
-    var card2=document.getElementById("tc-agents");
-    apiGet("/api/agents/status").then(function(r){
-      var h="";
-      if(r.success){
-        h+="<div style=\"font-weight:600;margin-bottom:8px\">"+r.total_agents+" Agent智慧体系</div>";
-        h+="<div>集团Agent: <b>"+r.orchestra_agents+"</b></div>";
-        var types=r.orchestra_by_type||{};
-        h+="<p style=\"margin-top:8px\"><button onclick=\"agentsLoadGroup()\">查看集团架构</button> <button onclick=\"agentsAudit()\">触发Agent审计</button></p>";
-      }else{h="<p style=\"color:var(--danger)\">"+esc(r.error)+"</p>"}
-      showToolResult("Agent智慧体系",h);
-      if(card2)card2.classList.remove("running");
-    });
-  }
-  else if(name==="audit"){
-    var card3=document.getElementById("tc-audit");
-    apiGet("/api/tools/audit-history").then(function(r){
-      var h="<div style=\"font-weight:600;margin-bottom:8px\">Agent审计</div>";
-      if(r.history&&r.history.length){
-        for(var i=0;i<r.history.length;i++){
-          var a=r.history[i];
-          h+="<div class=\"tr-item\" style=\"font-size:12px\"><span>"+esc(a.cycle_label||"")+"</span><span>"+esc(a.status||"")+"</span><span style=\"color:var(--text-muted)\">"+esc(a.created_at||"")+"</span></div>";
-        }
-      }else{h+="<p style=\"color:var(--text-muted)\">暂无审计记录</p>"}
-      h+="<p style=\"margin-top:8px\"><button onclick=\"agentsAudit()\">运行Agent审计</button></p>";
-      showToolResult("Agent审计",h);
-      if(card3)card3.classList.remove("running");
-    });
   }
   else{done()}
 }
@@ -3022,63 +2937,6 @@ function _premHideProgress(){
 /* ================================================================ */
 /* === v2.3.7 CEO Agent + Agent 体系 辅助函数 === */
 /* ================================================================ */
-function ceoStart(){
-  showToolResult("CEO Agent","<div style='padding:20px 0;text-align:center;color:var(--text-secondary)'>正在启动 CEO Agent...</div>");
-  apiPost("/api/tools/ceo/start",{}).then(function(r){
-    if(r.error){showToolResult("CEO Agent","<p style='color:var(--danger)'>启动失败: "+esc(r.error)+"</p>");return}
-    showToolResult("CEO Agent","<p style='color:var(--success)'>CEO Agent已启动("+esc(r.mode||"?")+")</p><p style='color:var(--text-muted);font-size:12px'>自动轮询进度中...</p>");
-    ceoStartPolling();
-  });
-}
-function ceoStop(){
-  apiPost("/api/tools/ceo/stop").then(function(r){
-    showToast("CEO停止请求已发送","success");
-  });
-}
-function ceoStartPolling(){
-  apiGet("/api/tools/ceo/progress").then(function(r){
-    if(!r)return;
-    if(r.running){
-      var p=r.progress||{};
-      var h="<div>CEO运行中: 周期 "+(p.cycle||0)+"/"+(p.max_iterations||"?").toString()+"</div>";
-      h+="<div style='color:var(--text-muted);font-size:12px;margin-top:4px'>动作: "+esc(p.current_action||"?")+"</div>";
-      h+="<div style='color:var(--text-muted);font-size:12px'>"+esc(p.message||"")+"</div>";
-      h+="<p style='margin-top:8px'><button onclick='ceoStop()'>停止</button></p>";
-      showToolResult("CEO Agent",h);
-      setTimeout(ceoStartPolling,3000);
-    }else{
-      var res=r.progress.metrics||{};
-      var h2="<div style='color:var(--success);font-weight:600'>CEO运行完成</div>";
-      h2+="<div style='margin-top:8px'>KPs喂入: "+(res.kps_fed||0)+" | 提取: "+(res.kps_extracted||0)+"</div>";
-      h2+="<div>审计: "+(res.audits_run||0)+" | Prompt优化: "+(res.prompts_optimized||0)+" | 爬虫: "+(res.crawl_cycles||0)+"</div>";
-      if(r.has_error)h2+="<p style='color:var(--danger)'>错误: "+esc(r.progress.message||"")+"</p>";
-      h2+="<p style='margin-top:8px'><button onclick='ceoStart()'>重新启动</button></p>";
-      showToolResult("CEO Agent",h2);
-    }
-  });
-}
-function agentsLoadGroup(){
-  apiGet("/api/agents/group-status").then(function(r){
-    if(r.error){showToolResult("集团架构","<p style='color:var(--danger)'>"+esc(r.error)+"</p>");return}
-    var h="<div style='font-weight:600;margin-bottom:8px'>"+esc(r.group_name||"")+"</div>";
-    h+="<div>子公司: <b>"+(r.subsidiaries||0)+"</b> | 总KPs: <b>"+(r.total_kps||0)+"</b> | 日均新增: <b>"+(r.daily_new_kps||0)+"</b></div>";
-    h+="<div style='font-size:12px;color:var(--text-muted);margin-top:4px'>状态: "+esc(r.operational_status||"")+"</div>";
-    showToolResult("集团架构",h);
-  });
-}
-function agentsAudit(){
-  showToolResult("Agent审计","<div style='padding:20px 0;text-align:center;color:var(--text-secondary)'>正在运行Agent审计(抽样+评分+辩论)...</div>");
-  apiPost("/api/tools/audit-run").then(function(r){
-    if(r.error){showToolResult("Agent审计","<p style='color:var(--danger)'>"+esc(r.error)+"</p>");return}
-    var report=r.report||{};
-    var h="<div style='color:var(--success);font-weight:600;margin-bottom:8px'>审计完成! 综合评分: <b>"+(report.overall_score||"?")+"</b></div>";
-    h+="<div>Agent数: "+(report.agent_count||0)+" | 抽样: "+(report.sample_count||0)+" 条</div>";
-    if(r.feed_tasks&&r.feed_tasks.length)h+="<div style='margin-top:4px'>喂料任务: <b>"+r.feed_tasks.length+"</b> 条</div>";
-    if(r.code_tasks&&r.code_tasks.length)h+="<div style='color:var(--danger);margin-top:4px'>代码任务: <b>"+r.code_tasks.length+"</b> 条(P0!)</div>";
-    h+="<p style='margin-top:8px'><button onclick='runTool(\"audit\")'>刷新</button></p>";
-    showToolResult("Agent审计",h);
-  });
-}
 
 /* --- 打开精品候选队列模态 --- */
 function openPremiumPool(){
@@ -5062,142 +4920,9 @@ function _qaResetUi(){
   document.getElementById("qaEmpty").style.display="block";
 }
 
-/* === Department Monitor === */
-function loadDeptMonitor(){
-  apiGet("/api/agents/org-chart").then(function(r){
-    if(!r||r.error){document.getElementById("deptGrid").innerHTML='<div class="empty-state"><h3>加载失败</h3><p>'+esc(r&&r.error||"未知错误")+'</p></div>';return}
-    var deptCodes=Object.keys(r.departments||{});
-    document.getElementById("deptSummary").textContent="共 "+deptCodes.length+" 个部门 | "+r.total_agents+" 个Agent | 月目标: "+r.monthly_revenue_target;
-    var grid=document.getElementById("deptGrid");
-    var h="";
-    for(var i=0;i<deptCodes.length;i++){
-      var d=r.departments[deptCodes[i]];
-      var memberCount=(d.members||[]).length;
-      var statusDot="green";
-      if(memberCount<=1)statusDot="red";
-      else if(memberCount===2)statusDot="yellow";
-      h+='<div class="dept-card">';
-      h+='<div class="dept-card-header">';
-      h+='<span class="dept-status-dot '+statusDot+'"></span>';
-      h+='<span class="dept-card-name">'+esc(d.name)+'</span>';
-      h+='</div>';
-      h+='<div class="dept-card-chief">首席: <span>'+esc(d.chief)+'</span> &middot; '+memberCount+' 人</div>';
-      h+='<div class="dept-card-mission">'+esc(d.mission||"")+'</div>';
-      h+='<div class="dept-card-members">';
-      for(var j=0;j<d.members.length;j++){
-        var m=d.members[j];
-        h+='<span class="dept-member-tag" title="模型:'+esc(m.model||"")+'">'+esc(m.name||m.code)+'</span>';
-      }
-      h+='</div></div>';
-    }
-    grid.innerHTML=h;
-  });
-}
 
-/* === NPU Polling === */
-var _npuTimer=null;
-function pollInfraStatus(){
-  apiGet("/api/agents/infra-status").then(function(r){
-    if(!r||r.error)return;
-    var hw=r.hardware||{};
-    var mem=r.memory||{};
-    var npuStr=hw.npu||"OFF";
-    var npuOn=npuStr.indexOf("ON")>=0;
-    var dot=document.getElementById("npuDot");
-    dot.className="npu-dot "+(npuOn?"on":"off");
-    document.getElementById("npuStatus").textContent=npuOn?"ON":"OFF";
-    if(mem.used_pct!=null){
-      document.getElementById("npuBadge").title="NPU:"+npuStr+" | RAM:"+mem.used_pct+"% | "+((mem.available_gb!=null)?mem.available_gb+"GB可用":"");
-    }
-  });
-}
-function startNpuPolling(){
-  pollInfraStatus();
-  if(_npuTimer)clearInterval(_npuTimer);
-  _npuTimer=setInterval(pollInfraStatus,60000);
-}
-function stopNpuPolling(){
-  if(_npuTimer){clearInterval(_npuTimer);_npuTimer=null}
-}
 
-/* === CEO Instruction === */
-var _ceoReqAbort=null;
-function sendCeoInstruction(){
-  var input=document.getElementById("ceoInput");
-  var text=input.value.trim();
-  if(!text){showToast("请输入指令","info");return}
-  document.getElementById("ceoSendBtn").disabled=true;
-  document.getElementById("ceoCancelBtn").style.display="inline-block";
-  document.getElementById("ceoResponseBox").className="ceo-response-box open";
-  document.getElementById("ceoResponseBox").innerHTML='<div style="padding:8px;color:var(--text-muted)">分析中...</div>';
-  var ctrl=new AbortController();
-  _ceoReqAbort=ctrl;
-  fetch(API+"/api/ceo/instruction",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({instruction:text}),
-    signal:ctrl.signal
-  }).then(function(r){return r.json()}).then(function(r){
-    document.getElementById("ceoSendBtn").disabled=false;
-    document.getElementById("ceoCancelBtn").style.display="none";
-    _ceoReqAbort=null;
-    if(r.error){
-      document.getElementById("ceoResponseBox").innerHTML='<div style="color:var(--danger);font-weight:600">错误: '+esc(r.error)+'</div>';
-      return;
-    }
-    renderCeoResult(r.analysis);
-  }).catch(function(e){
-    if(e&&e.name==="AbortError")return;
-    document.getElementById("ceoSendBtn").disabled=false;
-    document.getElementById("ceoCancelBtn").style.display="none";
-    _ceoReqAbort=null;
-    document.getElementById("ceoResponseBox").innerHTML='<div style="color:var(--danger);font-weight:600">请求失败: '+esc(e.message||e)+'</div>';
-  });
-}
-function renderCeoResult(analysis){
-  var body=document.getElementById("ceoResultBody");
-  if(!analysis||typeof analysis!=="object"){
-    body.innerHTML='<div style="color:var(--text-muted)">无分析结果</div>';
-    document.getElementById("ceoResultDlg").classList.add("open");
-    return;
-  }
-  var verdictMap={approve:"✅ 批准执行",reject:"❌ 建议拒绝",modify:"🔧 建议调整",defer:"⏸ 建议搁置",analyze:"🔍 深度分析"};
-  var h="";
-  h+='<div style="margin-bottom:14px"><span style="font-size:12px;color:var(--text-muted)">裁决</span><br>';
-  h+='<span style="font-size:16px;font-weight:700;color:var(--primary)">'+(verdictMap[analysis.verdict]||esc(String(analysis.verdict)))+'</span></div>';
-  if(analysis.analysis){
-    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--text-muted)">分析</span><p style="margin:4px 0 0;font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">'+esc(String(analysis.analysis))+'</p></div>';
-  }
-  if(analysis.risks&&analysis.risks.length){
-    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--warning);font-weight:600">风险点</span><ul style="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.7">';
-    for(var i=0;i<analysis.risks.length;i++)h+='<li style="color:var(--text-secondary)">'+esc(String(analysis.risks[i]))+'</li>';
-    h+='</ul></div>';
-  }
-  if(analysis.alternatives&&analysis.alternatives.length){
-    h+='<div style="margin-bottom:12px"><span style="font-size:12px;color:var(--info);font-weight:600">备选方案</span><ul style="margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.7">';
-    for(var i=0;i<analysis.alternatives.length;i++)h+='<li style="color:var(--text-secondary)">'+esc(String(analysis.alternatives[i]))+'</li>';
-    h+='</ul></div>';
-  }
-  if(analysis.recommendation){
-    h+='<div style="margin-bottom:12px;padding:12px;background:var(--primary-light);border-radius:var(--radius)"><span style="font-size:12px;color:var(--primary);font-weight:600">CEO建议</span><p style="margin:4px 0 0;font-size:13px;line-height:1.7;color:var(--text)">'+esc(String(analysis.recommendation))+'</p></div>';
-  }
-  if(analysis.requires_meeting){
-    h+='<div style="padding:8px 12px;background:var(--warning-bg);border-radius:var(--radius);font-size:12px;color:var(--amber-500);font-weight:600">需要召集Agent会议讨论 (requires_meeting=true)</div>';
-  }
-  document.getElementById("ceoResponseBox").innerHTML=h;
-  body.innerHTML=h;
-  document.getElementById("ceoResultDlg").classList.add("open");
-}
-function cancelCeoInstr(){
-  if(_ceoReqAbort){_ceoReqAbort.abort();_ceoReqAbort=null}
-  document.getElementById("ceoSendBtn").disabled=false;
-  document.getElementById("ceoCancelBtn").style.display="none";
-  document.getElementById("ceoResponseBox").className="ceo-response-box";
-  document.getElementById("ceoResponseBox").innerHTML="";
-}
-
-function toggleProductMenu(){var d=document.getElementById("productDropdown");d.style.display=d.style.display==="none"?"block":"none"}
-if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init();startNpuPolling()})}else{init();startNpuPolling()}
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){init()})}else{init()}
 </script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/js/sw.js')}
