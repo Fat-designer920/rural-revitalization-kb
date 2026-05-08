@@ -162,6 +162,37 @@ class DFAMatcher(object):
         return self._loaded
 
 
+# 模块级DFA单例
+_dfamatcher = None
+
+
+def _get_dfamatcher():
+    global _dfamatcher
+    if _dfamatcher is None:
+        _dfamatcher = DFAMatcher()
+    return _dfamatcher
+
+
+def sensitive_word_check(text):
+    """DFA敏感词检测。返回 {level, blocked, block_reason, total_hits, ...}"""
+    m = _get_dfamatcher()
+    hits = m.search(text)
+    if not hits:
+        return {"level": "safe", "total_hits": 0, "blocked": False, "block_reason": None}
+    total = len(hits)
+    critical_cats = {"政治敏感", "色情内容", "暴力恐怖", "赌博诈骗", "毒品管制"}
+    critical_hits = [(w, c, p) for w, c, p in hits if c in critical_cats]
+    if critical_hits:
+        return {"level": "blocked", "total_hits": total, "blocked": True,
+                "block_reason": "命中关键敏感类别: %s" % ", ".join(sorted(set(c for _, c, _ in critical_hits)))}
+    if total > 10:
+        return {"level": "blocked", "total_hits": total, "blocked": True,
+                "block_reason": "敏感词命中过多(%d个)" % total}
+    if total >= 3:
+        return {"level": "warning", "total_hits": total, "blocked": False, "block_reason": None}
+    return {"level": "safe", "total_hits": total, "blocked": False, "block_reason": None}
+
+
 class BrandRedlineChecker(object):
     """品牌红线检查器。一票否决,不留情面。集成了DFA敏感词自动匹配。"""
 

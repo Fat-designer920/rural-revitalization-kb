@@ -4836,6 +4836,19 @@ def qa_ask():
     if len(query) > 500:
         return jsonify({"success": False, "error": "query 超长(>500 字)"}), 400
 
+    # 安全门禁: DFA敏感词检测(入口过滤)
+    try:
+        from agents.brand_redlines import sensitive_word_check
+        safety = sensitive_word_check(query)
+        if safety.get("blocked"):
+            return jsonify({
+                "success": False,
+                "error": "内容安全策略拦截",
+                "block_reason": safety.get("block_reason", "命中敏感词"),
+            }), 400
+    except Exception:
+        pass  # 安全模块故障不阻断主流程
+
     # v2.3.3-mvp F063: 朋友模式 IP 限速校验(自用模式不限速)
     client_ip = request.remote_addr or ""
     if mode == "friend":
@@ -4926,12 +4939,24 @@ def qa_ask():
                 friend_tag=friend_tag,
             )
             with _qa_task_lock:
+                # 出口防幻觉: 检查来源追溯
+                if result and result.get("answer") and not result.get("canceled"):
+                    kp_ids = result.get("retrieved_kp_ids") or []
+                    source = result.get("source") or ""
+                    if source != "rule_fallback" and len(kp_ids) == 0:
+                        result["answer"] = (
+                            "抱歉，该回答无法追溯到可靠的知识来源，暂时无法提供。"
+                            "建议您换个方式提问，或查阅相关政策原文。"
+                        )
+                        result["source"] = "hallucination_blocked"
+                        result["retrieved_kp_ids"] = []
                 _qa_task["result"] = result
                 _qa_task["error"] = None
             # v2.3.3-mvp: 限速计数(只成功才扣额度,失败不吐刷)
             # 成功定义:有 answer 且 source != rule_fallback(规则兜底也不算成功)
             if (result and result.get("answer")
                     and result.get("source") != "rule_fallback"
+                    and result.get("source") != "hallucination_blocked"
                     and not result.get("canceled")):
                 success_for_quota = True
         except Exception as e:
