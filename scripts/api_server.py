@@ -23,14 +23,13 @@ from scripts.db_manager import DatabaseManager
 # v2.2.3 F060: 关键操作备份钩子 + 备份失败异常
 from scripts.backup_manager import operation_hook, BackupFailedError
 # v2.3.0-part3.5: E2E 诊断包 Markdown 导出(纯读格式化)
-from scripts.e2e_diagnosis_exporter import build_e2e_diagnosis_markdown
-# v2.3.1 F2/F6: 精品候选 AI 判定 + 精品导出(立规则 50 第 6 项:跨模块 import 双路径兜底)
 try:
-    from scripts.premium_judge import run_premium_refresh
-    from scripts.premium_exporter import build_premium_export
+    from scripts.e2e_diagnosis_exporter import build_e2e_diagnosis_markdown
 except ImportError:
-    from premium_judge import run_premium_refresh
-    from premium_exporter import build_premium_export
+    build_e2e_diagnosis_markdown = None
+# 精品判定/导出已下线 — 保留变量名防止引用报错
+run_premium_refresh = None
+build_premium_export = None
 
 app = Flask(__name__)
 CORS(app)

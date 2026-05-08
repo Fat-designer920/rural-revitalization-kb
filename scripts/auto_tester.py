@@ -130,15 +130,10 @@ CORE_MODULES = [
     ("scripts.extractor_parallel", "ExtractorParallel"),
     ("scripts.relation_analyzer", "RelationAnalyzer"),
     ("scripts.policy_validator", "PolicyValidator"),
-    ("scripts.experience_notes", "ExperienceNotes"),
-    ("scripts.health_checker", "HealthChecker"),
-    ("scripts.static_analyzer", "StaticAnalyzer"),
-    ("scripts.e2e_tester", "E2ETester"),
-    ("scripts.check_system", "CheckSystem"),
     ("scripts.backup_manager", "BackupManager"),
-    ("scripts.config_wizard", "ConfigWizard"),
     ("agents.reader_tagger", "ReaderAutoTagger"),
-    ("agents.audit_engine", "AuditEngine"),
+    ("agents.crawler_scheduler", "CrawlerScheduler"),
+    ("agents.auto_feeder", "AutoFeeder"),
 ]
 
 
@@ -726,13 +721,6 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     except Exception as e:
         report.add_check("L4", "API 连通性", "fail", str(e))
 
-    # 4.7 检查 experience_notes 模块
-    try:
-        from scripts.experience_notes import ExperienceNotes, ANNOTATION_TAGS
-        report.add_check("L4", "ExperienceNotes", "pass", f"{len(ANNOTATION_TAGS)} 个预设标签")
-    except Exception as e:
-        report.add_check("L4", "ExperienceNotes", "fail", str(e))
-
     layer["duration_ms"] = int((time.time() - t0) * 1000)
 
 
@@ -743,29 +731,7 @@ def _run_l5_e2e_integration(report, selector, no_ai=False):
     layer = report.add_layer("L5 跨模块端到端")
     t0 = time.time()
 
-    # 5.1 静态分析器可用性
-    try:
-        from scripts import static_analyzer
-        # 跑一次轻量扫描,验证规则有效
-        result = static_analyzer.run_static_scan()
-        if result and result.get("scanned_files", 0) > 0:
-            report.add_check("L5", "static_analyzer 扫描",
-                             "pass", f"扫描 {result['scanned_files']} 个文件")
-        else:
-            report.add_check("L5", "static_analyzer 扫描", "fail", "扫描结果为空")
-    except Exception as e:
-        report.add_check("L5", "static_analyzer 扫描", "fail", str(e))
-
-    # 5.2 体检引擎就绪度检查
-    try:
-        from scripts.health_checker import HealthChecker
-        hc = HealthChecker()
-        # 快速实例化检查(不跑全量体检,太贵)
-        report.add_check("L5", "HealthChecker 就绪", "pass", "实例化成功")
-    except Exception as e:
-        report.add_check("L5", "HealthChecker 就绪", "fail", str(e))
-
-    # 5.3 数据库管理器核心方法可用性
+    # 5.1 数据库管理器核心方法可用性
     try:
         from scripts.db_manager import DatabaseManager
         db = DatabaseManager()

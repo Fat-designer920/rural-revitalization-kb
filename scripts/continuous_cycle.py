@@ -62,26 +62,6 @@ def run_crawl():
         log(f'[Crawl] err: {str(e)[:60]}')
 
 
-def run_gpu():
-    """GPU负荷"""
-    try:
-        from scripts.npu_engine import NPUEngine
-        from scripts.db_manager import DatabaseManager
-        e = NPUEngine()
-        db = DatabaseManager()
-        conn = db.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT title,original_excerpt FROM knowledge_points WHERE review_status='confirmed' LIMIT 500")
-        rows = [(r[0] or "") + " " + (r[1] or "")[:100] for r in c]
-        conn.close()
-        if rows:
-            e.build_index(rows)
-            for q in ['土地整治', '高标准农田', '专项债', '增减挂钩']:
-                e.semantic_search(q, top_k=5)
-    except Exception as e:
-        pass
-
-
 def run_pipeline():
     """全管道"""
     try:
@@ -107,9 +87,6 @@ def main():
                 gc.collect(2)
 
             # 错峰执行任务
-            if cycle % 2 == 0:
-                run_gpu()
-
             if cycle % 8 == 1:
                 run_crawl()
 
