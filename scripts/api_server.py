@@ -39,7 +39,7 @@ except ImportError:
 run_premium_refresh = None
 build_premium_export = None
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=str(PROJECT_ROOT / "static"), static_url_path="/static")
 CORS(app)
 db = DatabaseManager()
 
@@ -790,37 +790,6 @@ def premium_viewer_page():
     return Response(
         "<h1>精品查看器 — 加载中...</h1>", mimetype="text/html; charset=utf-8"
     )
-
-
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    """静态资源: CSS/JS/图片 (优先 templates/, 回退 static/)"""
-    for base in (PROJECT_ROOT / "web" / "templates", PROJECT_ROOT / "static"):
-        p = base / filename
-        if p.exists() and p.suffix in (
-            ".css",
-            ".js",
-            ".png",
-            ".jpg",
-            ".svg",
-            ".ico",
-            ".json",
-        ):
-            mime_map = {
-                ".css": "text/css",
-                ".js": "application/javascript",
-                ".png": "image/png",
-                ".jpg": "image/jpeg",
-                ".svg": "image/svg+xml",
-                ".ico": "image/x-icon",
-                ".json": "application/json",
-            }
-            with open(p, "rb") as f:
-                return Response(
-                    f.read(),
-                    mimetype=mime_map.get(p.suffix, "application/octet-stream"),
-                )
-    return "Not Found", 404
 
 
 # 知识点 CRUD

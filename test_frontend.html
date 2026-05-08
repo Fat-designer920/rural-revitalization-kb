@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>前端诊断</title>
+</head>
+<body>
+<h1>后台前端诊断</h1>
+<div id="result"></div>
+<script>
+var result = document.getElementById('result');
+var tests = [];
+
+// 测试1: 检查API连通性
+fetch('/api/statistics')
+  .then(r => r.json())
+  .then(data => {
+    tests.push('✓ API统计接口正常: ' + JSON.stringify(data).substring(0, 100));
+    updateResult();
+  })
+  .catch(e => {
+    tests.push('✗ API统计接口失败: ' + e.message);
+    updateResult();
+  });
+
+// 测试2: 检查标签定义
+fetch('/api/tag-definitions')
+  .then(r => r.json())
+  .then(data => {
+    tests.push('✓ 标签定义接口正常');
+    updateResult();
+  })
+  .catch(e => {
+    tests.push('✗ 标签定义接口失败: ' + e.message);
+    updateResult();
+  });
+
+// 测试3: 检查知识点列表
+fetch('/api/knowledge-points?page=1&per_page=1')
+  .then(r => r.json())
+  .then(data => {
+    tests.push('✓ 知识点列表接口正常, 总数: ' + data.total);
+    updateResult();
+  })
+  .catch(e => {
+    tests.push('✗ 知识点列表接口失败: ' + e.message);
+    updateResult();
+  });
+
+function updateResult() {
+  result.innerHTML = '<pre>' + tests.join('\n') + '</pre>';
+}
+
+setTimeout(function() {
+  tests.push('\n=== 诊断完成 ===');
+  tests.push('如果所有测试都通过，说明后台API正常');
+  tests.push('如果主页面仍然卡住，可能是前端JS执行出错');
+  tests.push('请按F12打开开发者工具，查看Console标签页的错误信息');
+  updateResult();
+}, 3000);
+</script>
+</body>
+</html>
