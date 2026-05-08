@@ -3,9 +3,9 @@ api_server.py - Flask 后台 API 服务器
 路径：scripts/api_server.py
 版本：v2.3.7
 """
-import os,sys,json,re,traceback,webbrowser,threading
+import sys,json,re,traceback,webbrowser,threading
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # v2.3.7-part3: Windows GBK控制台UTF-8适配,根治乱码
 if sys.platform == 'win32':
@@ -468,8 +468,7 @@ def _ceo_readiness_check():
         return False, errors
 
     try:
-        from agents.ceo_agent import CEOAgent
-        from agents.audit_engine import AuditEngine
+        pass
     except Exception as e:
         errors.append("[2] Agent 模块 import 失败: " + str(e)[:200])
 

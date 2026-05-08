@@ -3,7 +3,7 @@ auto_feeder.py - 批量喂料器(全量文件+双模型+进度+断点续传+质�
 路径：agents/auto_feeder.py
 版本：v2.3.7-part2
 """
-import json, os, shutil, time, hashlib
+import os, shutil, time, hashlib
 from pathlib import Path
 from datetime import datetime
 

@@ -10,7 +10,6 @@ source_verifier.py - 信源核验器(所有非老唐提供的信息必须能找�
 """
 import re
 from pathlib import Path
-from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent
 

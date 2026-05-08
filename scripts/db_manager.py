@@ -2648,7 +2648,7 @@ class DatabaseManager:
         new_status = old_status
         if old_status == "intermittent":
             try:
-                from datetime import datetime as _dt, timedelta as _td
+                from datetime import datetime as _dt
                 first_dt = _dt.strptime(first_seen, "%Y-%m-%d %H:%M:%S")
                 now_dt = _dt.strptime(now, "%Y-%m-%d %H:%M:%S")
                 within_window = (now_dt - first_dt).days <= self.E2E_INTERMITTENT_WINDOW_DAYS

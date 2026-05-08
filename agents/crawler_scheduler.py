@@ -13,7 +13,7 @@ v2.3.8 重构:
 import json, time, hashlib, os, re
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import urljoin, urlparse, quote
+from urllib.parse import urljoin, urlparse
 
 try:
     import requests
@@ -30,7 +30,7 @@ sys_path = str(PROJECT_ROOT)
 # 导入正文提取器
 import sys as _sys
 _sys.path.insert(0, sys_path)
-from scripts.content_extractor import GovContentExtractor, check_robots_txt, RURAL_CORE_KEYWORDS, EXCLUDE_KEYWORDS
+from scripts.content_extractor import GovContentExtractor, check_robots_txt, EXCLUDE_KEYWORDS
 
 # === 政策列表页(四川乡村振兴定向信源) ===
 # 直接命中政府网站的政策列表页(server-rendered HTML)，不依赖JS搜索

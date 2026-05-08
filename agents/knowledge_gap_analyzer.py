@@ -6,7 +6,6 @@ knowledge_gap_analyzer.py - 知识缺口分析器(课程体系→倒推需求→
 CEO的核心工具: 课程体系→知识需求→知识库现状对比→缺口清单→爬取任务→喂料计划。
 实现从"被动等老唐喂料"到"CEO主动构建知识管道"的转变。
 """
-import json
 from datetime import datetime
 from agents.course_system import get_course_system, get_knowledge_needs
 

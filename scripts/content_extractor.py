@@ -3,9 +3,7 @@ content_extractor.py - 政府网站正文智能提取+元数据识别
 路径：scripts/content_extractor.py
 版本：v2.3.8
 """
-import re, json
-from datetime import datetime
-from urllib.parse import urlparse
+import re
 
 # gov.cn常见正文容器class/id模式
 GOV_CONTENT_PATTERNS = [

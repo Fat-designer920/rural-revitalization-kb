@@ -5,7 +5,6 @@ doc_structure.py - 中国公文结构分析器(发文字号/层级/类型/关键
 参考 GB/T 9704-2012 党政机关公文格式标准
 """
 import re
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # ── 发文字号正则（GB/T 9704-2012: 机关代字〔年份〕序号号）──

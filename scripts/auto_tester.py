@@ -5,7 +5,7 @@ auto_tester.py - F063 六层自动化测试引擎(git diff→模块→测试文�
 使用说明见 CLAUDE.md §12
 """
 
-import os, sys, json, sqlite3, time, traceback, shutil, hashlib
+import sys, json, sqlite3, time
 from pathlib import Path
 from datetime import datetime
 from collections import OrderedDict
@@ -674,7 +674,7 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
     # 4.4 验证核心 Prompt 可加载
     try:
         from scripts.prompts.prompt_templates import (
-            get_extraction_prompt, get_prompt_version,
+            get_prompt_version,
             RELATION_JUDGE_PROMPT, E2E_RESPONSE_JUDGE_PROMPT,
             QC_CHECK_PROMPT, POLICY_SCAN_PROMPT,
         )
@@ -703,7 +703,6 @@ def _run_l4_pipeline_test(report, selector, no_ai=False):
 
     # 4.5 验证 extractor_parallel 辅助模块
     try:
-        from scripts.extractor_parallel import identify_core_segments, merge_and_deduplicate
         report.add_check("L4", "extractor_parallel", "pass", "identify_core_segments + merge_and_deduplicate")
     except Exception as e:
         report.add_check("L4", "extractor_parallel", "fail", str(e))

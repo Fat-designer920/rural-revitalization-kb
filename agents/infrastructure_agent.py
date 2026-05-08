@@ -6,7 +6,7 @@ infrastructure_agent.py - 后勤保障Agent(系统监测+内存清理+硬件调�
 集团公司的基础设施管家。保证30个Agent运行在最佳硬件环境。
 职责: 系统检测→内存管理→硬件路由→缓存清理→磁盘监控→CEO汇报
 """
-import json, os, sys, gc, shutil, time, threading, platform, ctypes
+import os, sys, gc, shutil, time, threading, platform, ctypes
 from datetime import datetime
 from pathlib import Path
 

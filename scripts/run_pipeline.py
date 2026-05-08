@@ -11,7 +11,7 @@ run_pipeline.py - 知识管道CLI入口(深度爬取→喂料→提取→质检�
   python scripts/run_pipeline.py --status            # 查看当前状态
   python scripts/run_pipeline.py --dry-run           # 预览会处理多少文件
 """
-import sys, os, time, json
+import sys, json
 from pathlib import Path
 
 # v2.3.7-part3: Windows GBK控制台UTF-8适配

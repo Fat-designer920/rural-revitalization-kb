@@ -3,7 +3,6 @@ pre_commit_check.py - Git pre-commit 检查,CI/CD 管道本地版
 路径：scripts/pre_commit_check.py
 版本：v2.3.7-part5
 """
-import os
 import re
 import sys
 import ast

@@ -6,7 +6,7 @@ smart_search_agent.py - AI驱动智能搜索Agent(聚合平台搜索+信源验�
 职责: 从课程体系知识缺口倒推搜索词→在政府聚合平台搜索→验证信源→提取入库。
 区县级政策大多没有独立网站, 聚合平台(省政府/市州政府/公共资源交易平台)是主要来源。
 """
-import json, re, time, hashlib
+import re, time
 from pathlib import Path
 from datetime import datetime
 

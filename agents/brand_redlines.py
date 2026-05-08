@@ -4,7 +4,6 @@ brand_redlines.py - 品牌红线清单(所有对外内容必须通过的合规�
 版本：v2.3.7-part7
 品牌把关人执法依据, 含DFA关键词+语义级安全检查.
 """
-import json
 import os
 import re
 

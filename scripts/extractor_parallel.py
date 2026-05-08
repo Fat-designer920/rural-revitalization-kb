@@ -3,8 +3,7 @@
 并行双模型提取辅助模块 (v2.3.6-part1)
 提供 V4-Flash 快速全覆盖 + V4-Pro 深度核心段的并行提取逻辑
 """
-import json
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple
 
 
 def identify_core_segments(file_structure: Dict, segs: List[str]) -> List[Tuple[int, str]]:

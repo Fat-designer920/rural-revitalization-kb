@@ -3,7 +3,7 @@ preprocessor.py - 智能预处理(文件重命名+AI标签建议+质量评分)
 路径：scripts/preprocessor.py
 版本：v2.3.7-part8 - 集成doc_structure地域检测+质量评分
 """
-import os,sys,json,shutil
+import sys,json,shutil
 from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
