@@ -534,6 +534,23 @@ class CrawlerScheduler(object):
             if any(full_url.lower().endswith(ext) for ext in skip_exts):
                 continue
 
+            # 关键修复: 只保留文章页URL,过滤列表页/频道页
+            # 文章页特征: 含日期路径(2026/05/06), 或含/content/文章ID, 或长路径(>3级)
+            path_parts = [p for p in path.split('/') if p]
+            is_article = (
+                bool(re.search(r'/20\d{2}[/-]\d{1,2}[/-]\d{1,2}', path))  # 含日期
+                or len(path_parts) >= 4  # 长路径(=文章页)
+                or bool(re.search(r'/(content|article|info|detail)/', path))  # 文章标记
+                or bool(re.search(r'[a-f0-9]{16,}', path))  # 含长ID(=文章)
+            )
+            is_listing = (
+                len(path_parts) <= 2  # 只有1-2级=列表页
+                or path.endswith('/')  # 目录页
+                or bool(re.search(r'/(zwgk|zhengce|xxgk|tzgg|gongkai)(/)?$', path))
+            )
+            if is_listing and not is_article:
+                continue  # 跳过列表页,只取文章页
+
             # 评分: URL模式匹配 + 标题关键词匹配
             score = 0
             match_reason = []
