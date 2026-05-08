@@ -50,7 +50,6 @@ if defined LOCAL_IP (
     echo   (同一 WiFi 下可访问)
 )
 echo.
-echo   计划上线: /course /compliance /daily /templates
 echo ============================================================
 echo.
 
